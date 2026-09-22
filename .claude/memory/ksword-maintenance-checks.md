@@ -73,6 +73,9 @@
 - WDK builds force-include `warning.h`, which defines C macros including `leave`.
   A standalone compiler invocation without this header can miss name collisions:
   the window-band runtime callback uses `leaveCriticalSection` for this reason.
+- FLTK's `fl_win32_xid` is an external library symbol even when declared manually
+  in first-party source. Preserve its spelling and validate installer changes with
+  a full payload/resource build and link; C++ compilation alone misses this mismatch.
 - `Directory.Build.props` selects x64 host tools before C++ tool-path evaluation.
   Direct CI builds previously used `HostX86/x64/link.exe` and failed with C1002
   during LTCG, even when the automatic HostX64 retry finished code generation.

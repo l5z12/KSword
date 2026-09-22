@@ -30,7 +30,7 @@
 #pragma comment(lib, "Shell32.lib")
 #pragma comment(lib, "Ole32.lib")
 
-extern HWND flWin32Xid(const Fl_Window* window);
+extern HWND fl_win32_xid(const Fl_Window* window);
 
 #ifndef KSWORD_SETUP_ENABLE_TOPMOST
 #define KSWORD_SETUP_ENABLE_TOPMOST 0
@@ -1208,7 +1208,7 @@ std::string extractCharacterImage() {
 void applyInstallerZOrder(Fl_Window* owner) {
 #if KSWORD_SETUP_ENABLE_TOPMOST
     if (!owner) return;
-    HWND ownerHwnd = flWin32Xid(owner);
+    HWND ownerHwnd = fl_win32_xid(owner);
     if (ownerHwnd) {
         ::SetWindowPos(ownerHwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }
@@ -1227,7 +1227,7 @@ void applyInstallerZOrder(Fl_Window* owner) {
 void setInstallerShellDialogMode(bool enabled) {
 #if KSWORD_SETUP_ENABLE_TOPMOST
     g_topMostPaused = enabled;
-    HWND ownerHwnd = g_mainWindow ? flWin32Xid(g_mainWindow) : nullptr;
+    HWND ownerHwnd = g_mainWindow ? fl_win32_xid(g_mainWindow) : nullptr;
     HWND imageHwnd = g_characterWindow.hwnd();
     const HWND insertAfter = enabled ? HWND_NOTOPMOST : HWND_TOPMOST;
     const UINT flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
@@ -1249,7 +1249,7 @@ void setInstallerShellDialogMode(bool enabled) {
 // normal MessageBoxW parameters; processing optionally adds MB_TOPMOST when the
 // compile-time switch is enabled; output is the clicked button id.
 int topMostMessageBox(const wchar_t* text, const wchar_t* caption, UINT type) {
-    HWND ownerHwnd = gMainWindow ? flWin32Xid(gMainWindow) : nullptr;
+    HWND ownerHwnd = gMainWindow ? fl_win32_xid(gMainWindow) : nullptr;
 #if KSWORD_SETUP_ENABLE_TOPMOST
     return ::MessageBoxW(ownerHwnd, text, caption, type | MB_TOPMOST | MB_SETFOREGROUND);
 #else
@@ -1261,7 +1261,7 @@ int topMostMessageBox(const wchar_t* text, const wchar_t* caption, UINT type) {
 // Input is the right-side installer window; processing removes tool/noactivate
 // styles and forces WS_EX_APPWINDOW; no value is returned.
 void ensureTaskbarAppWindow(Fl_Window* window) {
-    HWND hwnd = window ? flWin32Xid(window) : nullptr;
+    HWND hwnd = window ? fl_win32_xid(window) : nullptr;
     if (!hwnd) return;
     LONG_PTR exStyle = ::GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
     exStyle &= ~(static_cast<LONG_PTR>(WS_EX_TOOLWINDOW) | static_cast<LONG_PTR>(WS_EX_NOACTIVATE));
