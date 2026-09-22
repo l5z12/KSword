@@ -15,7 +15,9 @@ class DeveloperCommandTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory(prefix="ksword contributor ")
         self.addCleanup(self.directory.cleanup)
-        self.root = Path(self.directory.name)
+        # Hosted Windows runners may expose TEMP through an 8.3 path alias.
+        # Discovery resolves overrides, so compare against the same canonical root.
+        self.root = Path(self.directory.name).resolve()
         self.msbuild = self.root / "VS with spaces/MSBuild.exe"
         self.msbuild.parent.mkdir()
         self.msbuild.touch()
