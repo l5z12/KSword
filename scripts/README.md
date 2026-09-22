@@ -8,7 +8,7 @@ machine. Python source checks and generators remain in `tools/`.
 
 | Location | Purpose |
 | --- | --- |
-| `setup/Setup-QtPaths.ps1` | Optional persistent Qt/Visual Studio setup; can write user environment variables, local `Directory.Build.props`, and project settings. Review `-WhatIf` first. |
+| `setup/Setup-QtPaths.ps1` | Optional persistent Qt/Visual Studio setup; can write user environment variables, local `Directory.Build.local.props`, and project settings. Review `-WhatIf` first. |
 | `runtime/TaskmgrHijack.ps1` | Task Manager integration helper distributed beside the desktop executable. The desktop project copies it; changing its source path must preserve the deployed basename. |
 | `legacy/Auto-Qmoc.ps1` | Historical MOC helper retained for reference. Normal builds use Qt MSBuild; this script is not part of the supported contributor build. |
 | `Build-*.ps1`, `Invoke-*.ps1` | Component builds and acceptance workflows. Read each script's help and required environment before running it. Some invoke or change a live driver/system. |

@@ -73,6 +73,11 @@
 - WDK builds force-include `warning.h`, which defines C macros including `leave`.
   A standalone compiler invocation without this header can miss name collisions:
   the window-band runtime callback uses `leaveCriticalSection` for this reason.
+- `Directory.Build.props` selects x64 host tools before C++ tool-path evaluation.
+  Direct CI builds previously used `HostX86/x64/link.exe` and failed with C1002
+  during LTCG, even when the automatic HostX64 retry finished code generation.
+  Keep the host choice shared across IDE, direct MSBuild, and contributor commands;
+  it does not change the MSVC toolset, target platform, or optimization settings.
 - Retired desktop/qmake scaffolding is text under `archive/desktop/`; taskbar
   snapshots remain under `archive/taskbar/`. Local old build trees were moved to
   ignored `artifacts/legacy-layout/`. Do not use those trees as source dependencies.

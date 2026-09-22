@@ -6,10 +6,13 @@
 `artifacts/bin/x64/Release/`. Its path is resolved relative to this props file, so each
 consumer imports the same location regardless of its project directory.
 
-`Directory.Build.targets` stays at the repository root because MSBuild discovers
-that filename while walking parent directories. A local, ignored
-`Directory.Build.props` may provide workstation-specific Qt paths. Do not commit
-that file or replace shared defaults with personal paths.
+`Directory.Build.props` and `Directory.Build.targets` stay at the repository root
+because MSBuild discovers them while walking parent directories. The shared props
+selects 64-bit host tools and imports the optional, ignored
+`Directory.Build.local.props` for workstation-specific Qt paths. The Qt setup
+helper writes only that local file. Keep personal paths out of tracked defaults.
+If an older checkout has generated Qt settings in `Directory.Build.props`, move
+that local file to `Directory.Build.local.props` before updating the checkout.
 
 Application and driver components retain their own root directories and project
 files. Native regression projects live in `tests/native/`; changing their location

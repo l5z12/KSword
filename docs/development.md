@@ -28,6 +28,12 @@ The native baseline is Visual Studio 2022 (Community or Build Tools), the
 and a **Windows SDK**. The starter targets do not need WDK, administrator rights,
 a signing certificate, or a driver loaded. Defaults are Release/x64, matching CI.
 
+`Directory.Build.props` selects the 64-bit MSVC host tools for direct MSBuild,
+IDE, and CI builds. The desktop's whole-program optimization can exhaust the
+32-bit linker's address space. Host architecture is independent of the target
+platform: Win32 targets still produce 32-bit binaries, and the selected toolset
+remains unchanged. An explicit `PreferredToolArchitecture` override takes precedence.
+
 ## Discover and test
 
 ```powershell

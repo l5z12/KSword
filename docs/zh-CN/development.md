@@ -22,6 +22,11 @@
 MSVC v143 x64/x86 工具集与 Windows SDK。默认 Release/x64，与 CI 一致。
 入门测试不需要 Qt、WDK、管理员权限、签名证书或已加载驱动。
 
+`Directory.Build.props` 为直接 MSBuild、IDE 和 CI 构建选择 64 位 MSVC 宿主工具。
+主程序的全程序优化可能耗尽 32 位链接器的地址空间。宿主架构与目标平台独立：
+Win32 目标仍生成 32 位二进制，工具集版本也保持不变。显式设置的
+`PreferredToolArchitecture` 优先于仓库默认值。
+
 ## 发现依赖并测试
 
 ```powershell

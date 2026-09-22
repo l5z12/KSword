@@ -27,7 +27,7 @@ class ImpactTests(unittest.TestCase):
         self.assertFalse(affected["driver"])
 
     def test_root_build_settings_trigger_every_consumer(self):
-        for path in ("Directory.Build.targets", "build/msbuild/Ksword.Output.props", "KSword.sln"):
+        for path in ("Directory.Build.props", "Directory.Build.targets", "build/msbuild/Ksword.Output.props", "KSword.sln"):
             with self.subTest(path=path):
                 self.assertTrue(all(ci_changes.affected_projects([path]).values()))
 

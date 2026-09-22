@@ -15,7 +15,7 @@ ROOT_DIRECTORIES = {
 }
 ROOT_FILES = {
     ".clang-tidy", ".editorconfig", ".gitattributes", ".gitignore", "AGENTS.md",
-    "COMMUNITY_COVENANT.md", "CONTRIBUTING.md", "Directory.Build.targets",
+    "COMMUNITY_COVENANT.md", "CONTRIBUTING.md", "Directory.Build.props", "Directory.Build.targets",
     "KSword.sln", "LICENSE", "README.md",
 }
 CPP_ROOTS = ("apps/", "integrations/", "shared/", "tests/native/")

@@ -10,7 +10,7 @@ param(
     # Do not persist environment variables to the current Windows user profile.
     [switch]$NoUserEnvironment,
 
-    # Do not create or update the repo-local Directory.Build.props helper file.
+    # Do not create or update the repo-local Directory.Build.local.props helper file.
     [switch]$NoDirectoryBuildProps,
 
     # Do not patch .vcxproj files; only discover and export Qt paths.
@@ -224,7 +224,7 @@ function Add-QtCandidatesFromKnownTextFiles {
         'apps/taskbar\Taskbar.vcxproj.user',
         'apps/hud\KswordHUD.vcxproj',
         'apps/hud\KswordHUD.vcxproj.user',
-        'Directory.Build.props'
+        'Directory.Build.local.props'
     )
 
     foreach ($relativeFile in $relativeFiles) {
@@ -664,16 +664,16 @@ function Set-UserQtEnvironment {
 
 function Update-DirectoryBuildProps {
     # Inputs: repo root, detected Qt install path, and optional QtMsBuild path.
-    # Processing: creates or updates a generated block in Directory.Build.props so
+    # Processing: creates or updates a generated block in Directory.Build.local.props so
     # MSBuild resolves Qt before project-local fallback paths are evaluated.
-    # Returns: the Directory.Build.props path.
+    # Returns: the Directory.Build.local.props path.
     param(
         [Parameter(Mandatory = $true)][string]$Root,
         [Parameter(Mandatory = $true)][string]$DetectedQtDir,
         [string]$DetectedQtMsBuild
     )
 
-    $propsPath = Join-Path $Root 'Directory.Build.props'
+    $propsPath = Join-Path $Root 'Directory.Build.local.props'
     $beginMarker = '<!-- KSWORD_QT_PATHS_BEGIN -->'
     $endMarker = '<!-- KSWORD_QT_PATHS_END -->'
     $qtDirXml = ConvertTo-XmlText -Text $DetectedQtDir
@@ -698,7 +698,7 @@ function Update-DirectoryBuildProps {
 
     if (-not (Test-Path -LiteralPath $propsPath -PathType Leaf)) {
         $content = '<?xml version="1.0" encoding="utf-8"?>' + [Environment]::NewLine + '<Project>' + [Environment]::NewLine + $block + '</Project>' + [Environment]::NewLine
-        if ($PSCmdlet.ShouldProcess($propsPath, 'create Directory.Build.props with detected Qt paths')) {
+        if ($PSCmdlet.ShouldProcess($propsPath, 'create Directory.Build.local.props with detected Qt paths')) {
             Set-Content -LiteralPath $propsPath -Value $content -Encoding UTF8
         }
         return $propsPath
@@ -713,7 +713,7 @@ function Update-DirectoryBuildProps {
         $updated = [regex]::Replace($existing, '</Project>\s*$', $block + '</Project>' + [Environment]::NewLine)
     }
     else {
-        throw "Directory.Build.props exists but does not look like an MSBuild Project XML file: $propsPath"
+        throw "Directory.Build.local.props exists but does not look like an MSBuild Project XML file: $propsPath"
     }
 
     if ($updated -ne $existing -and $PSCmdlet.ShouldProcess($propsPath, 'update generated Qt path block')) {
@@ -864,7 +864,7 @@ if (-not $NoDirectoryBuildProps) {
     Write-Step "Updated local MSBuild props: $propsPath"
 }
 else {
-    Write-Step 'Skipped Directory.Build.props update.'
+    Write-Step 'Skipped Directory.Build.local.props update.'
 }
 
 if (-not $SkipProjectFilePatch) {

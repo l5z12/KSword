@@ -7,7 +7,7 @@
 
 | 位置 | 用途 |
 | --- | --- |
-| `scripts/setup/Setup-QtPaths.ps1` | 可选的 Qt/Visual Studio 持久化配置；可能写用户环境变量、根目录本地 `Directory.Build.props` 和项目设置。先用 `-WhatIf` 检查。 |
+| `scripts/setup/Setup-QtPaths.ps1` | 可选的 Qt/Visual Studio 持久化配置；可能写用户环境变量、根目录本地 `Directory.Build.local.props` 和项目设置。先用 `-WhatIf` 检查。 |
 | `scripts/runtime/TaskmgrHijack.ps1` | 随桌面程序发布的任务管理器集成脚本，由主项目复制；移动源码时保留发布文件名。 |
 | `scripts/legacy/Auto-Qmoc.ps1` | 保留供参考的历史 MOC 脚本；常规构建使用 Qt MSBuild，不依赖此脚本。 |
 | `scripts/Build-*.ps1`、`scripts/Invoke-*.ps1` | 组件构建与验收流程；先读各脚本帮助与环境要求，部分会操作真实驱动或系统。 |

@@ -1,0 +1,10 @@
+<Project>
+  <Import Project="$(MSBuildThisFileDirectory)Directory.Build.local.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)Directory.Build.local.props')" />
+  <!-- Select the host tools before Microsoft.Cpp.props resolves their paths.
+       Whole-program optimization exceeds the 32-bit linker's address space.
+       This does not change the target platform or the selected MSVC toolset. -->
+  <PropertyGroup>
+    <PreferredToolArchitecture Condition="'$(PreferredToolArchitecture)' == ''">x64</PreferredToolArchitecture>
+  </PropertyGroup>
+</Project>
