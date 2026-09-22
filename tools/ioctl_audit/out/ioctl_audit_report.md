@@ -3,7 +3,7 @@
 - Generated at: `2026-09-13T00:14:28.771077+00:00`
 - Repository root: `C:\Users\Felix\CLionProjects\KSword`
 - Headers scanned: `51`
-- Registry scanned: `KswordARKDriver/src/dispatch/ioctl_registry.c`
+- Registry scanned: `drivers/ark/src/dispatch/ioctl_registry.c`
 
 ## Summary
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Static KswordARKDriver IOCTL protocol and registry auditor.
+"""Static drivers/ark IOCTL protocol and registry auditor.
 
 Inputs:
     * shared/driver/*Ioctl.h for IOCTL_KSWORD_ARK_* CTL_CODE definitions.
-    * KswordARKDriver/src/dispatch/ioctl_registry.c for registered handlers.
+    * drivers/ark/src/dispatch/ioctl_registry.c for registered handlers.
     * tools/ioctl_audit/ioctl_audit_rules.json for local audit policy.
 
 Processing:
@@ -251,7 +251,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     arguments are handled by argparse with its standard exit behavior.
     """
 
-    parser = argparse.ArgumentParser(description="Audit KswordARKDriver IOCTL definitions")
+    parser = argparse.ArgumentParser(description="Audit drivers/ark IOCTL definitions")
     parser.add_argument("--repo-root", required=True, help="Repository root to scan.")
     parser.add_argument("--format", choices=("text", "json", "markdown"), default="markdown")
     parser.add_argument("--out", help="Report output path. Relative paths resolve under --repo-root.")
@@ -535,7 +535,7 @@ def parse_registry(root: Path) -> list[RegistryEntry]:
     return value is a list of registry entries with approximate source lines.
     """
 
-    path = root / "KswordARKDriver" / "src" / "dispatch" / "ioctl_registry.c"
+    path = root / 'drivers/ark/src/dispatch/ioctl_registry.c'
     text = strip_comments(path.read_text(encoding="utf-8-sig", errors="replace"))
     row_re = re.compile(
         r"\{\s*(IOCTL_KSWORD_ARK_[A-Z0-9_]+)\s*,\s*([A-Za-z_]\w*)\s*,\s*\"([^\"]*)\"",
@@ -744,7 +744,7 @@ def build_report(root: Path, rules: Rules) -> dict[str, Any]:
         "repoRoot": str(root),
         "inputs": {
             "headers": [rel(header, root) for header in headers],
-            "registry": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+            "registry": "drivers/ark/src/dispatch/ioctl_registry.c",
             "macroCount": macro_count,
         },
         "rules": {
@@ -800,7 +800,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 
     summary = report["summary"]
     lines = [
-        "# KswordARKDriver IOCTL Audit Report",
+        "# drivers/ark IOCTL Audit Report",
         "",
         f"- Generated at: `{report['generatedAt']}`",
         f"- Repository root: `{report['repoRoot']}`",
@@ -861,7 +861,7 @@ def render_text(report: dict[str, Any]) -> str:
     string.
     """
 
-    lines = ["KswordARKDriver IOCTL audit", ""]
+    lines = ["drivers/ark IOCTL audit", ""]
     for key, value in report["summary"].items():
         lines.append(f"{key}: {value}")
     lines.extend(["", "Findings:"])

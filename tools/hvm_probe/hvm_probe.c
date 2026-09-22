@@ -1,38 +1,38 @@
 /*
- * hvm_probe —— 用户态 CPUID 探针：回答"这台机器（可能是嵌套的 L1）能不能跑 KSword HVM"。
+ * hvm_probe: A user-mode CPUID probe that determines whether this machine, possibly a nested L1, can run KSword HVM.
  *
- * 存在的理由：Win32_ComputerSystem.HypervisorPresent 读的是 CPUID.1:ECX[31]，它只说明
- * "我上面有 hypervisor"。任何虚拟机里这一位都是 1，用它判断"guest 内部有没有东西抢 VT-x"
- * 是错的。真正决定 KSword HVM 能否 VMXON 的是下面这些位。
+ * Rationale: Win32_ComputerSystem.HypervisorPresent reads CPUID.1:ECX[31], which only indicates 'a hypervisor exists
+ * above me'. This bit is always 1 in any VM; using it to determine 'whether anything inside the guest is competing
+ * for VT-x' is incorrect. What actually determines whether KSword HVM can execute VMXON are the bits listed below.
  *
- * 检查项与驱动里 hvm_evmcs.c 的判定链逐条对应，所以在不加载驱动的前提下就能预告
- * KswordARKHvmEvmcsDiscover 会走到哪一步、为什么停下。
+ * Each check item corresponds one-to-one with the decision chain in hvm_evmcs.c within the driver, allowing
+ * us to predict where kswordArkHvmEvmcsDiscover will stop and why, even without loading the driver.
  *
- * 只读 CPUID，不写任何状态，不需要管理员权限。
+ * Read-only CPUID; no state writes, so administrator privileges are not required.
  *
- * 编译： cl /nologo /W4 /WX /O2 hvm_probe.c
+ * Compile: cl /nologo /W4 /WX /O2 hvm_probe.c
  */
 
 #include <stdio.h>
 #include <string.h>
 #include <intrin.h>
-/* 只为 SetConsoleOutputCP：本文件是 UTF-8 源码，而中文 Windows 的控制台默认是
- * CP936。不切代码页的话每个中文字都会变成乱码 —— 实测在 guest 里就是这样。 */
+/* Only for SetConsoleOutputCP: This file uses UTF-8 source code, while the Chinese Windows console defaults to
+ * CP936. Without switching the code page, every Chinese character becomes garbled—verified to occur in the guest. */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-/* TLFS 定义的合成 CPUID 叶，与 hvm_evmcs.c 中的同名常量保持一致。 */
+/* Synthetic CPUID leaves defined by TLFS, kept consistent with the similarly named constants in hvm_evmcs.c. */
 #define HV_CPUID_VENDOR_AND_MAX  0x40000000u
 #define HV_CPUID_INTERFACE       0x40000001u
 #define HV_CPUID_FEATURES        0x40000003u
 #define HV_CPUID_RECOMMENDATIONS 0x40000004u
 #define HV_CPUID_NESTED_FEATURES 0x4000000Au
-/* "Hv#1" 的小端编码。 */
+/* "Hv#1" little-endian encoding. */
 #define HV_INTERFACE_SIGNATURE   0x31237648u
-/* TLFS 建议使用 eVMCS 接口。Hyper-V 只在该虚拟机开了嵌套虚拟化时才置这一位。 */
+/* TLFS recommends using the eVMCS interface. Hyper-V sets this bit only when nested virtualization is enabled for the VM. */
 #define HV_RECOMMEND_EVMCS       (1u << 14)
 
-static void put_line(void)
+static void putLine(void)
 {
     printf("--------------------------------------------------------------\n");
 }
@@ -53,7 +53,7 @@ int main(void)
     char hvVendor[13];
     int gateOk = 1;
 
-    /* 切到 UTF-8，退出前还原，免得把调用者的控制台留在改过的状态。 */
+    /* Switch to UTF-8 and restore on exit to avoid leaving the caller's console in a modified state. */
     previousCp = GetConsoleOutputCP();
     (void)SetConsoleOutputCP(CP_UTF8);
 
@@ -66,9 +66,9 @@ int main(void)
 
     __cpuid(regs, 1);
     ecx1 = (unsigned int)regs[2];
-    /* CPUID.1:ECX[5] = VMX。这一位才是"我自己能不能 VMXON"的前提。 */
+    /* CPUID.1:ECX[5] = VMX. This bit determines whether this level can execute VMXON itself. */
     vmxSupported = (ecx1 >> 5) & 1u;
-    /* CPUID.1:ECX[31] = hypervisor present。任何虚拟机里都是 1，不代表 VT-x 被占。 */
+    /* CPUID.1:ECX[31] = hypervisor present. It is always 1 in any VM, but does not imply VT-x is occupied. */
     hypervisorPresent = (int)((ecx1 >> 31) & 1u);
 
     __cpuid(regs, (int)0x80000000u);
@@ -77,21 +77,21 @@ int main(void)
     if (maxExt >= 0x80000001u) {
         __cpuid(regs, (int)0x80000001u);
         edx81 = (unsigned int)regs[3];
-        /* CPUID.80000001H:EDX[26] = 1 GiB 页。M-04 的能力门用的就是它。 */
+        /* CPUID.80000001H:EDX[26] = 1 GiB page. M-04 capability gate uses this. */
         page1gb = (int)((edx81 >> 26) & 1u);
     }
 
-    put_line();
+    putLine();
     printf(" KSword HVM 环境探针\n");
-    put_line();
+    putLine();
     printf("  CPU 厂商            : %s\n", vendor);
     printf("  CPUID 最大基本叶    : 0x%08X\n", maxBasic);
     printf("  CPUID 最大扩展叶    : 0x%08X\n", maxExt);
     printf("\n");
 
-    put_line();
+    putLine();
     printf(" 1. 能不能 VMXON（KSword HVM 的硬前提）\n");
-    put_line();
+    putLine();
     gateOk &= vmxSupported;
     verdict("CPUID.1:ECX[5] VMX 可用", vmxSupported,
             vmxSupported ? "VT-x 已透传进来"
@@ -104,9 +104,9 @@ int main(void)
     printf("\n");
 
     if (!hypervisorPresent) {
-        put_line();
+        putLine();
         printf(" 2. 上层 hypervisor：无（裸机运行）\n");
-        put_line();
+        putLine();
         printf("  非嵌套环境，下面的 TLFS 检查不适用。\n");
         goto done;
     }
@@ -118,9 +118,9 @@ int main(void)
     memcpy(hvVendor + 8, &regs[3], 4);
     hvVendor[12] = '\0';
 
-    put_line();
+    putLine();
     printf(" 2. 上层 hypervisor 的 TLFS 信息（对应 hvm_evmcs.c 的判定链）\n");
-    put_line();
+    putLine();
     printf("  合成叶厂商串        : %s\n", hvVendor);
     printf("  合成叶最大值        : 0x%08X\n", maxHvLeaf);
 
@@ -129,7 +129,7 @@ int main(void)
         goto done;
     }
 
-    /* 与 hvm_evmcs.c 完全相同的四道闸门，逐条报告卡在哪。 */
+    /* Exactly the same four gates as in hvm_evmcs.c, reporting line-by-line where the process is stuck. */
     {
         int leafOk = (maxHvLeaf >= HV_CPUID_NESTED_FEATURES);
         unsigned int iface = 0u, privileges = 0u, recommend = 0u;
@@ -168,9 +168,9 @@ int main(void)
         }
 
         printf("\n");
-        put_line();
+        putLine();
         printf(" 3. 结论\n");
-        put_line();
+        putLine();
         if (!vmxSupported) {
             printf("  KSword HVM **无法启动**：CPUID 里看不到 VMX。\n");
             printf("  处理：宿主上关机后执行\n");
@@ -195,7 +195,7 @@ int main(void)
 
 done:
     printf("\n");
-    put_line();
+    putLine();
     if (previousCp != 0u) {
         (void)SetConsoleOutputCP(previousCp);
     }

@@ -2,7 +2,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include "../../KswordARKDriver/src/features/hvm/hvm_nested_leaf_plan.h"
+#include "../../drivers/ark/src/features/hvm/hvm_nested_leaf_plan.h"
 
 /* Source path lengths, named by the granularity their walk terminated on. */
 #define SRC_4K 4U
@@ -13,14 +13,14 @@
 #define BACK_2M 0x40000000ULL
 #define BACK_1G 0x80000000ULL
 
-static KSW_HVM_LEAF_PLAN plan;
+static KswHvmLeafPlan plan;
 
-static unsigned int refusal(unsigned int shift, KSW_PLAN_U64 guest,
-                            unsigned int entries, KSW_PLAN_U64 backing,
-                            KSW_PLAN_U64 bytes) {
-    int ok = KswordHvmLeafPlanCreate(shift, guest, entries, 0, backing, bytes, &plan);
-    assert(ok == (plan.Refusal == KSW_PLAN_OK));
-    return plan.Refusal;
+static unsigned int refusal(unsigned int shift, KswPlanU64 guest,
+                            unsigned int entries, KswPlanU64 backing,
+                            KswPlanU64 bytes) {
+    int ok = kswordHvmLeafPlanCreate(shift, guest, entries, 0, backing, bytes, &plan);
+    assert(ok == (plan.refusal == KSW_PLAN_OK));
+    return plan.refusal;
 }
 
 static void granularity(void) {
@@ -45,10 +45,10 @@ static void granularity(void) {
            ==KSW_PLAN_REFUSE_SOURCE_UNKNOWN);
     assert(refusal(KSW_PLAN_SHIFT_4K,0x7000,5U,0x1000,0x1000)
            ==KSW_PLAN_REFUSE_SOURCE_UNKNOWN);
-    assert(KswordHvmLeafSourceShift(4U)==KSW_PLAN_SHIFT_4K);
-    assert(KswordHvmLeafSourceShift(3U)==KSW_PLAN_SHIFT_2M);
-    assert(KswordHvmLeafSourceShift(2U)==KSW_PLAN_SHIFT_1G);
-    assert(KswordHvmLeafSourceShift(0U)==0U && KswordHvmLeafSourceShift(9U)==0U);
+    assert(kswordHvmLeafSourceShift(4U)==KSW_PLAN_SHIFT_4K);
+    assert(kswordHvmLeafSourceShift(3U)==KSW_PLAN_SHIFT_2M);
+    assert(kswordHvmLeafSourceShift(2U)==KSW_PLAN_SHIFT_1G);
+    assert(kswordHvmLeafSourceShift(0U)==0U && kswordHvmLeafSourceShift(9U)==0U);
 }
 
 static void geometry(void) {
@@ -76,23 +76,23 @@ static void geometry(void) {
        reached: assert the property that makes it unreachable, over the highest
        admissible base of every granularity. */
     for(shift=KSW_PLAN_SHIFT_4K;shift<=KSW_PLAN_SHIFT_1G;shift++) {
-        KSW_PLAN_U64 region,top;
+        KswPlanU64 region,top;
         if(shift!=KSW_PLAN_SHIFT_4K&&shift!=KSW_PLAN_SHIFT_2M&&
            shift!=KSW_PLAN_SHIFT_1G) { continue; }
         region=1ULL<<shift;top=KSW_PLAN_GPA_LIMIT-region;
         assert(refusal(shift,top,SRC_1G,BACK_1G,0x40000000ULL)==KSW_PLAN_OK);
-        assert(plan.GuestBase+plan.RegionBytes==KSW_PLAN_GPA_LIMIT);
+        assert(plan.guestBase+plan.regionBytes==KSW_PLAN_GPA_LIMIT);
         /* One region higher is no longer a legal base at all. */
         assert(refusal(shift,top+region,SRC_1G,BACK_1G,0x40000000ULL)
                ==KSW_PLAN_REFUSE_GUEST_RANGE);
     }
     /* Sizes and page counts follow the granularity exactly. */
     assert(refusal(KSW_PLAN_SHIFT_2M,0x200000,SRC_2M,BACK_2M,0x200000)==KSW_PLAN_OK);
-    assert(plan.RegionBytes==0x200000ULL && plan.PageCount==512ULL);
+    assert(plan.regionBytes==0x200000ULL && plan.pageCount==512ULL);
     assert(refusal(KSW_PLAN_SHIFT_1G,0x40000000,SRC_1G,BACK_1G,0x40000000)==KSW_PLAN_OK);
-    assert(plan.RegionBytes==0x40000000ULL && plan.PageCount==262144ULL);
+    assert(plan.regionBytes==0x40000000ULL && plan.pageCount==262144ULL);
     assert(refusal(KSW_PLAN_SHIFT_4K,0x7000,SRC_4K,0x1000,0x1000)==KSW_PLAN_OK);
-    assert(plan.RegionBytes==0x1000ULL && plan.PageCount==1ULL);
+    assert(plan.regionBytes==0x1000ULL && plan.pageCount==1ULL);
 }
 
 static void backing(void) {
@@ -118,177 +118,177 @@ static void backing(void) {
 }
 
 static void ownership(void) {
-    KSW_HVM_LEAF_PLAN refused;
+    KswHvmLeafPlan refused;
     /* A 2-MiB plan owns every page of its region and nothing outside it. */
     assert(refusal(KSW_PLAN_SHIFT_2M,0x200000,SRC_2M,BACK_2M,0x200000)==KSW_PLAN_OK);
-    assert(!KswordHvmLeafPlanContains(&plan,0x1FFFFF));
-    assert(KswordHvmLeafPlanContains(&plan,0x200000));
-    assert(KswordHvmLeafPlanContains(&plan,0x200000+0x1FFFFF));
-    assert(!KswordHvmLeafPlanContains(&plan,0x400000));
+    assert(!kswordHvmLeafPlanContains(&plan,0x1FFFFF));
+    assert(kswordHvmLeafPlanContains(&plan,0x200000));
+    assert(kswordHvmLeafPlanContains(&plan,0x200000+0x1FFFFF));
+    assert(!kswordHvmLeafPlanContains(&plan,0x400000));
     /* The leaf carries the region base; hardware adds the offset itself. */
-    assert(KswordHvmLeafPlanLeafFrame(&plan)==BACK_2M);
+    assert(kswordHvmLeafPlanLeafFrame(&plan)==BACK_2M);
     /* Staging indexes the backing linearly and stops at the region edge. */
-    assert(KswordHvmLeafPlanPageFrame(&plan,0)==BACK_2M);
-    assert(KswordHvmLeafPlanPageFrame(&plan,1)==BACK_2M+0x1000);
-    assert(KswordHvmLeafPlanPageFrame(&plan,511)==BACK_2M+0x1FF000);
-    assert(KswordHvmLeafPlanPageFrame(&plan,512)==0);
-    assert(KswordHvmLeafPlanPageFrame(&plan,~0ULL)==0);
+    assert(kswordHvmLeafPlanPageFrame(&plan,0)==BACK_2M);
+    assert(kswordHvmLeafPlanPageFrame(&plan,1)==BACK_2M+0x1000);
+    assert(kswordHvmLeafPlanPageFrame(&plan,511)==BACK_2M+0x1FF000);
+    assert(kswordHvmLeafPlanPageFrame(&plan,512)==0);
+    assert(kswordHvmLeafPlanPageFrame(&plan,~0ULL)==0);
     /* A refused plan owns nothing and hands out no frame. */
-    assert(!KswordHvmLeafPlanCreate(KSW_PLAN_SHIFT_2M,0x200000,SRC_4K,0,
+    assert(!kswordHvmLeafPlanCreate(KSW_PLAN_SHIFT_2M,0x200000,SRC_4K,0,
                                     BACK_2M,0x200000,&refused));
-    assert(!KswordHvmLeafPlanContains(&refused,0x200000));
-    assert(KswordHvmLeafPlanLeafFrame(&refused)==0);
-    assert(KswordHvmLeafPlanPageFrame(&refused,0)==0);
+    assert(!kswordHvmLeafPlanContains(&refused,0x200000));
+    assert(kswordHvmLeafPlanLeafFrame(&refused)==0);
+    assert(kswordHvmLeafPlanPageFrame(&refused,0)==0);
     /* A 4-KiB plan owns exactly one page, preserving the original behaviour. */
     assert(refusal(KSW_PLAN_SHIFT_4K,0x7000,SRC_4K,0x1000,0x1000)==KSW_PLAN_OK);
-    assert(KswordHvmLeafPlanContains(&plan,0x7000));
-    assert(KswordHvmLeafPlanContains(&plan,0x7fff));
-    assert(!KswordHvmLeafPlanContains(&plan,0x8000));
-    assert(!KswordHvmLeafPlanContains(&plan,0x6fff));
-    assert(KswordHvmLeafPlanPageFrame(&plan,0)==0x1000);
-    assert(KswordHvmLeafPlanPageFrame(&plan,1)==0);
+    assert(kswordHvmLeafPlanContains(&plan,0x7000));
+    assert(kswordHvmLeafPlanContains(&plan,0x7fff));
+    assert(!kswordHvmLeafPlanContains(&plan,0x8000));
+    assert(!kswordHvmLeafPlanContains(&plan,0x6fff));
+    assert(kswordHvmLeafPlanPageFrame(&plan,0)==0x1000);
+    assert(kswordHvmLeafPlanPageFrame(&plan,1)==0);
     /* Null arguments are refused rather than dereferenced. */
-    assert(!KswordHvmLeafPlanCreate(KSW_PLAN_SHIFT_4K,0x7000,SRC_4K,0,0x1000,0x1000,0));
-    assert(!KswordHvmLeafPlanContains(0,0x7000));
-    assert(KswordHvmLeafPlanLeafFrame(0)==0);
-    assert(KswordHvmLeafPlanPageFrame(0,0)==0);
+    assert(!kswordHvmLeafPlanCreate(KSW_PLAN_SHIFT_4K,0x7000,SRC_4K,0,0x1000,0x1000,0));
+    assert(!kswordHvmLeafPlanContains(0,0x7000));
+    assert(kswordHvmLeafPlanLeafFrame(0)==0);
+    assert(kswordHvmLeafPlanPageFrame(0,0)==0);
 }
 
 /* A synthetic EPT12: four table pages at 0x1000, 0x2000, 0x3000, 0x4000. */
-typedef struct { KSW_PLAN_U64 tables[4][512]; KSW_PLAN_U64 fail; } fixture;
-static int rd(void *ctx, KSW_PLAN_U64 addr, KSW_PLAN_U64 *val) {
-    fixture *f=(fixture*)ctx;
+typedef struct { KswPlanU64 tables[4][512]; KswPlanU64 fail; } Fixture;
+static int rd(void *ctx, KswPlanU64 addr, KswPlanU64 *val) {
+    Fixture *f=(Fixture*)ctx;
     unsigned long t=(unsigned long)(addr/4096)-1;
     if(addr==f->fail || addr<4096 || t>=4 || (addr&7)) return 0;
     *val=f->tables[t][(addr&4095)/8];return 1;
 }
 /* Identity-ish hierarchy with 512 ordinary leaves under one 2-MiB region. */
-static void fine(fixture *f, KSW_PLAN_U64 bits) {
+static void fine(Fixture *f, KswPlanU64 bits) {
     unsigned int i;
     memset(f,0,sizeof(*f));
     f->tables[0][0]=0x2007;f->tables[1][0]=0x3007;f->tables[2][0]=0x4007;
-    for(i=0;i<512;i++) { f->tables[3][i]=((KSW_PLAN_U64)(0xA00+i)<<12)|bits; }
+    for(i=0;i<512;i++) { f->tables[3][i]=((KswPlanU64)(0xA00+i)<<12)|bits; }
 }
 
 static void scan(void) {
-    fixture f; KSW_HVM_LEAF_SOURCE_SCAN s; KSW_HVM_LEAF_PLAN p;
-    const KSW_PLAN_U64 eptp=0x105E;
+    Fixture f; KswHvmLeafSourceScan s; KswHvmLeafPlan p;
+    const KswPlanU64 kEptp=0x105E;
 
     /* 512 uniform 4-KiB leaves: one leaf may stand for all of them. */
     fine(&f,0x37);
-    assert(KswordHvmLeafPlanScanSource(eptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
-    assert(s.Complete && s.Uniform && s.Shift==KSW_PLAN_SHIFT_4K);
-    assert(s.LeafCount==512 && s.SharedBits==0x37);
+    assert(kswordHvmLeafPlanScanSource(kEptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
+    assert(s.complete && s.uniform && s.shift==KSW_PLAN_SHIFT_4K);
+    assert(s.leafCount==512 && s.sharedBits==0x37);
     /* And that proof is what admits the region a coarse source would admit. */
-    assert(!KswordHvmLeafPlanCreate(KSW_PLAN_SHIFT_2M,0,SRC_4K,0,BACK_2M,0x200000,&p));
-    assert(p.Refusal==KSW_PLAN_REFUSE_SOURCE_GRANULARITY);
-    assert(KswordHvmLeafPlanCreate(KSW_PLAN_SHIFT_2M,0,SRC_4K,1,BACK_2M,0x200000,&p));
-    assert(p.Refusal==KSW_PLAN_OK && p.PageCount==512);
+    assert(!kswordHvmLeafPlanCreate(KSW_PLAN_SHIFT_2M,0,SRC_4K,0,BACK_2M,0x200000,&p));
+    assert(p.refusal==KSW_PLAN_REFUSE_SOURCE_GRANULARITY);
+    assert(kswordHvmLeafPlanCreate(KSW_PLAN_SHIFT_2M,0,SRC_4K,1,BACK_2M,0x200000,&p));
+    assert(p.refusal==KSW_PLAN_OK && p.pageCount==512);
 
     /* One page the VMM made read-only breaks the whole region. */
     fine(&f,0x37); f.tables[3][300]=(0xA00ULL+300)<<12 | 0x35;
-    assert(KswordHvmLeafPlanScanSource(eptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
-    assert(s.Complete && !s.Uniform);
+    assert(kswordHvmLeafPlanScanSource(kEptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
+    assert(s.complete && !s.uniform);
     /* One page with a different memory type breaks it too. */
     fine(&f,0x37); f.tables[3][511]=(0xA00ULL+511)<<12 | 0x07;
-    assert(KswordHvmLeafPlanScanSource(eptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
-    assert(s.Complete && !s.Uniform);
+    assert(kswordHvmLeafPlanScanSource(kEptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
+    assert(s.complete && !s.uniform);
     /* Accessed and dirty differ per page and must not count as disagreement. */
     fine(&f,0x37); f.tables[3][7]|=0x100; f.tables[3][8]|=0x300;
-    assert(KswordHvmLeafPlanScanSource(eptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
-    assert(s.Complete && s.Uniform);
+    assert(kswordHvmLeafPlanScanSource(kEptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
+    assert(s.complete && s.uniform);
 
     /* An absent page means the region is not covered, so not uniform-provable. */
     fine(&f,0x37); f.tables[3][42]=0;
-    assert(KswordHvmLeafPlanScanSource(eptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
-    assert(!s.Complete);
+    assert(kswordHvmLeafPlanScanSource(kEptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
+    assert(!s.complete);
     /* An unreadable table is the same: incomplete, never silently uniform. */
     fine(&f,0x37); f.fail=0x4000+42*8;
-    assert(KswordHvmLeafPlanScanSource(eptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
-    assert(!s.Complete && !s.Uniform);
+    assert(kswordHvmLeafPlanScanSource(kEptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
+    assert(!s.complete && !s.uniform);
     /* An interior entry that grants access but names frame zero leads nowhere.
        It is present, so the permission test above lets it through; only the
        frame test stops it, and reporting the region uniform on that path would
        admit a leaf over memory the source does not describe. */
     fine(&f,0x37); f.tables[2][0]=0x0007;
-    assert(KswordHvmLeafPlanScanSource(eptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
-    assert(!s.Complete && !s.Uniform);
+    assert(kswordHvmLeafPlanScanSource(kEptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
+    assert(!s.complete && !s.uniform);
     fine(&f,0x37); f.tables[1][0]=0x0007;
-    assert(KswordHvmLeafPlanScanSource(eptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
-    assert(!s.Complete && !s.Uniform);
+    assert(kswordHvmLeafPlanScanSource(kEptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
+    assert(!s.complete && !s.uniform);
 
     /* A single coarse source leaf ends the walk after one read. */
     memset(&f,0,sizeof(f));
     f.tables[0][0]=0x2007;f.tables[1][0]=0x3007;f.tables[2][0]=0xA000B7;
-    assert(KswordHvmLeafPlanScanSource(eptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
-    assert(s.Complete && s.Uniform && s.Shift==KSW_PLAN_SHIFT_2M && s.LeafCount==1);
+    assert(kswordHvmLeafPlanScanSource(kEptp,0,KSW_PLAN_SHIFT_2M,rd,&f,&s));
+    assert(s.complete && s.uniform && s.shift==KSW_PLAN_SHIFT_2M && s.leafCount==1);
 
     /* A 1-GiB region over 4-KiB sources is 262,144 leaves. It is refused from
        the first leaf's granularity alone, before any of them is read: LeafCount
        stays zero, which is what separates "refused up front" from "walked until
        something went wrong". */
     fine(&f,0x37);
-    assert(KswordHvmLeafPlanScanSource(eptp,0,KSW_PLAN_SHIFT_1G,rd,&f,&s));
-    assert(!s.Uniform && !s.Complete && s.LeafCount==0 && s.Shift==KSW_PLAN_SHIFT_4K);
+    assert(kswordHvmLeafPlanScanSource(kEptp,0,KSW_PLAN_SHIFT_1G,rd,&f,&s));
+    assert(!s.uniform && !s.complete && s.leafCount==0 && s.shift==KSW_PLAN_SHIFT_4K);
     /* The same region is admissible the moment its source is one 1-GiB leaf. */
     memset(&f,0,sizeof(f));
     f.tables[0][0]=0x2007;f.tables[1][0]=0x800000B7;
-    assert(KswordHvmLeafPlanScanSource(eptp,0,KSW_PLAN_SHIFT_1G,rd,&f,&s));
-    assert(s.Uniform && s.Complete && s.LeafCount==1 && s.Shift==KSW_PLAN_SHIFT_1G);
+    assert(kswordHvmLeafPlanScanSource(kEptp,0,KSW_PLAN_SHIFT_1G,rd,&f,&s));
+    assert(s.uniform && s.complete && s.leafCount==1 && s.shift==KSW_PLAN_SHIFT_1G);
 
     /* Bad arguments are refused, not guessed. */
-    assert(!KswordHvmLeafPlanScanSource(eptp,0,KSW_PLAN_SHIFT_2M,rd,&f,0));
-    assert(!KswordHvmLeafPlanScanSource(eptp,0,KSW_PLAN_SHIFT_2M,0,&f,&s));
-    assert(!KswordHvmLeafPlanScanSource(eptp,0,11U,rd,&f,&s));
+    assert(!kswordHvmLeafPlanScanSource(kEptp,0,KSW_PLAN_SHIFT_2M,rd,&f,0));
+    assert(!kswordHvmLeafPlanScanSource(kEptp,0,KSW_PLAN_SHIFT_2M,0,&f,&s));
+    assert(!kswordHvmLeafPlanScanSource(kEptp,0,11U,rd,&f,&s));
 }
 
 /* Rechecking what the scan proved, one page at a time. */
 static void recheck(void) {
-    fixture f; KSW_HVM_LEAF_PLAN p, refused;
-    const KSW_PLAN_U64 eptp=0x105E;
+    Fixture f; KswHvmLeafPlan p, refused;
+    const KswPlanU64 kEptp=0x105E;
     /* The region the scan above admits: 512 ordinary pages sharing 0x37. */
-    assert(KswordHvmLeafPlanCreate(KSW_PLAN_SHIFT_2M,0,SRC_4K,1,BACK_2M,0x200000,&p));
+    assert(kswordHvmLeafPlanCreate(KSW_PLAN_SHIFT_2M,0,SRC_4K,1,BACK_2M,0x200000,&p));
 
     /* Nothing has changed, so every page still agrees. */
     fine(&f,0x37);
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,0,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,300,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,511,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,0,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,300,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,511,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
 
     /* The cursor wraps, so a caller may hold one counter that only grows. */
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,512,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,512,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
     f.tables[3][301]=(0xA00ULL+301)<<12 | 0x35;
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,301,0x37,rd,&f)==KSW_PLAN_RECHECK_DRIFTED);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,301,0x37,rd,&f)==KSW_PLAN_RECHECK_DRIFTED);
     /* 813 folds to 301: the same page, reached by wrapping. */
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,813,0x37,rd,&f)==KSW_PLAN_RECHECK_DRIFTED);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,813,0x37,rd,&f)==KSW_PLAN_RECHECK_DRIFTED);
     /* A neighbour of the changed page is unaffected; this is per page. */
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,302,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,302,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
 
     /* A different memory type is drift for the same reason a permission is. */
     fine(&f,0x37); f.tables[3][9]=(0xA00ULL+9)<<12 | 0x07;
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,9,0x37,rd,&f)==KSW_PLAN_RECHECK_DRIFTED);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,9,0x37,rd,&f)==KSW_PLAN_RECHECK_DRIFTED);
 
     /* A page that went away is drift, not an unreadable source. */
     fine(&f,0x37); f.tables[3][42]=0;
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,42,0x37,rd,&f)==KSW_PLAN_RECHECK_DRIFTED);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,42,0x37,rd,&f)==KSW_PLAN_RECHECK_DRIFTED);
     /* So is an interior table that went away, for every page under it. */
     fine(&f,0x37); f.tables[2][0]=0;
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,7,0x37,rd,&f)==KSW_PLAN_RECHECK_DRIFTED);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,7,0x37,rd,&f)==KSW_PLAN_RECHECK_DRIFTED);
 
     /* Hardware sets accessed and dirty per page. Counting them as drift would
        revoke every region as soon as its guest ran, which is the whole reason
        the admitting scan masks them; the recheck must mask the same ones. */
     fine(&f,0x37); f.tables[3][11]|=0x100; f.tables[3][12]|=0x300;
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,11,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,12,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,11,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,12,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
 
     /* A read that failed proves nothing and must not revoke a live lease. */
     fine(&f,0x37); f.fail=0x4000+5*8;
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,5,0x37,rd,&f)==KSW_PLAN_RECHECK_UNKNOWN);
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,6,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,5,0x37,rd,&f)==KSW_PLAN_RECHECK_UNKNOWN);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,6,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
     /* Neither does a malformed present entry naming frame zero. */
     fine(&f,0x37); f.tables[1][0]=0x0007;
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,0,0x37,rd,&f)==KSW_PLAN_RECHECK_UNKNOWN);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,0,0x37,rd,&f)==KSW_PLAN_RECHECK_UNKNOWN);
 
     /* A coarse source leaf under the region is compared at the level it ends
        on, so a region backed by one 2-MiB leaf is rechecked against that leaf.
@@ -298,17 +298,17 @@ static void recheck(void) {
        region on its first sample. */
     memset(&f,0,sizeof(f));
     f.tables[0][0]=0x2007;f.tables[1][0]=0x3007;f.tables[2][0]=0xA000B7;
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,0,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,400,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,0,0xB7,rd,&f)==KSW_PLAN_RECHECK_DRIFTED);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,0,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,400,0x37,rd,&f)==KSW_PLAN_RECHECK_AGREES);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,0,0xB7,rd,&f)==KSW_PLAN_RECHECK_DRIFTED);
 
     /* Nothing to recheck is not the same as nothing has changed. */
     fine(&f,0x37);
-    assert(KswordHvmLeafPlanRecheckPage(eptp,0,0,0x37,rd,&f)==KSW_PLAN_RECHECK_UNKNOWN);
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&p,0,0x37,0,&f)==KSW_PLAN_RECHECK_UNKNOWN);
-    assert(KswordHvmLeafPlanRecheckPage(0,&p,0,0x37,rd,&f)==KSW_PLAN_RECHECK_UNKNOWN);
-    assert(!KswordHvmLeafPlanCreate(KSW_PLAN_SHIFT_2M,0,SRC_4K,0,BACK_2M,0x200000,&refused));
-    assert(KswordHvmLeafPlanRecheckPage(eptp,&refused,0,0x37,rd,&f)==KSW_PLAN_RECHECK_UNKNOWN);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,0,0,0x37,rd,&f)==KSW_PLAN_RECHECK_UNKNOWN);
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&p,0,0x37,0,&f)==KSW_PLAN_RECHECK_UNKNOWN);
+    assert(kswordHvmLeafPlanRecheckPage(0,&p,0,0x37,rd,&f)==KSW_PLAN_RECHECK_UNKNOWN);
+    assert(!kswordHvmLeafPlanCreate(KSW_PLAN_SHIFT_2M,0,SRC_4K,0,BACK_2M,0x200000,&refused));
+    assert(kswordHvmLeafPlanRecheckPage(kEptp,&refused,0,0x37,rd,&f)==KSW_PLAN_RECHECK_UNKNOWN);
 }
 
 int main(void) {

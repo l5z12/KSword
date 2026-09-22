@@ -1,0 +1,50 @@
+#pragma once
+
+#include <ntddk.h>
+#include <wdf.h>
+#include <usb.h>
+#include <usbdlib.h>
+#include <wdfusb.h>
+#include <initguid.h>
+
+#include "ark_device.h"
+#include "ark_push_lock.h"
+#include "ark_file.h"
+#include "ark_queue.h"
+#include "ark_process.h"
+#include "ark_log.h"
+#include "ark_debug_output.h"
+#include "ark_bugcheck.h"
+#include "ark_callback.h"
+#include "ark_process_protect.h"
+#include "ark_kernel.h"
+#include "ark_dyndata.h"
+#include "ark_capability.h"
+#include "ark_thread.h"
+#include "ark_handle.h"
+#include "ark_alpc.h"
+#include "ark_section.h"
+#include "ark_injection_scan.h"
+#include "ark_memory.h"
+#include "ark_file_monitor.h"
+#include "ark_wsl_silo.h"
+#include "ark_trust.h"
+#include "ark_safety.h"
+#include "ark_preflight.h"
+#include "ark_registry.h"
+#include "ark_redirect.h"
+#include "ark_network.h"
+#include "ark_keyboard.h"
+#include "ark_storage.h"
+#include "ark_system_time.h"
+#include "ark_startup.h"
+#include "trace.h"
+
+EXTERN_C_START
+
+// WDFDRIVER Events
+DRIVER_INITIALIZE DriverEntry;
+EVT_WDF_DRIVER_UNLOAD kswordArkDriverEvtDriverUnload;
+EVT_WDF_OBJECT_CONTEXT_CLEANUP kswordArkDriverEvtDriverContextCleanup;
+
+EXTERN_C_END

@@ -8,19 +8,19 @@
 
 // ============================================================
 // KswordArkResearchIoctl.h
-// 作用：
-// - 为《第二规划》71 个专题提供稳定、只读、可版本化的 R3/R0 证据入口；
-// - 返回当前 IOCTL 请求上下文、CPU/时间快照、WDF/WDM 对象链，
-//   并由 R0 实时确认该专题所依赖的业务 IOCTL 是否在中央表注册；
-// - 这是证据编排协议，不代替各业务 IOCTL 的实际采集，也不把运行时
-//   unsupported/partial 伪装成 clean。
+// Purpose:
+// - Provides stable, read-only, versioned R3/R0 evidence entry points for the 71 topics of the "Second Plan";
+// - Returns the current IOCTL request context, CPU/time snapshot, and WDF/WDM object chain, and has R0 verify
+//   in real-time whether the business IOCTLs required by this topic are registered in the central table.
+// - Note: This is the evidence orchestration protocol; it does not replace actual data collection
+//   by individual business IOCTLs, nor does it disguise unsupported/partial runtime states as clean.
 // ============================================================
 
 #define KSWORD_ARK_RESEARCH_PROTOCOL_VERSION 1UL
 #define KSWORD_ARK_IOCTL_FUNCTION_QUERY_RESEARCH_TOPIC 0x90EUL
 
-// 响应包含内核对象/handler 地址；控制设备允许 World 只读，因此有意要求
-// 读写句柄，把地址型证据限制到 Administrators/SYSTEM。该 access bit 不是 mutation。
+// Response includes kernel object/handler addresses. The control device allows World read-only access, so it intentionally
+// requires read-write handles to restrict address-type evidence to Administrators/SYSTEM. This access bit is not a mutation.
 #define IOCTL_KSWORD_ARK_QUERY_RESEARCH_TOPIC \
     CTL_CODE( \
         KSWORD_ARK_IOCTL_DEVICE_TYPE, \
@@ -28,8 +28,8 @@
         METHOD_BUFFERED, \
         FILE_READ_ACCESS | FILE_WRITE_ACCESS)
 
-// Topic ID 与 KernelKnowledgeCatalog.cpp 中 71 项的顺序一致；
-// 新增/删除/重排任何一项都必须同时更新静态校验器。
+// Topic ID order matches the 71 items in KernelKnowledgeCatalog.cpp;
+// Adding, removing, or reordering any item requires a simultaneous update to the static checker.
 #define KSWORD_ARK_RESEARCH_TOPIC_EXECUTION_CHAIN                  1UL
 #define KSWORD_ARK_RESEARCH_TOPIC_ADDRESS_SPACES                   2UL
 #define KSWORD_ARK_RESEARCH_TOPIC_HANDLES_REFERENCES               3UL

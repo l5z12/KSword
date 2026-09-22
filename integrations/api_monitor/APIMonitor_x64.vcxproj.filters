@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <Filter Include="core">
+      <UniqueIdentifier>{5B9281D8-458E-5885-BD8E-43FFEB20C4CE}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="hook">
+      <UniqueIdentifier>{3C3F28A1-C9C8-5D67-990F-8EBE1C37D498}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared">
+      <UniqueIdentifier>{51DBF64A-DBDB-588F-AB6B-B72549435CF5}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="MonitorAgent.cpp" />
+    <ClInclude Include="MonitorAgent.h" />
+    <ClInclude Include="WinApiMonitorProtocol.h" />
+    <ClCompile Include="dllmain.cpp" />
+    <ClInclude Include="framework.h" />
+    <ClCompile Include="pch.cpp" />
+    <ClInclude Include="pch.h" />
+    <ClCompile Include="core\MonitorConfig.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClInclude Include="core\MonitorConfig.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClCompile Include="core\MonitorPipe.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClInclude Include="core\MonitorPipe.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClCompile Include="hook\HookEngine.cpp">
+      <Filter>hook</Filter>
+    </ClCompile>
+    <ClInclude Include="hook\HookEngine.h">
+      <Filter>hook</Filter>
+    </ClInclude>
+    <ClCompile Include="hook\HookTargets.cpp">
+      <Filter>hook</Filter>
+    </ClCompile>
+    <ClInclude Include="hook\HookTargets.h">
+      <Filter>hook</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\WinApiMonitorProtocol.h">
+      <Filter>shared</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

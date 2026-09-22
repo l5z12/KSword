@@ -54,11 +54,11 @@ static BOOL WINAPI FakeDeviceIoControl(HANDLE device, DWORD code, LPVOID input,
 
 int main(int argc, char** argv)
 {
-    if (argc > 1 && strcmp(argv[1], "metrics") == 0) { return DoMetrics(NULL, 1); }
-    if (argc == 1 || strcmp(argv[1], "strings") != 0) { return DoQuery(NULL, 1); }
-    KswordHvmPrintJsonString("没有拒绝过\"\\\n\t\xf0\x9f\x98\x80");
+    if (argc > 1 && strcmp(argv[1], "metrics") == 0) { return doMetrics(NULL, 1); }
+    if (argc == 1 || strcmp(argv[1], "strings") != 0) { return doQuery(NULL, 1); }
+    kswordHvmPrintJsonString("没有拒绝过\"\\\n\t\xf0\x9f\x98\x80");
     putchar('\n');
-    KswordHvmPrintJsonString("\xff\xe8");
+    kswordHvmPrintJsonString("\xff\xe8");
     putchar('\n');
     return 0;
 }

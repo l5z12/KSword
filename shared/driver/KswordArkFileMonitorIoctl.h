@@ -52,10 +52,10 @@
 
 // ============================================================
 // KswordArkFileMonitorIoctl.h
-// 作用：
-// - 定义 Phase-12 文件系统 minifilter 实时事件协议；
-// - R0 只负责采集和缓冲，R3 负责虚拟化列表、过滤展示和导出；
-// - 第一版过滤条件保持简单，复杂路径/扩展名过滤后续由 R3 或规则层扩展。
+// Purpose:
+// - Defines Phase-12 file system minifilter real-time event protocol;
+// - R0 is responsible only for collection and buffering; R3 handles virtualization lists, filtering, display, and export;
+// - The first version of filter conditions remains simple; complex path/extension filtering will be extended later by R3 or the rule layer.
 // ============================================================
 
 #define KSWORD_ARK_FILE_MONITOR_PROTOCOL_VERSION 1UL

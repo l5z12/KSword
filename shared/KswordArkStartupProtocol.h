@@ -16,7 +16,7 @@
 #define KSWORD_ARK_STARTUP_PARAMETERS_PATH \
     L"SYSTEM\\CurrentControlSet\\Services\\KswordARK\\Parameters"
 
-// REG_DWORD: last reached KSWORD_ARK_START_STAGE value.
+// REG_DWORD: last reached KswordArkStartStage value.
 #define KSWORD_ARK_STARTUP_VALUE_STAGE L"LastStartStage"
 
 // REG_DWORD: raw NTSTATUS of the last startup attempt. STATUS_PENDING while
@@ -38,25 +38,25 @@
 
 // Startup stages, ordered exactly like the DriverEntry call sequence. The
 // numeric values are part of the R3 contract and must never be reordered.
-typedef enum _KSWORD_ARK_START_STAGE
+typedef enum KswordArkStartStage
 {
-    KswordArkStartStageEnteredDriverEntry = 1,
-    KswordArkStartStageOsVersionCheck = 2,
-    KswordArkStartStageWdfDriverCreate = 3,
-    KswordArkStartStageControlInitAllocate = 4,
-    KswordArkStartStageDeviceAssignName = 5,
-    KswordArkStartStageDeviceCreate = 6,
-    KswordArkStartStageLogChannel = 7,
-    KswordArkStartStageDebugOutput = 8,
-    KswordArkStartStageSymbolicLink = 9,
-    KswordArkStartStageDefaultQueue = 10,
-    KswordArkStartStageCallbackRuntimeAllocate = 11,
-    KswordArkStartStageCallbackWaitQueue = 12,
-    KswordArkStartStageRegistryCallback = 13,
-    KswordArkStartStageProcessCallback = 14,
-    KswordArkStartStageThreadCallback = 15,
-    KswordArkStartStageImageCallback = 16,
-    KswordArkStartStageObjectCallback = 17,
-    KswordArkStartStageControlDevicePublish = 18,
-    KswordArkStartStageReady = 19
+    kKswordArkStartStageEnteredDriverEntry = 1,
+    kKswordArkStartStageOsVersionCheck = 2,
+    kKswordArkStartStageWdfDriverCreate = 3,
+    kKswordArkStartStageControlInitAllocate = 4,
+    kKswordArkStartStageDeviceAssignName = 5,
+    kKswordArkStartStageDeviceCreate = 6,
+    kKswordArkStartStageLogChannel = 7,
+    kKswordArkStartStageDebugOutput = 8,
+    kKswordArkStartStageSymbolicLink = 9,
+    kKswordArkStartStageDefaultQueue = 10,
+    kKswordArkStartStageCallbackRuntimeAllocate = 11,
+    kKswordArkStartStageCallbackWaitQueue = 12,
+    kKswordArkStartStageRegistryCallback = 13,
+    kKswordArkStartStageProcessCallback = 14,
+    kKswordArkStartStageThreadCallback = 15,
+    kKswordArkStartStageImageCallback = 16,
+    kKswordArkStartStageObjectCallback = 17,
+    kKswordArkStartStageControlDevicePublish = 18,
+    kKswordArkStartStageReady = 19
 } KSWORD_ARK_START_STAGE;

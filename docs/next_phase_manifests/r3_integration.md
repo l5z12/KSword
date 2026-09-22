@@ -14,7 +14,7 @@
 
 ## IOCTL registry
 
-`KswordARKDriver/src/dispatch/ioctl_registry.c` 已接入：
+`drivers/ark/src/dispatch/ioctl_registry.c` 已接入：
 
 - `IOCTL_KSWORD_ARK_SCAN_KERNEL_MEMORY_EVIDENCE`
 - `IOCTL_KSWORD_ARK_QUERY_PROCESS_CROSSVIEW`
@@ -34,12 +34,12 @@ R0 项目文件已加入本阶段明确存在的 memory evidence、process/threa
 R3 项目文件已加入：
 
 - `ArkDriverClient/ArkDriverMutation.cpp`
-- `MemoryDock/MemoryDock.KernelMemoryEvidence.cpp`
-- `ProcessDock/ProcessDock.CrossView.cpp`
-- `DriverDock/DriverDock.Integrity.cpp`
-- `MonitorDock/MonitorDock.ArkRiskCenter.cpp`
+- `memory_dock/MemoryDock.KernelMemoryEvidence.cpp`
+- `process_dock/ProcessDock.CrossView.cpp`
+- `driver_dock/DriverDock.Integrity.cpp`
+- `monitor_dock/MonitorDock.ArkRiskCenter.cpp`
 
-`MiscDock/ContextMenuCleaner` 属于其他施工范围，本文件不把它计入本轮集成结果。
+`misc_dock/ContextMenuCleaner` 属于其他施工范围，本文件不把它计入本轮集成结果。
 
 ## ArkDriverClient
 

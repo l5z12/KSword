@@ -12,7 +12,7 @@
 #include <windows.h>
 #include <process.h>
 #include <intrin.h>
-typedef SOCKET socket_t;
+typedef SOCKET SocketT;
 #define close_socket closesocket
 #else
 #include <unistd.h>
@@ -30,7 +30,7 @@ typedef int socket_t;
 #endif
 
 static volatile uint64_t sink;
-static double now_seconds(void) {
+static double nowSeconds(void) {
 #ifdef _WIN32
     LARGE_INTEGER t, f; QueryPerformanceCounter(&t); QueryPerformanceFrequency(&f);
     return (double)t.QuadPart/(double)f.QuadPart;
@@ -39,15 +39,15 @@ static double now_seconds(void) {
     return (double)t.tv_sec+(double)t.tv_nsec/1e9;
 #endif
 }
-static uint64_t random_next(uint64_t *x) { *x^=*x<<13;*x^=*x>>7;*x^=*x<<17;return *x; }
-static void cpuid_leaf(unsigned int leaf,unsigned int out[4]) {
+static uint64_t randomNext(uint64_t *x) { *x^=*x<<13;*x^=*x>>7;*x^=*x<<17;return *x; }
+static void cpuidLeaf(unsigned int leaf,unsigned int out[4]) {
 #ifdef _WIN32
     __cpuidex((int*)out,(int)leaf,0);
 #else
     __cpuid_count(leaf,0,out[0],out[1],out[2],out[3]);
 #endif
 }
-static int pin_cpu_zero(void) {
+static int pinCpuZero(void) {
 #ifdef _WIN32
     return SetProcessAffinityMask(GetCurrentProcess(),1)?0:(int)GetLastError();
 #else
@@ -61,50 +61,50 @@ static void emit(const char *name,double elapsed,uint64_t operations,uint64_t by
 static int fail(const char *name,const char *reason,int error) {
     printf("{\"schemaVersion\":1,\"workload\":\"%s\",\"status\":\"error\",\"reason\":\"%s\",\"error\":%d}\n",name,reason,error);return 1;
 }
-static int cpu_bench(void) {
+static int cpuBench(void) {
     uint64_t x=0x123456789ABCDEFULL,i,n=100000000;
-    double start=now_seconds();
-    for(i=0;i<n;i++) random_next(&x);
-    sink=x;emit("integer-xorshift",now_seconds()-start,n,0);return 0;
+    double start=nowSeconds();
+    for(i=0;i<n;i++) randomNext(&x);
+    sink=x;emit("integer-xorshift",nowSeconds()-start,n,0);return 0;
 }
-static int exit_bench(void) {
-    unsigned int out[4];uint64_t i,n=100000;double start=now_seconds();
-    for(i=0;i<n;i++) {cpuid_leaf(0,out);sink+=out[0];}
-    emit("cpuid-leaf0",now_seconds()-start,n,0);return 0;
+static int exitBench(void) {
+    unsigned int out[4];uint64_t i,n=100000;double start=nowSeconds();
+    for(i=0;i<n;i++) {cpuidLeaf(0,out);sink+=out[0];}
+    emit("cpuid-leaf0",nowSeconds()-start,n,0);return 0;
 }
-static int memory_bench(void) {
-    const size_t bytes=32U*1024U*1024U;size_t i;unsigned int r;
-    unsigned char *a=(unsigned char*)malloc(bytes),*b=(unsigned char*)malloc(bytes);
+static int memoryBench(void) {
+    const size_t kBytes=32U*1024U*1024U;size_t i;unsigned int r;
+    unsigned char *a=(unsigned char*)malloc(kBytes),*b=(unsigned char*)malloc(kBytes);
     double start;
     if(!a||!b) {free(a);free(b);return fail("memcpy-32MiB","allocate",errno);}
-    for(i=0;i<bytes;i++) a[i]=(unsigned char)i;
-    memset(b,0,bytes);memcpy(b,a,bytes);
-    start=now_seconds();
-    for(r=0;r<64;r++) {memcpy(b,a,bytes);sink+=b[(r*4096U)%bytes];a[r]=(unsigned char)r;}
-    emit("memcpy-32MiB",now_seconds()-start,64,(uint64_t)bytes*64); /* counts copied bytes once */
-    if(memcmp(a,b,bytes)!=0) {free(a);free(b);return fail("memcpy-32MiB","verify",0);}
+    for(i=0;i<kBytes;i++) a[i]=(unsigned char)i;
+    memset(b,0,kBytes);memcpy(b,a,kBytes);
+    start=nowSeconds();
+    for(r=0;r<64;r++) {memcpy(b,a,kBytes);sink+=b[(r*4096U)%kBytes];a[r]=(unsigned char)r;}
+    emit("memcpy-32MiB",nowSeconds()-start,64,(uint64_t)kBytes*64); /* counts copied bytes once */
+    if(memcmp(a,b,kBytes)!=0) {free(a);free(b);return fail("memcpy-32MiB","verify",0);}
     free(a);free(b);return 0;
 }
-static int latency_bench(void) {
-    const size_t count=(64U*1024U*1024U)/sizeof(uintptr_t);
-    uintptr_t *nodes=(uintptr_t*)malloc(count*sizeof(*nodes));
-    uint32_t *order=(uint32_t*)malloc(count*sizeof(*order));
+static int latencyBench(void) {
+    const size_t kCount=(64U*1024U*1024U)/sizeof(uintptr_t);
+    uintptr_t *nodes=(uintptr_t*)malloc(kCount*sizeof(*nodes));
+    uint32_t *order=(uint32_t*)malloc(kCount*sizeof(*order));
     uintptr_t cursor;uint64_t seed=0xED5633114ULL;size_t i;double start;
     if(!nodes||!order){free(nodes);free(order);return fail("pointer-chase-64MiB","allocate",errno);}
-    for(i=0;i<count;i++) order[i]=(uint32_t)i;
-    for(i=count-1;i>0;i--){size_t j=(size_t)(random_next(&seed)%(i+1));uint32_t tmp=order[i];order[i]=order[j];order[j]=tmp;}
-    for(i=0;i<count;i++) nodes[order[i]]=(uintptr_t)&nodes[order[(i+1)%count]];
+    for(i=0;i<kCount;i++) order[i]=(uint32_t)i;
+    for(i=kCount-1;i>0;i--){size_t j=(size_t)(randomNext(&seed)%(i+1));uint32_t tmp=order[i];order[i]=order[j];order[j]=tmp;}
+    for(i=0;i<kCount;i++) nodes[order[i]]=(uintptr_t)&nodes[order[(i+1)%kCount]];
     cursor=(uintptr_t)&nodes[order[0]];free(order);
-    for(i=0;i<count;i++) cursor=*(volatile uintptr_t*)cursor;
-    start=now_seconds();
-    for(i=0;i<count;i++) cursor=*(volatile uintptr_t*)cursor;
-    sink=(uint64_t)cursor;emit("pointer-chase-64MiB",now_seconds()-start,count,0);
+    for(i=0;i<kCount;i++) cursor=*(volatile uintptr_t*)cursor;
+    start=nowSeconds();
+    for(i=0;i<kCount;i++) cursor=*(volatile uintptr_t*)cursor;
+    sink=(uint64_t)cursor;emit("pointer-chase-64MiB",nowSeconds()-start,kCount,0);
     free(nodes);return 0;
 }
 
-typedef struct {socket_t listener;uint64_t bytes;int ping;int error;} net_context;
-static void net_worker(net_context *c) {
-    char buffer[65536];uint64_t total=0;socket_t fd=accept(c->listener,NULL,NULL);
+typedef struct {SocketT listener;uint64_t bytes;int ping;int error;} NetContext;
+static void netWorker(NetContext *c) {
+    char buffer[65536];uint64_t total=0;SocketT fd=accept(c->listener,NULL,NULL);
     if(fd==INVALID_SOCKET){c->error=1;return;}
     while(total<c->bytes) {
         int want=c->ping?1:(int)((c->bytes-total)<sizeof(buffer)?c->bytes-total:sizeof(buffer));
@@ -116,12 +116,12 @@ static void net_worker(net_context *c) {
     close_socket(fd);
 }
 #ifdef _WIN32
-static unsigned __stdcall net_thread(void *arg){net_worker((net_context*)arg);return 0;}
+static unsigned __stdcall netThread(void *arg){netWorker((NetContext*)arg);return 0;}
 #else
 static void *net_thread(void *arg){net_worker((net_context*)arg);return NULL;}
 #endif
-static int net_bench(int ping) {
-    net_context c;struct sockaddr_in address;socket_t client;char buffer[65536];
+static int netBench(int ping) {
+    NetContext c;struct sockaddr_in address;SocketT client;char buffer[65536];
     uint64_t total=0;double start,elapsed;int addressLength=(int)sizeof(address),one=1;
 #ifdef _WIN32
     HANDLE thread;WSADATA data;if(WSAStartup(MAKEWORD(2,2),&data))return fail("tcp-loopback","startup",1);
@@ -135,7 +135,7 @@ static int net_bench(int ping) {
     if(bind(c.listener,(struct sockaddr*)&address,sizeof(address)) || listen(c.listener,1))return fail("tcp-loopback","listen",errno);
 #ifdef _WIN32
     getsockname(c.listener,(struct sockaddr*)&address,&addressLength);
-    thread=(HANDLE)_beginthreadex(NULL,0,net_thread,&c,0,NULL);
+    thread=(HANDLE)_beginthreadex(NULL,0,netThread,&c,0,NULL);
     if(!thread)return fail("tcp-loopback","thread",errno);
 #else
     getsockname(c.listener,(struct sockaddr*)&address,(socklen_t*)&addressLength);
@@ -144,7 +144,7 @@ static int net_bench(int ping) {
     client=socket(AF_INET,SOCK_STREAM,0);
     setsockopt(client,IPPROTO_TCP,TCP_NODELAY,(const char*)&one,sizeof(one));
     if(connect(client,(struct sockaddr*)&address,sizeof(address)))return fail("tcp-loopback","connect",errno);
-    start=now_seconds();
+    start=nowSeconds();
     while(total<c.bytes) {
         int want=ping?1:(int)((c.bytes-total)<sizeof(buffer)?c.bytes-total:sizeof(buffer));
         int sent=(int)send(client,buffer,want,0);
@@ -158,17 +158,17 @@ static int net_bench(int ping) {
 #else
     pthread_join(thread,NULL);
 #endif
-    elapsed=now_seconds()-start;close_socket(c.listener);
+    elapsed=nowSeconds()-start;close_socket(c.listener);
     if(c.error)return fail("tcp-loopback","worker",c.error);
     emit(ping?"tcp-loopback-rtt-1B":"tcp-loopback-64MiB",elapsed,ping?c.bytes:0,ping?0:c.bytes);
     return 0;
 }
-static int disk_bench(const char *path) {
-    const size_t chunk=1024U*1024U;const unsigned int rounds=64;unsigned int i;
+static int diskBench(const char *path) {
+    const size_t kChunk=1024U*1024U;const unsigned int kRounds=64;unsigned int i;
     void *buffer;double start;int rc=0;
 #ifdef _WIN32
     HANDLE file;DWORD transferred;
-    buffer=VirtualAlloc(NULL,chunk,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);
+    buffer=VirtualAlloc(NULL,kChunk,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);
     if(!buffer)return fail("disk-direct","allocate",(int)GetLastError());
     file=CreateFileA(path,GENERIC_READ|GENERIC_WRITE,0,NULL,CREATE_NEW,FILE_FLAG_NO_BUFFERING|FILE_FLAG_WRITE_THROUGH,NULL);
     if(file==INVALID_HANDLE_VALUE){VirtualFree(buffer,0,MEM_RELEASE);return fail("disk-direct","create-new",(int)GetLastError());}
@@ -177,10 +177,10 @@ static int disk_bench(const char *path) {
     file=open(path,O_RDWR|O_CREAT|O_EXCL|O_DIRECT|O_DSYNC,0600);
     if(file<0){free(buffer);return fail("disk-direct","create-new",errno);}
 #endif
-    memset(buffer,0x3c,chunk);start=now_seconds();
-    for(i=0;i<rounds;i++) {
+    memset(buffer,0x3c,kChunk);start=nowSeconds();
+    for(i=0;i<kRounds;i++) {
 #ifdef _WIN32
-        if(!WriteFile(file,buffer,(DWORD)chunk,&transferred,NULL)||transferred!=chunk){rc=1;break;}
+        if(!WriteFile(file,buffer,(DWORD)kChunk,&transferred,NULL)||transferred!=kChunk){rc=1;break;}
 #else
         if(write(file,buffer,chunk)!=(ssize_t)chunk){rc=1;break;}
 #endif
@@ -192,17 +192,17 @@ static int disk_bench(const char *path) {
     if(fsync(file))rc=1;
     lseek(file,0,SEEK_SET);
 #endif
-    if(!rc)emit("disk-direct-write-64MiB",now_seconds()-start,rounds,(uint64_t)rounds*chunk);
-    start=now_seconds();
-    for(i=0;!rc&&i<rounds;i++) {
+    if(!rc)emit("disk-direct-write-64MiB",nowSeconds()-start,kRounds,(uint64_t)kRounds*kChunk);
+    start=nowSeconds();
+    for(i=0;!rc&&i<kRounds;i++) {
 #ifdef _WIN32
-        if(!ReadFile(file,buffer,(DWORD)chunk,&transferred,NULL)||transferred!=chunk){rc=1;break;}
+        if(!ReadFile(file,buffer,(DWORD)kChunk,&transferred,NULL)||transferred!=kChunk){rc=1;break;}
 #else
         if(read(file,buffer,chunk)!=(ssize_t)chunk){rc=1;break;}
 #endif
-        if(((unsigned char*)buffer)[0]!=0x3c||((unsigned char*)buffer)[chunk-1]!=0x3c)rc=1;
+        if(((unsigned char*)buffer)[0]!=0x3c||((unsigned char*)buffer)[kChunk-1]!=0x3c)rc=1;
     }
-    if(!rc)emit("disk-direct-read-64MiB",now_seconds()-start,rounds,(uint64_t)rounds*chunk);
+    if(!rc)emit("disk-direct-read-64MiB",nowSeconds()-start,kRounds,(uint64_t)kRounds*kChunk);
 #ifdef _WIN32
     CloseHandle(file);DeleteFileA(path);VirtualFree(buffer,0,MEM_RELEASE);
 #else
@@ -211,10 +211,10 @@ static int disk_bench(const char *path) {
     return rc?fail("disk-direct","io-or-verification",errno):0;
 }
 int main(int argc,char **argv) {
-    unsigned int leaf[4];int rc,pinned=pin_cpu_zero();
+    unsigned int leaf[4];int rc,pinned=pinCpuZero();
     setvbuf(stdout,NULL,_IONBF,0);
     if(argc<2){fprintf(stderr,"usage: microbench cpu|cpuid|memory|latency|net|ping|disk <new-file>\n");return 2;}
-    cpuid_leaf(1,leaf);
+    cpuidLeaf(1,leaf);
     printf("{\"schemaVersion\":1,\"kind\":\"metadata\",\"pointerBytes\":%u,\"pinCpu\":0,\"affinityResult\":%d,\"cpuid1Eax\":\"0x%08X\",\"cpuid1Ecx\":\"0x%08X\",\"timer\":\"%s\"}\n",(unsigned)sizeof(void*),pinned,leaf[0],leaf[2],
 #ifdef _WIN32
       "QueryPerformanceCounter"
@@ -222,13 +222,13 @@ int main(int argc,char **argv) {
       "CLOCK_MONOTONIC_RAW"
 #endif
     );
-    if(!strcmp(argv[1],"cpu"))rc=cpu_bench();
-    else if(!strcmp(argv[1],"cpuid"))rc=exit_bench();
-    else if(!strcmp(argv[1],"memory"))rc=memory_bench();
-    else if(!strcmp(argv[1],"latency"))rc=latency_bench();
-    else if(!strcmp(argv[1],"net"))rc=net_bench(0);
-    else if(!strcmp(argv[1],"ping"))rc=net_bench(1);
-    else if(!strcmp(argv[1],"disk")&&argc==3)rc=disk_bench(argv[2]);
+    if(!strcmp(argv[1],"cpu"))rc=cpuBench();
+    else if(!strcmp(argv[1],"cpuid"))rc=exitBench();
+    else if(!strcmp(argv[1],"memory"))rc=memoryBench();
+    else if(!strcmp(argv[1],"latency"))rc=latencyBench();
+    else if(!strcmp(argv[1],"net"))rc=netBench(0);
+    else if(!strcmp(argv[1],"ping"))rc=netBench(1);
+    else if(!strcmp(argv[1],"disk")&&argc==3)rc=diskBench(argv[2]);
     else rc=2;
     return rc;
 }

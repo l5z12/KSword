@@ -4,11 +4,11 @@
 
 // ============================================================
 // KswordArkCpuPowerIoctl.h
-// 作用：
-// - 定义 CPU 电源管理页面唯一的 R3/R0 通信协议；
-// - 查询接口只读取 CPUID 与经过异常保护的 Intel 架构 MSR；
-// - 控制接口只修改已探测且未锁定的 RAPL、HWP、Turbo、Turbo Ratio 与请求倍频字段；
-// - 不提供任意 MSR 编号或任意 64 位原始值写入能力。
+// Purpose:
+// - Define the unique R3/R0 communication protocol for the CPU power management page;
+// - The query interface only reads CPUID and Intel architecture MSRs protected by exception handling;
+// - The control interface modifies only detected and unlocked RAPL, HWP, Turbo, Turbo Ratio, and requested multiplier fields;
+// - Does not provide arbitrary MSR number or arbitrary 64-bit raw value write capability.
 // ============================================================
 
 #define KSWORD_ARK_CPU_POWER_PROTOCOL_VERSION 2UL
@@ -70,7 +70,7 @@
 #define KSWORD_ARK_CPU_POWER_RESPONSE_FLAG_WRITE_PARTIAL        0x00000040UL
 #define KSWORD_ARK_CPU_POWER_RESPONSE_FLAG_WRITE_VERIFIED       0x00000080UL
 
-// failureReason：在 lastStatus 之外指出请求被拒绝或写入失败的精确阶段。
+// failureReason: Indicates the precise stage where the request was rejected or write failed, beyond lastStatus.
 #define KSWORD_ARK_CPU_POWER_FAILURE_NONE                   0UL
 #define KSWORD_ARK_CPU_POWER_FAILURE_REQUEST_HEADER         1UL
 #define KSWORD_ARK_CPU_POWER_FAILURE_SAFETY_POLICY          2UL
@@ -107,7 +107,7 @@
 #define KSWORD_ARK_CPU_POWER_REQUEST_FLAG_REQUIRE_CURRENT 0x00000002UL
 #define KSWORD_ARK_CPU_POWER_REQUEST_FLAG_TURBO_RATIO_ARRAY 0x00000004UL
 
-// 无法从 MSR_PKG_POWER_INFO 取得 SKU 上限时，仍以 1000 W 作为协议绝对硬上限。
+// When the SKU limit cannot be retrieved from MSR_PKG_POWER_INFO, 1000 W is still used as the protocol's absolute hard limit.
 #define KSWORD_ARK_CPU_POWER_ABSOLUTE_MAX_MILLIWATTS 1000000UL
 
 #define KSWORD_ARK_CPU_POWER_VENDOR_TEXT_CHARS 13U
@@ -133,7 +133,7 @@ typedef struct _KSWORD_ARK_CPU_POWER_CONTROL_REQUEST
     unsigned long hwpEnergyPerformancePreference;
     unsigned long turboRatio;
     unsigned long requestedMultiplier;
-    // turboRatios 仅在 TURBO_RATIO_ARRAY 标志置位时用于逐档精确还原。
+    // turboRatios: Used for per-step precise restoration only when the TURBO_RATIO_ARRAY flag is set.
     unsigned long turboRatios[KSWORD_ARK_CPU_POWER_TURBO_RATIO_COUNT];
     unsigned long reserved;
     unsigned long long expectedPackagePowerLimit;

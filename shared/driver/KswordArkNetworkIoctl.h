@@ -4,11 +4,11 @@
 
 // ============================================================
 // KswordArkNetworkIoctl.h
-// 作用：
-// - 定义 R3/R0 网络过滤、端口隐藏控制协议和只读网络审计查询协议；
-// - R0 通过 WFP callout 执行端口级阻断/放行策略；
-// - 端口隐藏采用规则快照与查询接口表达，R3 可据此过滤展示。
-// - 网络审计 IOCTL 只返回快照/骨架状态，不删除连接、不禁用 WFP、不 detach NDIS。
+// Purpose:
+// - Defines the R3/R0 network filtering, port hiding control protocol, and read-only network audit query protocol;
+// - R0 executes port-level block/allow policies via WFP callouts;
+// - Port hiding is expressed via rule snapshots and query interfaces, allowing R3 to filter and display accordingly.
+// - Network audit IOCTLs only return snapshot/skeleton status; they do not delete connections, disable WFP, or detach NDIS.
 // ============================================================
 
 #define KSWORD_ARK_NETWORK_PROTOCOL_VERSION 1UL
@@ -209,7 +209,7 @@
 
 #define KSWORD_ARK_NETWORK_NAME_CHARS 96U
 
-// 网络审计通用请求。maxRows 为 R0 返回预算，0 表示由 R0 使用保守默认预算。
+// Network audit generic request. maxRows is the R0 return budget; 0 indicates R0 should use a conservative default budget.
 typedef struct _KSWORD_ARK_NETWORK_AUDIT_QUERY_REQUEST
 {
     unsigned long version;
@@ -218,7 +218,7 @@ typedef struct _KSWORD_ARK_NETWORK_AUDIT_QUERY_REQUEST
     unsigned long maxRows;
 } KSWORD_ARK_NETWORK_AUDIT_QUERY_REQUEST;
 
-// WFP ALE 事件增量查询。afterSequence=0 表示从驱动当前保留的最旧事件开始读取。
+// WFP ALE event incremental query. If afterSequence=0, read from the oldest event retained by the driver.
 typedef struct _KSWORD_ARK_NETWORK_WFP_EVENT_QUERY_REQUEST
 {
     unsigned long version;
@@ -229,8 +229,8 @@ typedef struct _KSWORD_ARK_NETWORK_WFP_EVENT_QUERY_REQUEST
     unsigned long long reserved;
 } KSWORD_ARK_NETWORK_WFP_EVENT_QUERY_REQUEST;
 
-// WFP ALE IPv4 流授权事件。地址保存为网络字节序字节数组，端口保存为主机字节序。
-// timestamp100ns 是从 1601-01-01 UTC 起算的 100ns 系统时间；该协议永远不承载 payload。
+// WFP ALE IPv4 stream authorization event. Addresses are stored as network-byte-order byte arrays; ports are stored in host-byte-order.
+// timestamp100ns is the 100ns system time counted from 1601-01-01 UTC; this protocol never carries a payload.
 typedef struct _KSWORD_ARK_NETWORK_WFP_EVENT_ROW
 {
     unsigned long version;
@@ -249,8 +249,8 @@ typedef struct _KSWORD_ARK_NETWORK_WFP_EVENT_ROW
     unsigned long reserved1;
 } KSWORD_ARK_NETWORK_WFP_EVENT_ROW;
 
-// WFP ALE 事件变长响应。droppedEventCount 为 ring 累计覆盖数，cursorGapCount 为本次
-// afterSequence 已落后于当前最旧事件而无法补回的事件数。
+// WFP ALE event variable-length response. droppedEventCount is the ring's cumulative coverage count; cursorGapCount is the
+// number of events that have fallen behind the current oldest event afterSequence and cannot be recovered in this batch.
 typedef struct _KSWORD_ARK_NETWORK_WFP_EVENT_RESPONSE
 {
     unsigned long version;
@@ -271,7 +271,7 @@ typedef struct _KSWORD_ARK_NETWORK_WFP_EVENT_RESPONSE
     KSWORD_ARK_NETWORK_WFP_EVENT_ROW entries[1];
 } KSWORD_ARK_NETWORK_WFP_EVENT_RESPONSE;
 
-// WFP IP packet 层增量查询。afterSequence=0 表示从驱动仍保留的最旧报文开始读取。
+// WFP IP packet layer incremental query. afterSequence=0 indicates reading from the oldest packet retained by the driver.
 typedef struct _KSWORD_ARK_NETWORK_TRAFFIC_QUERY_REQUEST
 {
     unsigned long version;
@@ -282,7 +282,7 @@ typedef struct _KSWORD_ARK_NETWORK_TRAFFIC_QUERY_REQUEST
     unsigned long long reserved;
 } KSWORD_ARK_NETWORK_TRAFFIC_QUERY_REQUEST;
 
-// WFP IP packet 层逐包捕获启停请求。禁用会清空 ring，避免 UI 停止后继续积累数据。
+// WFP IP packet layer per-packet capture start/stop request. Disabling clears the ring to prevent data accumulation after the UI stops.
 typedef struct _KSWORD_ARK_NETWORK_TRAFFIC_CONTROL_REQUEST
 {
     unsigned long version;
@@ -291,7 +291,7 @@ typedef struct _KSWORD_ARK_NETWORK_TRAFFIC_CONTROL_REQUEST
     unsigned long flags;
 } KSWORD_ARK_NETWORK_TRAFFIC_CONTROL_REQUEST;
 
-// WFP 逐包捕获启停响应。generation 每次成功启停递增，enabled 表示实际数据面状态。
+// WFP per-packet capture start/stop response. Generation increments on each successful start/stop; enabled indicates the actual data plane state.
 typedef struct _KSWORD_ARK_NETWORK_TRAFFIC_CONTROL_RESPONSE
 {
     unsigned long version;
@@ -304,8 +304,8 @@ typedef struct _KSWORD_ARK_NETWORK_TRAFFIC_CONTROL_RESPONSE
     unsigned long reserved1;
 } KSWORD_ARK_NETWORK_TRAFFIC_CONTROL_RESPONSE;
 
-// WFP IPv4/IPv6 逐包记录。地址按网络序字节数组保存，端口按主机序保存。
-// capturedBytes 只保留报文前缀；totalPacketLength/payloadLength 始终表达完整 IP 报文。
+// WFP IPv4/IPv6 per-packet records. Addresses are stored as network-byte-order arrays, ports as host-byte-order.
+// capturedBytes retains only the packet prefix; totalPacketLength/payloadLength always express the complete IP packet.
 typedef struct _KSWORD_ARK_NETWORK_TRAFFIC_PACKET_ROW
 {
     unsigned long version;
@@ -330,8 +330,8 @@ typedef struct _KSWORD_ARK_NETWORK_TRAFFIC_PACKET_ROW
     unsigned char capturedBytes[KSWORD_ARK_NETWORK_TRAFFIC_MAX_CAPTURE_BYTES];
 } KSWORD_ARK_NETWORK_TRAFFIC_PACKET_ROW;
 
-// WFP 逐包捕获变长响应。droppedPacketCount 为 ring 累计覆盖数，cursorGapCount 为
-// 本次 afterSequence 已落后于保留窗口而无法补回的报文数。
+// WFP per-packet capture variable-length response. droppedPacketCount is the ring's cumulative overwrite count;
+// cursorGapCount is the number of packets that have fallen behind the reserved window afterSequence and cannot be recovered.
 typedef struct _KSWORD_ARK_NETWORK_TRAFFIC_RESPONSE
 {
     unsigned long version;
@@ -352,7 +352,7 @@ typedef struct _KSWORD_ARK_NETWORK_TRAFFIC_RESPONSE
     KSWORD_ARK_NETWORK_TRAFFIC_PACKET_ROW entries[1];
 } KSWORD_ARK_NETWORK_TRAFFIC_RESPONSE;
 
-// TCP/UDP endpoint 行。地址以 16 字节保存，IPv4 使用前 4 字节。
+// TCP/UDP endpoint row. Addresses are stored in 16 bytes; IPv4 uses the first 4 bytes.
 typedef struct _KSWORD_ARK_NETWORK_ENDPOINT_ROW
 {
     unsigned long rowId;
@@ -377,7 +377,7 @@ typedef struct _KSWORD_ARK_NETWORK_ENDPOINT_ROW
     unsigned char remoteAddress[16];
 } KSWORD_ARK_NETWORK_ENDPOINT_ROW;
 
-// TCP/UDP endpoint 查询响应。totalRowCount 支持 count-first，returnedRowCount 受输出缓冲限制。
+// TCP/UDP endpoint query response. totalRowCount supports count-first; returnedRowCount is limited by output buffer size.
 typedef struct _KSWORD_ARK_NETWORK_ENDPOINT_RESPONSE
 {
     unsigned long version;
@@ -395,7 +395,7 @@ typedef struct _KSWORD_ARK_NETWORK_ENDPOINT_RESPONSE
     KSWORD_ARK_NETWORK_ENDPOINT_ROW entries[1];
 } KSWORD_ARK_NETWORK_ENDPOINT_RESPONSE;
 
-// WFP inventory 行。GUID 字段以原始 16 字节保存，函数地址用于后续 owner module 归属。
+// WFP inventory row. GUID fields are stored as raw 16 bytes; function addresses are used for subsequent owner module attribution.
 typedef struct _KSWORD_ARK_NETWORK_WFP_INVENTORY_ROW
 {
     unsigned long rowId;
@@ -417,7 +417,7 @@ typedef struct _KSWORD_ARK_NETWORK_WFP_INVENTORY_ROW
     wchar_t ownerModule[KSWORD_ARK_NETWORK_NAME_CHARS];
 } KSWORD_ARK_NETWORK_WFP_INVENTORY_ROW;
 
-// WFP inventory 响应。骨架阶段可返回 0 行与 AUDIT_STUB 状态。
+// WFP inventory response. In the skeleton phase, it can return 0 rows and the AUDIT_STUB status.
 typedef struct _KSWORD_ARK_NETWORK_WFP_INVENTORY_RESPONSE
 {
     unsigned long version;
@@ -435,7 +435,7 @@ typedef struct _KSWORD_ARK_NETWORK_WFP_INVENTORY_RESPONSE
     KSWORD_ARK_NETWORK_WFP_INVENTORY_ROW entries[1];
 } KSWORD_ARK_NETWORK_WFP_INVENTORY_RESPONSE;
 
-// NDIS chain 行。名称为诊断标签，不承诺包含完整设备实例路径。
+// NDIS chain row. The name is a diagnostic tag and does not guarantee inclusion of the full device instance path.
 typedef struct _KSWORD_ARK_NETWORK_NDIS_CHAIN_ROW
 {
     unsigned long rowId;
@@ -455,9 +455,9 @@ typedef struct _KSWORD_ARK_NETWORK_NDIS_CHAIN_ROW
     wchar_t ownerModule[KSWORD_ARK_NETWORK_NAME_CHARS];
 } KSWORD_ARK_NETWORK_NDIS_CHAIN_ROW;
 
-// NDIS chain 查询响应。公开设备栈只能证明 DEVICE_OBJECT 附加关系；除可证明的
-// FILE_DEVICE_PHYSICAL_NETCARD 边界外，objectKind 必须为 UNKNOWN。后续 PDB traversal
-// 必须维持 bounded traversal 和 count-first 语义。
+// NDIS chain query response. The public device stack can only prove DEVICE_OBJECT attachment
+// relationships; except for the provable FILE_DEVICE_PHYSICAL_NETCARD boundary, objectKind must
+// be UNKNOWN. Subsequent PDB traversal must maintain bounded traversal and count-first semantics.
 typedef struct _KSWORD_ARK_NETWORK_NDIS_CHAIN_RESPONSE
 {
     unsigned long version;
@@ -475,7 +475,7 @@ typedef struct _KSWORD_ARK_NETWORK_NDIS_CHAIN_RESPONSE
     KSWORD_ARK_NETWORK_NDIS_CHAIN_ROW entries[1];
 } KSWORD_ARK_NETWORK_NDIS_CHAIN_RESPONSE;
 
-// 单条网络规则。port 为 0 表示匹配任意端口，processId 为 0 表示匹配任意进程。
+// Single network rule. A port value of 0 matches any port; a processId value of 0 matches any process.
 typedef struct _KSWORD_ARK_NETWORK_RULE
 {
     unsigned long ruleId;
@@ -490,7 +490,7 @@ typedef struct _KSWORD_ARK_NETWORK_RULE
     unsigned long reserved1;
 } KSWORD_ARK_NETWORK_RULE;
 
-// 设置网络规则请求。REPLACE 覆盖整个规则快照，CLEAR/DISABLE 清空规则。
+// Network rule set request. REPLACE overwrites the entire rule snapshot; CLEAR/DISABLE clears the rules.
 typedef struct _KSWORD_ARK_NETWORK_SET_RULES_REQUEST
 {
     unsigned long version;
@@ -500,7 +500,7 @@ typedef struct _KSWORD_ARK_NETWORK_SET_RULES_REQUEST
     KSWORD_ARK_NETWORK_RULE rules[KSWORD_ARK_NETWORK_MAX_RULES];
 } KSWORD_ARK_NETWORK_SET_RULES_REQUEST;
 
-// 设置网络规则响应。blockedCount/hiddenPortCount 便于 R3 快速展示能力状态。
+// Network rule set response. blockedCount/hiddenPortCount facilitate R3 in quickly displaying capability status.
 typedef struct _KSWORD_ARK_NETWORK_SET_RULES_RESPONSE
 {
     unsigned long version;
@@ -515,7 +515,7 @@ typedef struct _KSWORD_ARK_NETWORK_SET_RULES_RESPONSE
     unsigned long reserved;
 } KSWORD_ARK_NETWORK_SET_RULES_RESPONSE;
 
-// 查询网络运行时响应。rules 是当前 R0 快照，R3 可据此做端口隐藏展示过滤。
+// Query network runtime response. The 'rules' field is the current R0 snapshot, allowing R3 to perform port hiding and display filtering based on it.
 typedef struct _KSWORD_ARK_NETWORK_STATUS_RESPONSE
 {
     unsigned long version;

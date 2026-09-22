@@ -7,17 +7,17 @@ namespace ks::dwm_order
 {
     inline constexpr std::uint32_t kProtocolVersion = 3;
     inline constexpr std::uint32_t kMagic = 0x4f5a5744;
-    enum class Action : std::uint32_t { Query, Apply, Restore, Stop, Connect };
-    enum class Position : std::uint32_t { Front, Back, Before, After };
+    enum class Action : std::uint32_t { kQuery, kApply, kRestore, kStop, kConnect };
+    enum class Position : std::uint32_t { kFront, kBack, kBefore, kAfter };
     enum class Status : std::uint32_t
     {
-        Ok, InvalidRequest, InvalidWindow, DifferentDesktop, UnsupportedRuntime,
-        HookConflict, WindowNotComposed, NativeFailure, VerificationFailed,
-        NotRunning, AgentMismatch, TransportFailure, Timeout, InternalException
+        kOk, kInvalidRequest, kInvalidWindow, kDifferentDesktop, kUnsupportedRuntime,
+        kHookConflict, kWindowNotComposed, kNativeFailure, kVerificationFailed,
+        kNotRunning, kAgentMismatch, kTransportFailure, kTimeout, kInternalException
     };
     enum ResultFlags : std::uint32_t
     {
-        Verified = 1, Maintaining = 2, HooksInstalled = 4, Restored = 8
+        kVerified = 1, kMaintaining = 2, kHooksInstalled = 4, kRestored = 8
     };
 
     struct WindowIdentity
@@ -29,8 +29,8 @@ namespace ks::dwm_order
     };
     struct Request
     {
-        Action action = Action::Query;
-        Position position = Position::Front;
+        Action action = Action::kQuery;
+        Position position = Position::kFront;
         std::uint32_t maintain = 1;
         std::uint32_t reserved = 0;
         WindowIdentity target;
@@ -38,7 +38,7 @@ namespace ks::dwm_order
     };
     struct Response
     {
-        Status status = Status::InvalidRequest;
+        Status status = Status::kInvalidRequest;
         std::uint32_t win32Error = 0;
         std::int32_t nativeResult = 0;
         std::uint32_t flags = 0;
@@ -49,7 +49,7 @@ namespace ks::dwm_order
         std::uint64_t previous = 0; // Window immediately above this one.
         std::uint64_t next = 0; // Window immediately below this one.
         std::uint64_t maintainedWindow = 0;
-        Status maintenanceStatus = Status::Ok;
+        Status maintenanceStatus = Status::kOk;
         std::uint32_t reserved = 0;
     };
     struct alignas(8) Packet

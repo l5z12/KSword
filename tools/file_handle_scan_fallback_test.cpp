@@ -1,4 +1,4 @@
-// Regression harness for the R0 file-handle scan policy and query volume.
+// regression harness for the R0 file-handle scan policy and query volume.
 //
 // The fake DriverClient covers five production bugs:
 // 1. A successful R0 enumeration with zero target matches must not fall back to
@@ -20,8 +20,8 @@
 // 8. A QUIET_LOG enumeration racing a process exit must classify
 //    STATUS_INVALID_CID as expected churn; every other status remains visible.
 
-#include "../Ksword5.1/Ksword5.1/ksword/file/file_handle_tools.h"
-#include "../Ksword5.1/Ksword5.1/ArkDriverClient/ArkDriverClient.h"
+#include "../shared/platform/file/FileHandleTools.h"
+#include "../shared/ark_client/ArkDriverClient.h"
 
 #include <Windows.h>
 
@@ -45,46 +45,46 @@ namespace
         static_cast<long>(static_cast<std::int32_t>(0xC000000BU));
     constexpr wchar_t kTargetPath[] = L"C:\\ksword-regression\\occupied.dat";
 
-    std::atomic_int g_scenario = kEmptyScenario;
-    std::atomic_bool g_kernelEnumerationCompleted = false;
-    std::atomic_bool g_r3FallbackEntered = false;
-    std::atomic_bool g_cancelRequested = false;
-    std::atomic_uint32_t g_objectQueryCount = 0;
-    std::atomic_uint32_t g_activeObjectQueryCount = 0;
-    std::atomic_uint32_t g_peakObjectQueryCount = 0;
-    std::atomic_bool g_enumQuietFlagObserved = true;
-    std::atomic_bool g_queryQuietFlagObserved = true;
+    std::atomic_int gScenario = kEmptyScenario;
+    std::atomic_bool gKernelEnumerationCompleted = false;
+    std::atomic_bool gR3FallbackEntered = false;
+    std::atomic_bool gCancelRequested = false;
+    std::atomic_uint32_t gObjectQueryCount = 0;
+    std::atomic_uint32_t gActiveObjectQueryCount = 0;
+    std::atomic_uint32_t gPeakObjectQueryCount = 0;
+    std::atomic_bool gEnumQuietFlagObserved = true;
+    std::atomic_bool gQueryQuietFlagObserved = true;
 
-    void RecordQueryStarted()
+    void recordQueryStarted()
     {
-        const std::uint32_t activeCount =
-            g_activeObjectQueryCount.fetch_add(1, std::memory_order_acq_rel) + 1;
-        std::uint32_t peakCount = g_peakObjectQueryCount.load(std::memory_order_acquire);
-        while (activeCount > peakCount &&
-               !g_peakObjectQueryCount.compare_exchange_weak(
+        const std::uint32_t kActiveCount =
+            gActiveObjectQueryCount.fetch_add(1, std::memory_order_acq_rel) + 1;
+        std::uint32_t peakCount = gPeakObjectQueryCount.load(std::memory_order_acquire);
+        while (kActiveCount > peakCount &&
+               !gPeakObjectQueryCount.compare_exchange_weak(
                    peakCount,
-                   activeCount,
+                   kActiveCount,
                    std::memory_order_acq_rel,
                    std::memory_order_acquire))
         {
         }
     }
 
-    void RecordQueryFinished()
+    void recordQueryFinished()
     {
-        g_activeObjectQueryCount.fetch_sub(1, std::memory_order_acq_rel);
+        gActiveObjectQueryCount.fetch_sub(1, std::memory_order_acq_rel);
     }
 
-    std::size_t DiagnosticCount(
+    std::size_t diagnosticCount(
         const std::wstring& diagnosticText,
         const std::wstring& label)
     {
-        const std::size_t labelOffset = diagnosticText.find(label);
-        if (labelOffset == std::wstring::npos)
+        const std::size_t kLabelOffset = diagnosticText.find(label);
+        if (kLabelOffset == std::wstring::npos)
         {
             return 0;
         }
-        std::size_t offset = labelOffset + label.size();
+        std::size_t offset = kLabelOffset + label.size();
         std::size_t value = 0;
         while (offset < diagnosticText.size() &&
                diagnosticText[offset] >= L'0' && diagnosticText[offset] <= L'9')
@@ -101,7 +101,7 @@ namespace ksword::ark
     ProcessEnumResult DriverClient::enumerateProcesses(unsigned long) const
     {
         ProcessEnumResult result{};
-        if (g_scenario.load(std::memory_order_acquire) == kDriverUnavailableScenario)
+        if (gScenario.load(std::memory_order_acquire) == kDriverUnavailableScenario)
         {
             result.io.ok = false;
             result.io.win32Error = ERROR_FILE_NOT_FOUND;
@@ -126,7 +126,7 @@ namespace ksword::ark
     {
         if ((flags & KSWORD_ARK_ENUM_HANDLE_FLAG_QUIET_LOG) == 0UL)
         {
-            g_enumQuietFlagObserved.store(false, std::memory_order_release);
+            gEnumQuietFlagObserved.store(false, std::memory_order_release);
         }
         HandleEnumResult result{};
         if (processId != ::GetCurrentProcessId())
@@ -139,11 +139,11 @@ namespace ksword::ark
         }
         result.io.ok = true;
         result.processId = processId;
-        if (g_scenario.load(std::memory_order_acquire) == kTypedHandleScenario)
+        if (gScenario.load(std::memory_order_acquire) == kTypedHandleScenario)
         {
-            const std::uint32_t totalCount = kNonFileHandleCount + kFileHandleCount;
-            result.entries.reserve(totalCount);
-            for (std::uint32_t index = 0; index < totalCount; ++index)
+            const std::uint32_t kTotalCount = kNonFileHandleCount + kFileHandleCount;
+            result.entries.reserve(kTotalCount);
+            for (std::uint32_t index = 0; index < kTotalCount; ++index)
             {
                 HandleEntry entry{};
                 entry.processId = processId;
@@ -154,10 +154,10 @@ namespace ksword::ark
                     : kFileTypeIndex;
                 result.entries.push_back(entry);
             }
-            result.totalCount = totalCount;
-            result.returnedCount = totalCount;
+            result.totalCount = kTotalCount;
+            result.returnedCount = kTotalCount;
         }
-        g_kernelEnumerationCompleted.store(true, std::memory_order_release);
+        gKernelEnumerationCompleted.store(true, std::memory_order_release);
         return result;
     }
 
@@ -169,10 +169,10 @@ namespace ksword::ark
     {
         if ((flags & KSWORD_ARK_QUERY_OBJECT_FLAG_QUIET_LOG) == 0UL)
         {
-            g_queryQuietFlagObserved.store(false, std::memory_order_release);
+            gQueryQuietFlagObserved.store(false, std::memory_order_release);
         }
-        g_objectQueryCount.fetch_add(1, std::memory_order_acq_rel);
-        RecordQueryStarted();
+        gObjectQueryCount.fetch_add(1, std::memory_order_acq_rel);
+        recordQueryStarted();
 
         HandleObjectQueryResult result{};
         result.io.ok = true;
@@ -180,13 +180,13 @@ namespace ksword::ark
         result.handleValue = handleValue;
         result.queryStatus = KSWORD_ARK_OBJECT_QUERY_STATUS_OK;
         result.actualGrantedAccess = 0x00120089;
-        const std::uint64_t fileHandleBase = kHandleBase + kNonFileHandleCount;
-        if (handleValue < fileHandleBase)
+        const std::uint64_t kFileHandleBase = kHandleBase + kNonFileHandleCount;
+        if (handleValue < kFileHandleBase)
         {
             result.objectTypeIndex = kNonFileTypeIndex;
             result.typeName = L"Event";
             result.objectName = L"\\BaseNamedObjects\\ksword-regression-event";
-            RecordQueryFinished();
+            recordQueryFinished();
             return result;
         }
 
@@ -196,42 +196,42 @@ namespace ksword::ark
         ::Sleep(3);
         result.objectTypeIndex = kFileTypeIndex;
         result.typeName = L"File";
-        if (handleValue == fileHandleBase + kFileHandleCount - 3U)
+        if (handleValue == kFileHandleBase + kFileHandleCount - 3U)
         {
             result.io.ok = false;
-            RecordQueryFinished();
+            recordQueryFinished();
             return result;
         }
-        if (handleValue == fileHandleBase + kFileHandleCount - 2U)
+        if (handleValue == kFileHandleBase + kFileHandleCount - 2U)
         {
             result.queryStatus = KSWORD_ARK_OBJECT_QUERY_STATUS_PARTIAL;
-            RecordQueryFinished();
+            recordQueryFinished();
             return result;
         }
-        if (handleValue == fileHandleBase + kFileHandleCount - 1U)
+        if (handleValue == kFileHandleBase + kFileHandleCount - 1U)
         {
             result.queryStatus = KSWORD_ARK_OBJECT_QUERY_STATUS_HANDLE_REFERENCE_FAILED;
             result.objectReferenceStatus = kNtStatusInvalidCid;
-            RecordQueryFinished();
+            recordQueryFinished();
             return result;
         }
-        if (handleValue == fileHandleBase)
+        if (handleValue == kFileHandleBase)
         {
             result.objectName = kTargetPath;
         }
         else
         {
             result.objectName = L"C:\\ksword-regression\\other-" +
-                std::to_wstring(handleValue - fileHandleBase) + L".dat";
+                std::to_wstring(handleValue - kFileHandleBase) + L".dat";
         }
-        RecordQueryFinished();
+        recordQueryFinished();
         return result;
     }
 }
 
 namespace ks::process
 {
-    std::string QueryProcessPathByPid(std::uint32_t)
+    std::string queryProcessPathByPid(std::uint32_t)
     {
         return {};
     }
@@ -239,41 +239,41 @@ namespace ks::process
 
 namespace ks::str
 {
-    std::wstring Utf8ToUtf16(const std::string& text)
+    std::wstring utf8ToUtf16(const std::string& text)
     {
         if (text.empty())
         {
             return {};
         }
-        const int length = ::MultiByteToWideChar(
+        const int kLength = ::MultiByteToWideChar(
             CP_UTF8,
             MB_ERR_INVALID_CHARS,
             text.data(),
             static_cast<int>(text.size()),
             nullptr,
             0);
-        if (length <= 0)
+        if (kLength <= 0)
         {
             return {};
         }
-        std::wstring result(static_cast<std::size_t>(length), L'\0');
+        std::wstring result(static_cast<std::size_t>(kLength), L'\0');
         ::MultiByteToWideChar(
             CP_UTF8,
             MB_ERR_INVALID_CHARS,
             text.data(),
             static_cast<int>(text.size()),
             result.data(),
-            length);
+            kLength);
         return result;
     }
 
-    std::string Utf16ToUtf8(const std::wstring& text)
+    std::string utf16ToUtf8(const std::wstring& text)
     {
         if (text.empty())
         {
             return {};
         }
-        const int length = ::WideCharToMultiByte(
+        const int kLength = ::WideCharToMultiByte(
             CP_UTF8,
             WC_ERR_INVALID_CHARS,
             text.data(),
@@ -282,18 +282,18 @@ namespace ks::str
             0,
             nullptr,
             nullptr);
-        if (length <= 0)
+        if (kLength <= 0)
         {
             return {};
         }
-        std::string result(static_cast<std::size_t>(length), '\0');
+        std::string result(static_cast<std::size_t>(kLength), '\0');
         ::WideCharToMultiByte(
             CP_UTF8,
             WC_ERR_INVALID_CHARS,
             text.data(),
             static_cast<int>(text.size()),
             result.data(),
-            length,
+            kLength,
             nullptr,
             nullptr);
         return result;
@@ -308,50 +308,50 @@ int wmain()
     {
         if (stepText == "准备抓取系统句柄快照")
         {
-            g_r3FallbackEntered.store(true, std::memory_order_release);
-            g_cancelRequested.store(true, std::memory_order_release);
+            gR3FallbackEntered.store(true, std::memory_order_release);
+            gCancelRequested.store(true, std::memory_order_release);
         }
     };
     emptyOptions.cancellationCallback = []()
     {
-        return g_cancelRequested.load(std::memory_order_acquire);
+        return gCancelRequested.load(std::memory_order_acquire);
     };
-    (void)ks::file::ScanHandleUsageByPaths({ kTargetPath }, emptyOptions);
-    if (!g_kernelEnumerationCompleted.load(std::memory_order_acquire))
+    (void)ks::file::scanHandleUsageByPaths({ kTargetPath }, emptyOptions);
+    if (!gKernelEnumerationCompleted.load(std::memory_order_acquire))
     {
         return 2;
     }
-    if (g_r3FallbackEntered.load(std::memory_order_acquire))
+    if (gR3FallbackEntered.load(std::memory_order_acquire))
     {
         return 1;
     }
 
-    g_scenario.store(kDriverUnavailableScenario, std::memory_order_release);
-    g_r3FallbackEntered.store(false, std::memory_order_release);
-    g_cancelRequested.store(false, std::memory_order_release);
+    gScenario.store(kDriverUnavailableScenario, std::memory_order_release);
+    gR3FallbackEntered.store(false, std::memory_order_release);
+    gCancelRequested.store(false, std::memory_order_release);
     ks::file::HandleUsageScanOptions unavailableOptions{};
     unavailableOptions.tryKernelHandleTable = true;
-    const ks::file::HandleUsageScanResult unavailableResult =
-        ks::file::ScanHandleUsageByPaths({ kTargetPath }, unavailableOptions);
-    const bool hasR3FallbackDiagnostic =
-        unavailableResult.diagnosticText.find(L"文件句柄来源:R3 DuplicateHandle") != std::wstring::npos;
-    if (!unavailableResult.kernelHandleTableAttempted ||
-        unavailableResult.kernelHandleTableUsed ||
-        !unavailableResult.r3HandleFallbackUsed ||
-        !hasR3FallbackDiagnostic)
+    const ks::file::HandleUsageScanResult kUnavailableResult =
+        ks::file::scanHandleUsageByPaths({ kTargetPath }, unavailableOptions);
+    const bool kHasR3FallbackDiagnostic =
+        kUnavailableResult.diagnosticText.find(L"文件句柄来源:R3 DuplicateHandle") != std::wstring::npos;
+    if (!kUnavailableResult.kernelHandleTableAttempted ||
+        kUnavailableResult.kernelHandleTableUsed ||
+        !kUnavailableResult.r3HandleFallbackUsed ||
+        !kHasR3FallbackDiagnostic)
     {
         return 12;
     }
 
-    g_scenario.store(kTypedHandleScenario, std::memory_order_release);
-    g_kernelEnumerationCompleted.store(false, std::memory_order_release);
-    g_r3FallbackEntered.store(false, std::memory_order_release);
-    g_cancelRequested.store(false, std::memory_order_release);
-    g_objectQueryCount.store(0, std::memory_order_release);
-    g_activeObjectQueryCount.store(0, std::memory_order_release);
-    g_peakObjectQueryCount.store(0, std::memory_order_release);
-    g_enumQuietFlagObserved.store(true, std::memory_order_release);
-    g_queryQuietFlagObserved.store(true, std::memory_order_release);
+    gScenario.store(kTypedHandleScenario, std::memory_order_release);
+    gKernelEnumerationCompleted.store(false, std::memory_order_release);
+    gR3FallbackEntered.store(false, std::memory_order_release);
+    gCancelRequested.store(false, std::memory_order_release);
+    gObjectQueryCount.store(0, std::memory_order_release);
+    gActiveObjectQueryCount.store(0, std::memory_order_release);
+    gPeakObjectQueryCount.store(0, std::memory_order_release);
+    gEnumQuietFlagObserved.store(true, std::memory_order_release);
+    gQueryQuietFlagObserved.store(true, std::memory_order_release);
 
     ks::file::HandleUsageScanOptions typedOptions{};
     typedOptions.tryKernelHandleTable = true;
@@ -359,84 +359,84 @@ int wmain()
     {
         if (stepText == "准备抓取系统句柄快照")
         {
-            g_r3FallbackEntered.store(true, std::memory_order_release);
+            gR3FallbackEntered.store(true, std::memory_order_release);
         }
     };
-    const ks::file::HandleUsageScanResult result =
-        ks::file::ScanHandleUsageByPaths({ kTargetPath }, typedOptions);
-    const std::uint32_t queryCount = g_objectQueryCount.load(std::memory_order_acquire);
-    const std::uint32_t peakQueryCount = g_peakObjectQueryCount.load(std::memory_order_acquire);
-    const bool hasEnumFailureDiagnostic =
-        result.diagnosticText.find(L"R0枚举失败进程:") != std::wstring::npos;
-    const std::size_t objectFailureDiagnosticCount =
-        DiagnosticCount(result.diagnosticText, L"R0对象查询失败:");
-    const bool quietInvalidCid = KSWORD_ARK_ENUM_HANDLE_STATUS_IS_EXPECTED_CHURN(
+    const ks::file::HandleUsageScanResult kResult =
+        ks::file::scanHandleUsageByPaths({ kTargetPath }, typedOptions);
+    const std::uint32_t kQueryCount = gObjectQueryCount.load(std::memory_order_acquire);
+    const std::uint32_t kPeakQueryCount = gPeakObjectQueryCount.load(std::memory_order_acquire);
+    const bool kHasEnumFailureDiagnostic =
+        kResult.diagnosticText.find(L"R0枚举失败进程:") != std::wstring::npos;
+    const std::size_t kObjectFailureDiagnosticCount =
+        diagnosticCount(kResult.diagnosticText, L"R0对象查询失败:");
+    const bool kQuietInvalidCid = KSWORD_ARK_ENUM_HANDLE_STATUS_IS_EXPECTED_CHURN(
         KSWORD_ARK_ENUM_HANDLE_FLAG_QUIET_LOG,
         kNtStatusInvalidCid);
-    const bool nonQuietInvalidCid = KSWORD_ARK_ENUM_HANDLE_STATUS_IS_EXPECTED_CHURN(
+    const bool kNonQuietInvalidCid = KSWORD_ARK_ENUM_HANDLE_STATUS_IS_EXPECTED_CHURN(
         0UL,
         kNtStatusInvalidCid);
-    const bool quietAccessDenied = KSWORD_ARK_ENUM_HANDLE_STATUS_IS_EXPECTED_CHURN(
+    const bool kQuietAccessDenied = KSWORD_ARK_ENUM_HANDLE_STATUS_IS_EXPECTED_CHURN(
         KSWORD_ARK_ENUM_HANDLE_FLAG_QUIET_LOG,
         static_cast<long>(0xC0000022UL));
 
-    std::cout << "R3_FALLBACK=" << (g_r3FallbackEntered.load() ? 1 : 0) << '\n'
-              << "OBJECT_QUERIES=" << queryCount << '\n'
-              << "PEAK_OBJECT_QUERIES=" << peakQueryCount << '\n'
-              << "FILE_LIKE_HANDLES=" << result.fileLikeHandleCount << '\n'
-              << "MATCHED_HANDLES=" << result.matchedHandleCount << '\n'
-              << "ENUM_CHURN_REPORTED_AS_ERROR=" << (hasEnumFailureDiagnostic ? 1 : 0) << '\n'
-              << "OBJECT_FAILURES=" << objectFailureDiagnosticCount << '\n'
-              << "ENUM_QUIET_LOG=" << (g_enumQuietFlagObserved.load() ? 1 : 0) << '\n'
-              << "QUERY_QUIET_LOG=" << (g_queryQuietFlagObserved.load() ? 1 : 0) << '\n'
-              << "R0_ATTEMPT_RECORDED=" << (unavailableResult.kernelHandleTableAttempted ? 1 : 0) << '\n'
-              << "R3_FALLBACK_RECORDED=" << (unavailableResult.r3HandleFallbackUsed ? 1 : 0) << '\n'
-              << "QUIET_INVALID_CID=" << (quietInvalidCid ? 1 : 0) << '\n'
-              << "NONQUIET_INVALID_CID=" << (nonQuietInvalidCid ? 1 : 0) << '\n'
-              << "QUIET_ACCESS_DENIED=" << (quietAccessDenied ? 1 : 0) << '\n';
+    std::cout << "R3_FALLBACK=" << (gR3FallbackEntered.load() ? 1 : 0) << '\n'
+              << "OBJECT_QUERIES=" << kQueryCount << '\n'
+              << "PEAK_OBJECT_QUERIES=" << kPeakQueryCount << '\n'
+              << "FILE_LIKE_HANDLES=" << kResult.fileLikeHandleCount << '\n'
+              << "MATCHED_HANDLES=" << kResult.matchedHandleCount << '\n'
+              << "ENUM_CHURN_REPORTED_AS_ERROR=" << (kHasEnumFailureDiagnostic ? 1 : 0) << '\n'
+              << "OBJECT_FAILURES=" << kObjectFailureDiagnosticCount << '\n'
+              << "ENUM_QUIET_LOG=" << (gEnumQuietFlagObserved.load() ? 1 : 0) << '\n'
+              << "QUERY_QUIET_LOG=" << (gQueryQuietFlagObserved.load() ? 1 : 0) << '\n'
+              << "R0_ATTEMPT_RECORDED=" << (kUnavailableResult.kernelHandleTableAttempted ? 1 : 0) << '\n'
+              << "R3_FALLBACK_RECORDED=" << (kUnavailableResult.r3HandleFallbackUsed ? 1 : 0) << '\n'
+              << "QUIET_INVALID_CID=" << (kQuietInvalidCid ? 1 : 0) << '\n'
+              << "NONQUIET_INVALID_CID=" << (kNonQuietInvalidCid ? 1 : 0) << '\n'
+              << "QUIET_ACCESS_DENIED=" << (kQuietAccessDenied ? 1 : 0) << '\n';
 
-    if (g_r3FallbackEntered.load(std::memory_order_acquire))
+    if (gR3FallbackEntered.load(std::memory_order_acquire))
     {
         return 3;
     }
-    if (queryCount > kFileHandleCount + 2)
+    if (kQueryCount > kFileHandleCount + 2)
     {
         return 4;
     }
-    if (hasEnumFailureDiagnostic)
+    if (kHasEnumFailureDiagnostic)
     {
         return 8;
     }
-    if (objectFailureDiagnosticCount != 1U)
+    if (kObjectFailureDiagnosticCount != 1U)
     {
         return 9;
     }
-    if (peakQueryCount < 2)
+    if (kPeakQueryCount < 2)
     {
         return 7;
     }
-    if (result.fileLikeHandleCount != kFileHandleCount)
+    if (kResult.fileLikeHandleCount != kFileHandleCount)
     {
         return 5;
     }
-    if (result.matchedHandleCount != 1)
+    if (kResult.matchedHandleCount != 1)
     {
         return 6;
     }
-    if (!g_enumQuietFlagObserved.load(std::memory_order_acquire))
+    if (!gEnumQuietFlagObserved.load(std::memory_order_acquire))
     {
         return 10;
     }
-    if (!g_queryQuietFlagObserved.load(std::memory_order_acquire))
+    if (!gQueryQuietFlagObserved.load(std::memory_order_acquire))
     {
         return 11;
     }
-    if (!result.kernelHandleTableAttempted || !result.kernelHandleTableUsed ||
-        result.r3HandleFallbackUsed)
+    if (!kResult.kernelHandleTableAttempted || !kResult.kernelHandleTableUsed ||
+        kResult.r3HandleFallbackUsed)
     {
         return 13;
     }
-    if (!quietInvalidCid || nonQuietInvalidCid || quietAccessDenied)
+    if (!kQuietInvalidCid || kNonQuietInvalidCid || kQuietAccessDenied)
     {
         return 14;
     }

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Ksword ntoskrnl PDB 深度偏移提取器。
+Ksword ntoskrnl PDB deep offset extractor.
 
-用途：
-- 从本机 PDB 缓存中的 ntkrnlmp.pdb 读取 TPI 类型流；
-- 提取进程、线程、对象、句柄、模块、驱动、内存、ALPC 等运行时详情页可用的结构字段；
-- 输出 JSON/CSV，作为后续 DynData v4 item 编号、详情 IOCTL 和 UI 展示字段的离线事实库。
+Purpose:
+- Read the TPI type stream from ntkrnlmp.pdb in the local PDB cache.
+- Extracts structure fields usable for runtime detail pages of processes, threads, objects, handles, modules, drivers, memory, ALPC, etc.
+- Output: JSON/CSV serving as an offline fact base for subsequent DynData v4 item IDs, detailed IOCTLs, and UI display fields.
 
-边界：
-- 只读 PDB 文件，不下载符号，不运行目标程序，不访问驱动；
-- 默认只解析目标类型，不做全模块递归深挖；
-- 生成物是审计/备用数据，不能直接当作 R0 任意读白名单使用。
+Boundary:
+- Reads PDB files only; does not download symbols, run target programs, or access drivers.
+- By default, parses only the target type without full module recursive deep digging.
+- The generated artifact is audit/backup data and must not be used directly as an R0 arbitrary-read allowlist.
 """
 
 from __future__ import annotations
@@ -31,8 +31,8 @@ DEFAULT_LLVM_PDBUTIL = r"D:\Software\VS\VC\Tools\Llvm\x64\bin\llvm-pdbutil.exe"
 DEFAULT_PDB_PATH = r"E:\KswordPDB\PDB\pdb-cache\amd64\ntkrnlmp.pdb\F923DA2D238E7C7CE180B962B19A37811\ntkrnlmp.pdb"
 DEFAULT_OUTPUT_DIR = r"D:\Temp\ksword_pdb_deep_offsets"
 
-# 这些类型覆盖当前目标中的“进程详细信息/线程详细信息/窗口相关底层对象/句柄/驱动/内存/IPC”等基础运行时实例。
-# 注意：ntkrnlmp 不包含 win32k 的窗口 USER 对象私有类型；窗口 GUI 类型应由 win32kbase/win32kfull PDB 继续补充。
+# These types cover basic runtime instances in the current target, including process details, thread details, window-related low-level objects, handles, drivers, memory, and IPC.
+# Note: ntkrnlmp does not include private types for win32k window USER objects; window GUI types should be further supplemented by win32kbase/win32kfull PDBs.
 TARGET_TYPE_GROUPS: dict[str, list[str]] = {
     "process_detail": [
         "_EPROCESS",
@@ -143,7 +143,7 @@ TARGET_TYPE_GROUPS: dict[str, list[str]] = {
     ],
 }
 
-# 这些别名把“全部字段事实库”连接到当前 DynData v3/v4 的候选 item 名称，便于后续批量编号和 IOCTL 消费。
+# These aliases link the 'complete field fact library' to candidate item names for DynData v3/v4, facilitating subsequent batch numbering and IOCTL consumption.
 KSWORD_ITEM_ALIASES: dict[tuple[str, str], str] = {
     ("_EPROCESS", "UniqueProcessId"): "EpUniqueProcessId",
     ("_EPROCESS", "ActiveProcessLinks"): "EpActiveProcessLinks",
@@ -335,8 +335,8 @@ KSWORD_ITEM_ALIASES: dict[tuple[str, str], str] = {
     ("_CALLBACK_ENTRY", "RegistrationContext"): "_CALLBACK_ENTRY.RegistrationContext",
 }
 
-# 这些 public/global 符号不是结构成员偏移，而是后续 CID/驱动/回调详情页
-# 需要的内核全局 RVA。它们必须来自 PDB publics + section header 映射。
+# These public/global symbols are not structure member offsets, but are for subsequent CID/driver/callback detail pages.
+# Required kernel global RVAs. They must come from PDB publics + section header mapping.
 TARGET_GLOBAL_SYMBOL_GROUPS: dict[str, list[str]] = {
     "kernel_global_detail": [
         "PspCidTable",
@@ -369,7 +369,7 @@ RUNTIME_ITEM_ID_NAMESPACE = 0x80000000
 
 @dataclass
 class TypeRecord:
-    """保存一个 llvm-pdbutil TPI 记录。"""
+    """Save an llvm-pdbutil TPI record."""
 
     record_id: str
     kind: str
@@ -379,7 +379,7 @@ class TypeRecord:
 
 @dataclass
 class TypeInfo:
-    """保存已归一化的类型信息，供字段解析时复用。"""
+    """Save normalized type information for reuse during field parsing."""
 
     record_id: str
     kind: str
@@ -398,13 +398,13 @@ class TypeInfo:
 
 
 def parse_int(text: str) -> int:
-    """解析十进制或 0x 十六进制整数。"""
+    """Parse decimal or 0x hexadecimal integers."""
     value = text.strip()
     return int(value, 16 if value.lower().startswith("0x") else 10)
 
 
 def normalize_type_id(text: str) -> str:
-    """把 llvm-pdbutil 打印的类型 ID 归一化为小写 0xXXXXXXXX 文本。"""
+    """Normalize the type ID printed by llvm-pdbutil to lowercase 0xXXXXXXXX text."""
     token = text.strip().split()[0]
     if token == "<no":
         return ""
@@ -418,13 +418,13 @@ def normalize_type_id(text: str) -> str:
 
 
 def first_backtick_name(text: str) -> str:
-    """提取记录头中的第一个反引号名称。"""
+    """Extract the first backtick name from the record header."""
     match = re.search(r"`([^`]+)`", text)
     return match.group(1) if match else ""
 
 
 def run_pdbutil(pdbutil_path: str, pdb_path: Path, *options: str, timeout: int = 900) -> str:
-    """执行 llvm-pdbutil 并返回 stdout。"""
+    """Execute llvm-pdbutil and return stdout."""
     completed = subprocess.run(
         [pdbutil_path, "dump", *options, str(pdb_path)],
         check=True,
@@ -438,16 +438,16 @@ def run_pdbutil(pdbutil_path: str, pdb_path: Path, *options: str, timeout: int =
 
 
 def parse_symbol_cache_identity(pdb_path: Path, pdb_guid: str) -> dict[str, Any]:
-    """从 Microsoft symbol-cache 目录名提取 RSDS GUID/Age。
+    """Extract the RSDS GUID/Age from the Microsoft symbol-cache directory name.
 
-    输入：
-    - pdb_path：形如 ...\\ntkrnlmp.pdb\\<GUID+Age>\\ntkrnlmp.pdb 的本地 PDB 路径；
-    - pdb_guid：llvm-pdbutil summary 中提取到的 PDB GUID。
-    处理：
-    - 解析父目录末尾的 GUID+Age key；
-    - 当 GUID 与 summary GUID 一致时，把尾部 age 按 symbol-server 规则当作十六进制解析。
-    返回：
-    - 包含 symbolCacheKey/symbolCacheGuid/symbolCacheAge 的字典；无法解析时返回空值。
+    Inputs:
+    - pdb_path: local PDB path in the format ...\\ntkrnlmp.pdb\\<GUID+Age>\\ntkrnlmp.pdb;
+    - pdb_guid: the PDB GUID extracted from the llvm-pdbutil summary.
+    Processing:
+    - Parse the GUID+Age key from the end of the parent directory name;
+    - When the GUID matches the summary GUID, parse the trailing age as hexadecimal according to symbol-server rules.
+    Returns:
+    - Dictionary containing symbolCacheKey, symbolCacheGuid, and symbolCacheAge; returns null if parsing fails.
     """
     cache_key = pdb_path.parent.name.strip()
     match = SYMBOL_CACHE_KEY_RE.match(cache_key)
@@ -472,16 +472,16 @@ def parse_symbol_cache_identity(pdb_path: Path, pdb_guid: str) -> dict[str, Any]
 
 
 def portable_pdb_identity_path(pdb_path: Path, symbol_identity: dict[str, Any]) -> str:
-    """构造可发布的 PDB 身份 URI。
+    """Construct the publishable PDB identity URI.
 
-    输入：
-    - pdb_path：生成机上的真实 PDB 路径，仅用于提取 arch/pdbName；
-    - symbol_identity：parse_symbol_cache_identity 解析出的 GUID+Age 身份。
-    处理：
-    - 发布 JSON 不写入 E:/D: 等本机路径，避免运行环境误以为需要开发机符号盘；
-    - 保留 symbol-cache 的 arch/pdbName/GUIDAge/pdbName 结构，后续审计仍可解析 Age。
-    返回：
-    - symbol-cache://... URI；无法识别缓存 key 时返回 pdb://pdbName。
+    Inputs:
+    - pdb_path: the actual PDB path on the build machine, used only to extract arch/pdbName.
+    - symbol_identity: The GUID+Age identity parsed by parse_symbol_cache_identity.
+    Processing:
+    - Do not write to local paths like E:/D: in the published JSON to prevent the runtime environment from mistakenly assuming a development machine symbol drive is required.
+    - Retains the symbol-cache structure (arch, pdbName, GUID, Age) so that Age can still be parsed during subsequent audits.
+    Returns:
+    - symbol-cache://... URI; returns pdb://pdbName when the cache key is unrecognized.
     """
     path_parts = [str(part) for part in pdb_path.parts]
     arch_text = "unknown"
@@ -502,16 +502,16 @@ def portable_pdb_identity_path(pdb_path: Path, symbol_identity: dict[str, Any]) 
 
 
 def parse_summary(summary_text: str, pdb_path: Path) -> dict[str, Any]:
-    """从 summary 输出中提取 PDB GUID/Age 等身份信息。
+    """Extract PDB GUID/Age and other identity information from the summary output.
 
-    输入：
-    - summary_text：llvm-pdbutil dump -summary 输出；
-    - pdb_path：实际 PDB 路径。
-    处理：
-    - summary Age 记录为 pdbSummaryAge；
-    - 若 PDB 来自 symbol-cache，优先使用父目录 GUID+Age 作为 runtime/RSDS 匹配用的 pdbAge。
-    返回：
-    - source 字典；pdbAge 字段用于和 ark_dyndata_pack_v4.json profile identity 匹配。
+    Inputs:
+    - summary_text: llvm-pdbutil dump -summary output;
+    - pdb_path: actual PDB path.
+    Processing:
+    - summary Age is recorded as pdbSummaryAge;
+    - If the PDB comes from the symbol cache, prefer using the parent directory's GUID + Age as the pdbAge for runtime/RSDS matching.
+    Returns:
+    - source dictionary; the pdbAge field is used to match the ark_dyndata_pack_v4.json profile identity.
     """
     guid_match = SUMMARY_GUID_RE.search(summary_text)
     age_match = SUMMARY_AGE_RE.search(summary_text)
@@ -540,7 +540,7 @@ def parse_summary(summary_text: str, pdb_path: Path) -> dict[str, Any]:
 
 
 def split_type_records(types_text: str) -> dict[str, TypeRecord]:
-    """把完整 TPI 文本切成按 record id 索引的记录。"""
+    """Split the complete TPI text into records indexed by record ID."""
     records: dict[str, TypeRecord] = {}
     current: TypeRecord | None = None
     for line in types_text.splitlines():
@@ -559,7 +559,7 @@ def split_type_records(types_text: str) -> dict[str, TypeRecord]:
 
 
 def build_type_info(records: dict[str, TypeRecord]) -> dict[str, TypeInfo]:
-    """把原始 TPI 记录转换为可解析的 TypeInfo。"""
+    """Convert raw TPI records into parseable TypeInfo."""
     infos: dict[str, TypeInfo] = {}
     for record_id, record in records.items():
         all_text = "\n".join([record.header, *record.body])
@@ -606,7 +606,7 @@ def build_type_info(records: dict[str, TypeRecord]) -> dict[str, TypeInfo]:
 
 
 def find_concrete_type(type_infos: dict[str, TypeInfo], type_name: str) -> TypeInfo | None:
-    """查找目标类型的非 forward-ref 定义。"""
+    """Find the non-forward-ref definition of the target type."""
     candidates = [info for info in type_infos.values() if info.name == type_name and not info.forward_ref]
     if not candidates:
         return None
@@ -615,7 +615,7 @@ def find_concrete_type(type_infos: dict[str, TypeInfo], type_name: str) -> TypeI
 
 
 def resolve_type_display(type_id: str, type_infos: dict[str, TypeInfo], depth: int = 0) -> str:
-    """把类型 ID 转成人类可读类型名。"""
+    """Convert type ID to a human-readable type name."""
     normalized = normalize_type_id(type_id)
     if not normalized:
         return type_id.strip()
@@ -638,7 +638,7 @@ def resolve_type_display(type_id: str, type_infos: dict[str, TypeInfo], depth: i
 
 
 def parse_member_line(line: str) -> dict[str, Any] | None:
-    """解析 LF_MEMBER 行并返回成员名、类型 ID 和字节偏移。"""
+    """Parse the LF_MEMBER line and return the member name, type ID, and byte offset."""
     match = MEMBER_RE.search(line)
     if not match:
         return None
@@ -653,7 +653,7 @@ def parse_member_line(line: str) -> dict[str, Any] | None:
 
 
 def parse_enum_line(line: str) -> dict[str, Any] | None:
-    """解析 LF_ENUMERATE 行。"""
+    """Parse LF_ENUMERATE lines."""
     match = ENUM_RE.search(line)
     if not match:
         return None
@@ -661,14 +661,14 @@ def parse_enum_line(line: str) -> dict[str, Any] | None:
 
 
 def target_global_symbol_groups_by_name() -> dict[str, str]:
-    """构建 global symbol 名称到领域名称的索引。
+    """Build an index mapping global symbol names to domain names.
 
-    输入：
-    - 无；读取 TARGET_GLOBAL_SYMBOL_GROUPS 常量。
-    处理：
-    - 遍历每个全局 RVA 领域，把符号名映射回领域名。
-    返回：
-    - dict[symbolName, groupName]，用于 publics 解析时 O(1) 判断目标符号。
+    Inputs:
+    - None; reads the TARGET_GLOBAL_SYMBOL_GROUPS constant.
+    Processing:
+    - Iterates through each global RVA domain to map symbol names back to domain names.
+    Returns:
+    - dict[symbolName, groupName]: Used for O(1) lookup of target symbols during publics parsing.
     """
     groups_by_name: dict[str, str] = {}
     for group_name, symbol_names in TARGET_GLOBAL_SYMBOL_GROUPS.items():
@@ -678,15 +678,15 @@ def target_global_symbol_groups_by_name() -> dict[str, str]:
 
 
 def parse_section_headers(section_text: str) -> dict[int, dict[str, Any]]:
-    """解析 llvm-pdbutil -section-headers 输出。
+    """Parse llvm-pdbutil -section-headers output.
 
-    输入：
-    - section_text：llvm-pdbutil dump -section-headers 文本。
-    处理：
-    - 记录 section header 编号、节名和 virtual address；
-    - virtual address 按十六进制解析，因为 llvm-pdbutil 对 PE section 字段使用十六进制文本。
-    返回：
-    - 按 1-based sectionIndex 索引的字典；无法取得 VA 的节不会被写入。
+    Inputs:
+    - section_text: text output from llvm-pdbutil dump -section-headers.
+    Processing:
+    - Record the section header index, section name, and virtual address.
+    - Virtual addresses are parsed as hexadecimal because llvm-pdbutil uses hexadecimal text for PE section fields.
+    Returns:
+    - A dictionary indexed by 1-based sectionIndex; sections where the VA cannot be obtained are not written.
     """
     sections: dict[int, dict[str, Any]] = {}
     current_index: int | None = None
@@ -728,17 +728,17 @@ def parse_section_headers(section_text: str) -> dict[int, dict[str, Any]]:
 
 
 def parse_public_global_symbols(publics_text: str, sections: dict[int, dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
-    """从 publics 流提取目标内核全局 RVA。
+    """Extract target kernel global RVA from publics stream.
 
-    输入：
-    - publics_text：llvm-pdbutil dump -publics 文本；
-    - sections：parse_section_headers 返回的 section VA 索引。
-    处理：
-    - 只接受 TARGET_GLOBAL_SYMBOL_GROUPS 中列出的符号；
-    - llvm-pdbutil publics 的 addr 偏移是十进制 section offset，section virtual address 是十六进制；
-    - 使用 sectionVA + sectionOffset 得到 image-relative RVA。
-    返回：
-    - (globalSymbols, missingSymbols)。globalSymbols 可直接序列化进 JSON。
+    Inputs:
+    - publics_text: llvm-pdbutil dump -publics output text;
+    - sections: section VA indices returned by parse_section_headers.
+    Processing:
+    - Only accepts symbols listed in TARGET_GLOBAL_SYMBOL_GROUPS;
+    - The address offsets for llvm-pdbutil publics are in decimal section offsets, while section virtual addresses are in hexadecimal.
+    - Use sectionVA + sectionOffset to obtain the image-relative RVA.
+    Returns:
+    - (globalSymbols, missingSymbols). globalSymbols can be directly serialized into JSON.
     """
     groups_by_name = target_global_symbol_groups_by_name()
     found_by_name: dict[str, dict[str, Any]] = {}
@@ -822,7 +822,7 @@ def extract_type_fields(
     type_infos: dict[str, TypeInfo],
     records: dict[str, TypeRecord],
 ) -> dict[str, Any] | None:
-    """提取一个目标类型的所有直接字段。"""
+    """Extract all direct fields of a target type."""
     type_info = find_concrete_type(type_infos, type_name)
     if type_info is None or not type_info.field_list_id:
         return None
@@ -877,7 +877,7 @@ def extract_type_fields(
 
 
 def build_flat_rows(targets: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """把嵌套目标类型展平成 CSV/审计行。"""
+    """Flatten nested target types into CSV/audit rows."""
     rows: list[dict[str, Any]] = []
     for target in targets:
         for field_entry in target.get("fields", []):
@@ -905,31 +905,31 @@ def build_flat_rows(targets: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def stable_runtime_item_id(group_name: str, type_name: str, field_name: str, attempt: int = 0) -> int:
-    """生成 deep runtime 字段稳定 ID。
+    """Generate stable IDs for deep runtime fields.
 
-    输入：
-    - group_name/type_name/field_name：字段完整归属；
-    - attempt：哈希冲突重试序号。
-    处理：
-    - 对规范化 key 做 CRC32；
-    - 强制置高位，避免和现有 KSW_DYN_FIELD_ID_* 小整数空间冲突。
-    返回：
-    - 32-bit unsigned runtime item id，可用于后续 v4/paged detail 协议引用。
+    Inputs:
+    - group_name/type_name/field_name: full field ownership.
+    - attempt: hash collision retry sequence number.
+    Processing:
+    - Compute CRC32 for normalized keys;
+    - Force the high bit to avoid conflicts with the existing KSW_DYN_FIELD_ID_* small integer space.
+    Returns:
+    - 32-bit unsigned runtime item ID, usable for subsequent v4/paged detail protocol references.
     """
     key = f"{group_name}:{type_name}:{field_name}:{attempt}".encode("utf-8", errors="strict")
     return RUNTIME_ITEM_ID_NAMESPACE | (zlib.crc32(key) & 0x7FFFFFFF)
 
 
 def assign_runtime_item_ids(rows: list[dict[str, Any]]) -> None:
-    """给 flatFields 原地补充 runtimeItemId。
+    """Supplement runtimeItemId to flatFields in place.
 
-    输入：
-    - rows：扁平字段列表。
-    处理：
-    - 使用 group/type/field 生成 deterministic id；
-    - 极小概率发生 CRC 碰撞时用 attempt 追加盐值重算，并记录 collisionAttempt。
-    返回：
-    - 无返回值；每行新增 runtimeItemId/runtimeItemIdHex/collisionAttempt。
+    Inputs:
+    - rows: flat field list
+    Processing:
+    - Generate deterministic IDs using group/type/field;
+    - In the extremely rare case of a CRC collision, append a salt value to the attempt and recalculate, recording the collisionAttempt.
+    Returns:
+    - No return value; adds runtimeItemId/runtimeItemIdHex/collisionAttempt per line.
     """
     used: dict[int, str] = {}
     for row in rows:
@@ -949,7 +949,7 @@ def assign_runtime_item_ids(rows: list[dict[str, Any]]) -> None:
 
 
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    """写出字段清单 CSV。"""
+    """Write the field list to CSV."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
         "group",
@@ -977,15 +977,15 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 
 
 def write_global_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    """写出全局 RVA 清单 CSV。
+    """Output global RVA list to CSV.
 
-    输入：
-    - path：输出 CSV 路径；
-    - rows：parse_public_global_symbols 生成的 globalSymbols。
-    处理：
-    - 只写目标 public/global 符号，不转储完整 publics 流。
-    返回：
-    - 无；文件编码为 UTF-8 BOM，便于 Excel/PowerShell 查看。
+    Inputs:
+    - path: output CSV path;
+    - rows: globalSymbols generated by parse_public_global_symbols.
+    Processing:
+    - Write only target public/global symbols; do not dump the complete publics stream.
+    Returns:
+    - None; file encoding is UTF-8 BOM for easier viewing in Excel/PowerShell.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
@@ -1018,21 +1018,21 @@ def build_runtime_detail_catalog(
     alias_rows: list[dict[str, Any]],
     global_symbols: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """构建运行时详情页可直接消费的分组目录。
+    """Build a grouped directory directly consumable by the runtime detail page.
 
-    输入：
-    - targets：按类型提取出的结构体字段集合。
-    - flat_rows：所有字段的扁平列表。
-    - alias_rows：已经映射到 Ksword DynData 命名的字段。
-    - global_symbols：public/global RVA 符号列表。
+    Inputs:
+    - targets: Set of structure fields extracted by type.
+    - flat_rows: a flattened list of all fields.
+    - alias_rows: fields already mapped to Ksword DynData names.
+    - global_symbols: list of public/global RVA symbols.
 
-    处理：
-    - 按 TARGET_TYPE_GROUPS 的 group 名称聚合类型和字段；
-    - 保留字段 offset、type、bitfield 和 kswordItemName；
-    - 生成 aliasMap/globalAliasMap，便于后续 R3/R0 把传统 DynData item 与深偏移库关联。
+    Processing:
+    - Aggregate types and fields by the group name in TARGET_TYPE_GROUPS;
+    - Retain fields offset, type, bitfield, and kswordItemName;
+    - Generates aliasMap/globalAliasMap to facilitate associating traditional DynData items with the deep offset library in subsequent R3/R0 operations.
 
-    返回：
-    - dict，可直接序列化进 deep offset JSON；不执行任何文件 I/O。
+    Returns:
+    - dict; can be directly serialized into the deep offset JSON without performing any file I/O.
     """
     target_by_type: dict[str, dict[str, Any]] = {}
     for target in targets:
@@ -1172,16 +1172,16 @@ def build_runtime_detail_catalog(
         "aliasMap": alias_map,
         "globalAliasMap": global_alias_map,
         "notes": [
-            "domains 可直接映射到进程、线程、句柄、驱动、内存、IPC 和回调详情页。",
-            "aliasMap 只包含已能与现有 DynData/pack item 名称关联的字段。",
-            "globalDomains 保存 public/global 符号 RVA，不代表结构成员偏移。",
-            "未进入 aliasMap 的字段仍可供后续 v4 item 编号、详情 IOCTL 和 UI 展示扩展使用。",
+            "domains can be directly mapped to process, thread, handle, driver, memory, IPC, and callback detail pages.",
+            "aliasMap only contains fields that can already be associated with existing DynData/pack item names.",
+            "globalDomains saves public/global symbol RVAs, not structure member offsets.",
+            "Fields not entered into aliasMap remain available for subsequent v4 item numbering, detail IOCTL, and UI display extensions.",
         ],
     }
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """解析命令行参数。"""
+    """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Extract useful ntoskrnl struct offsets from one PDB.")
     parser.add_argument("--pdb", default=DEFAULT_PDB_PATH, help="ntkrnlmp.pdb path to parse")
     parser.add_argument("--llvm-pdbutil", default=DEFAULT_LLVM_PDBUTIL, help="llvm-pdbutil executable path")
@@ -1195,7 +1195,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """主入口：执行 summary/types 解析并写出 JSON/CSV。"""
+    """Main entry: execute summary/types parsing and output JSON/CSV."""
     args = parse_args(argv)
     pdb_path = Path(args.pdb)
     pdbutil_path = str(Path(args.llvm_pdbutil))
@@ -1281,10 +1281,10 @@ def main(argv: list[str] | None = None) -> int:
         "missingTypes": missing_types,
         "missingGlobalSymbols": missing_global_symbols,
         "notes": [
-            "ntkrnlmp PDB 只覆盖 NT 内核类型；win32k 窗口对象字段需要 win32kbase/win32kfull PDB 继续提取。",
-            "flatFields 是详情页备用事实库；只有 kswordAliasFields 中的字段已映射到当前 DynData 命名。",
-            "globalSymbols 保存 public/global 符号 RVA；R0 使用前仍必须和加载模块 identity、TimeDateStamp、SizeOfImage 匹配。",
-            "bitField 字段给出成员字节偏移、位偏移和位宽，R0 使用时必须按掩码读取。",
+            "ntkrnlmp PDB only covers NT kernel types; win32k window object fields require win32kbase/win32kfull PDB for further extraction.",
+            "flatFields is the fallback fact library for detail pages; only fields in kswordAliasFields that are mapped to the current DynData namespace.",
+            "globalSymbols saves public/global symbol RVAs; R0 must still match the loaded module's identity, TimeDateStamp, and SizeOfImage before use.",
+            "bitField provides member byte offset, bit offset, and bit width; R0 must be read with a mask when used.",
         ],
     }
 

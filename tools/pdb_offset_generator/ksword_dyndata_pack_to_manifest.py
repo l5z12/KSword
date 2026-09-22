@@ -1,15 +1,15 @@
-"""从 v4 pack JSON 里取一个 profile，输出 ksword_dyndata_v4_blob 用的纯文本清单。
+"""Extracts a profile from the v4 pack JSON and outputs a plain-text manifest for ksword_dyndata_v4_blob.
 
-用途：靶机上只有驱动和 KswordCLI 时，把 PDB profile 下进驱动。pack 的 JSON 解析
-目前只在 GUI 里（Qt JSON），所以没有 GUI 的机器上 `_EPROCESS.VadRoot` 这类
-只来自 PDB profile 的字段会一直是 Unavailable —— 看着像"这个 build 没有偏移表"，
-其实是"偏移表在包里、只是没人 apply"。
+Purpose: When the target machine has only the driver and KswordCLI, this downloads the PDB profile into the
+driver. Since pack JSON parsing is currently only available in the GUI (Qt JSON), on machines without a GUI,
+fields like `_EPROCESS.VadRoot` that come solely from the PDB profile will remain "Unavailable". This looks like
+"this build lacks an offset table", but actually means "the offset table is in the package, just not applied".
 
-这里**只做 JSON 到文本**，一个字节的二进制布局都不碰：打包由
-ksword_dyndata_v4_blob.cpp 用产品头文件里的结构体完成。手抄一份布局出来，
-迟早和头文件走散，而且走散时不报错。
+This step performs **JSON-to-text conversion only**, touching no binary layout bytes: packing is
+handled by `ksword_dyndata_v4_blob.cpp` using structures from the product headers. Manually copying
+the layout will inevitably drift from the headers, and such drift will go undetected without errors.
 
-用法：
+Usage:
   python ksword_dyndata_pack_to_manifest.py --pack <pack.json> --pdb-guid <32hex>
          [--pdb-age N] [--image-base 0x...] [--output manifest.txt]
 """
@@ -24,10 +24,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pack", required=True)
     parser.add_argument("--pdb-guid", required=True,
-                        help="32 位十六进制，无连字符；见 PE 的 RSDS 记录")
+                        help="32-bit hexadecimal, no hyphens; see PE's RSDS record")
     parser.add_argument("--pdb-age", type=int, default=None)
     parser.add_argument("--image-base", default="0",
-                        help="目标机器上该模块的实际加载基址；0 表示不声明")
+                        help="The actual load base address of this module on the target machine; 0 means not declared")
     parser.add_argument("--flags", type=int, default=0)
     parser.add_argument("--output", default="-")
     args = parser.parse_args()
@@ -47,7 +47,7 @@ def main():
         break
 
     if hit is None:
-        # 明确报"包里没有"，不退回相近 build —— 那正是本功能一直拒绝做的事。
+        # Explicitly report "no profile in pack" rather than falling back to a similar build—that is precisely what this feature has always refused to do.
         sys.stderr.write("no profile in pack for pdbGuid=%s age=%s\n"
                          % (wanted, args.pdb_age))
         return 3
@@ -82,10 +82,10 @@ def main():
             int(item.get("aux0", 0)), int(item.get("aux1", 0)),
             int(item.get("aux2", 0)), int(item.get("aux3", 0))))
 
-    # legacy(v1) 字段。`fields` 是 [字典下标, 偏移] 对，而**驱动认的是字段 id**，
-    # 两者不是一回事：字典下标来自 fieldDictionary 的排列，字段 id 是协议里写死的
-    # KSW_DYN_FIELD_ID_*。所以要拿名字去 v4 items 里查回 itemId。
-    # 查不到 id 的条目宁可丢掉也不按下标当 id 发 —— 那会把偏移写到别的字段上。
+    # Legacy (v1) field. `fields` contains [dictionary index, offset] pairs, but the **driver recognizes field IDs**,
+    # These are not the same: dictionary indices come from the fieldDictionary's order, while field IDs are hardcoded in the protocol.
+    # KSW_DYN_FIELD_ID_*. Therefore, look up the itemId by name in v4 items.
+    # If an ID cannot be found, discard the entry rather than using the index as an ID; otherwise, the offset would be written to the wrong field.
     id_by_name = {}
     for item in hit.get("items", []):
         name = item.get("name")

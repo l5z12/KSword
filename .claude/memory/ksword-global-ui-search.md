@@ -2,10 +2,10 @@
 
 主程序标题栏中间输入框是“搜索 / CMD”双模式（默认搜索），实现分三层：
 
-- `Framework/CustomTitleBar`：输入组 `ksTitleInputGroup`（QToolButton 模式按钮 + QLineEdit 一体外观）。
+- `framework/CustomTitleBar`：输入组 `ksTitleInputGroup`（QToolButton 模式按钮 + QLineEdit 一体外观）。
   模式按钮 InstantPopup 菜单切换；搜索模式发 `searchTextEdited`，CMD 模式回车发 `commandSubmitted`
   （cmd /K 新控制台，MainWindow::executeCommandInNewConsole）。模式切换发 `inputModeChanged`。
-- `UI/GlobalUiSearch`（ks::ui::GlobalUiSearchController，Q_OBJECT/QtMoc）：防抖 220ms 后**异步分片**扫描——
+- `ui/GlobalUiSearch`（ks::ui::GlobalUiSearchController，Q_OBJECT/QtMoc）：防抖 220ms 后**异步分片**扫描——
   控件树只能在 UI 线程碰，所以按“每个事件循环周期扫一个 Dock”切片（singleShot(0) 链），
   分片间让出事件循环保持 UI 响应；`m_searchGeneration` 代数自增实现取消（新输入/Esc/切模式/收起弹层
   都会作废在途分片）。扫描中弹层显示进度行（ksGlobalUiSearchProgressRow：QLabel“正在搜索：%1（%2/%3）”

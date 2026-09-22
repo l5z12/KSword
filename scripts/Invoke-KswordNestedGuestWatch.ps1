@@ -1,71 +1,71 @@
 <#
 .SYNOPSIS
-    在测试机里起带嵌套派发的常驻，取一份基线，等你在来宾里开一台**第三方
-    hypervisor 的虚拟机**，然后把前后两份 status 的差值打出来。
+    Launch a resident with nested dispatch in the test machine to capture a baseline. Then, when you create a virtual
+    machine using a **third-party hypervisor** inside the guest, output the difference between the two status snapshots.
 
 .DESCRIPTION
-    必须以**管理员**在宿主上运行。
+    Must run as Administrator on the host.
 
-    这个脚本解决的是一个很具体的问题：证据本身 `hvm_ctl status` 早就有了，
-    但它一次吐三十多个字段加一张退出直方图，而"第三方 hypervisor 在我们
-    下面跑起来没有"这个问题只关心其中**九个退出原因**和**三个计数器**的
-    **变化量**。靠肉眼比两大坨输出，既慢又会看漏。
+    This script solves a very specific problem: while `hvm_ctl status` already provides the evidence,
+    it outputs over thirty fields plus an exit histogram. However, the question 'Is a third-party
+    hypervisor running beneath us?' only cares about the deltas of **nine exit reasons** and **three
+    **counters**. Comparing two massive output blocks by eye is slow and prone to missing details.
 
-    读法（下面的编号与 hvm_nested.c 的 KSW_VMX_EXIT_* 一致）：
+    Reading method (the numbers below correspond to KSW_VMX_EXIT_* in hvm_nested.c):
 
-      27 VMXON     对方有没有真的去用 VT-x。**零就是零**，说明它压根没走到
-                   这条路上 —— 要么用了别的后端（Hyper-V 平台 API 之类），
-                   要么在更早的地方就自己报错退了。这时看我们的计数器没有
-                   意义，先去看对方的日志。
-      21 VMPTRLD   载入了几张 vmcs12。一台虚拟机一个 vCPU 至少一张。
+      27 VMXON: Whether the other side actually uses VT-x. **Zero is zero**,
+                   meaning it never reached this path—either it used a different backend (such
+                   as Hyper-V platform APIs) or it errored out and exited earlier. In this case,
+                   checking our counters is meaningless; first, examine the other side's logs.
+      21 VMPTRLD loaded several vmcs12 structures. At least one per vCPU per virtual machine.
       23/25 VMREAD/VMWRITE
-                   它在配 VMCS。数量大是正常的（几百到几千），**分布**比
-                   总数有用：只有 VMWRITE 没有 VMLAUNCH，就是配到一半放弃了。
+                   Note: It configures VMCS. A large count is normal (hundreds to thousands); the **distribution** is
+                   more useful than the total: VMWRITE without VMLAUNCH indicates an abandoned configuration halfway.
       20/24 VMLAUNCH/VMRESUME
-                   真正的进入尝试次数。
-      26 VMXOFF    对方主动退出 VMX —— 通常意味着它放弃了。
+                   Actual number of entry attempts.
+      26 VMXOFF: The peer actively exited VMX — typically indicating it has given up.
 
-    再配合三个计数器：
+    Combined with three counters:
 
-      nestedL2LaunchRefusedCount   我们**拒绝**了多少次进入。
-                                   进入成功次数 = (20+24 的增量) - (这个增量)。
-                                   驱动没有"成功进入"的全局计数器，只能这样算，
-                                   所以这里报的是**推算值，不是直接读数**。
-      nestedVmcs12EvictionCount    vmcs12 池被挤掉过几次。对方 vCPU 数超过
-                                   池深（8）时才该动；平时动了就是异常。
-      nestedFuseTripCount          熔断跳闸：同一个 RIP 反复退出且不前进。
-                                   非零表示我们把某个 L2 卡在了原地。
+      nestedL2LaunchRefusedCount: The number of times we **refused** entry.
+                                   Successful entry count = (20 + 24 increment) - (this increment).
+                                   The driver lacks a global counter for "successfully entered" states, so this calculation
+                                   is used; thus, the reported value is an **inferred estimate, not a direct reading**.
+      nestedVmcs12EvictionCount: Number of vmcs12 pool evictions. It should increase only
+                                   when the peer vCPU count exceeds the pool depth (8); any other increase is anomalous.
+      nestedFuseTripCount: Fuse trip; repeated exits at the same RIP without progress.
+                                   Non-zero indicates we have stalled an L2 guest in place.
 
-    还有 lastVmInstructionError —— VMLAUNCH/VMRESUME 失败时它是**唯一**说明
-    失败原因的字段。
+    There is also lastVmInstructionError. When VMLAUNCH/VMRESUME
+    fails, it is the **only** field indicating the reason for failure.
 
 .PARAMETER WaitSeconds
-    基线之后的观察窗口。窗口里每 PollSeconds 秒取一次 status 存进记录，
-    所以来宾中途蓝屏/挂死时，**最后一次成功的采样就是飞行记录**。
-    在有交互的控制台里按任意键可以提前结束窗口。
+    Observation window after the baseline. The status is sampled every PollSeconds seconds and stored in the
+    record, so if the guest BSODs or hangs mid-process, **the last successful sample serves as the crash dump**.
+    Press any key in an interactive console to exit the window early.
 
 .PARAMETER Mode
-    nested  = 起 resident-nested（默认）
-    hidehv  = 起 resident-nested-hidehv：另对来宾**用户态**的 CPUID 隐藏
-              hypervisor 身份。
+    nested = start resident-nested (default); hidehv =
+    start resident-nested-hidehv: additionally hide the
+              hypervisor identity from the guest's user-mode CPUID.
 
-    实机量到的第一个拦路读数不是能力而是身份：VMware Workstation 17.6 用 CPUID
-    认出外层是 Hyper-V 就去要 WHP，要不到就在装载任何虚拟机之前拒绝启动
-    （`[msg.vmx.nestedHyperV]`）。hidehv 解决的正是这一件事。
+    The first blocking reading observed on the physical machine is not a capability check but an identity check: VMware
+    Workstation 17.6 uses CPUID to detect that the outer layer is Hyper-V and requests WHP; if WHP is unavailable, it
+    refuses to start any VM before loading them ([msg.vmx.nestedHyperV]). hidehv addresses exactly this issue.
 
-    模式不同的两次常驻，从状态位上**分不出来**。所以这里的规矩是：常驻已经在跑
-    而你又指定了模式，就先 stop 再按你要的模式重起 —— 宁可多停一次，也不要一次
-    测量在与你以为的不同模式下跑完并报通过。用 -SkipBringUp 可以关掉这个行为。
+    Two resident instances in different modes cannot be distinguished by status flags. Therefore, the rule here is: if the resident is
+    already running and you specify a mode, stop it first and then restart it in the requested mode — better to stop once extra than to
+    have a measurement complete in a mode different from what you assumed and report success. Use -SkipBringUp to disable this behavior.
 
 .PARAMETER SkipBringUp
-    不碰生命周期，只取基线 + 观察 + 差值。常驻已经在跑时用这个。
+    Do not touch lifecycle; only collect baseline + observation + delta. Use this when already running.
 
 .PARAMETER StopWhenDone
-    观察结束后把常驻停掉。默认**不停** —— 留着现场好接着看。
+    Stop the resident hypervisor after observation ends. By default, **leave it running** so observation can continue.
 
 .PARAMETER SelfTest
-    不连虚拟机，用两组合成的 status 过一遍差值与判读，确认这段逻辑本身是好的。
-    它排在观察窗口之后执行，真跑的时候在那里崩掉就白等一轮，所以先离线验。
+    Do not connect to the VM; iterate through the combined status of the two groups to check differences and interpretations, confirming this logic itself is correct.
+    It executes after the observation window; if it crashes during actual execution, the wait is wasted, so verify offline first.
 
 .EXAMPLE
     .\Invoke-KswordNestedGuestWatch.ps1 -SelfTest
@@ -140,8 +140,8 @@ function Invoke-Guest {
     }
 }
 
-# 空文件读回来是 $null，穿过 PowerShell Direct 的序列化边界会变成一个**空的
-# PSCustomObject** —— 它在 if 里为真却没有任何字符串方法。当文本用的都先过这里。
+# Reading an empty file returns $null, which becomes an **empty** string when crossing the PowerShell Direct serialization boundary.
+# PSCustomObject** — it evaluates to true in the if condition but has no string methods. All objects used as text pass through here first.
 function ConvertTo-Text {
     param($Value)
     if ($null -eq $Value) { return '' }
@@ -188,10 +188,10 @@ function Get-GuestBootTime {
 }
 
 # ---------------------------------------------------------------------------
-# 退出原因
+# Exit reason
 # ---------------------------------------------------------------------------
-# 编号 -> 名字。与 tools\hvm_ctl\hvm_ctl.c 的 ExitReasonName 和 hvm_nested.c 的
-# KSW_VMX_EXIT_* 是同一套；这里只列这条线上要看的。改任何一处都要三边对齐。
+# ID to name mapping. Must align with ExitReasonName in tools\hvm_ctl\hvm_ctl.c and hvm_nested.c.
+# KSW_VMX_EXIT_* are the same set; only listing those relevant on this line. Any change here must be synchronized across all three sides.
 $reasonNames = @{
     0='EXCEPTION_OR_NMI'; 1='EXTERNAL_INTERRUPT'; 2='TRIPLE_FAULT'; 7='INTERRUPT_WINDOW'
     9='TASK_SWITCH'; 10='CPUID'; 12='HLT'; 13='INVD'; 14='INVLPG'; 15='RDPMC'; 16='RDTSC'
@@ -202,16 +202,16 @@ $reasonNames = @{
     49='EPT_MISCONFIGURATION'; 50='INVEPT'; 51='RDTSCP'; 52='VMX_PREEMPTION_TIMER'
     53='INVVPID'; 54='WBINVD'; 55='XSETBV'; 58='INVPCID'; 59='VMFUNC'
 }
-# 只有另一个 hypervisor 在我们下面跑时才会出现的那一族。
+# The family of reasons that only appears when another hypervisor is running beneath us.
 $vmxReasons = @(19, 20, 21, 22, 23, 24, 25, 26, 27, 50, 53)
 
 function Get-ReasonName {
     param([int] $Reason)
     if ($reasonNames.ContainsKey($Reason)) { return $reasonNames[$Reason] }
-    return '见 SDM Appendix C'
+    return 'See SDM Appendix C'
 }
 
-# exitReasonCount 只发非零项，键是字符串化的原因编号。缺键 = 零。
+# exitReasonCount: Only emit non-zero items; keys are stringified reason IDs. Missing key = zero.
 function Get-ReasonMap {
     param($Json)
     $map = @{}
@@ -231,8 +231,8 @@ function Get-ReasonDelta {
 }
 
 # ---------------------------------------------------------------------------
-# 差值与判读。抽成函数有两个理由：它是整条流程里唯一有算术的部分，而且它只在
-# 观察窗口**结束之后**才第一次执行 —— 真跑时崩在这里就白等一轮，所以要能离线验。
+# Difference calculation and interpretation. The function is extracted for two reasons: it is the only part of the entire flow involving arithmetic, and it is only called
+# This runs only after the observation window ends. If a crash occurs during actual execution, waiting becomes futile, so offline verification is required.
 # ---------------------------------------------------------------------------
 function Show-Delta {
     param($Base, $Final)
@@ -262,15 +262,15 @@ function Show-Delta {
     $entries = (Get-ReasonDelta $bMap $fMap 20) + (Get-ReasonDelta $bMap $fMap 24)
 
     Write-Host ''
-    Write-Host '=== 差值 ===' -ForegroundColor Cyan
-    Write-Host ("  总退出       : +{0}" -f $d.vmExitCount)
-    Write-Host ("  拒绝 L2 启动 : +{0}" -f $d.refused)   -ForegroundColor $(if ($d.refused   -gt 0) { 'Yellow' } else { 'Gray' })
-    Write-Host ("  vmcs12 驱逐  : +{0}" -f $d.evicted)   -ForegroundColor $(if ($d.evicted   -gt 0) { 'Yellow' } else { 'Gray' })
-    Write-Host ("  熔断跳闸     : +{0}" -f $d.fuseTrips) -ForegroundColor $(if ($d.fuseTrips -gt 0) { 'Red'    } else { 'Gray' })
-    Write-Host ("  末次指令错误 : {0}" -f $d.lastVmInstructionError)
+    Write-Host '=== Difference ===' -ForegroundColor Cyan
+    Write-Host ("  Total Exit      : +{0}" -f $d.vmExitCount)
+    Write-Host ("  Refuse L2 start: +{0}" -f $d.refused)   -ForegroundColor $(if ($d.refused   -gt 0) { 'Yellow' } else { 'Gray' })
+    Write-Host ("  vmcs12  eviction : +{0}" -f $d.evicted)   -ForegroundColor $(if ($d.evicted   -gt 0) { 'Yellow' } else { 'Gray' })
+    Write-Host ("  Fuse Trip Count : +{0}" -f $d.fuseTrips) -ForegroundColor $(if ($d.fuseTrips -gt 0) { 'Red'    } else { 'Gray' })
+    Write-Host ("  Last instruction error: {0}" -f $d.lastVmInstructionError)
 
     Write-Host ''
-    Write-Host '  --- VMX 指令类退出（只有别的 hypervisor 在我们下面跑才会有）---'
+    Write-Host '  --- VMX instruction class exit (only occurs if another hypervisor is running beneath us) ---'
     $anyVmx = $false
     foreach ($r in $vmxReasons) {
         $delta = Get-ReasonDelta $bMap $fMap $r
@@ -278,12 +278,12 @@ function Show-Delta {
         $anyVmx = $true
         Write-Host ("    +{0,-10} reason={1,-3} {2}" -f $delta, $r, (Get-ReasonName $r)) -ForegroundColor Green
     }
-    if (-not $anyVmx) { Write-Host '    <一条都没有>' -ForegroundColor DarkGray }
+    if (-not $anyVmx) { Write-Host '    None found' -ForegroundColor DarkGray }
 
     Write-Host ''
-    Write-Host '  --- 其余退出原因的增量 ---'
-    # 先物化成带真实属性的对象再排。Sort-Object 用脚本块取键时，键要是它比不了
-    # 的东西就**静默保持原序**并照常返回 —— 看上去排过了，实际没有。
+    Write-Host '  --- Incremental for other exit reasons ---'
+    # Materialize objects with real properties first, then sort. When Sort-Object uses a script block to retrieve keys, the keys must be comparable.
+    # Items that are **silently kept in original order** and returned as-is appear sorted but are not.
     $others = @()
     foreach ($k in $d.reasons.Keys) {
         if ([int]$k -in $vmxReasons) { continue }
@@ -292,7 +292,7 @@ function Show-Delta {
         }
     }
     if ($others.Count -eq 0) {
-        Write-Host '    <无变化>' -ForegroundColor DarkGray
+        Write-Host '    <No changes>' -ForegroundColor DarkGray
     } else {
         foreach ($o in ($others | Sort-Object -Property Delta -Descending)) {
             Write-Host ("    +{0,-10} reason={1,-3} {2}" -f $o.Delta, $o.Reason, $o.Name)
@@ -300,40 +300,40 @@ function Show-Delta {
     }
 
     Write-Host ''
-    Write-Host '=== 判读 ===' -ForegroundColor Cyan
+    Write-Host '=== Judgment ===' -ForegroundColor Cyan
     if ($vmxon -eq 0) {
         $d.verdict = 'NO_VMXON'
-        Write-Host '  VMXON 增量为 0 —— 来宾里的 hypervisor **没有走 VT-x 这条路**。' -ForegroundColor Yellow
-        Write-Host '  我们这一侧没有任何可判的读数。先确认它是不是真的开起来了、' -ForegroundColor Yellow
-        Write-Host '  以及它选了哪个后端（走 Hyper-V 平台 API 的话根本不碰 VMX 指令）。' -ForegroundColor Yellow
+        Write-Host '  VMXON increment is 0 —— the hypervisor inside the guest **did not take the VT-x path**.' -ForegroundColor Yellow
+        Write-Host '  There are no readable values on our side. First confirm if it is truly started,' -ForegroundColor Yellow
+        Write-Host '  And which backend it selected (if using the Hyper-V platform API, VMX instructions are never touched).' -ForegroundColor Yellow
     } elseif ($entries -eq 0) {
         $d.verdict = 'VMXON_BUT_NO_ENTRY'
-        Write-Host ("  VMXON +{0}，VMPTRLD +{1}，VMWRITE +{2}，VMREAD +{3}，但**一次进入尝试都没有**。" -f `
+        Write-Host ("  VMXON +{0}, VMPTRLD +{1}, VMWRITE +{2}, VMREAD +{3}, but **no single entry attempt**." -f `
             $vmxon, $vmptrld, $vmwrite, $vmread) -ForegroundColor Yellow
-        Write-Host '  它进了 VMX、开始配 VMCS，然后放弃了。多半是某个能力位我们没放行 ——' -ForegroundColor Yellow
-        Write-Host '  对方读能力 MSR 发现缺东西就会自己退。下一步看能力过滤的允许集。' -ForegroundColor Yellow
+        Write-Host '  It entered VMX, started configuring VMCS, then gave up. Most likely we didn''t permit some capability bit ——' -ForegroundColor Yellow
+        Write-Host '  If the nested hypervisor reads capability MSRs and finds a missing feature, it exits on its own. Inspect the capability allowlist next.' -ForegroundColor Yellow
     } elseif ($d.refused -ge $entries) {
         $d.verdict = 'ALL_ENTRIES_REFUSED'
-        Write-Host ("  进入尝试 {0} 次，我们拒了 {1} 次 —— **全被拒**。" -f $entries, $d.refused) -ForegroundColor Red
-        Write-Host ("  末次指令错误 {0}。拒绝理由在驱动的 L2 启动校验里。" -f $d.lastVmInstructionError) -ForegroundColor Red
+        Write-Host ("  Attempting {0} times, we rejected {1} times — **All rejected**." -f $entries, $d.refused) -ForegroundColor Red
+        Write-Host ("  Last instruction error {0}. Rejection reason is in the driver's L2 startup validation." -f $d.lastVmInstructionError) -ForegroundColor Red
     } else {
         $d.verdict = 'L2_ENTERED'
-        Write-Host ("  进入尝试 {0} 次，被拒 {1} 次 ⇒ **推算成功进入 {2} 次**。" -f `
+        Write-Host ("  Attempting {0} times, rejected {1} times ⇒ **Calculated successful entry {2} times**." -f `
             $entries, $d.refused, ($entries - $d.refused)) -ForegroundColor Green
-        Write-Host '  （驱动没有"成功进入"的全局计数器，这是减出来的，不是直接读数。）' -ForegroundColor DarkGray
+        Write-Host '  (There is no global counter for "successfully entered" in the driver; this is derived by subtraction, not a direct read.)' -ForegroundColor DarkGray
         if ($d.fuseTrips -gt 0) {
             $d.verdict = 'L2_ENTERED_BUT_STUCK'
-            Write-Host ("  但熔断跳闸 +{0} —— 有 L2 卡在同一个 RIP 上不前进。" -f $d.fuseTrips) -ForegroundColor Red
+            Write-Host ("  But fuse trip +{0} — L2 is stuck at the same RIP and not advancing." -f $d.fuseTrips) -ForegroundColor Red
         }
         if ($vmxoff -gt 0) {
-            Write-Host ("  VMXOFF +{0} —— 对方主动退出了 VMX。" -f $vmxoff) -ForegroundColor Yellow
+            Write-Host ("  VMXOFF +{0} --- The peer voluntarily exited VMX." -f $vmxoff) -ForegroundColor Yellow
         }
     }
     return $d
 }
 
 # ---------------------------------------------------------------------------
-# 离线自检：合成四种典型局面，确认差值算术与判读分支都是好的。
+# Offline self-check: Synthesize four typical scenarios to verify that difference arithmetic and judgment branches are correct.
 # ---------------------------------------------------------------------------
 function New-FakeStatus {
     param([hashtable] $Reasons, [int] $Refused = 0, [int] $Evicted = 0, [int] $Fuse = 0,
@@ -353,41 +353,41 @@ function New-FakeStatus {
 
 function Invoke-SelfTest {
     $cases = @(
-        @{ Name='没碰 VT-x';       Expect='NO_VMXON'
+        @{ Name='VT-x not touched';       Expect='NO_VMXON'
            B=(New-FakeStatus @{10=100; 31=50} 0 0 0 1000)
            F=(New-FakeStatus @{10=400; 31=90} 0 0 0 4000) }
-        @{ Name='进了 VMX 没进 L2'; Expect='VMXON_BUT_NO_ENTRY'
+        @{ Name='Entered VMX but not L2'; Expect='VMXON_BUT_NO_ENTRY'
            B=(New-FakeStatus @{10=100} 0 0 0 1000)
            F=(New-FakeStatus @{10=120; 27=1; 21=2; 25=900; 23=300; 26=1} 0 0 0 2400) }
-        @{ Name='全被拒';           Expect='ALL_ENTRIES_REFUSED'
+        @{ Name='All Rejected';           Expect='ALL_ENTRIES_REFUSED'
            B=(New-FakeStatus @{10=100} 0 0 0 1000)
            F=(New-FakeStatus @{10=120; 27=1; 21=2; 25=900; 20=4} 4 0 0 2100 7) }
-        @{ Name='进去了但卡住';     Expect='L2_ENTERED_BUT_STUCK'
+        @{ Name='Entered but stuck';     Expect='L2_ENTERED_BUT_STUCK'
            B=(New-FakeStatus @{10=100} 0 0 0 1000)
            F=(New-FakeStatus @{10=120; 27=1; 21=2; 25=900; 20=4; 24=600} 1 0 3 9000) }
-        @{ Name='进去了';           Expect='L2_ENTERED'
+        @{ Name='Entered';           Expect='L2_ENTERED'
            B=(New-FakeStatus @{10=100} 2 1 0 1000)
            F=(New-FakeStatus @{10=120; 27=1; 21=2; 25=900; 20=4; 24=600} 2 1 0 9000) }
     )
     $failed = 0
     foreach ($c in $cases) {
         Write-Host ''
-        Write-Host ("######## 自检用例：{0}（期望 {1}）########" -f $c.Name, $c.Expect) -ForegroundColor Magenta
+        Write-Host ("######## Self-check case: {0} (expected {1}) ########" -f $c.Name, $c.Expect) -ForegroundColor Magenta
         $got = Show-Delta $c.B $c.F
         if ($got.verdict -eq $c.Expect) {
-            Write-Host ("  [OK]   判定 {0}" -f $got.verdict) -ForegroundColor Green
+            Write-Host ("  [OK]   Determine {0}" -f $got.verdict) -ForegroundColor Green
         } else {
-            Write-Host ("  [FAIL] 判定 {0}，期望 {1}" -f $got.verdict, $c.Expect) -ForegroundColor Red
+            Write-Host ("  [FAIL] Verdict {0}, expected {1}" -f $got.verdict, $c.Expect) -ForegroundColor Red
             $failed++
         }
     }
-    # 基线非零的那一例顺带验了"计数器是常驻期内累计的"：拒绝 2->2 必须是 +0。
+    # Note: The non-zero baseline case also verifies that 'counters are cumulative during the residency period': rejecting 2->2 must result in +0.
     Write-Host ''
     if ($failed -eq 0) {
-        Write-Host ("自检 {0}/{0} 通过" -f $cases.Count) -ForegroundColor Green
+        Write-Host ("Self-check {0}/{0} passed" -f $cases.Count) -ForegroundColor Green
         return 0
     }
-    Write-Host ("自检 {0} 例失败" -f $failed) -ForegroundColor Red
+    Write-Host ("Self-check {0} examples failed" -f $failed) -ForegroundColor Red
     return 1
 }
 
@@ -395,7 +395,7 @@ if ($SelfTest) { exit (Invoke-SelfTest) }
 
 # ---------------------------------------------------------------------------
 Import-Module Hyper-V -ErrorAction Stop
-if (-not (Test-Path $tool)) { throw "缺少 $tool（先跑 scripts\Build-KswordHvmTools.ps1）" }
+if (-not (Test-Path $tool)) { throw "Missing $tool (run scripts\Build-KswordHvmTools.ps1 first)" }
 $script:cred = New-Object System.Management.Automation.PSCredential(
     $GuestUser, (ConvertTo-SecureString $GuestPassword -AsPlainText -Force))
 
@@ -406,16 +406,16 @@ try {
     $record.vm = [ordered]@{
         state = "$($vm.State)"; vcpu = $vm.ProcessorCount; nested = [bool]$nestedExposed
     }
-    Write-Host '=== KSword 嵌套来宾观察 ===' -ForegroundColor Cyan
-    Write-Host ("虚拟机 {0}  {1}  {2} vCPU  嵌套={3}" -f $vm.Name, $vm.State, $vm.ProcessorCount, $nestedExposed)
-    Write-Host ("记录 -> {0}`n" -f $ResultPath) -ForegroundColor DarkGray
+    Write-Host '=== KSword Nested Guest Observation ===' -ForegroundColor Cyan
+    Write-Host ("VM {0} {1} {2} vCPU nested={3}" -f $vm.Name, $vm.State, $vm.ProcessorCount, $nestedExposed)
+    Write-Host ("Record -> {0}`n" -f $ResultPath) -ForegroundColor DarkGray
 
-    if ($vm.State -ne 'Running') { throw "虚拟机不在运行状态（$($vm.State)）。先 Start-VM。" }
-    if (-not $nestedExposed) { throw '嵌套虚拟化没开 —— 关机后 Set-VMProcessor -ExposeVirtualizationExtensions $true' }
+    if ($vm.State -ne 'Running') { throw "Virtual machine is not in Running state ($($vm.State)). Start-VM first." }
+    if (-not $nestedExposed) { throw 'Nested virtualization is not enabled —— after shutdown, run Set-VMProcessor -ExposeVirtualizationExtensions $true' }
 
     $bootBefore = Get-GuestBootTime
 
-    # ---- 送工具（每次都送，保证跑的是刚编译的那个）------------------------
+    # ---- Send tool (send every time to ensure running the freshly compiled version) ------------------------
     Invoke-Guest { New-Item -ItemType Directory -Force -Path 'C:\ksword' | Out-Null } | Out-Null
     try {
         Copy-VMFile -Name $VMName -SourcePath $tool -DestinationPath 'C:\ksword\hvm_ctl.exe' `
@@ -429,106 +429,106 @@ try {
     }
     Add-Step 'deploy:hvm_ctl' 'OK' ((Get-Item $tool).Length)
 
-    # ---- 生命周期：只补到"带嵌套派发的常驻在跑" ---------------------------
+    # ---- Lifecycle: Only supplement until 'resident with nested dispatch is running' ---------------------------
     $st = Invoke-HvmCtl 'status'
     if ($st.Exit -ne 0 -or $null -eq $st.Json) {
-        Add-Step 'status' 'FAIL' $st.Stderr '设备查询失败 —— 驱动可能没加载'
+        Add-Step 'status' 'FAIL' $st.Stderr 'Device query failed - driver may not be loaded'
         $record.verdict = 'BLOCKED'
-        [void]$record.notes.Add('hvm_ctl status 拿不到结果。先跑 Deploy-KswordDriverToVm.ps1。')
+        [void]$record.notes.Add('hvm_ctl status failed to get result. First run Deploy-KswordDriverToVm.ps1.')
         $exitCode = 1
         return
     }
     $names = $st.Json.stateNames
-    Add-Step 'status:before-bringup' 'OK' $null ("状态位 " + ($names -join ' '))
+    Add-Step 'status:before-bringup' 'OK' $null ("Status bit " + ($names -join ' '))
 
     if ($SkipBringUp) {
-        Add-Step 'bring-up' 'SKIP' $null '按 -SkipBringUp 跳过；只观察不改生命周期'
+        Add-Step 'bring-up' 'SKIP' $null 'Skip with -SkipBringUp; observe only, do not modify lifecycle'
         if (-not (Test-StateBit $names 'RESIDENT_ACTIVE')) {
-            [void]$record.notes.Add('常驻没在跑，而 -SkipBringUp 不去起它 —— 这一轮不可能有任何嵌套读数。')
+            [void]$record.notes.Add('The resident hypervisor is not running, and -SkipBringUp does not start it — there can be no nested readback in this round.')
         }
     } else {
         if ((Test-StateBit $names 'FAULTED') -or (Test-StateBit $names 'ROLLBACK_REQUIRED')) {
             $r = Invoke-HvmCtl 'reset-fault'
             Add-Step 'reset-fault' $(if ($r.Exit -eq 0) { 'OK' } else { 'FAIL' }) $r.Json `
-                     '状态里带 FAULTED/ROLLBACK_REQUIRED，不清掉 resident 必被拒'
+                     'Status contains FAULTED/ROLLBACK_REQUIRED; if resident is not cleared, it will be rejected'
             if ($r.Exit -ne 0) { $record.verdict = 'FAIL'; $exitCode = $r.Exit; return }
             $names = $r.Json.newStateNames
         }
         if (Test-StateBit $names 'RESOURCES_READY') {
-            Add-Step 'prepare' 'SKIP' $null 'RESOURCES_READY 已置位；重复 prepare 会把状态打成 FAULTED'
+            Add-Step 'prepare' 'SKIP' $null 'RESOURCES_READY is set; repeating prepare will set the state to FAULTED'
         } else {
             $r = Invoke-HvmCtl 'prepare'
             Add-Step 'prepare' $(if ($r.Exit -eq 0) { 'OK' } else { 'FAIL' }) $r.Json
             if ($r.Exit -ne 0) { $record.verdict = 'FAIL'; $exitCode = $r.Exit; return }
             $names = $r.Json.newStateNames
         }
-        # 常驻要求 SELF_TEST_PASSED，缺了会被判 NOT_PREPARED（0xC00000A3）并顺手
-        # 把状态打成 FAULTED —— 那个状态名读起来像"没 prepare"，而 prepare 明明
-        # 刚返回 0，两个读数对不上会把人带到完全错的方向。补这一级不是保险起见。
+        # SELF_TEST_PASSED is required; missing it results in NOT_PREPARED (0xC00000A3) and is handled accordingly.
+        # Mark the state as FAULTED — that state name reads like "not prepared," yet prepare was clearly
+        # Just returned 0; a mismatch between the two readings would lead in a completely wrong direction. Adding this layer is not for safety.
         if (-not (Test-StateBit $names 'SELF_TEST_PASSED')) {
             $r = Invoke-HvmCtl 'self-test'
             Add-Step 'self-test' $(if ($r.Exit -eq 0) { 'OK' } else { 'FAIL' }) $r.Json `
-                     '逐处理器 VMXON/VMXOFF；常驻的前置条件'
+                     'Per-processor VMXON/VMXOFF; resident hypervisor prerequisites'
             if ($r.Exit -ne 0) { $record.verdict = 'FAIL'; $exitCode = $r.Exit; return }
             $names = $r.Json.newStateNames
         } else {
-            Add-Step 'self-test' 'SKIP' $null 'SELF_TEST_PASSED 已置位'
+            Add-Step 'self-test' 'SKIP' $null 'SELF_TEST_PASSED set'
         }
 
-        # RESIDENT_ACTIVE 置位**不等于**它是我们要的那个模式：普通 resident 起的
-        # 常驻里 VMX 指令被注 #UD，而 nested 与 hidehv 两种常驻在状态位上完全
-        # 一样。沿用一个来历不明的常驻，等于让整轮测量在未知模式下跑完。
+        # Setting RESIDENT_ACTIVE does not equal it being the mode we want: a normal resident start
+        # Resident mode traps VMX instructions with #UD, while nested and hidehv resident modes are identical in their state bits.
+        # The same applies here: reusing a resident hypervisor of unknown origin runs the entire measurement in an unknown mode.
         if (Test-StateBit $names 'RESIDENT_ACTIVE') {
             $r = Invoke-HvmCtl 'stop'
             Add-Step 'stop' $(if ($r.Exit -eq 0) { 'OK' } else { 'FAIL' }) $r.Json `
-                     '常驻已在跑但模式不可知（状态位分不出 nested / hidehv）；先停掉再按本轮要的模式重起'
+                     'Resident hypervisor is already running but mode is unknown (status bits cannot distinguish nested / hidehv); stop it first and restart according to the mode required for this round'
             if ($r.Exit -ne 0) { $record.verdict = 'FAIL'; $exitCode = $r.Exit; return }
         }
         $residentVerb = if ($Mode -eq 'hidehv') { 'resident-nested-hidehv' } else { 'resident-nested' }
         $r = Invoke-HvmCtl $residentVerb
         Add-Step $residentVerb $(if ($r.Exit -eq 0) { 'OK' } else { 'FAIL' }) $r.Json `
-                 '全处理器进 VMX 常驻，并允许来宾执行 VMX 指令'
+                 'All processors enter VMX resident mode, and allow the guest to execute VMX instructions'
         if ($r.Exit -ne 0) {
             $record.verdict = 'FAIL'
-            [void]$record.notes.Add("$residentVerb 返回 $($r.Json.statusName)")
+            [void]$record.notes.Add("$residentVerb readback $($r.Json.statusName)")
             $exitCode = $r.Exit
             return
         }
     }
 
-    # 常驻起来之后立刻读一次来宾用户态的 CPUID。这是 hidehv 唯一的直接判据 ——
-    # 状态位上看不出模式，而这两个值就是 VMware 用来判断外层身份的那两个。
+    # After becoming resident, immediately read the guest user-mode CPUID. This is the only direct criterion for hidehv.
+    # The mode cannot be determined from the status bits; these two values are the ones VMware uses to determine the outer identity.
     $cv = Invoke-HvmCtl 'cpuid-view'
     if ($null -ne $cv.Json) {
         $record.cpuidView = $cv.Json
         $hidden = [bool]$cv.Json.hidden
-        $note = "hypervisor 位={0}  厂商=`"{1}`"" -f $cv.Json.hypervisorPresent, $cv.Json.hvVendor
+        $note = "hypervisor bit={0}  vendor=`"{1}`"" -f $cv.Json.hypervisorPresent, $cv.Json.hvVendor
         if ($Mode -eq 'hidehv' -and -not $hidden) {
-            Add-Step 'cpuid-view' 'FAIL' $cv.Json ("要求隐藏但用户态仍看得见：" + $note)
-            [void]$record.notes.Add('hidehv 没有生效 —— 后面就算 VMware 起不来，也不是嵌套能力的问题。')
+            Add-Step 'cpuid-view' 'FAIL' $cv.Json ("Hidden but visible in user mode: " + $note)
+            [void]$record.notes.Add('hidehv did not take effect — even if VMware fails to start afterward, it is not a nested virtualization capability issue.')
         } elseif ($Mode -eq 'hidehv') {
-            Add-Step 'cpuid-view' 'OK' $cv.Json ("隐藏生效：" + $note)
+            Add-Step 'cpuid-view' 'OK' $cv.Json ("Hidden effect: " + $note)
         } else {
             Add-Step 'cpuid-view' 'OK' $cv.Json $note
         }
     } else {
-        Add-Step 'cpuid-view' 'BLOCKED' $null '读不到；本轮无法确认来宾看到的身份'
+        Add-Step 'cpuid-view' 'BLOCKED' $null 'Readback failed; unable to confirm the identity seen by the guest in this round'
     }
 
-    # ---- 基线 --------------------------------------------------------------
+    # ---- Baseline -------------------------------------------------------------------
     $base = Invoke-HvmCtl 'status'
     if ($base.Exit -ne 0 -or $null -eq $base.Json) {
         Add-Step 'baseline' 'FAIL' $base.Stderr; $record.verdict = 'FAIL'; $exitCode = 1; return
     }
     $record.baseline = $base.Json
-    Add-Step 'baseline' 'OK' $null ("vmExitCount={0} 拒绝={1} 驱逐={2} 熔断={3}" -f `
+    Add-Step 'baseline' 'OK' $null ("vmExitCount={0} Deny={1} Evict={2} Melt={3}" -f `
         $base.Json.vmExitCount, $base.Json.nestedL2LaunchRefusedCount,
         $base.Json.nestedVmcs12EvictionCount, $base.Json.nestedFuseTripCount)
 
-    # ---- 观察窗口 ----------------------------------------------------------
+    # ---- Observation Window ----------------------------------------------------------
     Write-Host ''
-    Write-Host '>>> 现在去来宾里，在第三方 hypervisor 里开虚拟机。' -ForegroundColor Yellow
-    Write-Host (">>> 窗口 {0} 秒，每 {1} 秒采一次样；按任意键提前结束。" -f $WaitSeconds, $PollSeconds) -ForegroundColor Yellow
+    Write-Host '>>> Now go into the guest and launch a VM inside the third-party hypervisor.' -ForegroundColor Yellow
+    Write-Host (">>> Window for {0} seconds, sample every {1} seconds; press any key to exit early." -f $WaitSeconds, $PollSeconds) -ForegroundColor Yellow
     Write-Host ''
 
     $deadline = (Get-Date).AddSeconds($WaitSeconds)
@@ -538,9 +538,9 @@ try {
         $poll = $null
         try { $poll = Invoke-HvmCtl 'status' } catch { $poll = $null }
         if ($null -eq $poll -or $null -eq $poll.Json) {
-            # 来宾没应答。**这本身就是读数** —— 上一次成功的采样是飞行记录。
+            # The guest did not respond. **This itself is a reading** — the last successful sample is the flight record.
             $lastAlive = $false
-            Add-Step 'poll' 'BLOCKED' $null '来宾不应答；上一次采样即为最后现场'
+            Add-Step 'poll' 'BLOCKED' $null 'Guest did not respond; last sample is the final context'
             break
         }
         [void]$record.samples.Add([ordered]@{
@@ -555,7 +555,7 @@ try {
         $vmxSeen = 0L
         $m = Get-ReasonMap $poll.Json
         foreach ($r in $vmxReasons) { if ($m.ContainsKey($r)) { $vmxSeen += [int64]$m[$r] } }
-        Write-Host ("  采样 exits={0} VMX指令类={1} 拒绝={2} 熔断={3}" -f `
+        Write-Host ("  Sampling exits={0} VMX instruction class={1} Rejected={2} Meltdown={3}" -f `
             $poll.Json.vmExitCount, $vmxSeen,
             $poll.Json.nestedL2LaunchRefusedCount, $poll.Json.nestedFuseTripCount) -ForegroundColor DarkGray
 
@@ -564,17 +564,17 @@ try {
         if ($keyed) { try { [void][Console]::ReadKey($true) } catch { }; break }
     }
 
-    # ---- 终局 --------------------------------------------------------------
+    # ---- Final State ----------------------------------------------------------------
     if (-not $lastAlive) {
         $bootAfter = Get-GuestBootTime
         if ($null -eq $bootAfter) {
-            Add-Step 'final' 'BLOCKED' $null '来宾仍不应答 —— 挂死或正在重启'
+            Add-Step 'final' 'BLOCKED' $null 'Guest still unresponsive -- hung or rebooting'
             $record.verdict = 'GUEST_UNRESPONSIVE'
         } elseif ($null -ne $bootBefore -and [math]::Abs(($bootAfter - $bootBefore).TotalSeconds) -ge 2) {
-            Add-Step 'final' 'FAIL' $null "来宾重启过（$bootBefore -> $bootAfter）；计数器已清零，差值无意义"
+            Add-Step 'final' 'FAIL' $null "Guest rebooted ($bootBefore -> $bootAfter); counter cleared, difference meaningless"
             $record.verdict = 'GUEST_REBOOTED'
         } else {
-            Add-Step 'final' 'BLOCKED' $null '来宾中途失联但没重启 —— 现场在 samples 的最后一条'
+            Add-Step 'final' 'BLOCKED' $null 'Guest disconnected mid-flight but did not restart —— the scene is the last entry in samples'
             $record.verdict = 'GUEST_UNRESPONSIVE'
         }
         $exitCode = 1
@@ -587,9 +587,9 @@ try {
     }
     $record.final = $fin.Json
 
-    # generation 变了说明中间被 teardown/prepare 过，计数器是另一条命的。
+    # A change in generation indicates the resource was torn down and prepared again in between; the counter belongs to a different lifecycle.
     if ($fin.Json.generation -ne $base.Json.generation) {
-        Add-Step 'final' 'BLOCKED' $null ("generation {0} -> {1}：中途重建过资源，差值不可比" -f `
+        Add-Step 'final' 'BLOCKED' $null ("generation {0} -> {1}: Resources were rebuilt mid-process, difference is not comparable" -f `
             $base.Json.generation, $fin.Json.generation)
         $record.verdict = 'GENERATION_CHANGED'
         $exitCode = 1
@@ -604,7 +604,7 @@ try {
         $r = Invoke-HvmCtl 'stop'
         Add-Step 'stop' $(if ($r.Exit -eq 0) { 'OK' } else { 'FAIL' }) $r.Json
     } else {
-        Add-Step 'stop' 'SKIP' $null '默认不停常驻；要停加 -StopWhenDone 或单独跑 hvm_ctl stop'
+        Add-Step 'stop' 'SKIP' $null 'Default: do not stop resident hypervisor; add -StopWhenDone or run hvm_ctl stop separately to stop'
     }
 }
 catch {
@@ -616,7 +616,7 @@ catch {
 finally {
     Save-Record
     Write-Host ''
-    Write-Host ("判定 {0}  记录 {1}" -f $record.verdict, $ResultPath) -ForegroundColor Cyan
+    Write-Host ("Determine {0} record {1}" -f $record.verdict, $ResultPath) -ForegroundColor Cyan
 }
 
 exit $exitCode

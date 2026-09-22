@@ -58,7 +58,8 @@ docs/next/paper-data/20260916-followup/** -text -whitespace
 # Large icon collections and vendored sources retain their upstream bytes.
 *.svg -text
 third_party/** -text
-KswordSetup/fltk/** -text
+apps/setup/fltk/** -text
+apps/desktop/include/ads/** -text
 
 # Binary artifacts and resources.
 *.7z  binary

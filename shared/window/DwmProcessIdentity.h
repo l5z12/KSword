@@ -5,7 +5,7 @@
 
 namespace ks::dwm_order
 {
-    inline bool MatchesProcessIdentity(HANDLE process, const WindowIdentity& identity)
+    inline bool matchesProcessIdentity(HANDLE process, const WindowIdentity& identity)
     {
         if (!process || process == INVALID_HANDLE_VALUE || !identity.processId
             || !identity.processCreated || GetProcessId(process) != identity.processId) return false;

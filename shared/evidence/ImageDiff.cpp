@@ -3,31 +3,31 @@
 #include <algorithm>
 #include <utility>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 namespace {
 
 constexpr std::size_t kNoRule = static_cast<std::size_t>(-1);
 
-// 已通过准入的规则集合。索引指回调用方原始的 rules 数组，条目里的 ruleId /
-// ruleVersion 才对得上。
-std::size_t RuleIndexForRva(const std::vector<ExplanationRule>& rules,
+// Set of rules that have already passed admission. The index refers back to the caller's original
+// `rules` array, ensuring the `ruleId` and `ruleVersion` within the entries match correctly.
+std::size_t ruleIndexForRva(const std::vector<ExplanationRule>& rules,
                             const std::vector<std::size_t>& admitted,
                             std::uint32_t rva) noexcept {
-    for (const std::size_t index : admitted) {
-        if (rules[index].range.contains(rva)) {
-            return index;
+    for (const std::size_t kIndex : admitted) {
+        if (rules[kIndex].range.contains(rva)) {
+            return kIndex;
         }
     }
     return kNoRule;
 }
 
-// 折叠前的原始片段。key 由 (kind, readStatus, sectionIndex, ruleIndex) 组成，
-// 任一项变化都必须断开 —— 否则折叠后的 readStatus 或 ruleId 会代表不了里面的字节。
+// Original piece before folding. The key is composed of (kind, readStatus, sectionIndex, ruleIndex); any
+// change must break the link—otherwise, the folded readStatus or ruleId would not represent the bytes inside.
 struct Piece final {
     std::uint32_t rva = 0;
     std::uint32_t length = 0;
-    DiffKind kind = DiffKind::ByteDifference;
-    ByteReadStatus readStatus = ByteReadStatus::Read;
+    DiffKind kind = DiffKind::kByteDifference;
+    ByteReadStatus readStatus = ByteReadStatus::kRead;
     std::size_t sectionIndex = kInvalidSectionIndex;
     std::size_t ruleIndex = kNoRule;
 
@@ -41,97 +41,97 @@ struct Piece final {
     }
 };
 
-void AppendBytes(std::vector<std::uint8_t>& target,
+void appendBytes(std::vector<std::uint8_t>& target,
                  const std::vector<std::uint8_t>& source,
                  std::size_t offset,
                  std::size_t count) {
     if (offset >= source.size()) {
         return;
     }
-    const std::size_t available = std::min(count, source.size() - offset);
+    const std::size_t kAvailable = std::min(count, source.size() - offset);
     target.insert(target.end(),
                   source.begin() + static_cast<std::ptrdiff_t>(offset),
-                  source.begin() + static_cast<std::ptrdiff_t>(offset + available));
+                  source.begin() + static_cast<std::ptrdiff_t>(offset + kAvailable));
 }
 
 } // namespace
 
 // ---------------------------------------------------------------------------
-// 枚举名字
+// Enum names
 // ---------------------------------------------------------------------------
 
-const char* ByteReadStatusName(ByteReadStatus status) noexcept {
+const char* byteReadStatusName(ByteReadStatus status) noexcept {
     switch (status) {
-    case ByteReadStatus::Read:         return "Read";
-    case ByteReadStatus::Unreadable:   return "Unreadable";
-    case ByteReadStatus::NotCollected: return "NotCollected";
+    case ByteReadStatus::kRead:         return "Read";
+    case ByteReadStatus::kUnreadable:   return "Unreadable";
+    case ByteReadStatus::kNotCollected: return "NotCollected";
     }
     return "NotCollected";
 }
 
-const char* DiffExplanationName(DiffExplanation explanation) noexcept {
+const char* diffExplanationName(DiffExplanation explanation) noexcept {
     switch (explanation) {
-    case DiffExplanation::Unexplained: return "Unexplained";
-    case DiffExplanation::Explained:   return "Explained";
+    case DiffExplanation::kUnexplained: return "Unexplained";
+    case DiffExplanation::kExplained:   return "Explained";
     }
     return "Unexplained";
 }
 
-const char* DiffKindName(DiffKind kind) noexcept {
+const char* diffKindName(DiffKind kind) noexcept {
     switch (kind) {
-    case DiffKind::ByteDifference:   return "ByteDifference";
-    case DiffKind::MissingLiveBytes: return "MissingLiveBytes";
+    case DiffKind::kByteDifference:   return "ByteDifference";
+    case DiffKind::kMissingLiveBytes: return "MissingLiveBytes";
     }
     return "ByteDifference";
 }
 
-const char* ModuleStalenessVerdictName(ModuleStalenessVerdict verdict) noexcept {
+const char* moduleStalenessVerdictName(ModuleStalenessVerdict verdict) noexcept {
     switch (verdict) {
-    case ModuleStalenessVerdict::Same:         return "Same";
-    case ModuleStalenessVerdict::Stale:        return "Stale";
-    case ModuleStalenessVerdict::Unverifiable: return "Unverifiable";
+    case ModuleStalenessVerdict::kSame:         return "Same";
+    case ModuleStalenessVerdict::kStale:        return "Stale";
+    case ModuleStalenessVerdict::kUnverifiable: return "Unverifiable";
     }
     return "Unverifiable";
 }
 
-const char* ReferenceSourceKindName(ReferenceSourceKind kind) noexcept {
+const char* referenceSourceKindName(ReferenceSourceKind kind) noexcept {
     switch (kind) {
-    case ReferenceSourceKind::LocalDisk:         return "LocalDisk";
-    case ReferenceSourceKind::UserSelectedImage: return "UserSelectedImage";
-    case ReferenceSourceKind::SavedSnapshot:     return "SavedSnapshot";
+    case ReferenceSourceKind::kLocalDisk:         return "LocalDisk";
+    case ReferenceSourceKind::kUserSelectedImage: return "UserSelectedImage";
+    case ReferenceSourceKind::kSavedSnapshot:     return "SavedSnapshot";
     }
     return "LocalDisk";
 }
 
-const char* TargetOwnerKindName(TargetOwnerKind kind) noexcept {
+const char* targetOwnerKindName(TargetOwnerKind kind) noexcept {
     switch (kind) {
-    case TargetOwnerKind::InsideModule:        return "InsideModule";
-    case TargetOwnerKind::OutsideKnownModules: return "OutsideKnownModules";
+    case TargetOwnerKind::kInsideModule:        return "InsideModule";
+    case TargetOwnerKind::kOutsideKnownModules: return "OutsideKnownModules";
     }
     return "OutsideKnownModules";
 }
 
-const char* FollowStepKindName(FollowStepKind kind) noexcept {
+const char* followStepKindName(FollowStepKind kind) noexcept {
     switch (kind) {
-    case FollowStepKind::ResolvedCode:       return "ResolvedCode";
-    case FollowStepKind::DirectBranch:       return "DirectBranch";
-    case FollowStepKind::IndirectUnresolved: return "IndirectUnresolved";
-    case FollowStepKind::ExportForwarder:    return "ExportForwarder";
-    case FollowStepKind::TargetUnreadable:   return "TargetUnreadable";
+    case FollowStepKind::kResolvedCode:       return "ResolvedCode";
+    case FollowStepKind::kDirectBranch:       return "DirectBranch";
+    case FollowStepKind::kIndirectUnresolved: return "IndirectUnresolved";
+    case FollowStepKind::kExportForwarder:    return "ExportForwarder";
+    case FollowStepKind::kTargetUnreadable:   return "TargetUnreadable";
     }
     return "TargetUnreadable";
 }
 
-const char* FollowTerminationName(FollowTermination termination) noexcept {
+const char* followTerminationName(FollowTermination termination) noexcept {
     switch (termination) {
-    case FollowTermination::Resolved:            return "Resolved";
-    case FollowTermination::DepthExhausted:      return "DepthExhausted";
-    case FollowTermination::ByteBudgetExhausted: return "ByteBudgetExhausted";
-    case FollowTermination::CycleDetected:       return "CycleDetected";
-    case FollowTermination::TargetUnreadable:    return "TargetUnreadable";
-    case FollowTermination::OutsideKnownModules: return "OutsideKnownModules";
-    case FollowTermination::IndirectUnresolved:  return "IndirectUnresolved";
-    case FollowTermination::ExportForwarder:     return "ExportForwarder";
+    case FollowTermination::kResolved:            return "Resolved";
+    case FollowTermination::kDepthExhausted:      return "DepthExhausted";
+    case FollowTermination::kByteBudgetExhausted: return "ByteBudgetExhausted";
+    case FollowTermination::kCycleDetected:       return "CycleDetected";
+    case FollowTermination::kTargetUnreadable:    return "TargetUnreadable";
+    case FollowTermination::kOutsideKnownModules: return "OutsideKnownModules";
+    case FollowTermination::kIndirectUnresolved:  return "IndirectUnresolved";
+    case FollowTermination::kExportForwarder:     return "ExportForwarder";
     }
     return "TargetUnreadable";
 }
@@ -143,37 +143,37 @@ const char* FollowTerminationName(FollowTermination termination) noexcept {
 RvaRange LiveImageBytes::window() const noexcept {
     RvaRange range;
     range.rva = baseRva;
-    const std::uint64_t count = static_cast<std::uint64_t>(bytes.size());
-    const std::uint64_t end = std::min<std::uint64_t>(
-        static_cast<std::uint64_t>(baseRva) + count, 0xFFFFFFFFULL);
-    range.length = static_cast<std::uint32_t>(end - static_cast<std::uint64_t>(baseRva));
+    const std::uint64_t kCount = static_cast<std::uint64_t>(bytes.size());
+    const std::uint64_t kEnd = std::min<std::uint64_t>(
+        static_cast<std::uint64_t>(baseRva) + kCount, 0xFFFFFFFFULL);
+    range.length = static_cast<std::uint32_t>(kEnd - static_cast<std::uint64_t>(baseRva));
     return range;
 }
 
 ByteReadStatus LiveImageBytes::statusAt(std::uint32_t rva) const noexcept {
     if (!wellFormed() || rva < baseRva) {
-        return ByteReadStatus::NotCollected;
+        return ByteReadStatus::kNotCollected;
     }
-    const std::uint64_t offset = static_cast<std::uint64_t>(rva) - static_cast<std::uint64_t>(baseRva);
-    if (offset >= static_cast<std::uint64_t>(status.size())) {
-        return ByteReadStatus::NotCollected;
+    const std::uint64_t kOffset = static_cast<std::uint64_t>(rva) - static_cast<std::uint64_t>(baseRva);
+    if (kOffset >= static_cast<std::uint64_t>(status.size())) {
+        return ByteReadStatus::kNotCollected;
     }
-    return status[static_cast<std::size_t>(offset)];
+    return status[static_cast<std::size_t>(kOffset)];
 }
 
 bool LiveImageBytes::byteAt(std::uint32_t rva, std::uint8_t& out) const noexcept {
-    if (statusAt(rva) != ByteReadStatus::Read) {
+    if (statusAt(rva) != ByteReadStatus::kRead) {
         return false;
     }
-    const std::size_t offset = static_cast<std::size_t>(rva - baseRva);
-    out = bytes[offset];
+    const std::size_t kOffset = static_cast<std::size_t>(rva - baseRva);
+    out = bytes[kOffset];
     return true;
 }
 
 LiveImageBytes LiveImageBytes::fromBytes(std::uint32_t baseRvaIn, std::vector<std::uint8_t> data) {
     LiveImageBytes live;
     live.baseRva = baseRvaIn;
-    live.status.assign(data.size(), ByteReadStatus::Read);
+    live.status.assign(data.size(), ByteReadStatus::kRead);
     live.bytes = std::move(data);
     return live;
 }
@@ -182,66 +182,66 @@ void LiveImageBytes::markRange(const RvaRange& range, ByteReadStatus newStatus) 
     if (!wellFormed() || range.empty()) {
         return;
     }
-    const std::uint64_t windowBegin = baseRva;
-    const std::uint64_t windowEnd = windowBegin + static_cast<std::uint64_t>(status.size());
-    const std::uint64_t begin = std::max<std::uint64_t>(range.rva, windowBegin);
-    const std::uint64_t end = std::min<std::uint64_t>(range.endExclusive(), windowEnd);
-    for (std::uint64_t at = begin; at < end; ++at) {
-        status[static_cast<std::size_t>(at - windowBegin)] = newStatus;
+    const std::uint64_t kWindowBegin = baseRva;
+    const std::uint64_t kWindowEnd = kWindowBegin + static_cast<std::uint64_t>(status.size());
+    const std::uint64_t kBegin = std::max<std::uint64_t>(range.rva, kWindowBegin);
+    const std::uint64_t kEnd = std::min<std::uint64_t>(range.endExclusive(), kWindowEnd);
+    for (std::uint64_t at = kBegin; at < kEnd; ++at) {
+        status[static_cast<std::size_t>(at - kWindowBegin)] = newStatus;
     }
 }
 
 // ---------------------------------------------------------------------------
-// I-04 规则
+// I-04 rule
 // ---------------------------------------------------------------------------
 
-const char* RuleAdmissionName(RuleAdmission admission) noexcept {
+const char* ruleAdmissionName(RuleAdmission admission) noexcept {
     switch (admission) {
-    case RuleAdmission::Accepted:              return "Accepted";
-    case RuleAdmission::Unusable:              return "Unusable";
-    case RuleAdmission::CoversWholeImage:      return "CoversWholeImage";
-    case RuleAdmission::NotScopedToOneSection: return "NotScopedToOneSection";
+    case RuleAdmission::kAccepted:              return "Accepted";
+    case RuleAdmission::kUnusable:              return "Unusable";
+    case RuleAdmission::kCoversWholeImage:      return "CoversWholeImage";
+    case RuleAdmission::kNotScopedToOneSection: return "NotScopedToOneSection";
     }
     return "Unusable";
 }
 
-RuleAdmission AdmitExplanationRule(const PeImageMap& reference,
+RuleAdmission admitExplanationRule(const PeImageMap& reference,
                                    const ExplanationRule& rule) noexcept {
     if (!rule.usable()) {
-        return RuleAdmission::Unusable;
+        return RuleAdmission::kUnusable;
     }
     if (!reference.valid()) {
-        // 参考映像都解析不了就没有"范围"可言，谈不上豁免。
-        return RuleAdmission::NotScopedToOneSection;
+        // If the reference image cannot be parsed, there is no 'range' to speak of, so exemption does not apply.
+        return RuleAdmission::kNotScopedToOneSection;
     }
     RvaRange imageRange;
     imageRange.rva = 0U;
     imageRange.length = reference.header.sizeOfImage;
     if (rule.range.containsRange(imageRange)) {
-        // 覆盖整份映像 = 给整份驱动永久放行。I-04 通过条件里被点名禁止的那条路。
-        return RuleAdmission::CoversWholeImage;
+        // Covering the whole image = permanent allow for the entire driver. This path is explicitly forbidden in the I-04 condition.
+        return RuleAdmission::kCoversWholeImage;
     }
-    // 豁免必须精确到范围：整段落在某一个已映射节里，或整段落在 PE 头里。
-    // 跨节的"依据"没有可核对的对象 —— 一条规则说不清它同时在解释两个节里的什么。
+    // Exemption must be precise to the range: the entire paragraph must lie within a single mapped section or within the PE header.
+    // Cross-section 'evidence' has no verifiable object—a rule cannot explain what it is interpreting in two sections simultaneously.
     if (reference.headerRange.containsRange(rule.range)) {
-        return RuleAdmission::Accepted;
+        return RuleAdmission::kAccepted;
     }
     for (const SectionMap& section : reference.sections) {
-        if (section.status != SectionMapStatus::Mapped) {
+        if (section.status != SectionMapStatus::kMapped) {
             continue;
         }
         if (section.virtualRange().containsRange(rule.range)) {
-            return RuleAdmission::Accepted;
+            return RuleAdmission::kAccepted;
         }
     }
-    return RuleAdmission::NotScopedToOneSection;
+    return RuleAdmission::kNotScopedToOneSection;
 }
 
-const ExplanationRule* FindExplanationRule(const PeImageMap& reference,
+const ExplanationRule* findExplanationRule(const PeImageMap& reference,
                                            const std::vector<ExplanationRule>& rules,
                                            const RvaRange& span) noexcept {
     for (const ExplanationRule& rule : rules) {
-        if (AdmitExplanationRule(reference, rule) == RuleAdmission::Accepted &&
+        if (admitExplanationRule(reference, rule) == RuleAdmission::kAccepted &&
             rule.range.containsRange(span)) {
             return &rule;
         }
@@ -250,10 +250,10 @@ const ExplanationRule* FindExplanationRule(const PeImageMap& reference,
 }
 
 // ---------------------------------------------------------------------------
-// I-09 统计与身份复核
+// I-09: Statistics and identity verification.
 // ---------------------------------------------------------------------------
 
-void AccumulateStats(ScanCoverageStats& accumulator, const ScanCoverageStats& one) noexcept {
+void accumulateStats(ScanCoverageStats& accumulator, const ScanCoverageStats& one) noexcept {
     accumulator.modules.attempted += one.modules.attempted;
     accumulator.modules.succeeded += one.modules.succeeded;
     accumulator.modules.failed += one.modules.failed;
@@ -274,183 +274,183 @@ void AccumulateStats(ScanCoverageStats& accumulator, const ScanCoverageStats& on
     }
 }
 
-ModuleStalenessVerdict CheckModuleStillSame(const DriverInstanceId& before,
+ModuleStalenessVerdict checkModuleStillSame(const DriverInstanceId& before,
                                             const DriverInstanceId& after) noexcept {
-    if (before.strength() == IdentityStrength::Unusable) {
-        // 读前就没有可用身份，读后再怎么比也确认不了 —— 不能假装"还是同一个"。
-        return ModuleStalenessVerdict::Unverifiable;
+    if (before.strength() == IdentityStrength::kUnusable) {
+        // No usable identity exists before the read; no comparison afterward can confirm it is the same module—do not pretend it is.
+        return ModuleStalenessVerdict::kUnverifiable;
     }
-    if (after.strength() == IdentityStrength::Unusable) {
-        // 读后拿不到任何身份：模块已卸载，或复核本身失败。两种情况都不允许继续
-        // 用旧地址解释差异，因此保守判过期。
-        return ModuleStalenessVerdict::Stale;
+    if (after.strength() == IdentityStrength::kUnusable) {
+        // No identity can be retrieved after reading: the module has been unloaded, or the verification failed. In either case,
+        // continuing to interpret differences using old addresses is disallowed; therefore, conservatively mark as stale.
+        return ModuleStalenessVerdict::kStale;
     }
     if (!before.bootId.empty() && !after.bootId.empty() && before.bootId != after.bootId) {
-        // 跨启动周期的地址没有可比性。
-        return ModuleStalenessVerdict::Stale;
+        // Addresses across startup cycles are not comparable.
+        return ModuleStalenessVerdict::kStale;
     }
     if (before.imageBase.present && after.imageBase.present &&
         before.imageBase.value != after.imageBase.value) {
-        // 同一启动周期内基址变了：模块被重载过，之前算出的 RVA→VA 映射全部失效。
-        return ModuleStalenessVerdict::Stale;
+        // Base address changed within the same boot cycle: the module was reloaded, invalidating all previously computed RVA→VA mappings.
+        return ModuleStalenessVerdict::kStale;
     }
 
-    switch (MatchDriverInstance(before, after)) {
-    case MatchResult::Confirmed:
-        return ModuleStalenessVerdict::Same;
-    case MatchResult::NoMatch:
-        return ModuleStalenessVerdict::Stale;
-    case MatchResult::Candidate:
-        return ModuleStalenessVerdict::Unverifiable;
+    switch (matchDriverInstance(before, after)) {
+    case MatchResult::kConfirmed:
+        return ModuleStalenessVerdict::kSame;
+    case MatchResult::kNoMatch:
+        return ModuleStalenessVerdict::kStale;
+    case MatchResult::kCandidate:
+        return ModuleStalenessVerdict::kUnverifiable;
     }
-    return ModuleStalenessVerdict::Unverifiable;
+    return ModuleStalenessVerdict::kUnverifiable;
 }
 
 // ---------------------------------------------------------------------------
-// I-10 比较依据
+// I-10 Comparison basis
 // ---------------------------------------------------------------------------
 
-std::vector<std::string> BuildTrustNotes(const ReferenceSource& source) {
+std::vector<std::string> buildTrustNotes(const ReferenceSource& source) {
     std::vector<std::string> notes;
     switch (source.kind) {
-    case ReferenceSourceKind::LocalDisk:
+    case ReferenceSourceKind::kLocalDisk:
         notes.emplace_back("integrity.reference.localDisk");
-        // 本机磁盘不是不可篡改的信任根：能改内核的攻击者一般也能改盘上的文件。
+        // The local disk is not an immutable trust root: an attacker capable of modifying the kernel can generally also modify files on the disk.
         notes.emplace_back("integrity.reference.localDisk.notATrustRoot");
         notes.emplace_back("integrity.reference.localDisk.sameNameMayBeOtherVersion");
         break;
-    case ReferenceSourceKind::UserSelectedImage:
+    case ReferenceSourceKind::kUserSelectedImage:
         notes.emplace_back("integrity.reference.userSelected");
         notes.emplace_back("integrity.reference.userSelected.versionMustBeConfirmed");
         notes.emplace_back("integrity.reference.userSelected.providedByOperator");
         break;
-    case ReferenceSourceKind::SavedSnapshot:
+    case ReferenceSourceKind::kSavedSnapshot:
         notes.emplace_back("integrity.reference.savedSnapshot");
         notes.emplace_back("integrity.reference.savedSnapshot.mayPredateChange");
         notes.emplace_back("integrity.reference.savedSnapshot.capturedOnThisMachine");
         break;
     }
-    // 签名状态与"字节一致"是两回事，任何来源下都要说清楚。
+    // Signature status and 'byte equality' are distinct concepts; this must be clarified regardless of the source.
     notes.emplace_back("integrity.reference.signatureIsNotByteEquality");
-    if (source.identity.strength() == IdentityStrength::Unusable) {
+    if (source.identity.strength() == IdentityStrength::kUnusable) {
         notes.emplace_back("integrity.reference.identityUnusable");
     }
     return notes;
 }
 
 // ---------------------------------------------------------------------------
-// I-05 差异引擎
+// I-05: Diff engine
 // ---------------------------------------------------------------------------
 
-ImageDiffReport CompareImage(const PeImageMap& reference,
+ImageDiffReport compareImage(const PeImageMap& reference,
                              const LiveImageBytes& live,
                              const ImageDiffOptions& options) {
     ImageDiffReport report;
     report.reference = options.reference;
-    report.trustNotes = BuildTrustNotes(options.reference);
+    report.trustNotes = buildTrustNotes(options.reference);
     report.staleness = options.staleness;
     report.stats.pageSize = (options.pageSize != 0U) ? options.pageSize : 4096U;
     report.stats.modules.attempted = 1U;
 
     if (!reference.valid()) {
-        // 参考映像本身无法解析：不产出任何差异，也绝不产出"未发现差异"。
-        report.outcome = CollectionOutcome::failure(CollectionStatus::Error, "PE",
+        // The reference image itself cannot be parsed: produce no differences and never produce "no differences found".
+        report.outcome = CollectionOutcome::failure(CollectionStatus::kError, "PE",
                                                     static_cast<std::uint64_t>(reference.status),
                                                     reference.errorDetail);
         report.limitationKeys.emplace_back("integrity.limitation.referenceUnparsable");
         report.stats.modules.failed = 1U;
-        report.conclusion = AnalysisConclusion::NoEvidence;
+        report.conclusion = AnalysisConclusion::kNoEvidence;
         return report;
     }
 
-    // 1) 计算有效比较集合。
+    // 1) Calculate the effective comparison set.
     RvaRange imageRange;
     imageRange.rva = 0U;
     imageRange.length = reference.header.sizeOfImage;
-    // 默认请求集合用 rawBackedRanges（减 notComparable 之前的口径）：不可比较的字节
-    // 必须以"已排除"的身份进账，而不是从请求里凭空消失。
+    // The default request set uses rawBackedRanges (the scope before excluding notComparable):
+    // non-comparable bytes must be recorded as 'excluded' rather than disappearing from the request.
     std::vector<RvaRange> base = options.compareRanges.empty() ? reference.rawBackedRanges
                                                                : options.compareRanges;
-    base = IntersectRvaRanges(base, std::vector<RvaRange>{imageRange});
+    base = intersectRvaRanges(base, std::vector<RvaRange>{imageRange});
 
     std::vector<RvaRange> excluded = reference.notComparableRanges;
     excluded.insert(excluded.end(), options.excludedRanges.begin(), options.excludedRanges.end());
-    excluded = NormalizeRvaRanges(std::move(excluded));
+    excluded = normalizeRvaRanges(std::move(excluded));
 
-    const std::vector<RvaRange> effective = SubtractRvaRanges(base, excluded);
-    report.excludedRanges = IntersectRvaRanges(base, excluded);
-    report.excludedBytes = RvaRangesTotalBytes(report.excludedRanges);
-    const std::uint64_t effectiveBytes = RvaRangesTotalBytes(effective);
+    const std::vector<RvaRange> kEffective = subtractRvaRanges(base, excluded);
+    report.excludedRanges = intersectRvaRanges(base, excluded);
+    report.excludedBytes = rvaRangesTotalBytes(report.excludedRanges);
+    const std::uint64_t kEffectiveBytes = rvaRangesTotalBytes(kEffective);
 
-    // 1b) I-04 规则准入。过宽或跨节的规则一律丢弃并留下限制键 —— 静默忽略会让
-    //     调用方以为豁免生效了，静默接受则等于整模块放行。
+    // 1b) I-04 rule admission: Overly broad or cross-segment rules are discarded while retaining the restriction key. Silent
+    //     ignoring misleads the caller into thinking an exemption is active; silent acceptance effectively whitelists the entire module.
     std::vector<std::size_t> admittedRules;
     admittedRules.reserve(options.rules.size());
     bool sawWholeImageRule = false;
     bool sawUnscopedRule = false;
     bool sawUnusableRule = false;
     for (std::size_t index = 0; index < options.rules.size(); ++index) {
-        switch (AdmitExplanationRule(reference, options.rules[index])) {
-        case RuleAdmission::Accepted:
+        switch (admitExplanationRule(reference, options.rules[index])) {
+        case RuleAdmission::kAccepted:
             admittedRules.push_back(index);
             break;
-        case RuleAdmission::CoversWholeImage:
+        case RuleAdmission::kCoversWholeImage:
             sawWholeImageRule = true;
             ++report.rejectedRuleCount;
             break;
-        case RuleAdmission::NotScopedToOneSection:
+        case RuleAdmission::kNotScopedToOneSection:
             sawUnscopedRule = true;
             ++report.rejectedRuleCount;
             break;
-        case RuleAdmission::Unusable:
+        case RuleAdmission::kUnusable:
             sawUnusableRule = true;
             ++report.rejectedRuleCount;
             break;
         }
     }
 
-    // 2) 页级位图。SizeOfImage 有 512MB 上限，位图规模可控。
-    const std::uint32_t pageSize = report.stats.pageSize;
-    const std::size_t pageCount =
+    // 2) Page-level bitmap. SizeOfImage has a 512MB limit, keeping the bitmap size manageable.
+    const std::uint32_t kPageSize = report.stats.pageSize;
+    const std::size_t kPageCount =
         static_cast<std::size_t>((static_cast<std::uint64_t>(reference.header.sizeOfImage) +
-                                  pageSize - 1U) / pageSize);
-    std::vector<bool> pageCompared(pageCount, false);
-    std::vector<bool> pageFailed(pageCount, false);
-    std::vector<bool> pageExcluded(pageCount, false);
-    // 落在有效比较集合里的页。命中上限提前停止时，靠它把"从未扫描"的页记进
-    // notAttempted，而不是让它们从账目里消失。
-    std::vector<bool> pageInEffective(pageCount, false);
-    for (const RvaRange& range : effective) {
-        for (std::uint64_t at = range.rva; at < range.endExclusive(); at += pageSize) {
-            const std::size_t page = static_cast<std::size_t>(at / pageSize);
-            if (page < pageCount) {
-                pageInEffective[page] = true;
+                                  kPageSize - 1U) / kPageSize);
+    std::vector<bool> pageCompared(kPageCount, false);
+    std::vector<bool> pageFailed(kPageCount, false);
+    std::vector<bool> pageExcluded(kPageCount, false);
+    // Pages falling within the effective comparison set. When the hit limit is reached and scanning stops early, this
+    // ensures pages that were 'never scanned' are recorded in notAttempted rather than disappearing from the accounting.
+    std::vector<bool> pageInEffective(kPageCount, false);
+    for (const RvaRange& range : kEffective) {
+        for (std::uint64_t at = range.rva; at < range.endExclusive(); at += kPageSize) {
+            const std::size_t kPage = static_cast<std::size_t>(at / kPageSize);
+            if (kPage < kPageCount) {
+                pageInEffective[kPage] = true;
             }
         }
-        const std::uint64_t lastPage = (range.endExclusive() - 1U) / pageSize;
-        if (lastPage < static_cast<std::uint64_t>(pageCount)) {
-            pageInEffective[static_cast<std::size_t>(lastPage)] = true;
+        const std::uint64_t kLastPage = (range.endExclusive() - 1U) / kPageSize;
+        if (kLastPage < static_cast<std::uint64_t>(kPageCount)) {
+            pageInEffective[static_cast<std::size_t>(kLastPage)] = true;
         }
     }
     for (const RvaRange& range : report.excludedRanges) {
-        for (std::uint64_t at = range.rva; at < range.endExclusive(); at += pageSize) {
-            const std::size_t page = static_cast<std::size_t>(at / pageSize);
-            if (page < pageCount) {
-                pageExcluded[page] = true;
+        for (std::uint64_t at = range.rva; at < range.endExclusive(); at += kPageSize) {
+            const std::size_t kPage = static_cast<std::size_t>(at / kPageSize);
+            if (kPage < kPageCount) {
+                pageExcluded[kPage] = true;
             }
         }
-        const std::uint64_t lastPage = (range.endExclusive() - 1U) / pageSize;
-        if (lastPage < static_cast<std::uint64_t>(pageCount)) {
-            pageExcluded[static_cast<std::size_t>(lastPage)] = true;
+        const std::uint64_t kLastPage = (range.endExclusive() - 1U) / kPageSize;
+        if (kLastPage < static_cast<std::uint64_t>(kPageCount)) {
+            pageExcluded[static_cast<std::size_t>(kLastPage)] = true;
         }
     }
 
-    // 3) 逐字节扫描，产出未折叠片段。
-    // pieceCap 是真正会停住扫描的那条上限：折叠发生在扫描之后，所以 maxEntries
-    // 管不住片段数。它必须被当成一条公开的约束记账（F-06），不能只留在这里。
-    const std::size_t pieceCap = options.maxEntries * 4U + 16U;
+    // 3) Scan byte-by-byte to produce unfolded fragments.
+    // pieceCap is the actual upper limit that halts the scan: Since folding occurs after scanning, maxEntries cannot
+    // control the number of pieces. It must be treated as a public accounting constraint (F-06) and not kept internal.
+    const std::size_t kPieceCap = options.maxEntries * 4U + 16U;
     report.entryLimit = static_cast<std::uint64_t>(options.maxEntries);
-    report.pieceLimit = static_cast<std::uint64_t>(pieceCap);
+    report.pieceLimit = static_cast<std::uint64_t>(kPieceCap);
     std::vector<Piece> pieces;
     Piece current;
     bool haveCurrent = false;
@@ -466,7 +466,7 @@ ImageDiffReport CompareImage(const PeImageMap& reference,
         }
     };
 
-    for (const RvaRange& range : effective) {
+    for (const RvaRange& range : kEffective) {
         if (stopped) {
             break;
         }
@@ -474,59 +474,59 @@ ImageDiffReport CompareImage(const PeImageMap& reference,
             processedBegin = OptionalU64::of(range.rva);
         }
         for (std::uint64_t at = range.rva; at < range.endExclusive(); ++at) {
-            const std::uint32_t rva = static_cast<std::uint32_t>(at);
-            const std::size_t page = static_cast<std::size_t>(at / pageSize);
-            if (page < pageCount) {
-                pageCompared[page] = true;
+            const std::uint32_t kRva = static_cast<std::uint32_t>(at);
+            const std::size_t kPage = static_cast<std::size_t>(at / kPageSize);
+            if (kPage < kPageCount) {
+                pageCompared[kPage] = true;
             }
             report.stats.bytes.attempted += 1U;
 
-            const ByteReadStatus liveStatus = live.statusAt(rva);
-            if (liveStatus == ByteReadStatus::Read) {
+            const ByteReadStatus kLiveStatus = live.statusAt(kRva);
+            if (kLiveStatus == ByteReadStatus::kRead) {
                 std::uint8_t liveByte = 0U;
-                const bool got = live.byteAt(rva, liveByte);
-                const std::uint8_t referenceByte = reference.image[static_cast<std::size_t>(rva)];
+                const bool kGot = live.byteAt(kRva, liveByte);
+                const std::uint8_t kReferenceByte = reference.image[static_cast<std::size_t>(kRva)];
                 report.comparedBytes += 1U;
-                if (got && liveByte == referenceByte) {
-                    // 相同：断开当前片段，但不产生任何条目。
+                if (kGot && liveByte == kReferenceByte) {
+                    // Identical: Break the current segment without generating any entries.
                     flush();
                     processedEnd = at + 1U;
                     continue;
                 }
                 report.differingBytes += 1U;
             } else {
-                // I-05：读不到的字节是缺失标记，不参与字节比较，也不计入差异。
-                if (liveStatus == ByteReadStatus::Unreadable) {
+                // I-05: Unreadable bytes are missing markers; they are excluded from byte comparison and not counted as differences.
+                if (kLiveStatus == ByteReadStatus::kUnreadable) {
                     report.unreadableBytes += 1U;
                 } else {
                     report.notCollectedBytes += 1U;
                 }
                 report.stats.bytes.failed += 1U;
-                if (page < pageCount) {
-                    pageFailed[page] = true;
+                if (kPage < kPageCount) {
+                    pageFailed[kPage] = true;
                 }
             }
 
-            // 到这里说明该字节要进条目：要么是真差异，要么是缺失标记。
+            // Reaching here indicates the byte must enter an entry: either a true difference or a missing marker.
             if (cachedSection == kInvalidSectionIndex ||
-                !reference.sections[cachedSection].virtualRange().contains(rva) ||
-                reference.sections[cachedSection].status != SectionMapStatus::Mapped) {
-                cachedSection = SectionIndexForRva(reference, rva);
+                !reference.sections[cachedSection].virtualRange().contains(kRva) ||
+                reference.sections[cachedSection].status != SectionMapStatus::kMapped) {
+                cachedSection = sectionIndexForRva(reference, kRva);
             }
-            const DiffKind kind = (liveStatus == ByteReadStatus::Read) ? DiffKind::ByteDifference
-                                                                       : DiffKind::MissingLiveBytes;
-            // 缺失标记从不带解释：没读到就没有可核对的依据。
-            const std::size_t ruleIndex = (kind == DiffKind::ByteDifference)
-                                              ? RuleIndexForRva(options.rules, admittedRules, rva)
+            const DiffKind kKind = (kLiveStatus == ByteReadStatus::kRead) ? DiffKind::kByteDifference
+                                                                       : DiffKind::kMissingLiveBytes;
+            // Missing markers imply no explanation: without a read, there is no basis for verification.
+            const std::size_t kRuleIndex = (kKind == DiffKind::kByteDifference)
+                                              ? ruleIndexForRva(options.rules, admittedRules, kRva)
                                               : kNoRule;
 
             Piece candidate;
-            candidate.rva = rva;
+            candidate.rva = kRva;
             candidate.length = 1U;
-            candidate.kind = kind;
-            candidate.readStatus = liveStatus;
+            candidate.kind = kKind;
+            candidate.readStatus = kLiveStatus;
             candidate.sectionIndex = cachedSection;
-            candidate.ruleIndex = ruleIndex;
+            candidate.ruleIndex = kRuleIndex;
 
             if (haveCurrent && current.sameKey(candidate) && current.endExclusive() == at) {
                 current.length += 1U;
@@ -534,8 +534,8 @@ ImageDiffReport CompareImage(const PeImageMap& reference,
                 flush();
                 current = candidate;
                 haveCurrent = true;
-                if (pieces.size() >= pieceCap) {
-                    // 片段数命中上限：保留已产出的部分，并明确记账为不完整。
+                if (pieces.size() >= kPieceCap) {
+                    // Segment count limit hit: retain the partially produced output and explicitly record it as incomplete.
                     stopped = true;
                     report.limitHit = true;
                     break;
@@ -548,19 +548,19 @@ ImageDiffReport CompareImage(const PeImageMap& reference,
 
     report.stats.bytes.succeeded = report.comparedBytes;
     report.stats.bytes.excluded = report.excludedBytes;
-    // F-06：命中片段上限时，有效比较集合里还没走到的尾部一个字节都没进任何桶。
-    // 它既不是失败也不是排除，单独立一个桶，账目才闭合：
-    //   attempted + notAttempted + excluded == 请求集合字节数。
+    // F-06: When the hit fragment limit is reached, the trailing byte in the effective comparison set that hasn't been processed yet enters no bucket.
+    // This is neither a failure nor an exclusion; track it in a separate category so that every outcome is accounted for:
+    //   attempted + notAttempted + excluded == total bytes in the request set.
     report.notAttemptedBytes =
-        (effectiveBytes > report.stats.bytes.attempted)
-            ? (effectiveBytes - report.stats.bytes.attempted)
+        (kEffectiveBytes > report.stats.bytes.attempted)
+            ? (kEffectiveBytes - report.stats.bytes.attempted)
             : 0U;
     report.stats.bytes.notAttempted = report.notAttemptedBytes;
 
-    for (std::size_t page = 0; page < pageCount; ++page) {
-        // 排除与比较是两个独立事实：一个页可以既有被比较的字节，又有被排除的
-        // 字节。只在"整页从未被比较"时才计入 excluded，会让含排除窗口的页报出
-        // 100% 成功（I-09）。因此两个桶分别判，同一页可以同时进 attempted 与
+    for (std::size_t page = 0; page < kPageCount; ++page) {
+        // Exclusion and comparison are independent facts: a page can have both compared bytes and excluded bytes. Counting a
+        // page as excluded only when 'the entire page was never compared' causes pages with exclusion windows to report 100%
+        // success (I-09). Therefore, check the two buckets separately; the same page can enter both attempted and excluded.
         // excluded。
         if (pageCompared[page]) {
             report.stats.pages.attempted += 1U;
@@ -579,8 +579,8 @@ ImageDiffReport CompareImage(const PeImageMap& reference,
     }
     report.scanStoppedAtPieceLimit = stopped;
 
-    // 4) 折叠成条目。折叠只在同 key 且间隔不超过 collapseGapBytes 时发生，
-    //    原始片段全部保留在 subRanges 里。
+    // 4) Collapse into entries. Collapsing occurs only when keys are identical and the gap
+    //    does not exceed collapseGapBytes; all original fragments are retained in subRanges.
     std::vector<std::vector<Piece>> groups;
     for (const Piece& piece : pieces) {
         bool merged = false;
@@ -588,15 +588,15 @@ ImageDiffReport CompareImage(const PeImageMap& reference,
             std::vector<Piece>& back = groups.back();
             const Piece& last = back.back();
             if (last.sameKey(piece) && piece.rva >= last.endExclusive()) {
-                const std::uint64_t gap = static_cast<std::uint64_t>(piece.rva) - last.endExclusive();
-                if (gap <= static_cast<std::uint64_t>(options.collapseGapBytes)) {
+                const std::uint64_t kGap = static_cast<std::uint64_t>(piece.rva) - last.endExclusive();
+                if (kGap <= static_cast<std::uint64_t>(options.collapseGapBytes)) {
                     bool ruleStillCovers = true;
                     if (piece.ruleIndex != kNoRule) {
                         RvaRange span;
                         span.rva = back.front().rva;
                         span.length = static_cast<std::uint32_t>(piece.endExclusive() - span.rva);
-                        // 折叠后的整段必须仍落在同一条规则范围内，否则被折进来的
-                        // 间隔字节会跟着一起"被解释"。
+                        // The folded entire segment must still fall within the same rule range; otherwise,
+                        // the interleaved gap bytes will be incorrectly interpreted along with it.
                         ruleStillCovers = options.rules[piece.ruleIndex].range.containsRange(span);
                     }
                     if (ruleStillCovers) {
@@ -622,19 +622,19 @@ ImageDiffReport CompareImage(const PeImageMap& reference,
 
         ImageDiffEntry entry;
         entry.kind = first.kind;
-        entry.module = options.module;   // I-05：差异必须能指回具体模块实例
+        entry.module = options.module;   // I-05: The difference must be traceable to a specific module instance
         entry.rva = first.rva;
         entry.length = static_cast<std::uint32_t>(last.endExclusive() - first.rva);
         entry.va = reference.loadedBase + entry.rva;
         entry.readStatus = first.readStatus;
         entry.sectionIndex = first.sectionIndex;
-        entry.sectionName = SectionNameForRva(reference, first.rva);
+        entry.sectionName = sectionNameForRva(reference, first.rva);
         entry.evidenceSource = options.evidenceSource;
         entry.collapsed = group.size() > 1U;
 
-        // I-05：反汇编上下文。本层没有解码器，所以请求解码只能得到"尝试过但解不
-        // 出来"+ 一个明确的原因键；没请求就是"没尝试"。两者必须能区分，而且都
-        // 不影响上面已经填好的原始字节证据。
+        // I-05: Disassembly context. This layer has no decoder, so a request to decode yields only "attempted
+        // but failed" plus an explicit reason key; no request means "not attempted". These two states must be
+        // distinguishable, and neither affects the original byte evidence already filled above.
         if (options.attemptDisassembly) {
             entry.disassembly.attempted = true;
             entry.disassembly.decoded = false;
@@ -643,7 +643,7 @@ ImageDiffReport CompareImage(const PeImageMap& reference,
 
         if (first.ruleIndex != kNoRule) {
             const ExplanationRule& rule = options.rules[first.ruleIndex];
-            entry.explanation = DiffExplanation::Explained;
+            entry.explanation = DiffExplanation::kExplained;
             entry.ruleId = rule.ruleId;
             entry.ruleVersion = rule.ruleVersion;
             entry.ruleEvidence = rule.evidenceText;
@@ -653,9 +653,9 @@ ImageDiffReport CompareImage(const PeImageMap& reference,
             DiffSubRange sub;
             sub.rva = piece.rva;
             sub.length = piece.length;
-            AppendBytes(sub.referenceBytes, reference.image, static_cast<std::size_t>(piece.rva),
+            appendBytes(sub.referenceBytes, reference.image, static_cast<std::size_t>(piece.rva),
                         static_cast<std::size_t>(piece.length));
-            if (piece.readStatus == ByteReadStatus::Read) {
+            if (piece.readStatus == ByteReadStatus::kRead) {
                 for (std::uint32_t offset = 0U; offset < piece.length; ++offset) {
                     std::uint8_t value = 0U;
                     if (live.byteAt(piece.rva + offset, value)) {
@@ -663,33 +663,33 @@ ImageDiffReport CompareImage(const PeImageMap& reference,
                     }
                 }
             }
-            // readStatus != Read 时 liveBytes 保持为空：绝不补 00。
+            // When readStatus != Read, liveBytes remains empty: never pad with 00.
             entry.subRanges.push_back(std::move(sub));
         }
 
-        // 条目上的字节证据有上限，超出部分只在 subRanges 里保留完整原始范围描述。
-        // 截断必须显式标出来，不能让调用方以为拿到的是全部字节。
-        const std::size_t byteCap = static_cast<std::size_t>(options.maxBytesPerEntry);
+        // Byte evidence on an entry has a cap; excess data retains only the complete original range descriptions in subRanges.
+        // Truncation must be explicitly indicated so the caller does not assume they received all bytes.
+        const std::size_t kByteCap = static_cast<std::size_t>(options.maxBytesPerEntry);
         for (const DiffSubRange& sub : entry.subRanges) {
-            const std::size_t referenceRoom =
-                (entry.referenceBytes.size() < byteCap) ? (byteCap - entry.referenceBytes.size()) : 0U;
-            if (referenceRoom < sub.referenceBytes.size()) {
+            const std::size_t kReferenceRoom =
+                (entry.referenceBytes.size() < kByteCap) ? (kByteCap - entry.referenceBytes.size()) : 0U;
+            if (kReferenceRoom < sub.referenceBytes.size()) {
                 entry.byteEvidenceTruncated = true;
             }
-            AppendBytes(entry.referenceBytes, sub.referenceBytes, 0U, referenceRoom);
-            if (entry.kind == DiffKind::ByteDifference) {
-                const std::size_t liveRoom =
-                    (entry.liveBytes.size() < byteCap) ? (byteCap - entry.liveBytes.size()) : 0U;
-                if (liveRoom < sub.liveBytes.size()) {
+            appendBytes(entry.referenceBytes, sub.referenceBytes, 0U, kReferenceRoom);
+            if (entry.kind == DiffKind::kByteDifference) {
+                const std::size_t kLiveRoom =
+                    (entry.liveBytes.size() < kByteCap) ? (kByteCap - entry.liveBytes.size()) : 0U;
+                if (kLiveRoom < sub.liveBytes.size()) {
                     entry.byteEvidenceTruncated = true;
                 }
-                AppendBytes(entry.liveBytes, sub.liveBytes, 0U, liveRoom);
+                appendBytes(entry.liveBytes, sub.liveBytes, 0U, kLiveRoom);
             }
         }
 
-        if (entry.kind == DiffKind::ByteDifference) {
+        if (entry.kind == DiffKind::kByteDifference) {
             ++report.byteDifferenceEntries;
-            if (entry.explanation == DiffExplanation::Explained) {
+            if (entry.explanation == DiffExplanation::kExplained) {
                 ++report.explainedEntries;
             } else {
                 ++report.unexplainedEntries;
@@ -704,7 +704,7 @@ ImageDiffReport CompareImage(const PeImageMap& reference,
         report.limitHit = true;
     }
 
-    // 5) 账目与结论。
+    // 5) Account and conclusion.
     report.coverage.requestedBegin =
         base.empty() ? OptionalU64::unset() : OptionalU64::of(base.front().rva);
     report.coverage.requestedEnd =
@@ -718,36 +718,36 @@ ImageDiffReport CompareImage(const PeImageMap& reference,
     report.coverage.truncated = dropped;
     report.coverage.limitHit = report.limitHit;
     if (report.limitHit) {
-        // F-06：报告真正生效的那条上限。停住扫描的是片段数，只写 maxEntries 会
-        // 让调用方以为约束是条目数（单位都不一样）。两者都在 report 里暴露。
+        // F-06: The actual effective limit in the report. Stopping the scan based on piece count while only writing maxEntries would
+        // mislead the caller into thinking the constraint is in terms of entry count (different units). Both are exposed in the report.
         report.coverage.limit = OptionalU64::of(report.scanStoppedAtPieceLimit
                                                     ? report.pieceLimit
                                                     : report.entryLimit);
     }
 
-    // I-09 + I-01：Unverifiable 与 Stale 同等对待。"读前读后无法确认是同一个模块"
-    // 不是"确认了是同一个"——把它走正常路径会把"分析无法判断"塌成"正确的空集合"，
-    // 那正是 F 第 4 节要求必须区分的两件事。观测到的条目照常保留，但结论封顶在
-    // Indeterminate、采集状态降为 Partial。
-    const bool identityUncertain = (options.staleness == ModuleStalenessVerdict::Stale) ||
-                                   (options.staleness == ModuleStalenessVerdict::Unverifiable);
+    // I-09 + I-01: Treat Unverifiable and Stale identically. 'Unable to confirm the module is the same before and after
+    // reading' is not 'confirmed to be the same module'. Routing this through the normal path would collapse 'analysis unable
+    // to determine' into 'correct empty set', which is precisely the distinction Section 4 of F requires. Observed entries
+    // are retained, but the conclusion is capped at Indeterminate, and the collection status is downgraded to Partial.
+    const bool kIdentityUncertain = (options.staleness == ModuleStalenessVerdict::kStale) ||
+                                   (options.staleness == ModuleStalenessVerdict::kUnverifiable);
 
     CollectionOutcome outcome;
     if (base.empty()) {
-        // 比较集合为空：什么都没比，绝不能因为"没看到差异"而升级成 NoDifferenceObserved。
-        outcome.status = CollectionStatus::NotCollected;
+        // Empty comparison set: nothing was compared; never escalate to NoDifferenceObserved simply because "no differences were seen".
+        outcome.status = CollectionStatus::kNotCollected;
         outcome.message = "integrity.diff.nothingToCompare";
         report.limitationKeys.emplace_back("integrity.limitation.emptyCompareSet");
-    } else if (options.staleness == ModuleStalenessVerdict::Stale) {
-        outcome.status = CollectionStatus::Partial;
+    } else if (options.staleness == ModuleStalenessVerdict::kStale) {
+        outcome.status = CollectionStatus::kPartial;
         outcome.message = "integrity.diff.moduleStale";
-    } else if (options.staleness == ModuleStalenessVerdict::Unverifiable) {
-        outcome.status = CollectionStatus::Partial;
+    } else if (options.staleness == ModuleStalenessVerdict::kUnverifiable) {
+        outcome.status = CollectionStatus::kPartial;
         outcome.message = "integrity.diff.moduleIdentityUnverifiable";
     } else if (report.coverage.fullyCovered()) {
-        outcome.status = CollectionStatus::Success;
+        outcome.status = CollectionStatus::kSuccess;
     } else {
-        outcome.status = CollectionStatus::Partial;
+        outcome.status = CollectionStatus::kPartial;
         outcome.message = "integrity.diff.partialCoverage";
     }
     report.outcome = outcome;
@@ -756,25 +756,25 @@ ImageDiffReport CompareImage(const PeImageMap& reference,
     envelope.outcome = report.outcome;
     envelope.coverage = report.coverage;
     report.conclusion = envelope.deriveConclusion(report.byteDifferenceEntries != 0U);
-    if (identityUncertain) {
-        // 身份不一致或无法确认时，地址可能已经指向别的东西，不允许把观测升级成
-        // 任何确定结论 —— 包括"未发现差异"。
-        report.conclusion = AnalysisConclusion::Indeterminate;
+    if (kIdentityUncertain) {
+        // When identity is inconsistent or unconfirmed, the address may already point to something else;
+        // do not upgrade observations to any definitive conclusion — including "no differences found."
+        report.conclusion = AnalysisConclusion::kIndeterminate;
     }
 
-    if (options.staleness == ModuleStalenessVerdict::Stale) {
+    if (options.staleness == ModuleStalenessVerdict::kStale) {
         report.stats.modules.failed = 1U;
-    } else if (options.staleness == ModuleStalenessVerdict::Unverifiable) {
-        // 既不记成功也不记失败：字节确实读到了，但"读的是不是这个模块"没确认。
-        // 记成 succeeded 会在多模块汇总里把不确定性洗掉，记成 failed 又谎报了一次
-        // 采集失败。attempted 与 succeeded + failed 的差额就是这一类。
+    } else if (options.staleness == ModuleStalenessVerdict::kUnverifiable) {
+        // Neither success nor failure is recorded: bytes were read, but it's unconfirmed whether they belong to this module.
+        // Marking as succeeded would wash out uncertainty in multi-module aggregation, while marking as failed would falsely
+        // report a collection failure. The difference between attempted and (succeeded + failed) represents this category.
     } else {
         report.stats.modules.succeeded = 1U;
     }
 
-    if (options.staleness == ModuleStalenessVerdict::Stale) {
+    if (options.staleness == ModuleStalenessVerdict::kStale) {
         report.limitationKeys.emplace_back("integrity.limitation.moduleStale");
-    } else if (options.staleness == ModuleStalenessVerdict::Unverifiable) {
+    } else if (options.staleness == ModuleStalenessVerdict::kUnverifiable) {
         report.limitationKeys.emplace_back("integrity.limitation.moduleIdentityUnverifiable");
     }
     if (sawWholeImageRule) {
@@ -802,22 +802,22 @@ ImageDiffReport CompareImage(const PeImageMap& reference,
         report.limitationKeys.emplace_back("integrity.limitation.entryLimitHit");
     }
     switch (reference.relocation.status) {
-    case RelocationStatus::NotNeeded:
-    case RelocationStatus::Applied:
+    case RelocationStatus::kNotNeeded:
+    case RelocationStatus::kApplied:
         break;
-    case RelocationStatus::AppliedWithUnsupported:
+    case RelocationStatus::kAppliedWithUnsupported:
         report.limitationKeys.emplace_back("integrity.limitation.relocationUnsupportedTypes");
         break;
-    case RelocationStatus::DirectoryMissing:
+    case RelocationStatus::kDirectoryMissing:
         report.limitationKeys.emplace_back("integrity.limitation.relocationDirectoryMissing");
         break;
-    case RelocationStatus::DirectoryUnbacked:
+    case RelocationStatus::kDirectoryUnbacked:
         report.limitationKeys.emplace_back("integrity.limitation.relocationDirectoryUnbacked");
         break;
-    case RelocationStatus::DirectoryMalformed:
+    case RelocationStatus::kDirectoryMalformed:
         report.limitationKeys.emplace_back("integrity.limitation.relocationDirectoryMalformed");
         break;
-    case RelocationStatus::Stripped:
+    case RelocationStatus::kStripped:
         report.limitationKeys.emplace_back("integrity.limitation.relocationsStripped");
         break;
     }
@@ -825,32 +825,32 @@ ImageDiffReport CompareImage(const PeImageMap& reference,
 }
 
 // ---------------------------------------------------------------------------
-// I-06 跳转目标与所有者
+// I-06 Jump target and owner.
 // ---------------------------------------------------------------------------
 
-TargetOwner ResolveTargetOwner(std::uint64_t address, const std::vector<ModuleRange>& modules) {
+TargetOwner resolveTargetOwner(std::uint64_t address, const std::vector<ModuleRange>& modules) {
     TargetOwner owner;
     for (const ModuleRange& module : modules) {
         if (module.contains(address)) {
-            owner.kind = TargetOwnerKind::InsideModule;
+            owner.kind = TargetOwnerKind::kInsideModule;
             owner.moduleName = module.name;
             owner.moduleBase = OptionalU64::of(module.base);
             owner.offset = OptionalU64::of(address - module.base);
             return owner;
         }
     }
-    // 落在已知模块之外只是"我们不知道它属于谁"，不是判定。
-    owner.kind = TargetOwnerKind::OutsideKnownModules;
+    // Being outside known modules just means "we don't know who owns it," not a definitive judgment.
+    owner.kind = TargetOwnerKind::kOutsideKnownModules;
     return owner;
 }
 
-FollowResult FollowBranchTarget(std::uint64_t startAddress,
+FollowResult followBranchTarget(std::uint64_t startAddress,
                                 const std::vector<ModuleRange>& modules,
                                 const BranchResolver& resolver,
                                 const FollowOptions& options) {
     FollowResult result;
     if (!resolver) {
-        result.termination = FollowTermination::TargetUnreadable;
+        result.termination = FollowTermination::kTargetUnreadable;
         return result;
     }
 
@@ -860,75 +860,75 @@ FollowResult FollowBranchTarget(std::uint64_t startAddress,
     bool havePreviousOwner = false;
 
     for (;;) {
-        const TargetOwner owner = ResolveTargetOwner(address, modules);
+        const TargetOwner kOwner = resolveTargetOwner(address, modules);
 
-        if (havePreviousOwner && owner.moduleName != previousOwnerName) {
+        if (havePreviousOwner && kOwner.moduleName != previousOwnerName) {
             result.crossedModuleBoundary = true;
         }
-        previousOwnerName = owner.moduleName;
+        previousOwnerName = kOwner.moduleName;
         havePreviousOwner = true;
 
-        if (owner.kind == TargetOwnerKind::OutsideKnownModules) {
-            // 不往未知内存里继续跟随：没有模块归属就没有可核对的边界。
+        if (kOwner.kind == TargetOwnerKind::kOutsideKnownModules) {
+            // Do not follow into unknown memory: without module ownership, there are no boundaries to verify against.
             FollowNode node;
             node.address = address;
-            node.owner = owner;
-            node.step = FollowStepKind::TargetUnreadable;
+            node.owner = kOwner;
+            node.step = FollowStepKind::kTargetUnreadable;
             result.path.push_back(std::move(node));
-            result.termination = FollowTermination::OutsideKnownModules;
+            result.termination = FollowTermination::kOutsideKnownModules;
             return result;
         }
 
         if (std::find(visited.begin(), visited.end(), address) != visited.end()) {
             FollowNode node;
             node.address = address;
-            node.owner = owner;
-            node.step = FollowStepKind::DirectBranch;
+            node.owner = kOwner;
+            node.step = FollowStepKind::kDirectBranch;
             result.path.push_back(std::move(node));
-            result.termination = FollowTermination::CycleDetected;
+            result.termination = FollowTermination::kCycleDetected;
             return result;
         }
         visited.push_back(address);
 
-        const BranchStep step = resolver(address);
-        result.bytesUsed += step.bytesConsumed;
+        const BranchStep kStep = resolver(address);
+        result.bytesUsed += kStep.bytesConsumed;
 
         FollowNode node;
         node.address = address;
-        node.owner = owner;
-        node.step = step.kind;
-        node.forwarderText = step.forwarderText;
+        node.owner = kOwner;
+        node.step = kStep.kind;
+        node.forwarderText = kStep.forwarderText;
         result.path.push_back(std::move(node));
 
         if (result.bytesUsed > options.maxBytes) {
-            result.termination = FollowTermination::ByteBudgetExhausted;
+            result.termination = FollowTermination::kByteBudgetExhausted;
             return result;
         }
 
-        switch (step.kind) {
-        case FollowStepKind::ResolvedCode:
-            result.termination = FollowTermination::Resolved;
+        switch (kStep.kind) {
+        case FollowStepKind::kResolvedCode:
+            result.termination = FollowTermination::kResolved;
             return result;
-        case FollowStepKind::IndirectUnresolved:
-            result.termination = FollowTermination::IndirectUnresolved;
+        case FollowStepKind::kIndirectUnresolved:
+            result.termination = FollowTermination::kIndirectUnresolved;
             return result;
-        case FollowStepKind::ExportForwarder:
-            result.termination = FollowTermination::ExportForwarder;
+        case FollowStepKind::kExportForwarder:
+            result.termination = FollowTermination::kExportForwarder;
             return result;
-        case FollowStepKind::TargetUnreadable:
-            result.termination = FollowTermination::TargetUnreadable;
+        case FollowStepKind::kTargetUnreadable:
+            result.termination = FollowTermination::kTargetUnreadable;
             return result;
-        case FollowStepKind::DirectBranch:
+        case FollowStepKind::kDirectBranch:
             break;
         }
 
         if (result.depthUsed >= options.maxDepth) {
-            result.termination = FollowTermination::DepthExhausted;
+            result.termination = FollowTermination::kDepthExhausted;
             return result;
         }
         result.depthUsed += 1U;
-        address = step.target;
+        address = kStep.target;
     }
 }
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

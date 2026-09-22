@@ -1,25 +1,25 @@
 <#
 .SYNOPSIS
-    连上测试机的内核调试器，并自动加载符号、下好常驻路径的断点。
+    Connect to the kernel debugger on the test machine, automatically load symbols, and set breakpoints for the resident path.
 
 .DESCRIPTION
-    前面几轮在手敲 kd 命令上耗掉很多时间，而且断点必须**在挂死之前**下好 ——
-    挂死之后 NMI 与 Ctrl+C 都进不去（kd 报 transport connection lost），
-    所以"先跑测试再想办法断入"这条路不存在。这个脚本把整套准备一次做完。
+    Previous rounds wasted significant time manually typing kd commands, and breakpoints must be set **before the system hangs**.
+    After a hang, neither NMI nor Ctrl+C can be entered (kd reports 'transport connection lost'), so the path of 'run the test
+    first then figure out how to break in' does not exist. This script performs the entire preparation sequence in one go.
 
-    它做的事：
-      1. 定位 kd.exe；
-      2. 校验命名管道映射与驱动符号文件确实存在；
-      3. 用 -c "$$><scripts\kd-ksword-resident.txt" 启动 kd，
-         自动加载符号、自检符号、下断点、然后 g 放行。
+    What it does:
+      1. Locate kd.exe;
+      2. Verify that the named pipe mapping and driver symbol files actually exist.
+      3. Start kd using -c "$$><scripts\kd-ksword-resident.txt" to automatically
+         load symbols, self-check symbols, set breakpoints, and then 'g' to continue.
 
-    kd 会**接管当前控制台**，所以在一个专门的窗口里跑它。
+    kd will **take over the current console**, so run it in a dedicated window.
 
 .PARAMETER ScriptFile
-    要执行的 kd 脚本。默认 scripts\kd-ksword-resident.txt。
+    The kd script to execute. Defaults to scripts\kd-ksword-resident.txt.
 
 .PARAMETER NoAutoScript
-    只连接，不执行任何脚本。手工探索时用。
+    Connect only; do not execute any scripts. For manual exploration.
 
 .EXAMPLE
     .\Start-KswordVmDebugger.ps1
@@ -41,91 +41,91 @@ $kd = @(
     "C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\kd.exe",
     "C:\Program Files\Windows Kits\10\Debuggers\x64\kd.exe"
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $kd) { throw '找不到 kd.exe（需要 WDK 或 Debugging Tools for Windows）。' }
+if (-not $kd) { throw 'Cannot find kd.exe (WDK or Debugging Tools for Windows is required).' }
 Write-Host ("kd     : {0}" -f $kd) -ForegroundColor DarkGray
 
-# --- 前提校验：宁可现在失败，也别连上之后发现断点不命中 ----------------------
-$pdb = Join-Path $repo 'Ksword5.1\x64\Release\KswordARKDriver\KswordARK.pdb'
-$sys = Join-Path $repo 'Ksword5.1\x64\Release\KswordARK.sys'
-if (-not (Test-Path $pdb)) { throw "缺少驱动符号：$pdb" }
-if (-not (Test-Path $sys)) { throw "缺少驱动产物：$sys" }
+# --- Precondition check: Fail now rather than connect and miss breakpoints.
+$pdb = Join-Path $repo 'artifacts/bin\x64\Release\KswordARKDriver\KswordARK.pdb'
+$sys = Join-Path $repo 'artifacts/bin\x64\Release\KswordARK.sys'
+if (-not (Test-Path $pdb)) { throw "Missing driver symbols: $pdb" }
+if (-not (Test-Path $sys)) { throw "Missing driver artifacts: $sys" }
 $pdbTime = (Get-Item $pdb).LastWriteTime
 $sysTime = (Get-Item $sys).LastWriteTime
-Write-Host ("符号   : {0}  ({1})" -f $pdb, $pdbTime) -ForegroundColor DarkGray
+Write-Host ("Symbol   : {0} ({1})" -f $pdb, $pdbTime) -ForegroundColor DarkGray
 if ([math]::Abs(($pdbTime - $sysTime).TotalMinutes) -gt 5) {
-    # 符号与二进制不同期时，断点会下在错误的地址上 —— 那种失败看起来像
-    # "断点不命中"，很容易被误读成"代码没走到"。
-    Write-Host ("  [警告] .pdb 与 .sys 时间相差 {0:N1} 分钟，可能不是同一次构建。" -f
+    # When symbols and binaries are out of sync, breakpoints land at incorrect addresses — such failures appear as
+    # "Breakpoint not hit" is easily misread as "code path not executed".
+    Write-Host ("  [Warning] .pdb and .sys timestamps differ by {0:N1} minutes; they may not be from the same build." -f
         ($pdbTime - $sysTime).TotalMinutes) -ForegroundColor Yellow
-    Write-Host "         符号对不上时断点会下错地址，表现是'不命中'，别读成'代码没走到'。" -ForegroundColor Yellow
+    Write-Host "         When symbols do not match, breakpoints will be set at incorrect addresses, manifesting as 'misses'; do not misinterpret this as 'code was not reached'." -ForegroundColor Yellow
 }
 
-# 命名管道映射
+# Named pipe mapping
 try {
     $com = Get-VMComPort -VMName $VMName -Number 1 -ErrorAction Stop
     $want = "\\.\pipe\$PipeName"
     if ($com.Path -ne $want) {
-        throw "COM1 当前映射到 '$($com.Path)'，不是 '$want'。先跑 Enable-KswordVmKernelDebug.ps1。"
+        throw "COM1 is currently mapped to '$($com.Path)', not '$want'. Run Enable-KswordVmKernelDebug.ps1 first."
     }
-    Write-Host ("管道   : {0}" -f $com.Path) -ForegroundColor DarkGray
+    Write-Host ("Pipeline : {0}" -f $com.Path) -ForegroundColor DarkGray
 } catch [Microsoft.HyperV.PowerShell.VirtualizationException] {
-    throw "查询 COM1 失败（需要管理员）：$($_.Exception.Message)"
+    throw "Failed to query COM1 (requires administrator): $($_.Exception.Message)"
 }
 
-# --- 组装命令行 -------------------------------------------------------------
+# --- Assemble command line -------------------------------------------------------------
 $conn = "com:pipe,port=\\.\pipe\$PipeName,resets=0,reconnect"
-# 参数是 resets=0,reconnect —— **不是** resync。后者只对真实串口有效，
-# 命名管道上会被判非法参数（Win32 error 0n87）。实测踩过。
+# Parameters are resets=0,reconnect — **not** resync. The latter only works for real serial ports.
+# Invalid parameters on the named pipe (Win32 error 0x87). This has been encountered in practice.
 
-# -b：连上就请求断入。
-# 没有它的话，在**引导期**连上的 kd 会一路跟着目标跑、永远拿不到 kd> 提示符，
-# 而 -c 脚本只在第一个提示符处执行 —— 表现就是"连上了但断点一个没下、
-# 脚本毫无输出"。实测踩过：先前那次能出提示符只是因为它是主动 break-in 连的。
+# -b: Request break-in upon connection.
+# Without it, a kd connection established during the **boot phase** will follow the target indefinitely without ever obtaining the kd> prompt,
+# However, the -c script only executes at the first prompt — resulting in 'connected but no breakpoints set'.
+# The script produces no output. In practice, the previous prompt appeared only because it was an active break-in connection.
 $kdArgs = @('-b', '-k', $conn)
 if (-not $NoAutoScript) {
     if (-not $ScriptFile) { $ScriptFile = Join-Path $PSScriptRoot 'kd-ksword-resident.txt' }
-    if (-not (Test-Path $ScriptFile)) { throw "找不到 kd 脚本：$ScriptFile" }
-    # 必须是 $$< （逐行执行），**不能**用 $$>< 。
-    # $$>< 会把文件里所有换行替换成分号、拼成**一条**命令，而 .sympath+ 后面的
-    # 分号是路径分隔符 —— 结果它把后续所有命令都当成路径吞掉，符号路径被污染成
-    # 一堆 "Error: ... attempts to access 'bu KswordARK!...' failed"，
-    # 一个断点都下不上。实测踩过。
+    if (-not (Test-Path $ScriptFile)) { throw "Cannot find kd script: $ScriptFile" }
+    # Must use $$< (line-by-line execution); **do not** use $$><.
+    # $$>< replaces all newlines in the file with semicolons to form a single command, while .sympath+ follows
+    # The semicolon acts as a path separator, causing it to consume all subsequent commands as paths and corrupting the symbol path.
+    # A bunch of "Error: ... attempts to access 'bu KswordARK!...' failed".
+    # Note: Cannot set a single breakpoint. Verified by experience.
     $kdArgs += @('-c', "`$`$<$ScriptFile")
-    Write-Host ("脚本   : {0}" -f $ScriptFile) -ForegroundColor DarkGray
+    Write-Host ("Script : {0}" -f $ScriptFile) -ForegroundColor DarkGray
 }
 
 Write-Host @"
 
---- 先开 kd，再启动虚拟机 ---
+--- Start kd first, then launch the virtual machine ---
 
-Hyper-V 的命名管道串口只在虚拟机**初始化 COM 口那一刻**握手。guest 已经跑起来
-之后再连，kd 会一直停在 "no_debuggee / Waiting to reconnect"，接不进去。
-上一个 kd 断开之后同样需要重启虚拟机才能再接。
+Hyper-V's named pipe serial port only handshakes at the moment the virtual machine **initializes the COM port**. The guest is already running
+Connect later; kd will remain stuck at "no_debuggee / Waiting to reconnect" and cannot connect.
+After the previous kd disconnect, the virtual machine also needs to be restarted to reconnect.
 
-所以：让本窗口挂着，到另一个管理员窗口执行
+So: keep this window open, then execute in another administrator window
 
     Restart-VM -Name '$VMName' -Force
 
-kd 会在引导过程中自动接上。（guest 健康时 -Force 只是跳过确认，不是强制断电。）
+kd will automatically attach during the boot process. (When the guest is healthy, -Force only skips confirmation, it does not force a power-off.)
 
---- 接上之后的顺序（不能颠倒）---
+--- The order after connecting (must not be reversed) ---
 
-脚本用的是**延迟断点** bu：驱动服务是 start= demand，连调试器时它还没加载，
-普通 bp 会因符号无法解析而下不上。bu 会挂起，等模块加载再解析。
-所以 bl 这时显示 "u"（未解析）是**正常的**，不是出错。
+The script uses **delayed breakpoints** bu: the driver service is start= demand, so it is not yet loaded when connecting the debugger,
+Normal bp will fail to set due to unresolved symbols. bu will suspend and wait for the module to load before resolving.
+So bl showing "u" (unresolved) at this time is **normal**, not an error.
 
-放行之后到另一个窗口，按这个顺序：
+After resuming execution, switch to another window and follow this order:
 
   1) .\scripts\Deploy-KswordDriverToVm.ps1
-     驱动加载时 kd 会因 sxe ld:KswordARK.sys 断一次。断下来敲：
+     When the driver is loaded, kd will break once due to sxe ld:KswordARK.sys. After breaking, type:
          .reload /f KswordARK.sys
-         bl                      <- 断点应该变成已解析（不再是 u）
+         bl                      <- breakpoint should become resolved (no longer u)
          g
 
   2) .\scripts\Invoke-KswordAutomatedAcceptance.ps1 -Stage resident
 
-看 [1][2][3][4] 打到哪一步为止，以及 GuestResume / VmExitEntry 有没有命中。
-把 kd 窗口的全部输出贴回来。
+Check up to which step [1][2][3][4] has reached, and whether GuestResume / VmExitEntry has been hit.
+Paste all output from the kd window back.
 
 "@ -ForegroundColor Cyan
 

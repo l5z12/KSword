@@ -1,33 +1,33 @@
-﻿# 通过 VMware 自带的 VNC 服务取虚拟机画面，并且可以往里送按键。
+﻿# Capture the VM screen via VMware's built-in VNC service and support sending keystrokes.
 #
-# 为什么不用截屏：
-#   - Hyper-V 的缩略图拍的是**靶机的桌面**，上面得有一个 VMware 窗口才看得见虚拟机；
-#     而从 PowerShell Direct（session 0）启动的 VMware，窗口开在一个不可见的桌面上，
-#     缩略图里干干净净什么都没有。交互式计划任务也起不来（schtasks /Run 报
+# Why not use screenshots:
+#   - Hyper-V's thumbnail captures the **target machine's desktop**; a VMware window must be visible on it to see the VM.
+#     VMware started through PowerShell Direct (session 0) opens its window on a non-visible desktop,
+#     The thumbnail is completely empty. Interactive scheduled tasks also fail to start (schtasks /Run reports
 #     "Element not found"）。
-#   - `vmrun captureScreen` 要求来宾装了 VMware Tools 并登录，对一个 512 字节的
-#     引导扇区或一张 TinyCore 光盘都无从谈起。
+#   - `vmrun captureScreen` requires the guest to have VMware Tools installed and logged in, which is problematic for a 512-byte
+#     Neither a boot sector nor a TinyCore disc is applicable.
 #
-# VNC 这条路绕开了整个会话问题：帧缓冲直接来自 vmware-vmx 进程，跟有没有窗口、
-# 谁有焦点都没关系。送按键同样如此 —— 之前按键进不去 VMware，正是因为它们要先
-# 经过窗口焦点。
+# The VNC path bypasses the entire session issue: frame buffers come directly from the vmware-vmx process, regardless of window focus.
+# It does not matter who has focus. Sending key events is the same — previously, key events could not enter VMware because they had to first
+# Pass through window focus.
 #
-# 协议只用到 RFB 3.8 的最小子集：无认证、Raw 编码、一次全屏更新。
-# 所有多字节字段都是**大端**，这是 RFB 与 x86 相反的地方，写错了不会报错，
-# 只会得到一张尺寸荒谬的图 —— 所以下面对宽高做了上界检查。
+# The protocol uses only the minimal subset of RFB 3.8: no authentication, Raw encoding, and a single full-screen update.
+# All multi-byte fields are **big-endian**, which is the difference between RFB and x86; writing incorrectly will not trigger an error.
+# This will only produce an absurdly sized image — hence the upper bound check on width and height below.
 param(
     [string] $VncHost = '127.0.0.1',
     [int]    $Port = 5900,
     [string] $OutFile,
-    # X11 keysym 序列；送完再取图。空则只取图。
+    # X11 keysym sequence; fetch image after sending. If empty, fetch only the image.
     [int[]]  $Keys = @(),
     [int]    $KeyDelayMs = 120,
-    # 在**同一条连接**上连取几帧，间隔 FrameGapMs。
+    # On the same connection, fetch multiple frames with an interval of FrameGapMs.
     #
-    # 为什么要有这个：连上取一帧就断开时，画面可能是陈旧的 —— VMware 只在有
-    # 客户端看着的时候才跟踪 VGA 文本缓冲的脏区。那会让"画面停在第 N 行"
-    # 变成一个假读数，而它和"来宾停在第 N 行"长得一模一样。
-    # 取两帧以上，第二帧才是"连接建立之后的现在"。
+    # Why this exists: when connecting, fetching one frame and then disconnecting may return stale data—VMware only updates the buffer when there is a client
+    # Track dirty regions of the VGA text buffer only when the client is looking. This causes "the screen to freeze at line N".
+    # It becomes a fake reading, which looks exactly like 'guest paused at line N'.
+    # Capture at least two frames; the second frame represents the current state after the connection is established.
     [int]    $Frames = 1,
     [int]    $FrameGapMs = 4000
 )
@@ -39,7 +39,7 @@ function Read-Exact([IO.Stream] $s, [int] $n) {
     $got = 0
     while ($got -lt $n) {
         $r = $s.Read($buf, $got, $n - $got)
-        if ($r -le 0) { throw "连接在读到 $n 字节之前就断了（已读 $got）" }
+        if ($r -le 0) { throw "Connection broke before reading $n bytes (read $got)" }
         $got += $r
     }
     return $buf
@@ -61,32 +61,32 @@ $client = New-Object Net.Sockets.TcpClient
 $client.Connect($VncHost, $Port)
 $client.NoDelay = $true
 $ns = $client.GetStream()
-# 必须有读超时。
+# A read timeout is required.
 #
-# 请求整帧之后，画面**一点没变**时服务端可以什么都不回 —— 于是客户端就永远阻塞在
-# 那里，而"脚本挂住"和"来宾挂住"在外面看是一样的。超时到了就说没变化，
-# 这本身也是一个读数。
+# After requesting a full frame, the server may return nothing if the screen has not changed at all, causing the client to block indefinitely.
+# There, a 'script hang' and a 'guest hang' look identical from the outside. Once the timeout expires, report no change.
+# This is also a read operation.
 $ns.ReadTimeout = 20000
 
-# --- 握手 ---
+# --- Handshake ---
 $ver = [Text.Encoding]::ASCII.GetString((Read-Exact $ns 12))
-Write-Output ("服务端版本 = " + $ver.Trim())
+Write-Output ("Server version = " + $ver.Trim())
 $mine = [Text.Encoding]::ASCII.GetBytes("RFB 003.008`n")
 $ns.Write($mine, 0, 12)
 
 $n = (Read-Exact $ns 1)[0]
 if ($n -eq 0) {
     $len = BE32 (Read-Exact $ns 4) 0
-    throw ("服务端拒绝：" + [Text.Encoding]::ASCII.GetString((Read-Exact $ns $len)))
+    throw ("Server rejected: " + [Text.Encoding]::ASCII.GetString((Read-Exact $ns $len)))
 }
 $types = Read-Exact $ns $n
-Write-Output ("安全类型 = " + (($types | ForEach-Object { $_ }) -join ','))
-if ($types -notcontains 1) { throw "服务端不接受无认证（类型 1），这里没有实现 VNC 口令认证" }
+Write-Output ("Security Type = " + (($types | ForEach-Object { $_ }) -join ','))
+if ($types -notcontains 1) { throw "The server does not accept unauthenticated (type 1) connections; VNC password authentication is not implemented here" }
 $ns.Write([byte[]]@(1), 0, 1)
 $res = BE32 (Read-Exact $ns 4) 0
-if ($res -ne 0) { throw "安全握手失败，SecurityResult = $res" }
+if ($res -ne 0) { throw "Secure handshake failed, SecurityResult = $res" }
 
-# ClientInit：1 = 共享，别把已经连上的其它客户端踢掉
+# ClientInit: 1 = shared; do not kick off other connected clients.
 $ns.Write([byte[]]@(1), 0, 1)
 
 $init = Read-Exact $ns 24
@@ -94,13 +94,13 @@ $w = BE16 $init 0
 $h = BE16 $init 2
 $nameLen = BE32 $init 20
 $name = [Text.Encoding]::UTF8.GetString((Read-Exact $ns $nameLen))
-Write-Output ("帧缓冲 = ${w}x${h}   名称 = $name")
+Write-Output ("Frame buffer = ${w}x${h}   Name = $name")
 if ($w -le 0 -or $h -le 0 -or $w -gt 8192 -or $h -gt 8192) {
-    throw "帧缓冲尺寸 ${w}x${h} 不合理——多半是字节序读反了"
+    throw "Frame buffer size ${w}x${h} is unreasonable—likely due to reversed byte order"
 }
 
-# --- 指定像素格式：32bpp、小端、真彩、R/G/B 移位 16/8/0 ---
-# 这样每个像素就是内存里的 B,G,R,X 四个字节，正好对上 Format24bppRgb 的取法。
+# --- Specify pixel format: 32bpp, little-endian, true color, R/G/B shifts 16/8/0 ---
+# This ensures each pixel maps to four bytes (B, G, R, X) in memory, aligning with the Format24bppRgb access pattern.
 $pf = New-Object byte[] 16
 $pf[0] = 32; $pf[1] = 24; $pf[2] = 0; $pf[3] = 1
 Put16 $pf 4 255; Put16 $pf 6 255; Put16 $pf 8 255
@@ -110,18 +110,18 @@ $msg[0] = 0
 [Array]::Copy($pf, 0, $msg, 4, 16)
 $ns.Write($msg, 0, 20)
 
-# --- 只要 Raw 编码：省掉一整套解码器，代价是每帧几 MB，本地环回无所谓 ---
+# --- Use Raw encoding only: skip the entire decoder at the cost of a few MB per frame; negligible for local loopback ---
 $msg = New-Object byte[] 8
 $msg[0] = 2; Put16 $msg 2 1; Put32 $msg 4 0
 $ns.Write($msg, 0, 8)
 
-# --- 按键 ---
-# 位 0x10000 = "这一键要按着 Shift"。
+# --- Keys ---
+# Bit 0x10000 = 'This key requires holding Shift'.
 #
-# RFB 的 keysym 本身已经区分大小写，但 VMware 的服务端把 keysym 翻成扫描码时
-# 不会替你合成 Shift：送 'S'（0x53）进去，来宾收到的是 's'。实测代价是一整轮
-# —— isolinux 的编辑行上出现 console=ttys0，Linux 没有这个控制台名，串口一个
-# 字节都没有，而画面上那一行看着完全正常。
+# RFB keysyms are case-sensitive, but VMware's server converts keysyms to scan codes when
+# Does not synthesize Shift: sending 'S' (0x53) results in the guest receiving 's'. Measured cost is one full round.
+# — The isolinux edit line shows console=ttys0, but Linux has no such console name; there is only one serial port.
+# No bytes present, yet the corresponding line on the screen appears completely normal.
 $shiftL = 0xFFE1
 foreach ($k in $Keys) {
     $shifted = ($k -band 0x10000) -ne 0
@@ -143,7 +143,7 @@ foreach ($k in $Keys) {
     Start-Sleep -Milliseconds $KeyDelayMs
 }
 if ($Keys.Count -gt 0) {
-    Write-Output ("已送 " + $Keys.Count + " 个按键")
+    Write-Output ("Sent " + $Keys.Count + " keys")
     Start-Sleep -Milliseconds 600
 }
 
@@ -151,17 +151,17 @@ if (-not $OutFile) { $client.Close(); return }
 
 Add-Type -AssemblyName System.Drawing
 
-# **一张位图跨帧复用。**
+# **Reuse a single bitmap across frames.**
 #
-# 第一版每帧新建一张，只把服务器发来的矩形画进去 —— 而服务器从第二帧起只发变化
-# 区域（哪怕请求写的是非增量），于是第 2..N 帧全是黑的，看着就像"来宾把屏幕清空了"。
-# 又一次仪器故障长成了被测现象的样子。累积到同一张上，缺的部分就还是上一帧的内容。
+# In the first version, a new bitmap was created for each frame, drawing only the rectangles sent by the server — while the server sends changes only from the second frame onwards.
+# The region (even if the request writes non-incremental data), so frames 2..N are all black, appearing as if the guest cleared the screen.
+# Another instrument failure manifested as the measured phenomenon. Accumulating frames causes missing parts to retain content from the previous frame.
 $bmp = New-Object System.Drawing.Bitmap($w, $h, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
 
 for ($frame = 1; $frame -le $Frames; $frame++) {
     if ($frame -gt 1) { Start-Sleep -Milliseconds $FrameGapMs }
 
-    # 非增量：要的是整帧，不是"自上次以来变了什么"
+    # Non-incremental: Requires the full frame, not 'what changed since last time'.
     $req = New-Object byte[] 10
     $req[0] = 3; $req[1] = 0
     Put16 $req 2 0; Put16 $req 4 0; Put16 $req 6 $w; Put16 $req 8 $h
@@ -170,14 +170,14 @@ for ($frame = 1; $frame -le $Frames; $frame++) {
     $hdr = $null
     try { $hdr = Read-Exact $ns 4 }
     catch [IO.IOException] {
-        Write-Output ("第 $frame 帧：{0} ms 内没有更新（画面没有变化）" -f $ns.ReadTimeout)
+        Write-Output ("Frame $frame - No update within {0} ms (screen unchanged)" -f $ns.ReadTimeout)
         continue
     }
-    if ($hdr[0] -ne 0) { throw "期望 FramebufferUpdate(0)，收到消息类型 $($hdr[0])" }
+    if ($hdr[0] -ne 0) { throw "Expected FramebufferUpdate(0), received message type $($hdr[0])" }
     $rects = BE16 $hdr 2
 
     $rect = New-Object System.Drawing.Rectangle(0, 0, $w, $h)
-    # ReadWrite，不是 WriteOnly：这一帧可能只覆盖屏幕的一小块，其余要保留
+    # ReadWrite, not WriteOnly: This frame may cover only a small portion of the screen; the rest must be preserved.
     $data = $bmp.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadWrite,
         [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
     $stride = $data.Stride
@@ -188,7 +188,7 @@ for ($frame = 1; $frame -le $Frames; $frame++) {
             $rh = Read-Exact $ns 12
             $rx = BE16 $rh 0; $ry = BE16 $rh 2; $rw = BE16 $rh 4; $rht = BE16 $rh 6
             $enc = BE32 $rh 8
-            if ($enc -ne 0) { throw "矩形 $r 用了编码 $enc，这里只实现了 Raw(0)" }
+            if ($enc -ne 0) { throw "Rectangle $r uses encoding $enc, only Raw(0) is implemented here" }
             $px = Read-Exact $ns ($rw * $rht * 4)
             for ($y = 0; $y -lt $rht; $y++) {
                 $src = $y * $rw * 4
@@ -211,7 +211,7 @@ for ($frame = 1; $frame -le $Frames; $frame++) {
                 [IO.Path]::Combine($dir, "$base-f$frame.png")
             }
     $bmp.Save($name, [System.Drawing.Imaging.ImageFormat]::Png)
-    Write-Output ("saved=$name 矩形数=$rects bytes=" + (Get-Item $name).Length)
+    Write-Output ("saved=$name rectangle count=$rects bytes=" + (Get-Item $name).Length)
 }
 $bmp.Dispose()
 $client.Close()

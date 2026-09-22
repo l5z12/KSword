@@ -7,10 +7,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$sourceRoot = Join-Path $repositoryRoot 'CheatEngineExecutablePlugin'
+$sourceRoot = Join-Path $repositoryRoot 'integrations/cheat_engine_launcher'
 $pluginRoot = Join-Path $repositoryRoot 'plugin\cheat-engine'
 
-# 未显式指定时，从系统安装信息解析 CE 目录，避免写个人机器路径。
+# If not explicitly specified, resolve the CE directory from system installation info to avoid hardcoding paths for personal machines.
 if ([string]::IsNullOrWhiteSpace($CheatEngineDirectory)) {
     $uninstallRoots = @(
         'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
@@ -23,11 +23,11 @@ if ([string]::IsNullOrWhiteSpace($CheatEngineDirectory)) {
     $CheatEngineDirectory = [string]$installation.InstallLocation
 }
 
-# 所有输入产物必须存在，缺一项即停止，避免生成看似完整的坏插件。
+# All input artifacts must exist; missing any one stops the process to avoid generating a seemingly complete but broken plugin.
 $ceDirectory = [IO.Path]::GetFullPath($CheatEngineDirectory)
 $launcher = Join-Path $sourceRoot "x64\$Configuration\KswordCheatEngineLauncher.exe"
-$bridgeX64 = Join-Path $repositoryRoot "CheatEnginePlugin\x64\$Configuration\KswordCheatEnginePlugin.dll"
-$bridgeWin32 = Join-Path $repositoryRoot "CheatEnginePlugin\Win32\$Configuration\KswordCheatEnginePlugin.dll"
+$bridgeX64 = Join-Path $repositoryRoot "integrations/cheat_engine_plugin\x64\$Configuration\KswordCheatEnginePlugin.dll"
+$bridgeWin32 = Join-Path $repositoryRoot "integrations/cheat_engine_plugin\Win32\$Configuration\KswordCheatEnginePlugin.dll"
 $requiredFiles = @(
     (Join-Path $ceDirectory 'cheatengine-x86_64.exe'),
     $launcher,
@@ -40,7 +40,7 @@ foreach ($requiredFile in $requiredFiles) {
     }
 }
 
-# 只清理脚本拥有的精确插件目录，并验证它位于仓库 plugin 根下。
+# Only clean up the exact plugin directory owned by the script and verify it is located under the repository's plugin root.
 $expectedPluginRoot = [IO.Path]::GetFullPath(
     (Join-Path $repositoryRoot 'plugin\cheat-engine'))
 if ([IO.Path]::GetFullPath($pluginRoot) -ne $expectedPluginRoot) {
@@ -56,7 +56,7 @@ New-Item -ItemType Directory -Path $payloadRoot -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $bridgeRoot 'x64') -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $bridgeRoot 'Win32') -Force | Out-Null
 
-# 保留 CE 原始用户态目录布局，随后移除其 DBK/DBVM 内核载荷和卸载器。
+# Preserve the original CE user-mode directory layout, then remove its DBK/DBVM kernel payloads and uninstaller.
 Copy-Item -Path (Join-Path $ceDirectory '*') -Destination $payloadRoot -Recurse -Force
 $excludedPayloads = @(
     'dbk32.cepack',
@@ -76,7 +76,7 @@ foreach ($relativePath in $excludedPayloads) {
     }
 }
 
-# 覆盖 KSword 自有入口、清单、通知、自动加载脚本和双架构桥接 DLL。
+# Overwrite KSword's own entry point, manifest, notification, auto-load script, and dual-architecture bridge DLL.
 Copy-Item -LiteralPath $launcher -Destination (
     Join-Path $pluginRoot 'KswordCheatEngineLauncher.exe') -Force
 Copy-Item -LiteralPath $bridgeX64 -Destination (
@@ -97,7 +97,7 @@ Copy-Item -LiteralPath (
     Join-Path $sourceRoot 'integration\10_ksword_bridge.lua') -Destination (
     Join-Path $payloadRoot 'autorun\10_ksword_bridge.lua') -Force
 
-# 输出机器可读摘要，便于构建日志核对插件文件是否真实包含。
+# Output machine-readable summary to facilitate build log verification that plugin files truly contain the expected content.
 $allFiles = Get-ChildItem -LiteralPath $pluginRoot -Recurse -File
 [pscustomobject]@{
     PluginRoot = $pluginRoot

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <!--
+    Centralize final application and driver artifacts while keeping project-local IntDir
+    values. This file resolves the repository from build/msbuild, so no machine path is used.
+  -->
+  <PropertyGroup>
+    <KswordUnifiedOutputDir>$(MSBuildThisFileDirectory)..\..\artifacts\bin\$(Platform)\$(Configuration)\</KswordUnifiedOutputDir>
+    <OutDir>$(KswordUnifiedOutputDir)</OutDir>
+  </PropertyGroup>
+</Project>

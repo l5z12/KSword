@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <Filter Include="apps">
+      <UniqueIdentifier>{306A6207-E014-51DC-9BD3-81B20782EE30}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\cli">
+      <UniqueIdentifier>{CEBF4AC4-9BDC-544E-9CE8-6DEC06323358}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="KswordCliTests.cpp" />
+    <ClCompile Include="..\..\..\apps\cli\CliArguments.cpp">
+      <Filter>apps\cli</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\apps\cli\CliArguments.h">
+      <Filter>apps\cli</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\apps\cli\CliSupport.h">
+      <Filter>apps\cli</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

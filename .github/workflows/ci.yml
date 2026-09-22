@@ -35,6 +35,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
       - name: Detect changed project inputs
         id: detect
         shell: bash
@@ -45,103 +50,11 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           RUN_BRANCH: ${{ github.head_ref || github.ref_name }}
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-
-          previous_run_id=0
-          previous_status='not_checked'
-          previous_conclusion='none'
-          if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then
-            if previous_run="$({
-              gh api --method GET \
-                -H 'Accept: application/vnd.github+json' \
-                "/repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
-                -f branch="$RUN_BRANCH" \
-                -f per_page=20 \
-                --jq "[.workflow_runs[] | select(.id != ${GITHUB_RUN_ID})][0] // {} | [(.id // 0), (.status // \"missing\"), (.conclusion // \"none\")] | @tsv"
-            } 2>&1)"; then
-              IFS=$'\t' read -r previous_run_id previous_status previous_conclusion <<< "$previous_run"
-            else
-              echo "Unable to query the previous CI run: $previous_run" >&2
-              previous_status='query_failed'
-            fi
-          fi
-
-          echo "Previous CI run for branch $RUN_BRANCH: id=$previous_run_id status=$previous_status conclusion=$previous_conclusion"
-
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            changed='__all__'
-          elif [[ "$previous_status" != "completed" || "$previous_conclusion" != "success" ]]; then
-            echo 'Previous CI run did not complete successfully; treating all projects as affected.' >&2
-            changed='__all__'
-          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
-            git fetch --no-tags origin "$BASE_REF" --depth=1
-            base_sha="$(git merge-base "origin/$BASE_REF" "$EVENT_SHA")"
-            changed="$(git diff --name-only "$base_sha" "$EVENT_SHA")"
-          elif [[ -n "${EVENT_BEFORE:-}" && "$EVENT_BEFORE" != "0000000000000000000000000000000000000000" ]]; then
-            if git cat-file -e "${EVENT_BEFORE}^{commit}" 2>/dev/null; then
-              changed="$(git diff --name-only "$EVENT_BEFORE" "$EVENT_SHA")"
-            else
-              echo "Previous push commit $EVENT_BEFORE is unavailable; treating all projects as affected." >&2
-              changed='__all__'
-            fi
-          else
-            changed="$(git diff --name-only HEAD~1 HEAD)"
-          fi
-
-          matches() {
-            if [[ "$changed" == '__all__' ]]; then
-              return 0
-            fi
-            printf '%s\n' "$changed" | grep -Eq "$1"
-          }
-
-          common='(^tools/|^scripts/|^shared/|^third_party/|^\.deps/|^\.github/workflows/|^.*\.sln$|(^|/)(Directory\.Build\..*|.*\.props|.*\.targets)$)'
-          usermode_re="^(TaskmgrHijack\.ps1$|Ksword5\.1/|Launcher/|Taskbar/|KswordHUD/|APIMonitor_x64/|KswordCLI/|KswordFsDecodeTests/|DwmZOrderAgent/)|$common"
-          setup_re="^(TaskmgrHijack\.ps1$|KswordSetup/|Ksword5\.1/|Launcher/|Taskbar/|KswordHUD/|APIMonitor_x64/|KswordCLI/|KswordARKDriver/|KswordARKLight/|DwmZOrderAgent/)|$common"
-          arklight_re="^(KswordARKLight/|KswordARKLightTests/|KswordARKDriver/|Ksword5\.1/Ksword5\.1/(ArkDriverClient/|Resource/)|shared/driver/|scripts/Sign-KswordArkDriverVariant\.ps1)|$common"
-          ce_plugin_re="^(CheatEnginePlugin/|Ksword5\.1/Ksword5\.1/(ArkDriverClient/|ksword/string/)|shared/driver/)|$common"
-          ce_launcher_re="^(CheatEngineExecutablePlugin/|Ksword5\.1/Ksword5\.1/(ArkDriverClient/|ksword/string/))|$common"
-
-          # 回归保护：主程序构建后直接复制根目录脚本，路径规则必须始终命中。
-          for project_rule in "$usermode_re" "$setup_re"; do
-            if ! printf '%s\n' 'TaskmgrHijack.ps1' | grep -Eq "$project_rule"; then
-              echo 'TaskmgrHijack.ps1 must trigger user-mode and setup builds.' >&2
-              exit 1
-            fi
-          done
-
-          usermode=false
-          setup=false
-          arklight=false
-          ce_plugin=false
-          ce_launcher=false
-          matches "$usermode_re" && usermode=true || true
-          matches "$setup_re" && setup=true || true
-          matches "$arklight_re" && arklight=true || true
-          matches "$ce_plugin_re" && ce_plugin=true || true
-          matches "$ce_launcher_re" && ce_launcher=true || true
-
-          any=false
-          [[ "$usermode" == true || "$setup" == true || "$arklight" == true || "$ce_plugin" == true || "$ce_launcher" == true ]] && any=true
-
-          {
-            echo "any=$any"
-            echo "usermode=$usermode"
-            echo "setup=$setup"
-            echo "arklight=$arklight"
-            echo "ce_plugin=$ce_plugin"
-            echo "ce_launcher=$ce_launcher"
-          } >> "$GITHUB_OUTPUT"
-
-          echo 'Changed paths:'
-          printf '%s\n' "$changed"
-          echo "Affected projects: usermode=$usermode setup=$setup arklight=$arklight ce_plugin=$ce_plugin ce_launcher=$ce_launcher"
+        run: python tools/ci_changes.py --workflow ci.yml
 
   source-integrity:
     name: Source integrity
     needs: changes
-    if: needs.changes.outputs.any == 'true'
     runs-on: windows-2022
     steps:
       - name: Check out source
@@ -157,11 +70,11 @@ jobs:
       - name: Check changed-file whitespace
         shell: pwsh
         run: |
-          # 捕获的工具输出不受源码卫生检查约束。
+          # Captured tool output is exempt from source hygiene checks.
           #
-          # docs/next/logs/ 里是 kd !analyze、验收套件、飞行记录仪逐字写下来的
-          # 转录。kd 的输出本身就带行尾空格，而这些文件的价值恰恰在于"与工具当时
-          # 打出来的一模一样"——为过检查去改它，等于把证据改成了别的东西。
+          # docs/next/logs/ contains verbatim output from kd !analyze, acceptance test suites, and flight recorders.
+          # Transcription. KD output inherently includes trailing whitespace, and the value of these files lies precisely in their 'exact match with the tool at that time'
+          # Changing it to pass the check is equivalent to altering the evidence itself.
           $skipLogs = @(':(exclude)docs/next/logs/**')
           if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
             git diff --check "origin/$env:GITHUB_BASE_REF...HEAD" -- . @skipLogs
@@ -220,49 +133,12 @@ jobs:
             git diff --check HEAD~1 HEAD -- . @skipLogs
           }
 
-      - name: Validate tracked JSON
-        shell: pwsh
-        run: |
-          @'
-          import json
-          import subprocess
-          import sys
+      - name: Run portable source checks
+        run: python tools/check.py
 
-          paths = subprocess.check_output(
-              ["git", "ls-files", "--", "*.json"], text=True
-          ).splitlines()
-          for raw_path in paths:
-              with open(raw_path, encoding="utf-8-sig") as source:
-                  json.load(source)
-          print(f"Validated {len(paths)} tracked JSON file(s).")
-          '@ | python -
-
-      - name: Audit language packs
-        run: >-
-          python tools/i18n_language_pack.py audit
-          --source-root Ksword5.1/Ksword5.1
-          --zh-pack Ksword5.1/Ksword5.1/languages/zh-CN.json
-          --en-pack Ksword5.1/Ksword5.1/languages/en-US.json
-
-      - name: Validate kernel knowledge research chain
-        run: python tools/validate_kernel_knowledge.py
-
-      # 这道门禁原先挂在主程序 vcxproj 的 BeforeTargets="ClCompile" 上，靠"每次
-      # 编译 GUI 都会顺带跑一遍"来生效。2026-09-19 主程序对 hvm_ctl 的依赖整条
-      # 摘掉，那个目标也一起删了——于是它变成一个谁都不跑的脚本。接到这里来：
-      # 纯源码解析，不需要先把探针编出来。
-      - name: Gate hvm_ctl command catalog
-        run: python tools/hvm_ctl/audit_catalog.py
-
-      # 这两条不变量少一个字就会静默退化成共享层次：翻转路径的 INVEPT 操作数，
-      # 以及两个 arm 站点的 Local 参数。改动落在 VM-exit 路径上，没有运行期
-      # 验证手段，所以只能在编译机上钉死。门禁本身用两次变异注入验证过能抓到回归。
-      - name: Gate per-processor EPT invariants
-        run: python tools/hvm_local_ept_gate.py
-
-      # 这批算术在驱动里只有加载后才执行，出错的表现是蓝屏或者更糟——静默改掉
-      # 一块无关内存的 EPT 权限。抽进共享头之后正确性可以在编译机上直接证明，
-      # 所以它没有理由只靠人手动跑。
+      # These arithmetic operations execute only after the driver is loaded; errors manifest as a BSOD or worse—silent modification is not an option.
+      # EPT permissions for unrelated memory. After extracting into a shared header, correctness can be directly proven on the build machine.
+      # Therefore, there is no reason to rely solely on manual execution by humans.
       - name: Run HVM control-arithmetic unit tests
         shell: pwsh
         run: |
@@ -279,18 +155,8 @@ jobs:
             throw 'HVM control-arithmetic unit tests failed.'
           }
 
-      # --fail-on-risk is the point of this step.  Without it the auditor ran,
-      # wrote a report nobody opened, and the HIGH findings it recorded sat
-      # untouched for over a month - which is exactly how a confirmed local
-      # privilege escalation stayed in the tree.  A check that cannot fail the
-      # build is documentation, not a gate.
-      - name: Audit IOCTL registry and access policy
-        run: >-
-          python tools/ioctl_audit/ksword_ioctl_audit.py
-          --repo-root .
-          --format markdown
-          --out artifacts/ioctl-audit.md
-          --fail-on-risk
+      - name: Run contributor native tests (no Qt or WDK)
+        run: python tools/dev.py test
 
       - name: Upload IOCTL audit report
         if: always()
@@ -353,11 +219,11 @@ jobs:
 
           # The release DynData pack is intentionally generated from the private,
           # reviewed PDB corpus and is not tracked in this source repository. The
-          # The Launcher project consumes the v4 pack to generate its compile-time
+          # The apps/launcher project consumes the v4 pack to generate its compile-time
           # support manifest. Keep empty CI-only v3/v4 fixtures because the real
           # packs come from the private, reviewed PDB corpus. They are never
           # copied to a release artifact or published.
-          $ciProfiles = 'Ksword5.1/Ksword5.1/profiles'
+          $ciProfiles = 'apps/desktop/profiles'
           New-Item -ItemType Directory -Path $ciProfiles -Force | Out-Null
           @'
           {
@@ -382,14 +248,15 @@ jobs:
             '/v:minimal'
           )
           $projects = @(
-            'Ksword5.1/Ksword5.1/Ksword5.1.vcxproj',
-            'Launcher/Launcher.vcxproj',
-            'Taskbar/Taskbar.vcxproj',
-            'KswordHUD/KswordHUD.vcxproj',
-            'APIMonitor_x64/APIMonitor_x64.vcxproj',
-            'KswordCLI/KswordCLI.vcxproj',
-            'KswordFsDecodeTests/KswordFsDecodeTests.vcxproj',
-            'DwmZOrderAgent/tests/OrderTests.vcxproj'
+            'apps/desktop/KswordDesktop.vcxproj',
+            'apps/launcher/Launcher.vcxproj',
+            'apps/taskbar/Taskbar.vcxproj',
+            'apps/hud/KswordHUD.vcxproj',
+            'integrations/api_monitor/APIMonitor_x64.vcxproj',
+            'apps/cli/KswordCLI.vcxproj',
+            'tests/native/fs_decode/KswordFsDecodeTests.vcxproj',
+            'tests/native/monitor/KswordMonitorTests.vcxproj',
+            'tests/native/dwm_z_order/OrderTests.vcxproj'
           )
           foreach ($project in $projects) {
             & $msbuild $project @properties
@@ -398,9 +265,9 @@ jobs:
             }
           }
 
-          # 文件系统结构解码的离线单元测试：只喂字节数组，不打开卷、不加载驱动。
-          # runlist 是磁盘上的不可信输入，越界与溢出分支在真实卷上极难构造。
-          $decodeTests = 'KswordFsDecodeTests/x64/Release/KswordFsDecodeTests.exe'
+          # Offline unit tests for file system structure decoding: feed only byte arrays, do not open volumes or load drivers.
+          # runlist is untrusted input on disk; out-of-bounds and overflow branches are extremely difficult to construct on real volumes.
+          $decodeTests = 'tests/native/fs_decode/x64/Release/KswordFsDecodeTests.exe'
           if (-not (Test-Path $decodeTests)) {
             throw "File-system decode tests were not built: $decodeTests"
           }
@@ -410,8 +277,8 @@ jobs:
           }
 
           # Loads the agent only in the test process; never injects into CI's DWM.
-          & 'DwmZOrderAgent/tests/x64/Release/DwmZOrderTests.exe' `
-            (Join-Path $PWD 'Ksword5.1/x64/Release/KswordDwmZOrder.dll')
+          & 'tests/native/dwm_z_order/x64/Release/DwmZOrderTests.exe' `
+            (Join-Path $PWD 'artifacts/bin/x64/Release/KswordDwmZOrder.dll')
           if ($LASTEXITCODE -ne 0) {
             throw "DWM order model/agent protocol tests failed with exit code $LASTEXITCODE."
           }
@@ -420,31 +287,41 @@ jobs:
         shell: pwsh
         run: |
           $artifacts = @(
-            'Ksword5.1/x64/Release/Ksword5.1.exe',
-            'Ksword5.1/x64/Release/Launcher.exe',
-            'Ksword5.1/x64/Release/Taskbar.exe',
-            'Ksword5.1/x64/Release/KswordHUD.exe',
-            'Ksword5.1/x64/Release/APIMonitor_x64.dll',
-            'Ksword5.1/x64/Release/KswordDwmZOrder.dll',
-            'Ksword5.1/x64/Release/KswordCLI.exe'
+            'artifacts/bin/x64/Release/Ksword5.1.exe',
+            'artifacts/bin/x64/Release/Launcher.exe',
+            'artifacts/bin/x64/Release/Taskbar.exe',
+            'artifacts/bin/x64/Release/KswordHUD.exe',
+            'artifacts/bin/x64/Release/APIMonitor_x64.dll',
+            'artifacts/bin/x64/Release/KswordDwmZOrder.dll',
+            'artifacts/bin/x64/Release/KswordCLI.exe'
           )
           $missing = $artifacts | Where-Object { -not (Test-Path $_) }
           if ($missing) {
             throw "Expected Release artifact(s) missing: $($missing -join ', ')"
           }
 
+      - name: Verify all CLI help routes
+        run: python tools/test_cli_help.py --exe artifacts/bin/x64/Release/KswordCLI.exe
+
+      - name: Verify ETW filter configuration
+        shell: pwsh
+        run: |
+          $env:PATH = (Join-Path $env:QT_ROOT_DIR 'bin') + ';' + $env:PATH
+          & 'tests/native/monitor/x64/Release/KswordMonitorTests.exe'
+          if ($LASTEXITCODE -ne 0) { throw "ETW filter tests failed with exit code $LASTEXITCODE." }
+
       - name: Upload user-mode artifacts
         uses: actions/upload-artifact@v6
         with:
           name: KswordUserMode-unsigned-Release
           path: |
-            Ksword5.1/x64/Release/**
-            !Ksword5.1/x64/Release/profiles/ark_dyndata_pack_v4.json.qz
-            !Ksword5.1/x64/Release/profiles/launcher_support_manifest.json
+            artifacts/bin/x64/Release/**
+            !artifacts/bin/x64/Release/profiles/ark_dyndata_pack_v4.json.qz
+            !artifacts/bin/x64/Release/profiles/launcher_support_manifest.json
           if-no-files-found: error
 
   ksword-setup:
-    name: KswordSetup Release build
+    name: apps/setup Release build
     needs: changes
     if: needs.changes.outputs.setup == 'true'
     runs-on: windows-2022
@@ -488,10 +365,10 @@ jobs:
             throw 'Could not locate MSBuild through vswhere.'
           }
 
-          # KswordSetup embeds the Release payload generated by the main project.
+          # apps/setup embeds the Release payload generated by the main project.
           # The private profile corpus is not tracked, so provide the same
           # compile-only v3/v4 fixtures used by the regular user-mode CI.
-          $ciProfiles = 'Ksword5.1/Ksword5.1/profiles'
+          $ciProfiles = 'apps/desktop/profiles'
           New-Item -ItemType Directory -Path $ciProfiles -Force | Out-Null
           @'
           {
@@ -510,22 +387,22 @@ jobs:
             '/t:Build',
             '/p:Configuration=Release',
             '/p:Platform=x64',
-            "/p:SolutionDir=$((Resolve-Path 'Ksword5.1').Path)\",
+            "/p:SolutionDir=$((Resolve-Path '.').Path)\",
             "/p:QtMsBuild=$env:KSWORD_QT_MSBUILD",
             '/p:KswordArkSkipAutoTestSign=true',
             '/m:1',
             '/v:minimal'
           )
-          & $msbuild 'Ksword5.1/Ksword5.1/Ksword5.1.vcxproj' @properties
+          & $msbuild 'apps/desktop/KswordDesktop.vcxproj' @properties
           if ($LASTEXITCODE -ne 0) {
-            throw "MSBuild failed for Ksword5.1 payload prerequisite with exit code $LASTEXITCODE."
+            throw "MSBuild failed for desktop payload prerequisite with exit code $LASTEXITCODE."
           }
 
           # Never embed compile-only empty DynData fixtures in an artifact that
           # can be promoted to a public automatic prerelease.
           $ciOnlyProfileOutputs = @(
-            'Ksword5.1/x64/Release/profiles/ark_dyndata_pack_v4.json.qz',
-            'Ksword5.1/x64/Release/profiles/launcher_support_manifest.json'
+            'artifacts/bin/x64/Release/profiles/ark_dyndata_pack_v4.json.qz',
+            'artifacts/bin/x64/Release/profiles/launcher_support_manifest.json'
           )
           foreach ($profileOutput in $ciOnlyProfileOutputs) {
             if (Test-Path -LiteralPath $profileOutput) {
@@ -533,39 +410,39 @@ jobs:
             }
           }
 
-          & $msbuild 'KswordSetup/KswordSetup.vcxproj' `
+          & $msbuild 'apps/setup/KswordSetup.vcxproj' `
             /t:Build `
             /p:Configuration=Release `
             /p:Platform=x64 `
             /m:1 `
             /v:minimal
           if ($LASTEXITCODE -ne 0) {
-            throw "MSBuild failed for KswordSetup with exit code $LASTEXITCODE."
+            throw "MSBuild failed for apps/setup with exit code $LASTEXITCODE."
           }
 
-      - name: Verify KswordSetup artifacts
+      - name: Verify apps/setup artifacts
         shell: pwsh
         run: |
           $artifacts = @(
-            'Ksword5.1/x64/Release/KswordSetup.exe',
-            'Ksword5.1/x64/Release/KswordSetup.pdb'
+            'artifacts/bin/x64/Release/KswordSetup.exe',
+            'artifacts/bin/x64/Release/KswordSetup.pdb'
           )
           $missing = $artifacts | Where-Object { -not (Test-Path $_) }
           if ($missing) {
-            throw "Expected KswordSetup artifact(s) missing: $($missing -join ', ')"
+            throw "Expected apps/setup artifact(s) missing: $($missing -join ', ')"
           }
 
-      - name: Upload KswordSetup artifacts
+      - name: Upload apps/setup artifacts
         uses: actions/upload-artifact@v6
         with:
           name: KswordSetup-unsigned-Release
           path: |
-            Ksword5.1/x64/Release/KswordSetup.exe
-            Ksword5.1/x64/Release/KswordSetup.pdb
+            artifacts/bin/x64/Release/KswordSetup.exe
+            artifacts/bin/x64/Release/KswordSetup.pdb
           if-no-files-found: error
 
   ksword-arklight:
-    name: KswordARKLight Release build
+    name: apps/ark_light Release build
     needs: changes
     if: needs.changes.outputs.arklight == 'true'
     runs-on: windows-2022
@@ -573,7 +450,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v5
 
-      - name: Build driver prerequisite and KswordARKLight
+      - name: Build driver prerequisite and apps/ark_light
         shell: pwsh
         run: |
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
@@ -583,8 +460,8 @@ jobs:
             throw 'Could not locate MSBuild through vswhere.'
           }
 
-          $solutionDir = (Resolve-Path 'Ksword5.1').Path + '\'
-          & $msbuild 'KswordARKDriver/KswordARKDriver.vcxproj' `
+          $solutionDir = (Resolve-Path '.').Path + '\'
+          & $msbuild 'drivers/ark/KswordARKDriver.vcxproj' `
             /t:Build `
             /p:Configuration=Release `
             /p:Platform=x64 `
@@ -594,10 +471,10 @@ jobs:
             /m:1 `
             /v:minimal
           if ($LASTEXITCODE -ne 0) {
-            throw "MSBuild failed for KswordARKDriver prerequisite with exit code $LASTEXITCODE."
+            throw "MSBuild failed for drivers/ark prerequisite with exit code $LASTEXITCODE."
           }
 
-          & $msbuild 'KswordARKLight/KswordARKLight.vcxproj' `
+          & $msbuild 'apps/ark_light/KswordARKLight.vcxproj' `
             /t:Build `
             /p:Configuration=Release `
             /p:Platform=x64 `
@@ -607,10 +484,10 @@ jobs:
             /m:1 `
             /v:minimal
           if ($LASTEXITCODE -ne 0) {
-            throw "MSBuild failed for KswordARKLight with exit code $LASTEXITCODE."
+            throw "MSBuild failed for apps/ark_light with exit code $LASTEXITCODE."
           }
 
-          & $msbuild 'KswordARKLightTests/KswordARKLightTests.vcxproj' `
+          & $msbuild 'tests/native/ark_light/KswordARKLightTests.vcxproj' `
             /t:Build `
             /p:Configuration=Release `
             /p:Platform=x64 `
@@ -620,30 +497,30 @@ jobs:
             throw "MSBuild failed for KswordARKLightTests with exit code $LASTEXITCODE."
           }
 
-          & 'KswordARKLightTests/x64/Release/KswordARKLightTests.exe'
+          & 'tests/native/ark_light/x64/Release/KswordARKLightTests.exe'
           if ($LASTEXITCODE -ne 0) {
             throw "KswordARKLightTests failed with exit code $LASTEXITCODE."
           }
 
-      - name: Verify KswordARKLight artifacts
+      - name: Verify apps/ark_light artifacts
         shell: pwsh
         run: |
           $artifacts = @(
-            'Ksword5.1/x64/Release/KswordARKLight.exe',
-            'KswordARKLight/generated/KswordARK.sys'
+            'artifacts/bin/x64/Release/KswordARKLight.exe',
+            'apps/ark_light/generated/KswordARK.sys'
           )
           $missing = $artifacts | Where-Object { -not (Test-Path $_) }
           if ($missing) {
-            throw "Expected KswordARKLight artifact(s) missing: $($missing -join ', ')"
+            throw "Expected apps/ark_light artifact(s) missing: $($missing -join ', ')"
           }
 
-      - name: Upload KswordARKLight artifacts
+      - name: Upload apps/ark_light artifacts
         uses: actions/upload-artifact@v6
         with:
           name: KswordARKLight-unsigned-Release
           path: |
-            Ksword5.1/x64/Release/KswordARKLight.exe
-            KswordARKLight/generated/KswordARK.sys
+            artifacts/bin/x64/Release/KswordARKLight.exe
+            apps/ark_light/generated/KswordARK.sys
           if-no-files-found: error
 
   ksword-ce-plugin:
@@ -668,7 +545,7 @@ jobs:
           if (-not $msbuild -or -not (Test-Path $msbuild)) {
             throw 'Could not locate MSBuild through vswhere.'
           }
-          & $msbuild 'CheatEnginePlugin/KswordCheatEnginePlugin.vcxproj' `
+          & $msbuild 'integrations/cheat_engine_plugin/KswordCheatEnginePlugin.vcxproj' `
             /t:Build `
             /p:Configuration=Release `
             /p:Platform='${{ matrix.platform }}' `
@@ -682,8 +559,8 @@ jobs:
         shell: pwsh
         run: |
           $artifacts = @(
-            'CheatEnginePlugin/${{ matrix.platform }}/Release/KswordCheatEnginePlugin.dll',
-            'CheatEnginePlugin/${{ matrix.platform }}/Release/KswordCheatEnginePlugin.pdb'
+            'integrations/cheat_engine_plugin/${{ matrix.platform }}/Release/KswordCheatEnginePlugin.dll',
+            'integrations/cheat_engine_plugin/${{ matrix.platform }}/Release/KswordCheatEnginePlugin.pdb'
           )
           $missing = $artifacts | Where-Object { -not (Test-Path $_) }
           if ($missing) {
@@ -695,8 +572,8 @@ jobs:
         with:
           name: KswordCheatEnginePlugin-${{ matrix.platform }}-Release
           path: |
-            CheatEnginePlugin/${{ matrix.platform }}/Release/KswordCheatEnginePlugin.dll
-            CheatEnginePlugin/${{ matrix.platform }}/Release/KswordCheatEnginePlugin.pdb
+            integrations/cheat_engine_plugin/${{ matrix.platform }}/Release/KswordCheatEnginePlugin.dll
+            integrations/cheat_engine_plugin/${{ matrix.platform }}/Release/KswordCheatEnginePlugin.pdb
           if-no-files-found: error
 
   ksword-ce-launcher:
@@ -717,7 +594,7 @@ jobs:
           if (-not $msbuild -or -not (Test-Path $msbuild)) {
             throw 'Could not locate MSBuild through vswhere.'
           }
-          & $msbuild 'CheatEngineExecutablePlugin/KswordCheatEngineLauncher.vcxproj' `
+          & $msbuild 'integrations/cheat_engine_launcher/KswordCheatEngineLauncher.vcxproj' `
             /t:Build `
             /p:Configuration=Release `
             /p:Platform=x64 `
@@ -731,8 +608,8 @@ jobs:
         shell: pwsh
         run: |
           $artifacts = @(
-            'CheatEngineExecutablePlugin/x64/Release/KswordCheatEngineLauncher.exe',
-            'CheatEngineExecutablePlugin/x64/Release/KswordCheatEngineLauncher.pdb'
+            'integrations/cheat_engine_launcher/x64/Release/KswordCheatEngineLauncher.exe',
+            'integrations/cheat_engine_launcher/x64/Release/KswordCheatEngineLauncher.pdb'
           )
           $missing = $artifacts | Where-Object { -not (Test-Path $_) }
           if ($missing) {
@@ -744,8 +621,8 @@ jobs:
         with:
           name: KswordCheatEngineLauncher-Release
           path: |
-            CheatEngineExecutablePlugin/x64/Release/KswordCheatEngineLauncher.exe
-            CheatEngineExecutablePlugin/x64/Release/KswordCheatEngineLauncher.pdb
+            integrations/cheat_engine_launcher/x64/Release/KswordCheatEngineLauncher.exe
+            integrations/cheat_engine_launcher/x64/Release/KswordCheatEngineLauncher.pdb
           if-no-files-found: error
 
   auto-prerelease:

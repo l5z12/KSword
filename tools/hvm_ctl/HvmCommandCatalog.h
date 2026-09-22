@@ -8,60 +8,60 @@ extern "C" {
 
 #define KSW_HVM_COMMAND_MAX_ARGS 4
 
-typedef enum HVM_COMMAND_HANDLER {
-    HvmControl, HvmStatus, HvmCpuid, HvmPlatform, HvmFlags, HvmAcl,
-    HvmNestedProbe, HvmNestedProbeAll, HvmNestedAd, HvmSelfvirt, HvmSelfvirtAll,
-    HvmGdt, HvmMsrLog, HvmMsrClear, HvmXonly, HvmAllowOnce, HvmTlb, HvmTlbExit,
-    HvmViewQuery, HvmViewProbe, HvmViewEffect, HvmSelfcheck, HvmViewVerify,
-    HvmEptLeaf, HvmEvents, HvmCrOn, HvmCrOff,
-    HvmInjectQuery, HvmInjectTest, HvmInjectDll, HvmInjectRelease, HvmInjectClear,
-    HvmProcQuery, HvmProcFreeze, HvmProcTerminate, HvmProcRelease, HvmProcClear,
-    HvmPageQuery, HvmPageMap, HvmPageRemove, HvmMetrics, HvmPageMapTest, HvmPageRemoveTest,
+typedef enum HvmCommandHandler {
+    kHvmControl, kHvmStatus, kHvmCpuid, kHvmPlatform, kHvmFlags, kHvmAcl,
+    kHvmNestedProbe, kHvmNestedProbeAll, kHvmNestedAd, kHvmSelfvirt, kHvmSelfvirtAll,
+    kHvmGdt, kHvmMsrLog, kHvmMsrClear, kHvmXonly, kHvmAllowOnce, kHvmTlb, kHvmTlbExit,
+    kHvmViewQuery, kHvmViewProbe, kHvmViewEffect, kHvmSelfcheck, kHvmViewVerify,
+    kHvmEptLeaf, kHvmEvents, kHvmCrOn, kHvmCrOff,
+    kHvmInjectQuery, kHvmInjectTest, kHvmInjectDll, kHvmInjectRelease, kHvmInjectClear,
+    kHvmProcQuery, kHvmProcFreeze, kHvmProcTerminate, kHvmProcRelease, kHvmProcClear,
+    kHvmPageQuery, kHvmPageMap, kHvmPageRemove, kHvmMetrics, kHvmPageMapTest, kHvmPageRemoveTest,
     /* Region overrides: publish at a chosen leaf granularity, then edit one page
        of the published region at a time. Appended rather than inserted so every
        existing handler keeps its ordinal. */
-    HvmPageMapRegion, HvmPageMapRegionScan, HvmPageStage, HvmPageDigest,
+    kHvmPageMapRegion, kHvmPageMapRegionScan, kHvmPageStage, kHvmPageDigest,
     /* First-touch memory watch.  Appended so every existing ordinal is kept. */
-    HvmWatchAddVa, HvmWatchAddPa, HvmWatchList, HvmWatchRearm, HvmWatchRemove,
-    HvmWatchSelfTest, HvmWatchSelfTestRead, HvmWatchSelfTestExec,
-    HvmWatchSelfTestSmp, HvmWatchSelfTestRemap, HvmWatchSelfTestEvidence,
-    HvmWatchSelfTestConflict, HvmWatchSelfTestRestart, HvmWatchSelfTestProcess,
-    HvmHelp, HvmCommands
-} HVM_COMMAND_HANDLER;
+    kHvmWatchAddVa, kHvmWatchAddPa, kHvmWatchList, kHvmWatchRearm, kHvmWatchRemove,
+    kHvmWatchSelfTest, kHvmWatchSelfTestRead, kHvmWatchSelfTestExec,
+    kHvmWatchSelfTestSmp, kHvmWatchSelfTestRemap, kHvmWatchSelfTestEvidence,
+    kHvmWatchSelfTestConflict, kHvmWatchSelfTestRestart, kHvmWatchSelfTestProcess,
+    kHvmHelp, kHvmCommands
+} HvmCommandHandler;
 
-typedef enum HVM_ARGUMENT_KIND {
-    HvmDecimal32, HvmDecimal64, HvmHex32, HvmHex64, HvmPageAddress, HvmByte, HvmPath
-} HVM_ARGUMENT_KIND;
+typedef enum HvmArgumentKind {
+    kHvmDecimal32, kHvmDecimal64, kHvmHex32, kHvmHex64, kHvmPageAddress, kHvmByte, kHvmPath
+} HvmArgumentKind;
 
-typedef struct HVM_COMMAND_ARGUMENT {
+typedef struct HvmCommandArgument {
     const char* name;
-    HVM_ARGUMENT_KIND kind;
+    HvmArgumentKind kind;
     const char* defaultValue; /* NULL means required. Values retain their declared base. */
-} HVM_COMMAND_ARGUMENT;
+} HvmCommandArgument;
 
-typedef struct HVM_COMMAND_SPEC {
+typedef struct HvmCommandSpec {
     const char* name;
     const char* title;
     const char* group;
     const char* description;
-    HVM_COMMAND_HANDLER handler;
+    HvmCommandHandler handler;
     int readOnly;
     unsigned long command;
     unsigned long flags;
     unsigned int argumentCount;
-    HVM_COMMAND_ARGUMENT arguments[KSW_HVM_COMMAND_MAX_ARGS];
-} HVM_COMMAND_SPEC;
+    HvmCommandArgument arguments[KSW_HVM_COMMAND_MAX_ARGS];
+} HvmCommandSpec;
 
-const HVM_COMMAND_SPEC* KswordHvmCommands(size_t* count);
-const HVM_COMMAND_SPEC* KswordHvmFindCommand(const char* name);
+const HvmCommandSpec* kswordHvmCommands(size_t* count);
+const HvmCommandSpec* kswordHvmFindCommand(const char* name);
 /* Returns 0 on success. No driver access; used by both the form and dispatcher. */
-int KswordHvmValidateArguments(const HVM_COMMAND_SPEC* command, int count,
+int kswordHvmValidateArguments(const HvmCommandSpec* command, int count,
     const char* const* arguments, unsigned long long values[KSW_HVM_COMMAND_MAX_ARGS],
     char* error, size_t errorSize);
-void KswordHvmPrintCommands(int asJson);
-void KswordHvmPrintJsonString(const char* text);
-int KswordHvmCommandMain(int argc, char** argv);
-int KswordHvmCommandMainWide(int argc, wchar_t** argv);
+void kswordHvmPrintCommands(int asJson);
+void kswordHvmPrintJsonString(const char* text);
+int kswordHvmCommandMain(int argc, char** argv);
+int kswordHvmCommandMainWide(int argc, wchar_t** argv);
 
 #ifdef __cplusplus
 }

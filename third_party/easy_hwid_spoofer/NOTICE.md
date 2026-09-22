@@ -5,4 +5,4 @@
 - Third-party licensing note: this module follows the license listed above, and Ksword's project `LICENSE` does not replace it.
 - KswordARK integration scope: only the dispatch-function approach is represented in KswordARK (`IRP_MJ_DEVICE_CONTROL` hook plus completion-routine return-buffer rewriting).
 - Excluded scope: physical-memory HWID modification, SMBIOS physical table scanning/writing, storport private memory serial rewriting, NDIS private block scanning/writing, and boot-sector/volume direct writes.
-- Local integration points: `shared/driver/KswordArkHwidIoctl.h`, `KswordARKDriver/src/features/hwid/`, `Ksword5.1/Ksword5.1/ArkDriverClient/ArkDriverHwid.cpp`, and `Ksword5.1/Ksword5.1/HardwareDock/HardwareHwidDispatchPage.*`.
+- Local integration points: `shared/driver/KswordArkHwidIoctl.h`, `drivers/ark/src/features/hwid/`, `shared/ark_client/ArkDriverHwid.cpp`, and `apps/desktop/hardware_dock/HardwareHwidDispatchPage.*`.

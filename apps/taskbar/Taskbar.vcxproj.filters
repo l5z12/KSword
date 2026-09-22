@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <ClCompile Include="AudioAnalyze.cpp" />
+    <QtMoc Include="AudioAnalyze.h" />
+    <ClCompile Include="DisplayRestartMonitor.cpp" />
+    <QtMoc Include="DisplayRestartMonitor.h" />
+    <ClCompile Include="Function.cpp" />
+    <ClInclude Include="Function.h" />
+    <ClCompile Include="Override.cpp" />
+    <QtMoc Include="Override.h" />
+    <ClCompile Include="SosHotkeyLauncher.cpp" />
+    <ClInclude Include="SosHotkeyLauncher.h" />
+    <ClCompile Include="SpectrumWidget.cpp" />
+    <QtMoc Include="SpectrumWidget.h" />
+    <ClCompile Include="Taskbar.cpp" />
+    <QtMoc Include="Taskbar.h" />
+    <QtRcc Include="Taskbar.qrc" />
+    <QtUic Include="Taskbar.ui" />
+    <ClCompile Include="TaskbarEarthquakeAudioPlayer.cpp" />
+    <ClInclude Include="TaskbarEarthquakeAudioPlayer.h" />
+    <ClCompile Include="TaskbarEarthquakeClient.cpp" />
+    <QtMoc Include="TaskbarEarthquakeClient.h" />
+    <ClCompile Include="TaskbarNotificationService.cpp" />
+    <QtMoc Include="TaskbarNotificationService.h" />
+    <ClCompile Include="TaskbarPresentationEffects.cpp" />
+    <ClCompile Include="TaskbarRestartCoordinator.cpp" />
+    <ClInclude Include="TaskbarRestartCoordinator.h" />
+    <ClCompile Include="TaskbarSettingsDialog.cpp" />
+    <QtMoc Include="TaskbarSettingsDialog.h" />
+    <ClCompile Include="TaskbarSharedState.cpp" />
+    <QtMoc Include="TaskbarSharedState.h" />
+    <ClCompile Include="main.cpp" />
+  </ItemGroup>
+</Project>

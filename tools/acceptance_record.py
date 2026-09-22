@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""逐项更新 docs/next/KSword_Acceptance_Results_Template.json 的执行记录。
+"""Update the execution record in docs/next/KSword_Acceptance_Results_Template.json item by item.
 
-这是交付物之一（第 9 节"逐项结果记录"）的维护工具，不进入产品运行时，
-也不被 UI 读取。它只改动被显式点名的编号，其余条目原样保留。
+This is a maintenance tool for deliverable Section 9 "Itemized Result Records". It is not part of the product
+runtime and is not read by the UI. It only modifies explicitly numbered entries, leaving all other items unchanged.
 
-用法:
-    py -3 tools/acceptance_record.py set F-03 \
-        --implementation 已实现 --verification PASS \
+Usage:
+    uv run --python 3.12 python tools/acceptance_record.py set F-03 \
+        --implementation implemented --verification PASS \
         --path shared/evidence/ObjectIdentity.cpp \
-        --env E0 --exec "构建+运行 KswordARKLightTests.exe -> F 92/92" \
+        --env E0 --exec "Build+Run KswordARKLightTests.exe -> F 92/92" \
         --evidence docs/next/logs/lighttests-run.txt
 
-    py -3 tools/acceptance_record.py show F-03
-    py -3 tools/acceptance_record.py summary
+    uv run --python 3.12 python tools/acceptance_record.py show F-03
+    uv run --python 3.12 python tools/acceptance_record.py summary
 """
 
 from __future__ import annotations
@@ -26,7 +26,12 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RECORD = os.path.join(REPO_ROOT, "docs", "next", "KSword_Acceptance_Results_Template.json")
 
-IMPLEMENTATION_STATES = ("未开始", "开发中", "已实现")
+# Keep the existing record schema; expose English names at the CLI boundary.
+IMPLEMENTATION_STATES = {
+    "not-started": "未开始",
+    "in-progress": "开发中",
+    "implemented": "已实现",
+}
 VERIFICATION_STATES = ("NOT_RUN", "PASS", "FAIL", "BLOCKED")
 APPLICABILITY_STATES = ("required", "not_applicable")
 
@@ -54,9 +59,7 @@ def cmd_set(args: argparse.Namespace) -> int:
     item = find(document, args.id)
 
     if args.implementation:
-        if args.implementation not in IMPLEMENTATION_STATES:
-            raise SystemExit("implementation must be one of %s" % (IMPLEMENTATION_STATES,))
-        item["implementation_status"] = args.implementation
+        item["implementation_status"] = implementation_value(args.implementation)
     if args.verification:
         if args.verification not in VERIFICATION_STATES:
             raise SystemExit("verification must be one of %s" % (VERIFICATION_STATES,))
@@ -87,7 +90,7 @@ def cmd_set(args: argparse.Namespace) -> int:
     if args.notes is not None:
         item["notes"] = args.notes
 
-    # PASS 必须有实际执行记录，否则这条记录本身就是假的。
+    # PASS status requires at least one actual execution record; otherwise, the record is invalid.
     if item["verification_status"] == "PASS" and not item["executions"]:
         raise SystemExit("%s cannot be PASS without at least one execution record" % args.id)
     if item["verification_status"] == "BLOCKED" and not item["blocking_reason"]:
@@ -95,7 +98,7 @@ def cmd_set(args: argparse.Namespace) -> int:
 
     save(document)
     print("updated %s: impl=%s verify=%s" %
-          (args.id, item["implementation_status"], item["verification_status"]))
+          (args.id, implementation_label(item["implementation_status"]), item["verification_status"]))
     return 0
 
 
@@ -103,6 +106,19 @@ def cmd_show(args: argparse.Namespace) -> int:
     item = find(load(), args.id)
     print(json.dumps(item, ensure_ascii=False, indent=2))
     return 0
+
+
+def implementation_value(value: str) -> str:
+    """Accept English CLI values and legacy aliases without migrating records."""
+    if value in IMPLEMENTATION_STATES:
+        return IMPLEMENTATION_STATES[value]
+    if value in IMPLEMENTATION_STATES.values():
+        return value
+    raise SystemExit("implementation must be one of %s" % ", ".join(IMPLEMENTATION_STATES))
+
+
+def implementation_label(value: str) -> str:
+    return next((label for label, stored in IMPLEMENTATION_STATES.items() if stored == value), value)
 
 
 def cmd_summary(_args: argparse.Namespace) -> int:
@@ -128,7 +144,8 @@ def main(argv: list[str]) -> int:
 
     setter = sub.add_parser("set", help="update one acceptance item")
     setter.add_argument("id")
-    setter.add_argument("--implementation")
+    setter.add_argument("--implementation", metavar="STATE",
+                        help="not-started, in-progress, or implemented (legacy aliases accepted)")
     setter.add_argument("--verification")
     setter.add_argument("--applicability")
     setter.add_argument("--path", action="append")

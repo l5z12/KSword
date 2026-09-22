@@ -191,7 +191,7 @@ def cpp_bytes(data):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=ROOT / ".deps/dwm-zorder-corpus")
-    parser.add_argument("--output", type=Path, default=ROOT / "DwmZOrderAgent/RuntimeSignatures.h")
+    parser.add_argument("--output", type=Path, default=ROOT / "integrations/dwm_z_order/RuntimeSignatures.h")
     args = parser.parse_args()
     patterns = []
     for version, sha in FIXTURES:

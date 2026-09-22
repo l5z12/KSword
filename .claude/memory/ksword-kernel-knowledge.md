@@ -7,8 +7,8 @@ metadata:
 
 # KernelDock 内核知识中心
 
-- 需求基线是仓库根目录 `第二规划.md`。它列出 12 类、71 个 Windows 内核知识专题，并要求每篇同时具备关系图、生命周期、公开/私有边界、只读观察路径、版本/权限/IRQL、错误处理、Ksword 字段解释和证据限制。
-- 目录定义集中在 `Ksword5.1/Ksword5.1/KernelDock/KernelKnowledgeCatalog.*`；文章 UI 位于 `KernelKnowledgeTab.*`。新增文件必须继续同步 `.vcxproj` 和 `.vcxproj.filters`。
+- 需求基线是仓库根目录 `docs/research/kernel-knowledge-plan.zh-CN.md`。它列出 12 类、71 个 Windows 内核知识专题，并要求每篇同时具备关系图、生命周期、公开/私有边界、只读观察路径、版本/权限/IRQL、错误处理、Ksword 字段解释和证据限制。
+- 目录定义集中在 `apps/desktop/kernel_dock/KernelKnowledgeCatalog.*`；文章 UI 位于 `KernelKnowledgeTab.*`。新增文件必须继续同步 `.vcxproj` 和 `.vcxproj.filters`。
 - 可见文章只存放在 `languages/zh-CN.json` 与 `languages/en-US.json` 的 `context_translations` 中，键格式为 `kernel.knowledge.topic.<id>.(title|summary|body)`。语言包只能定点编辑。
 - 动态语义键必须调用 `ks::i18n::text(key)`，不能调用 `text(key, key)`：中文是历史源语言，非空 fallback 会优先返回 fallback，从而把键名直接显示给用户。验证器会拒绝这一回归。
 - 71 个专题 ID 还与 `shared/driver/KswordArkResearchIoctl.h` 及 `research_topic_ioctl.c` 严格同序。`IOCTL_KSWORD_ARK_QUERY_RESEARCH_TOPIC` 只采集本次 R3→WDF→WDM 上下文并用中央表核实 1..4 个业务 IOCTL，不串行调用业务 handler，不触发扫描或 mutation。

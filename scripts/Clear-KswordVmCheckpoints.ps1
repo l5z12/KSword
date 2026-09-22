@@ -1,36 +1,36 @@
 <#
 .SYNOPSIS
-    清理 KSword 测试机累积的检查点，回收磁盘空间。
+    Clean up accumulated checkpoints on the KSword test machine to reclaim disk space.
 
 .DESCRIPTION
-    必须以**管理员**运行。
+    Must run as **Administrator**.
 
-    每个检查点都会保存一份完整的内存映像（本机 8 GiB）加上一个差分磁盘，
-    分级测试每跑一轮就产生一到两个，很快就把系统盘吃光 —— 表现是
-    `Checkpoint operation failed ... 磁盘空间不足 (0x80070070)`。
+    Each checkpoint saves a full memory image (8 GiB native) plus a differencing disk. Tiered
+    testing generates one to two per round, quickly filling the system drive—manifesting as
+    `Checkpoint operation failed ... Not enough disk space (0x80070070)`.
 
-    **默认只做预演，不删任何东西。** 看过清单确认无误后加 -Confirm 才真删。
+    **By default, this is a dry run that deletes nothing. Only add -Confirm after reviewing the list to confirm it is correct before actually deleting.
 
-    保留规则（两条都生效）：
-      * 名字在 -Keep 里的永远保留，默认保留 'clean-install' ——
-        那是唯一一个"干净系统 + 已配置好前提"的基线，删了要重装。
-      * 其余按创建时间倒序保留最近 -KeepLast 个（默认 2）。
+    Retention rules (both must apply):
+      * Names in -Keep are always retained; by default, 'clean-install' is retained. That is the only
+        baseline with a 'clean system + pre-configured prerequisites'; deleting it requires a reinstall.
+      * Keep the most recent -KeepLast (default 2) snapshots in reverse chronological order.
 
-    删除是**异步**的：Hyper-V 在后台把差分磁盘合并回父盘。脚本会等合并结束，
-    否则你会看到空间没有立刻回来。
+    Deletion is **asynchronous**: Hyper-V merges the differencing disk back to the parent disk in the background.
+    The script waits for the merge to complete; otherwise, you will not see the space freed immediately.
 
 .PARAMETER Confirm
-    真正执行删除。不加这个开关只打印将要删除的清单。
+    Actually perform the deletion. Without this switch, only the list of items to be deleted is printed.
 
 .PARAMETER KeepLast
-    除保留名单之外，额外保留最近的几个。默认 2。
+    Retain a few recent ones in addition to the whitelist. Default is 2.
 
 .PARAMETER Keep
-    永不删除的检查点名字。默认 'clean-install'。
+    Checkpoints that are never deleted. Default is 'clean-install'.
 
 .EXAMPLE
-    .\Clear-KswordVmCheckpoints.ps1              # 预演，只看清单
-    .\Clear-KswordVmCheckpoints.ps1 -Confirm     # 真删
+    .\Clear-KswordVmCheckpoints.ps1 # Dry run: list only.
+    .\Clear-KswordVmCheckpoints.ps1 -Confirm # Actual deletion.
     .\Clear-KswordVmCheckpoints.ps1 -KeepLast 0 -Confirm
 #>
 [CmdletBinding()]
@@ -55,61 +55,61 @@ function Get-FreeGb {
 $vm = Get-VM -Name $VMName -ErrorAction Stop
 $vmPath = $vm.Path
 $freeBefore = Get-FreeGb $vmPath
-Write-Host ("虚拟机 {0}  状态 {1}  路径 {2}" -f $vm.Name, $vm.State, $vmPath)
-Write-Host ("所在卷剩余 {0} GB" -f $freeBefore) -ForegroundColor $(
+Write-Host ("Virtual Machine {0}  Status {1}  Path {2}" -f $vm.Name, $vm.State, $vmPath)
+Write-Host ("Remaining {0} GB on the volume" -f $freeBefore) -ForegroundColor $(
     if ($freeBefore -lt 5) { 'Red' } elseif ($freeBefore -lt 20) { 'Yellow' } else { 'Green' })
 
 $all = @(Get-VMSnapshot -VMName $VMName | Sort-Object CreationTime)
-if ($all.Count -eq 0) { Write-Host "`n没有检查点。" -ForegroundColor Green; return }
+if ($all.Count -eq 0) { Write-Host "`nNo checkpoints." -ForegroundColor Green; return }
 
-Write-Host "`n全部检查点（按时间正序）：" -ForegroundColor Cyan
+Write-Host "`nAll checkpoints (in chronological order):" -ForegroundColor Cyan
 $all | Format-Table Name, SnapshotType, CreationTime -AutoSize
 
-# 保留：名单内的 + 最近 KeepLast 个
+# Keep: those on the list + the most recent KeepLast entries.
 $keepByName = @($all | Where-Object { $Keep -contains $_.Name })
 $keepRecent = @($all | Sort-Object CreationTime -Descending | Select-Object -First ([math]::Max($KeepLast, 0)))
 $keepNames  = @(($keepByName + $keepRecent) | ForEach-Object { $_.Name } | Sort-Object -Unique)
 $doomed     = @($all | Where-Object { $keepNames -notcontains $_.Name })
 
-Write-Host "保留：" -ForegroundColor Green
+Write-Host "Keep: " -ForegroundColor Green
 foreach ($n in $keepNames) {
-    $why = if ($Keep -contains $n) { '（保留名单）' } else { '（最近 {0} 个之一）' -f $KeepLast }
+    $why = if ($Keep -contains $n) { '(Whitelist)' } else { '(One of the last {0})' -f $KeepLast }
     Write-Host ("  {0} {1}" -f $n, $why) -ForegroundColor Green
 }
 
 if ($doomed.Count -eq 0) {
-    Write-Host "`n没有可删除的检查点。要腾出空间就调小 -KeepLast。" -ForegroundColor Yellow
+    Write-Host "`nNo checkpoints to delete. To free up space, reduce -KeepLast." -ForegroundColor Yellow
     return
 }
 
-Write-Host "`n将删除 $($doomed.Count) 个：" -ForegroundColor Yellow
+Write-Host "`nDeleting $($doomed.Count) :" -ForegroundColor Yellow
 foreach ($s in $doomed) { Write-Host ("  {0}   {1}" -f $s.Name, $s.CreationTime) -ForegroundColor Yellow }
 
 if (-not $Confirm) {
-    Write-Host "`n【预演】没有删除任何东西。确认清单无误后加 -Confirm 执行：" -ForegroundColor Cyan
+    Write-Host "`n[Rehearsal] Nothing has been deleted. Add -Confirm after verifying the manifest to execute:" -ForegroundColor Cyan
     Write-Host "  .\scripts\Clear-KswordVmCheckpoints.ps1 -Confirm"
     return
 }
 
 foreach ($s in $doomed) {
-    Write-Host ("删除 {0} ..." -f $s.Name) -NoNewline
+    Write-Host ("Deleting {0} ..." -f $s.Name) -NoNewline
     Remove-VMSnapshot -VMName $VMName -Name $s.Name -Confirm:$false
-    Write-Host " 已提交" -ForegroundColor Green
+    Write-Host "  Submitted" -ForegroundColor Green
 }
 
-# Hyper-V 的删除是异步的：差分磁盘在后台合并回父盘，合并完空间才真正回来。
-# 不等的话会看到"删了但空间没变"，然后误以为删除没生效。
-Write-Host "`n等待后台合并完成..." -ForegroundColor Cyan
+# Hyper-V deletion is asynchronous: differencing disks merge back to the parent disk in the background; space is only reclaimed after the merge completes.
+# Without waiting, you might see "deleted but space unchanged" and mistakenly assume the deletion failed.
+Write-Host "`nWaiting for background merge to complete..." -ForegroundColor Cyan
 $deadline = (Get-Date).AddMinutes(30)
 while ((Get-Date) -lt $deadline) {
     $merging = @(Get-VM -Name $VMName | Where-Object { $_.Status -match 'Merg|合并' })
     if ($merging.Count -eq 0) { break }
-    Write-Host ("  仍在合并：{0}" -f (Get-VM -Name $VMName).Status)
+    Write-Host ("  Still merging: {0}" -f (Get-VM -Name $VMName).Status)
     Start-Sleep -Seconds 15
 }
 
 $freeAfter = Get-FreeGb $vmPath
-Write-Host ("`n剩余空间 {0} GB -> {1} GB（回收约 {2} GB）" -f
+Write-Host ("`nRemaining space {0} GB -> {1} GB (reclaiming approximately {2} GB)" -f
     $freeBefore, $freeAfter, [math]::Round($freeAfter - $freeBefore, 2)) -ForegroundColor Green
-Write-Host "`n剩下的检查点：" -ForegroundColor Cyan
+Write-Host "`nRemaining checkpoints:" -ForegroundColor Cyan
 Get-VMSnapshot -VMName $VMName | Sort-Object CreationTime | Format-Table Name, CreationTime -AutoSize

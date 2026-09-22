@@ -102,7 +102,7 @@
 #define KSWORD_ARK_CALLBACK_TYPE_IMAGE_LOAD 4UL
 #define KSWORD_ARK_CALLBACK_TYPE_OBJECT 5UL
 #define KSWORD_ARK_CALLBACK_TYPE_MINIFILTER 6UL
-// 兼容旧配置/旧源码常量名：该类型已经接入文件系统微过滤器规则链路，不再是 UI 预留项。
+// Compatible with legacy configurations/constant names: this type is now integrated into the filesystem minifilter rule chain and is no longer a UI reserved item.
 #define KSWORD_ARK_CALLBACK_TYPE_MINIFILTER_RESERVED KSWORD_ARK_CALLBACK_TYPE_MINIFILTER
 
 // External callback remove type.

@@ -61,7 +61,7 @@ Linux 6.18.35-tinycore64，2 vCPU。引导没有 `nosmp`、`hpet=disable` 或
   读者的整页校验随后覆盖 `B2 × 4 + D1 × 4092`，恢复后再次覆盖 `A5 × 4096`。
 
 原始记录和逐次判定：
-[双核数据目录](paper-data/20260915-gap-closure/smp/)、
+[双核数据目录](paper-data/20260915-gap-closure/smp)、
 [汇总](paper-data/20260915-gap-closure/smp/derived/smp-summary.json)、
 [故障明细](paper-data/20260915-gap-closure/smp/derived/faults.csv)、
 [换页明细](paper-data/20260915-gap-closure/smp/derived/cycles.csv)。
@@ -115,7 +115,7 @@ VMware 不同，仍需单独验证，不能假定安装角色就能复用同一�
 IPI 到达偏差中位数 **0.2 µs**，最大 **1.5 µs**。退出主体中位数 **748.5 µs**，
 rendezvous 包络 **40.95 µs**。逐核状态捕获、VMCS 编程和 entry 边界均单独落盘。
 
-见 [最终 A/B 数据](paper-data/20260915-gap-closure/final-windows/)、
+见 [最终 A/B 数据](paper-data/20260915-gap-closure/final-windows)、
 [开销表](paper-data/20260915-gap-closure/final-windows/derived/windows-overhead.csv)、
 [阶段汇总](paper-data/20260915-gap-closure/final-windows/derived/internal-transition-summary.json)。
 

@@ -24,8 +24,8 @@ namespace
 
     bool nearlyEqual(const qreal firstValue, const qreal secondValue)
     {
-        const qreal scale = std::max<qreal>({ 1.0, std::abs(firstValue), std::abs(secondValue) });
-        return std::abs(firstValue - secondValue) <= kRangeEpsilon * scale;
+        const qreal kScale = std::max<qreal>({ 1.0, std::abs(firstValue), std::abs(secondValue) });
+        return std::abs(firstValue - secondValue) <= kRangeEpsilon * kScale;
     }
 
     bool pointNearlyEqual(const QPointF& firstPoint, const QPointF& secondPoint)
@@ -53,15 +53,15 @@ namespace
             return toPoints;
         }
 
-        const int fromCount = fromPoints.size();
-        const int toCount = toPoints.size();
+        const int kFromCount = fromPoints.size();
+        const int kToCount = toPoints.size();
         QList<QPointF> result = toPoints;
 
-        if (fromCount == toCount && toCount >= 2)
+        if (kFromCount == kToCount && kToCount >= 2)
         {
             bool resetCoordinateShift = true;
             bool absoluteCoordinateShift = true;
-            for (int pointIndex = 0; pointIndex + 1 < toCount; ++pointIndex)
+            for (int pointIndex = 0; pointIndex + 1 < kToCount; ++pointIndex)
             {
                 resetCoordinateShift = resetCoordinateShift
                     && nearlyEqual(toPoints.at(pointIndex).x(), fromPoints.at(pointIndex).x())
@@ -77,23 +77,23 @@ namespace
                 {
                     sampleSpacing = 1.0;
                 }
-                for (int pointIndex = 0; pointIndex < toCount; ++pointIndex)
+                for (int pointIndex = 0; pointIndex < kToCount; ++pointIndex)
                 {
-                    const QPointF targetPoint = toPoints.at(pointIndex);
-                    const qreal startX = resetCoordinateShift
-                        ? targetPoint.x() + sampleSpacing
-                        : targetPoint.x();
-                    const qreal startY = pointIndex + 1 == toCount
+                    const QPointF kTargetPoint = toPoints.at(pointIndex);
+                    const qreal kStartX = resetCoordinateShift
+                        ? kTargetPoint.x() + sampleSpacing
+                        : kTargetPoint.x();
+                    const qreal kStartY = pointIndex + 1 == kToCount
                         ? fromPoints.constLast().y()
-                        : targetPoint.y();
+                        : kTargetPoint.y();
                     result[pointIndex] = QPointF(
-                        interpolateValue(startX, targetPoint.x(), progress),
-                        interpolateValue(startY, targetPoint.y(), progress));
+                        interpolateValue(kStartX, kTargetPoint.x(), progress),
+                        interpolateValue(kStartY, kTargetPoint.y(), progress));
                 }
                 return result;
             }
 
-            for (int pointIndex = 0; pointIndex < toCount; ++pointIndex)
+            for (int pointIndex = 0; pointIndex < kToCount; ++pointIndex)
             {
                 result[pointIndex] = QPointF(
                     interpolateValue(fromPoints.at(pointIndex).x(), toPoints.at(pointIndex).x(), progress),
@@ -102,23 +102,23 @@ namespace
             return result;
         }
 
-        if (toCount == fromCount + 1)
+        if (kToCount == kFromCount + 1)
         {
-            for (int pointIndex = 0; pointIndex < fromCount; ++pointIndex)
+            for (int pointIndex = 0; pointIndex < kFromCount; ++pointIndex)
             {
                 result[pointIndex] = QPointF(
                     interpolateValue(fromPoints.at(pointIndex).x(), toPoints.at(pointIndex).x(), progress),
                     interpolateValue(fromPoints.at(pointIndex).y(), toPoints.at(pointIndex).y(), progress));
             }
-            const QPointF targetPoint = toPoints.constLast();
-            result[toCount - 1] = QPointF(
-                targetPoint.x(),
-                interpolateValue(fromPoints.constLast().y(), targetPoint.y(), progress));
+            const QPointF kTargetPoint = toPoints.constLast();
+            result[kToCount - 1] = QPointF(
+                kTargetPoint.x(),
+                interpolateValue(fromPoints.constLast().y(), kTargetPoint.y(), progress));
             return result;
         }
 
-        const int sharedCount = std::min(fromCount, toCount);
-        for (int pointIndex = 0; pointIndex < sharedCount; ++pointIndex)
+        const int kSharedCount = std::min(kFromCount, kToCount);
+        for (int pointIndex = 0; pointIndex < kSharedCount; ++pointIndex)
         {
             result[pointIndex] = QPointF(
                 interpolateValue(fromPoints.at(pointIndex).x(), toPoints.at(pointIndex).x(), progress),
@@ -133,10 +133,10 @@ namespace
         const qreal progress)
     {
         QVector<qreal> result = toValues;
-        const int sharedCount = std::min(
+        const int kSharedCount = std::min(
             static_cast<int>(fromValues.size()),
             static_cast<int>(toValues.size()));
-        for (int valueIndex = 0; valueIndex < sharedCount; ++valueIndex)
+        for (int valueIndex = 0; valueIndex < kSharedCount; ++valueIndex)
         {
             result[valueIndex] = interpolateValue(fromValues.at(valueIndex), toValues.at(valueIndex), progress);
         }
@@ -155,27 +155,27 @@ namespace
             return QString::number(value, 'g', 3);
         }
 
-        const QString format = axis->labelFormat();
-        if (format.contains(QStringLiteral("%d")))
+        const QString kFormat = axis->labelFormat();
+        if (kFormat.contains(QStringLiteral("%d")))
         {
             return QString::number(qRound64(value));
         }
-        if (format.contains(QStringLiteral("%.0f")))
+        if (kFormat.contains(QStringLiteral("%.0f")))
         {
             QString text = QString::number(value, 'f', 0);
-            if (format.contains(QStringLiteral("%%")))
+            if (kFormat.contains(QStringLiteral("%%")))
             {
                 text += QLatin1Char('%');
             }
             return text;
         }
 
-        const qreal span = std::abs(axis->max() - axis->min());
-        if (span >= 1000.0)
+        const qreal kSpan = std::abs(axis->max() - axis->min());
+        if (kSpan >= 1000.0)
         {
             return QString::number(value, 'g', 3);
         }
-        return QString::number(value, 'f', span <= 10.0 ? 1 : 0);
+        return QString::number(value, 'f', kSpan <= 10.0 ? 1 : 0);
     }
 
     bool isHorizontalAlignment(const Qt::Alignment alignment)
@@ -189,13 +189,13 @@ namespace
         const QPair<qreal, qreal>& xRange,
         const QPair<qreal, qreal>& yRange)
     {
-        const qreal xSpan = std::max<qreal>(kRangeEpsilon, xRange.second - xRange.first);
-        const qreal ySpan = std::max<qreal>(kRangeEpsilon, yRange.second - yRange.first);
-        const qreal xRatio = (point.x() - xRange.first) / xSpan;
-        const qreal yRatio = (point.y() - yRange.first) / ySpan;
+        const qreal kXSpan = std::max<qreal>(kRangeEpsilon, xRange.second - xRange.first);
+        const qreal kYSpan = std::max<qreal>(kRangeEpsilon, yRange.second - yRange.first);
+        const qreal kXRatio = (point.x() - xRange.first) / kXSpan;
+        const qreal kYRatio = (point.y() - yRange.first) / kYSpan;
         return QPointF(
-            plotRect.left() + xRatio * plotRect.width(),
-            plotRect.bottom() - yRatio * plotRect.height());
+            plotRect.left() + kXRatio * plotRect.width(),
+            plotRect.bottom() - kYRatio * plotRect.height());
     }
 }
 
@@ -206,14 +206,14 @@ KsPainterChartObject::KsPainterChartObject(QObject* parent)
 
 void KsPainterChartObject::setChangeHandler(std::function<void()> changeHandler)
 {
-    m_changeHandler = std::move(changeHandler);
+    changeHandler_ = std::move(changeHandler);
 }
 
 void KsPainterChartObject::notifyChanged()
 {
-    if (m_changeHandler)
+    if (changeHandler_)
     {
-        m_changeHandler();
+        changeHandler_();
     }
 }
 
@@ -224,134 +224,134 @@ QAbstractAxis::QAbstractAxis(QObject* parent)
 
 void QAbstractAxis::setLabelsVisible(const bool visible)
 {
-    m_labelsVisible = visible;
+    labelsVisible_ = visible;
     notifyChanged();
 }
 
 bool QAbstractAxis::labelsVisible() const
 {
-    return m_labelsVisible;
+    return labelsVisible_;
 }
 
 void QAbstractAxis::setGridLineVisible(const bool visible)
 {
-    m_gridLineVisible = visible;
+    gridLineVisible_ = visible;
     notifyChanged();
 }
 
 bool QAbstractAxis::isGridLineVisible() const
 {
-    return m_gridLineVisible;
+    return gridLineVisible_;
 }
 
 void QAbstractAxis::setMinorGridLineVisible(const bool visible)
 {
-    m_minorGridLineVisible = visible;
+    minorGridLineVisible_ = visible;
     notifyChanged();
 }
 
 bool QAbstractAxis::isMinorGridLineVisible() const
 {
-    return m_minorGridLineVisible;
+    return minorGridLineVisible_;
 }
 
 void QAbstractAxis::setLineVisible(const bool visible)
 {
-    m_lineVisible = visible;
+    lineVisible_ = visible;
     notifyChanged();
 }
 
 bool QAbstractAxis::isLineVisible() const
 {
-    return m_lineVisible;
+    return lineVisible_;
 }
 
 void QAbstractAxis::setLabelsBrush(const QBrush& brush)
 {
-    m_labelsBrush = brush;
+    labelsBrush_ = brush;
     notifyChanged();
 }
 
 QBrush QAbstractAxis::labelsBrush() const
 {
-    return m_labelsBrush;
+    return labelsBrush_;
 }
 
 void QAbstractAxis::setTitleBrush(const QBrush& brush)
 {
-    m_titleBrush = brush;
+    titleBrush_ = brush;
     notifyChanged();
 }
 
 QBrush QAbstractAxis::titleBrush() const
 {
-    return m_titleBrush;
+    return titleBrush_;
 }
 
 void QAbstractAxis::setLinePenColor(const QColor& color)
 {
-    m_linePen.setColor(color);
+    linePen_.setColor(color);
     notifyChanged();
 }
 
 void QAbstractAxis::setGridLineColor(const QColor& color)
 {
-    m_gridLinePen.setColor(color);
+    gridLinePen_.setColor(color);
     notifyChanged();
 }
 
 void QAbstractAxis::setLinePen(const QPen& pen)
 {
-    m_linePen = pen;
+    linePen_ = pen;
     notifyChanged();
 }
 
 QPen QAbstractAxis::linePen() const
 {
-    return m_linePen;
+    return linePen_;
 }
 
 void QAbstractAxis::setGridLinePen(const QPen& pen)
 {
-    m_gridLinePen = pen;
+    gridLinePen_ = pen;
     notifyChanged();
 }
 
 QPen QAbstractAxis::gridLinePen() const
 {
-    return m_gridLinePen;
+    return gridLinePen_;
 }
 
 void QAbstractAxis::setTitleText(const QString& titleText)
 {
-    m_titleText = titleText;
+    titleText_ = titleText;
     notifyChanged();
 }
 
 QString QAbstractAxis::titleText() const
 {
-    return m_titleText;
+    return titleText_;
 }
 
 void QAbstractAxis::setLabelFormat(const QString& labelFormat)
 {
-    m_labelFormat = labelFormat;
+    labelFormat_ = labelFormat;
     notifyChanged();
 }
 
 QString QAbstractAxis::labelFormat() const
 {
-    return m_labelFormat;
+    return labelFormat_;
 }
 
 Qt::Alignment QAbstractAxis::alignment() const
 {
-    return m_alignment;
+    return alignment_;
 }
 
 void QAbstractAxis::setAlignment(const Qt::Alignment alignment)
 {
-    m_alignment = alignment;
+    alignment_ = alignment;
     notifyChanged();
 }
 
@@ -370,23 +370,23 @@ void QValueAxis::setRange(qreal minimum, qreal maximum)
     {
         maximum = minimum + 1.0;
     }
-    if (nearlyEqual(m_minimum, minimum) && nearlyEqual(m_maximum, maximum))
+    if (nearlyEqual(minimum_, minimum) && nearlyEqual(maximum_, maximum))
     {
         return;
     }
-    m_minimum = minimum;
-    m_maximum = maximum;
+    minimum_ = minimum;
+    maximum_ = maximum;
     notifyChanged();
 }
 
 qreal QValueAxis::min() const
 {
-    return m_minimum;
+    return minimum_;
 }
 
 qreal QValueAxis::max() const
 {
-    return m_maximum;
+    return maximum_;
 }
 
 QBarCategoryAxis::QBarCategoryAxis(QObject* parent)
@@ -396,19 +396,19 @@ QBarCategoryAxis::QBarCategoryAxis(QObject* parent)
 
 void QBarCategoryAxis::append(const QString& category)
 {
-    m_categories.append(category);
+    categories_.append(category);
     notifyChanged();
 }
 
 void QBarCategoryAxis::append(const QStringList& categories)
 {
-    m_categories.append(categories);
+    categories_.append(categories);
     notifyChanged();
 }
 
 QStringList QBarCategoryAxis::categories() const
 {
-    return m_categories;
+    return categories_;
 }
 
 QAbstractSeries::QAbstractSeries(QObject* parent)
@@ -418,13 +418,13 @@ QAbstractSeries::QAbstractSeries(QObject* parent)
 
 void QAbstractSeries::setName(const QString& name)
 {
-    m_name = name;
+    name_ = name;
     notifyChanged();
 }
 
 QString QAbstractSeries::name() const
 {
-    return m_name;
+    return name_;
 }
 
 bool QAbstractSeries::attachAxis(QAbstractAxis* axis)
@@ -433,9 +433,9 @@ bool QAbstractSeries::attachAxis(QAbstractAxis* axis)
     {
         return false;
     }
-    if (!m_attachedAxes.contains(axis))
+    if (!attachedAxes_.contains(axis))
     {
-        m_attachedAxes.append(axis);
+        attachedAxes_.append(axis);
         notifyChanged();
     }
     return true;
@@ -443,7 +443,7 @@ bool QAbstractSeries::attachAxis(QAbstractAxis* axis)
 
 QList<QAbstractAxis*> QAbstractSeries::attachedAxes() const
 {
-    return m_attachedAxes;
+    return attachedAxes_;
 }
 
 QLineSeries::QLineSeries(QObject* parent)
@@ -458,131 +458,131 @@ void QLineSeries::append(const qreal x, const qreal y)
 
 void QLineSeries::append(const QPointF& point)
 {
-    m_points.append(point);
+    points_.append(point);
     notifyChanged();
 }
 
 bool QLineSeries::remove(const int index)
 {
-    if (index < 0 || index >= m_points.size())
+    if (index < 0 || index >= points_.size())
     {
         return false;
     }
-    m_points.removeAt(index);
+    points_.removeAt(index);
     notifyChanged();
     return true;
 }
 
 void QLineSeries::replace(const QList<QPointF>& points)
 {
-    m_points = points;
+    points_ = points;
     notifyChanged();
 }
 
 int QLineSeries::count() const
 {
-    return static_cast<int>(m_points.size());
+    return static_cast<int>(points_.size());
 }
 
 QList<QPointF> QLineSeries::points() const
 {
-    return m_points;
+    return points_;
 }
 
 void QLineSeries::setColor(const QColor& color)
 {
-    m_pen.setColor(color);
+    pen_.setColor(color);
     notifyChanged();
 }
 
 QColor QLineSeries::color() const
 {
-    return m_pen.color();
+    return pen_.color();
 }
 
 void QLineSeries::setPen(const QPen& pen)
 {
-    m_pen = pen;
+    pen_ = pen;
     notifyChanged();
 }
 
 QPen QLineSeries::pen() const
 {
-    return m_pen;
+    return pen_;
 }
 
 QAreaSeries::QAreaSeries(QLineSeries* upperSeries, QLineSeries* lowerSeries, QObject* parent)
     : QAbstractSeries(parent)
-    , m_upperSeries(upperSeries)
-    , m_lowerSeries(lowerSeries)
+    , upperSeries_(upperSeries)
+    , lowerSeries_(lowerSeries)
 {
-    if (m_upperSeries != nullptr)
+    if (upperSeries_ != nullptr)
     {
-        m_upperSeries->setChangeHandler([this]() { notifyChanged(); });
+        upperSeries_->setChangeHandler([this]() { notifyChanged(); });
     }
-    if (m_lowerSeries != nullptr)
+    if (lowerSeries_ != nullptr)
     {
-        m_lowerSeries->setChangeHandler([this]() { notifyChanged(); });
+        lowerSeries_->setChangeHandler([this]() { notifyChanged(); });
     }
 }
 
 QLineSeries* QAreaSeries::upperSeries() const
 {
-    return m_upperSeries;
+    return upperSeries_;
 }
 
 QLineSeries* QAreaSeries::lowerSeries() const
 {
-    return m_lowerSeries;
+    return lowerSeries_;
 }
 
 void QAreaSeries::setColor(const QColor& color)
 {
-    m_brush = QBrush(color);
+    brush_ = QBrush(color);
     notifyChanged();
 }
 
 QColor QAreaSeries::color() const
 {
-    return m_brush.color();
+    return brush_.color();
 }
 
 void QAreaSeries::setBorderColor(const QColor& color)
 {
-    m_pen.setColor(color);
+    pen_.setColor(color);
     notifyChanged();
 }
 
 QColor QAreaSeries::borderColor() const
 {
-    return m_pen.color();
+    return pen_.color();
 }
 
 void QAreaSeries::setPen(const QPen& pen)
 {
-    m_pen = pen;
+    pen_ = pen;
     notifyChanged();
 }
 
 QPen QAreaSeries::pen() const
 {
-    return m_pen;
+    return pen_;
 }
 
 void QAreaSeries::setBrush(const QBrush& brush)
 {
-    m_brush = brush;
+    brush_ = brush;
     notifyChanged();
 }
 
 QBrush QAreaSeries::brush() const
 {
-    return m_brush;
+    return brush_;
 }
 
 QBarSet::QBarSet(const QString& label, QObject* parent)
     : KsPainterChartObject(parent)
-    , m_label(label)
+    , label_(label)
 {
 }
 
@@ -594,81 +594,81 @@ QBarSet& QBarSet::operator<<(const qreal value)
 
 void QBarSet::append(const qreal value)
 {
-    m_values.append(value);
+    values_.append(value);
     notifyChanged();
 }
 
 void QBarSet::replace(const int index, const qreal value)
 {
-    if (index < 0 || index >= m_values.size())
+    if (index < 0 || index >= values_.size())
     {
         return;
     }
-    if (nearlyEqual(m_values.at(index), value))
+    if (nearlyEqual(values_.at(index), value))
     {
         return;
     }
-    m_values[index] = value;
+    values_[index] = value;
     notifyChanged();
 }
 
 int QBarSet::count() const
 {
-    return static_cast<int>(m_values.size());
+    return static_cast<int>(values_.size());
 }
 
 QVector<qreal> QBarSet::values() const
 {
-    return m_values;
+    return values_;
 }
 
 QString QBarSet::label() const
 {
-    return m_label;
+    return label_;
 }
 
 void QBarSet::setColor(const QColor& color)
 {
-    m_brush = QBrush(color);
+    brush_ = QBrush(color);
     notifyChanged();
 }
 
 QColor QBarSet::color() const
 {
-    return m_brush.color();
+    return brush_.color();
 }
 
 void QBarSet::setBorderColor(const QColor& color)
 {
-    m_borderColor = color;
+    borderColor_ = color;
     notifyChanged();
 }
 
 QColor QBarSet::borderColor() const
 {
-    return m_borderColor;
+    return borderColor_;
 }
 
 void QBarSet::setBrush(const QBrush& brush)
 {
-    m_brush = brush;
+    brush_ = brush;
     notifyChanged();
 }
 
 QBrush QBarSet::brush() const
 {
-    return m_brush;
+    return brush_;
 }
 
 void QBarSet::setLabelBrush(const QBrush& brush)
 {
-    m_labelBrush = brush;
+    labelBrush_ = brush;
     notifyChanged();
 }
 
 QBrush QBarSet::labelBrush() const
 {
-    return m_labelBrush;
+    return labelBrush_;
 }
 
 QBarSeries::QBarSeries(QObject* parent)
@@ -678,11 +678,11 @@ QBarSeries::QBarSeries(QObject* parent)
 
 bool QBarSeries::append(QBarSet* set)
 {
-    if (set == nullptr || m_sets.contains(set))
+    if (set == nullptr || sets_.contains(set))
     {
         return false;
     }
-    m_sets.append(set);
+    sets_.append(set);
     if (set->parent() == nullptr)
     {
         set->setParent(this);
@@ -704,7 +704,7 @@ bool QBarSeries::append(const QList<QBarSet*>& sets)
 
 QList<QBarSet*> QBarSeries::barSets() const
 {
-    return m_sets;
+    return sets_;
 }
 
 void QBarSeries::attachSetHandler(QBarSet* set)
@@ -727,80 +727,80 @@ void QLegend::hide()
 
 void QLegend::setVisible(const bool visible)
 {
-    m_visible = visible;
+    visible_ = visible;
     notifyChanged();
 }
 
 bool QLegend::isVisible() const
 {
-    return m_visible;
+    return visible_;
 }
 
 void QLegend::setAlignment(const Qt::Alignment alignment)
 {
-    m_alignment = alignment;
+    alignment_ = alignment;
     notifyChanged();
 }
 
 Qt::Alignment QLegend::alignment() const
 {
-    return m_alignment;
+    return alignment_;
 }
 
 void QLegend::setLabelColor(const QColor& color)
 {
-    m_labelBrush = QBrush(color);
+    labelBrush_ = QBrush(color);
     notifyChanged();
 }
 
 QColor QLegend::labelColor() const
 {
-    return m_labelBrush.color();
+    return labelBrush_.color();
 }
 
 void QLegend::setLabelBrush(const QBrush& brush)
 {
-    m_labelBrush = brush;
+    labelBrush_ = brush;
     notifyChanged();
 }
 
 QBrush QLegend::labelBrush() const
 {
-    return m_labelBrush;
+    return labelBrush_;
 }
 
 void QLegend::setFont(const QFont& font)
 {
-    m_font = font;
+    font_ = font;
     notifyChanged();
 }
 
 QFont QLegend::font() const
 {
-    return m_font;
+    return font_;
 }
 
 QChart::QChart(QObject* parent)
     : KsPainterChartObject(parent)
-    , m_legend(new QLegend(this))
+    , legend_(new QLegend(this))
 {
-    m_legend->setChangeHandler([this]() { notifyChanged(); });
+    legend_->setChangeHandler([this]() { notifyChanged(); });
 }
 
 void QChart::addSeries(QAbstractSeries* series)
 {
-    if (series == nullptr || m_series.contains(series))
+    if (series == nullptr || series_.contains(series))
     {
         return;
     }
-    m_series.append(series);
+    series_.append(series);
     if (series->parent() == nullptr)
     {
         series->setParent(this);
     }
     attachSeriesHandlers(series);
     QObject::connect(series, &QObject::destroyed, this, [this, series]() {
-        m_series.removeAll(series);
+        series_.removeAll(series);
         notifyChanged();
     });
     notifyChanged();
@@ -808,7 +808,7 @@ void QChart::addSeries(QAbstractSeries* series)
 
 QList<QAbstractSeries*> QChart::series() const
 {
-    return m_series;
+    return series_;
 }
 
 void QChart::addAxis(QAbstractAxis* axis, const Qt::Alignment alignment)
@@ -817,16 +817,16 @@ void QChart::addAxis(QAbstractAxis* axis, const Qt::Alignment alignment)
     {
         return;
     }
-    if (!m_axes.contains(axis))
+    if (!axes_.contains(axis))
     {
-        m_axes.append(axis);
+        axes_.append(axis);
         if (axis->parent() == nullptr)
         {
             axis->setParent(this);
         }
         axis->setChangeHandler([this]() { notifyChanged(); });
         QObject::connect(axis, &QObject::destroyed, this, [this, axis]() {
-            m_axes.removeAll(axis);
+            axes_.removeAll(axis);
             notifyChanged();
         });
     }
@@ -836,155 +836,155 @@ void QChart::addAxis(QAbstractAxis* axis, const Qt::Alignment alignment)
 
 QList<QAbstractAxis*> QChart::axes() const
 {
-    return m_axes;
+    return axes_;
 }
 
 QLegend* QChart::legend() const
 {
-    return m_legend;
+    return legend_;
 }
 
 void QChart::setTitle(const QString& title)
 {
-    m_title = title;
+    title_ = title;
     notifyChanged();
 }
 
 QString QChart::title() const
 {
-    return m_title;
+    return title_;
 }
 
 void QChart::setTitleBrush(const QBrush& brush)
 {
-    m_titleBrush = brush;
+    titleBrush_ = brush;
     notifyChanged();
 }
 
 QBrush QChart::titleBrush() const
 {
-    return m_titleBrush;
+    return titleBrush_;
 }
 
 void QChart::setTitleFont(const QFont& font)
 {
-    m_titleFont = font;
+    titleFont_ = font;
     notifyChanged();
 }
 
 QFont QChart::titleFont() const
 {
-    return m_titleFont;
+    return titleFont_;
 }
 
 void QChart::setBackgroundVisible(const bool visible)
 {
-    m_backgroundVisible = visible;
+    backgroundVisible_ = visible;
     notifyChanged();
 }
 
 bool QChart::isBackgroundVisible() const
 {
-    return m_backgroundVisible;
+    return backgroundVisible_;
 }
 
 void QChart::setBackgroundRoundness(const qreal roundness)
 {
-    m_backgroundRoundness = std::max<qreal>(0.0, roundness);
+    backgroundRoundness_ = std::max<qreal>(0.0, roundness);
     notifyChanged();
 }
 
 qreal QChart::backgroundRoundness() const
 {
-    return m_backgroundRoundness;
+    return backgroundRoundness_;
 }
 
 void QChart::setBackgroundBrush(const QBrush& brush)
 {
-    m_backgroundBrush = brush;
+    backgroundBrush_ = brush;
     notifyChanged();
 }
 
 QBrush QChart::backgroundBrush() const
 {
-    return m_backgroundBrush;
+    return backgroundBrush_;
 }
 
 void QChart::setMargins(const QMargins& margins)
 {
-    m_margins = margins;
+    margins_ = margins;
     notifyChanged();
 }
 
 QMargins QChart::margins() const
 {
-    return m_margins;
+    return margins_;
 }
 
 void QChart::setPlotAreaBackgroundVisible(const bool visible)
 {
-    m_plotAreaBackgroundVisible = visible;
+    plotAreaBackgroundVisible_ = visible;
     notifyChanged();
 }
 
 bool QChart::isPlotAreaBackgroundVisible() const
 {
-    return m_plotAreaBackgroundVisible;
+    return plotAreaBackgroundVisible_;
 }
 
 void QChart::setPlotAreaBackgroundBrush(const QBrush& brush)
 {
-    m_plotAreaBackgroundBrush = brush;
+    plotAreaBackgroundBrush_ = brush;
     notifyChanged();
 }
 
 QBrush QChart::plotAreaBackgroundBrush() const
 {
-    return m_plotAreaBackgroundBrush;
+    return plotAreaBackgroundBrush_;
 }
 
 void QChart::setPlotAreaBackgroundPen(const QPen& pen)
 {
-    m_plotAreaBackgroundPen = pen;
+    plotAreaBackgroundPen_ = pen;
     notifyChanged();
 }
 
 QPen QChart::plotAreaBackgroundPen() const
 {
-    return m_plotAreaBackgroundPen;
+    return plotAreaBackgroundPen_;
 }
 
 void QChart::setAnimationOptions(const AnimationOption options)
 {
-    m_animationOptions = options;
+    animationOptions_ = options;
     notifyChanged();
 }
 
 QChart::AnimationOption QChart::animationOptions() const
 {
-    return m_animationOptions;
+    return animationOptions_;
 }
 
 void QChart::setAnimationDuration(const int durationMs)
 {
-    m_animationDurationMs = std::max(0, durationMs);
+    animationDurationMs_ = std::max(0, durationMs);
     notifyChanged();
 }
 
 int QChart::animationDuration() const
 {
-    return m_animationDurationMs;
+    return animationDurationMs_;
 }
 
 void QChart::setAnimationEasingCurve(const QEasingCurve& easingCurve)
 {
-    m_animationEasingCurve = easingCurve;
+    animationEasingCurve_ = easingCurve;
     notifyChanged();
 }
 
 QEasingCurve QChart::animationEasingCurve() const
 {
-    return m_animationEasingCurve;
+    return animationEasingCurve_;
 }
 
 void QChart::update()
@@ -1025,39 +1025,39 @@ void QChart::attachSeriesHandlers(QAbstractSeries* series)
 
 QChartView::QChartView(QChart* chart, QWidget* parent)
     : QFrame(parent)
-    , m_chart(chart)
-    , m_animation(new QVariantAnimation(this))
+    , chart_(chart)
+    , animation_(new QVariantAnimation(this))
 {
     setAutoFillBackground(false);
     setAttribute(Qt::WA_OpaquePaintEvent, false);
-    if (m_chart != nullptr)
+    if (chart_ != nullptr)
     {
-        if (m_chart->parent() == nullptr)
+        if (chart_->parent() == nullptr)
         {
-            m_chart->setParent(this);
+            chart_->setParent(this);
         }
-        m_chart->setChangeHandler([this]() { scheduleModelUpdate(); });
+        chart_->setChangeHandler([this]() { scheduleModelUpdate(); });
     }
 
-    m_animation->setStartValue(0.0);
-    m_animation->setEndValue(1.0);
+    animation_->setStartValue(0.0);
+    animation_->setEndValue(1.0);
     QObject::connect(
-        m_animation,
+        animation_,
         &QVariantAnimation::valueChanged,
         this,
         [this](const QVariant& progressValue) {
-            m_animationProgress = progressValue.toReal();
+            animationProgress_ = progressValue.toReal();
             QFrame::update();
         });
     QObject::connect(
-        m_animation,
+        animation_,
         &QVariantAnimation::finished,
         this,
         [this]() {
-            m_animationProgress = 1.0;
-            m_displayedLinePoints = m_toLinePoints;
-            m_displayedBarValues = m_toBarValues;
-            m_displayedAxisRanges = m_toAxisRanges;
+            animationProgress_ = 1.0;
+            displayedLinePoints_ = toLinePoints_;
+            displayedBarValues_ = toBarValues_;
+            displayedAxisRanges_ = toAxisRanges_;
             QFrame::update();
         });
 
@@ -1066,15 +1066,15 @@ QChartView::QChartView(QChart* chart, QWidget* parent)
 
 QChartView::~QChartView()
 {
-    if (m_chart != nullptr)
+    if (chart_ != nullptr)
     {
-        m_chart->setChangeHandler({});
+        chart_->setChangeHandler({});
     }
 }
 
 QChart* QChartView::chart() const
 {
-    return m_chart;
+    return chart_;
 }
 
 QWidget* QChartView::viewport()
@@ -1091,7 +1091,7 @@ void QChartView::setRenderHint(const QPainter::RenderHint hint, const bool enabl
 {
     if (hint == QPainter::Antialiasing)
     {
-        m_antialiasingEnabled = enabled;
+        antialiasingEnabled_ = enabled;
         QFrame::update();
     }
 }
@@ -1113,7 +1113,7 @@ void QChartView::setSizeAdjustPolicy(const QAbstractScrollArea::SizeAdjustPolicy
 
 void QChartView::setBackgroundBrush(const QBrush& brush)
 {
-    m_viewBackgroundBrush = brush;
+    viewBackgroundBrush_ = brush;
     QFrame::update();
 }
 
@@ -1125,7 +1125,7 @@ QSize QChartView::sizeHint() const
 void QChartView::showEvent(QShowEvent* event)
 {
     QFrame::showEvent(event);
-    if (m_animation == nullptr || m_animation->state() != QAbstractAnimation::Running)
+    if (animation_ == nullptr || animation_->state() != QAbstractAnimation::Running)
     {
         syncSnapshotsToCurrent();
     }
@@ -1133,27 +1133,27 @@ void QChartView::showEvent(QShowEvent* event)
 
 void QChartView::scheduleModelUpdate()
 {
-    if (m_updateScheduled)
+    if (updateScheduled_)
     {
         return;
     }
-    m_updateScheduled = true;
+    updateScheduled_ = true;
     QTimer::singleShot(0, this, [this]() { applyPendingModelUpdate(); });
 }
 
 void QChartView::applyPendingModelUpdate()
 {
-    m_updateScheduled = false;
-    if (m_chart == nullptr)
+    updateScheduled_ = false;
+    if (chart_ == nullptr)
     {
         QFrame::update();
         return;
     }
-    if (m_chart->animationOptions() == QChart::NoAnimation || m_chart->animationDuration() <= 0)
+    if (chart_->animationOptions() == QChart::kNoAnimation || chart_->animationDuration() <= 0)
     {
-        if (m_animation->state() == QAbstractAnimation::Running)
+        if (animation_->state() == QAbstractAnimation::Running)
         {
-            m_animation->stop();
+            animation_->stop();
         }
         syncSnapshotsToCurrent();
         QFrame::update();
@@ -1164,150 +1164,150 @@ void QChartView::applyPendingModelUpdate()
 
 void QChartView::startModelAnimation()
 {
-    if (m_chart == nullptr)
+    if (chart_ == nullptr)
     {
         return;
     }
 
-    if (m_animation->state() == QAbstractAnimation::Running)
+    if (animation_->state() == QAbstractAnimation::Running)
     {
         captureCurrentFrameAsDisplayed();
     }
 
-    const LinePointMap targetLinePoints = currentLinePoints();
-    const BarValueMap targetBarValues = currentBarValues();
-    const AxisRangeMap targetAxisRanges = currentAxisRanges();
-    if (m_displayedLinePoints.isEmpty()
-        && m_displayedBarValues.isEmpty()
-        && m_displayedAxisRanges.isEmpty())
+    const LinePointMap kTargetLinePoints = currentLinePoints();
+    const BarValueMap kTargetBarValues = currentBarValues();
+    const AxisRangeMap kTargetAxisRanges = currentAxisRanges();
+    if (displayedLinePoints_.isEmpty()
+        && displayedBarValues_.isEmpty()
+        && displayedAxisRanges_.isEmpty())
     {
         syncSnapshotsToCurrent();
         QFrame::update();
         return;
     }
 
-    const int optionBits = static_cast<int>(m_chart->animationOptions());
-    const bool animateSeries = (optionBits & static_cast<int>(QChart::SeriesAnimations)) != 0;
-    const bool animateAxes = (optionBits & static_cast<int>(QChart::GridAxisAnimations)) != 0;
+    const int kOptionBits = static_cast<int>(chart_->animationOptions());
+    const bool kAnimateSeries = (kOptionBits & static_cast<int>(QChart::kSeriesAnimations)) != 0;
+    const bool kAnimateAxes = (kOptionBits & static_cast<int>(QChart::kGridAxisAnimations)) != 0;
 
-    if (!animateSeries)
+    if (!kAnimateSeries)
     {
-        m_displayedLinePoints = targetLinePoints;
-        m_displayedBarValues = targetBarValues;
+        displayedLinePoints_ = kTargetLinePoints;
+        displayedBarValues_ = kTargetBarValues;
     }
-    if (!animateAxes)
+    if (!kAnimateAxes)
     {
-        m_displayedAxisRanges = targetAxisRanges;
+        displayedAxisRanges_ = kTargetAxisRanges;
     }
 
-    m_fromLinePoints.clear();
-    m_toLinePoints = targetLinePoints;
-    for (auto iterator = targetLinePoints.constBegin(); iterator != targetLinePoints.constEnd(); ++iterator)
+    fromLinePoints_.clear();
+    toLinePoints_ = kTargetLinePoints;
+    for (auto iterator = kTargetLinePoints.constBegin(); iterator != kTargetLinePoints.constEnd(); ++iterator)
     {
-        m_fromLinePoints.insert(
+        fromLinePoints_.insert(
             iterator.key(),
-            m_displayedLinePoints.value(iterator.key(), iterator.value()));
+            displayedLinePoints_.value(iterator.key(), iterator.value()));
     }
 
-    m_fromBarValues.clear();
-    m_toBarValues = targetBarValues;
-    for (auto iterator = targetBarValues.constBegin(); iterator != targetBarValues.constEnd(); ++iterator)
+    fromBarValues_.clear();
+    toBarValues_ = kTargetBarValues;
+    for (auto iterator = kTargetBarValues.constBegin(); iterator != kTargetBarValues.constEnd(); ++iterator)
     {
-        m_fromBarValues.insert(
+        fromBarValues_.insert(
             iterator.key(),
-            m_displayedBarValues.value(iterator.key(), iterator.value()));
+            displayedBarValues_.value(iterator.key(), iterator.value()));
     }
 
-    m_fromAxisRanges.clear();
-    m_toAxisRanges = targetAxisRanges;
-    for (auto iterator = targetAxisRanges.constBegin(); iterator != targetAxisRanges.constEnd(); ++iterator)
+    fromAxisRanges_.clear();
+    toAxisRanges_ = kTargetAxisRanges;
+    for (auto iterator = kTargetAxisRanges.constBegin(); iterator != kTargetAxisRanges.constEnd(); ++iterator)
     {
-        m_fromAxisRanges.insert(
+        fromAxisRanges_.insert(
             iterator.key(),
-            m_displayedAxisRanges.value(iterator.key(), iterator.value()));
+            displayedAxisRanges_.value(iterator.key(), iterator.value()));
     }
 
-    const bool seriesChanged = animateSeries
-        && (m_fromLinePoints != m_toLinePoints || m_fromBarValues != m_toBarValues);
-    const bool axesChanged = animateAxes && m_fromAxisRanges != m_toAxisRanges;
-    if (!seriesChanged && !axesChanged)
+    const bool kSeriesChanged = kAnimateSeries
+        && (fromLinePoints_ != toLinePoints_ || fromBarValues_ != toBarValues_);
+    const bool kAxesChanged = kAnimateAxes && fromAxisRanges_ != toAxisRanges_;
+    if (!kSeriesChanged && !kAxesChanged)
     {
         syncSnapshotsToCurrent();
         QFrame::update();
         return;
     }
 
-    m_animationProgress = 0.0;
-    m_animation->setDuration(m_chart->animationDuration());
-    m_animation->setEasingCurve(m_chart->animationEasingCurve());
-    m_animation->setStartValue(0.0);
-    m_animation->setEndValue(1.0);
-    m_animation->start();
+    animationProgress_ = 0.0;
+    animation_->setDuration(chart_->animationDuration());
+    animation_->setEasingCurve(chart_->animationEasingCurve());
+    animation_->setStartValue(0.0);
+    animation_->setEndValue(1.0);
+    animation_->start();
 }
 
 void QChartView::syncSnapshotsToCurrent()
 {
-    m_displayedLinePoints = currentLinePoints();
-    m_displayedBarValues = currentBarValues();
-    m_displayedAxisRanges = currentAxisRanges();
-    m_fromLinePoints = m_displayedLinePoints;
-    m_toLinePoints = m_displayedLinePoints;
-    m_fromBarValues = m_displayedBarValues;
-    m_toBarValues = m_displayedBarValues;
-    m_fromAxisRanges = m_displayedAxisRanges;
-    m_toAxisRanges = m_displayedAxisRanges;
-    m_animationProgress = 1.0;
+    displayedLinePoints_ = currentLinePoints();
+    displayedBarValues_ = currentBarValues();
+    displayedAxisRanges_ = currentAxisRanges();
+    fromLinePoints_ = displayedLinePoints_;
+    toLinePoints_ = displayedLinePoints_;
+    fromBarValues_ = displayedBarValues_;
+    toBarValues_ = displayedBarValues_;
+    fromAxisRanges_ = displayedAxisRanges_;
+    toAxisRanges_ = displayedAxisRanges_;
+    animationProgress_ = 1.0;
 }
 
 void QChartView::captureCurrentFrameAsDisplayed()
 {
     LinePointMap frameLinePoints;
-    for (auto iterator = m_toLinePoints.constBegin(); iterator != m_toLinePoints.constEnd(); ++iterator)
+    for (auto iterator = toLinePoints_.constBegin(); iterator != toLinePoints_.constEnd(); ++iterator)
     {
         frameLinePoints.insert(iterator.key(), renderedPoints(iterator.key()));
     }
     BarValueMap frameBarValues;
-    for (auto iterator = m_toBarValues.constBegin(); iterator != m_toBarValues.constEnd(); ++iterator)
+    for (auto iterator = toBarValues_.constBegin(); iterator != toBarValues_.constEnd(); ++iterator)
     {
         frameBarValues.insert(iterator.key(), renderedBarValues(iterator.key()));
     }
     AxisRangeMap frameAxisRanges;
-    for (auto iterator = m_toAxisRanges.constBegin(); iterator != m_toAxisRanges.constEnd(); ++iterator)
+    for (auto iterator = toAxisRanges_.constBegin(); iterator != toAxisRanges_.constEnd(); ++iterator)
     {
         frameAxisRanges.insert(iterator.key(), renderedAxisRange(iterator.key()));
     }
-    m_animation->stop();
-    m_displayedLinePoints = frameLinePoints;
-    m_displayedBarValues = frameBarValues;
-    m_displayedAxisRanges = frameAxisRanges;
-    m_animationProgress = 1.0;
+    animation_->stop();
+    displayedLinePoints_ = frameLinePoints;
+    displayedBarValues_ = frameBarValues;
+    displayedAxisRanges_ = frameAxisRanges;
+    animationProgress_ = 1.0;
 }
 
 QChartView::LinePointMap QChartView::currentLinePoints() const
 {
     LinePointMap result;
-    if (m_chart == nullptr)
+    if (chart_ == nullptr)
     {
         return result;
     }
     QSet<const QLineSeries*> visitedSeries;
-    const auto addLineSeries = [&result, &visitedSeries](const QLineSeries* lineSeries) {
+    const auto kAddLineSeries = [&result, &visitedSeries](const QLineSeries* lineSeries) {
         if (lineSeries != nullptr && !visitedSeries.contains(lineSeries))
         {
             visitedSeries.insert(lineSeries);
             result.insert(lineSeries, lineSeries->points());
         }
     };
-    for (QAbstractSeries* abstractSeries : m_chart->series())
+    for (QAbstractSeries* abstractSeries : chart_->series())
     {
         if (QLineSeries* lineSeries = dynamic_cast<QLineSeries*>(abstractSeries))
         {
-            addLineSeries(lineSeries);
+            kAddLineSeries(lineSeries);
         }
         else if (QAreaSeries* areaSeries = dynamic_cast<QAreaSeries*>(abstractSeries))
         {
-            addLineSeries(areaSeries->upperSeries());
-            addLineSeries(areaSeries->lowerSeries());
+            kAddLineSeries(areaSeries->upperSeries());
+            kAddLineSeries(areaSeries->lowerSeries());
         }
     }
     return result;
@@ -1316,11 +1316,11 @@ QChartView::LinePointMap QChartView::currentLinePoints() const
 QChartView::BarValueMap QChartView::currentBarValues() const
 {
     BarValueMap result;
-    if (m_chart == nullptr)
+    if (chart_ == nullptr)
     {
         return result;
     }
-    for (QAbstractSeries* abstractSeries : m_chart->series())
+    for (QAbstractSeries* abstractSeries : chart_->series())
     {
         QBarSeries* barSeries = dynamic_cast<QBarSeries*>(abstractSeries);
         if (barSeries == nullptr)
@@ -1341,11 +1341,11 @@ QChartView::BarValueMap QChartView::currentBarValues() const
 QChartView::AxisRangeMap QChartView::currentAxisRanges() const
 {
     AxisRangeMap result;
-    if (m_chart == nullptr)
+    if (chart_ == nullptr)
     {
         return result;
     }
-    for (QAbstractAxis* abstractAxis : m_chart->axes())
+    for (QAbstractAxis* abstractAxis : chart_->axes())
     {
         if (QValueAxis* valueAxis = dynamic_cast<QValueAxis*>(abstractAxis))
         {
@@ -1361,18 +1361,18 @@ QList<QPointF> QChartView::renderedPoints(const QLineSeries* series) const
     {
         return {};
     }
-    const int optionBits = m_chart != nullptr
-        ? static_cast<int>(m_chart->animationOptions())
+    const int kOptionBits = chart_ != nullptr
+        ? static_cast<int>(chart_->animationOptions())
         : 0;
-    const bool animateSeries = (optionBits & static_cast<int>(QChart::SeriesAnimations)) != 0;
-    if (animateSeries && m_animation->state() == QAbstractAnimation::Running)
+    const bool kAnimateSeries = (kOptionBits & static_cast<int>(QChart::kSeriesAnimations)) != 0;
+    if (kAnimateSeries && animation_->state() == QAbstractAnimation::Running)
     {
         return interpolatePointLists(
-            m_fromLinePoints.value(series, series->points()),
-            m_toLinePoints.value(series, series->points()),
-            m_animationProgress);
+            fromLinePoints_.value(series, series->points()),
+            toLinePoints_.value(series, series->points()),
+            animationProgress_);
     }
-    return m_displayedLinePoints.value(series, series->points());
+    return displayedLinePoints_.value(series, series->points());
 }
 
 QVector<qreal> QChartView::renderedBarValues(const QBarSet* set) const
@@ -1381,18 +1381,18 @@ QVector<qreal> QChartView::renderedBarValues(const QBarSet* set) const
     {
         return {};
     }
-    const int optionBits = m_chart != nullptr
-        ? static_cast<int>(m_chart->animationOptions())
+    const int kOptionBits = chart_ != nullptr
+        ? static_cast<int>(chart_->animationOptions())
         : 0;
-    const bool animateSeries = (optionBits & static_cast<int>(QChart::SeriesAnimations)) != 0;
-    if (animateSeries && m_animation->state() == QAbstractAnimation::Running)
+    const bool kAnimateSeries = (kOptionBits & static_cast<int>(QChart::kSeriesAnimations)) != 0;
+    if (kAnimateSeries && animation_->state() == QAbstractAnimation::Running)
     {
         return interpolateBarValues(
-            m_fromBarValues.value(set, set->values()),
-            m_toBarValues.value(set, set->values()),
-            m_animationProgress);
+            fromBarValues_.value(set, set->values()),
+            toBarValues_.value(set, set->values()),
+            animationProgress_);
     }
-    return m_displayedBarValues.value(set, set->values());
+    return displayedBarValues_.value(set, set->values());
 }
 
 QPair<qreal, qreal> QChartView::renderedAxisRange(const QValueAxis* axis) const
@@ -1401,20 +1401,20 @@ QPair<qreal, qreal> QChartView::renderedAxisRange(const QValueAxis* axis) const
     {
         return qMakePair(0.0, 1.0);
     }
-    const QPair<qreal, qreal> currentRange(axis->min(), axis->max());
-    const int optionBits = m_chart != nullptr
-        ? static_cast<int>(m_chart->animationOptions())
+    const QPair<qreal, qreal> kCurrentRange(axis->min(), axis->max());
+    const int kOptionBits = chart_ != nullptr
+        ? static_cast<int>(chart_->animationOptions())
         : 0;
-    const bool animateAxes = (optionBits & static_cast<int>(QChart::GridAxisAnimations)) != 0;
-    if (animateAxes && m_animation->state() == QAbstractAnimation::Running)
+    const bool kAnimateAxes = (kOptionBits & static_cast<int>(QChart::kGridAxisAnimations)) != 0;
+    if (kAnimateAxes && animation_->state() == QAbstractAnimation::Running)
     {
-        const QPair<qreal, qreal> fromRange = m_fromAxisRanges.value(axis, currentRange);
-        const QPair<qreal, qreal> toRange = m_toAxisRanges.value(axis, currentRange);
+        const QPair<qreal, qreal> kFromRange = fromAxisRanges_.value(axis, kCurrentRange);
+        const QPair<qreal, qreal> kToRange = toAxisRanges_.value(axis, kCurrentRange);
         return qMakePair(
-            interpolateValue(fromRange.first, toRange.first, m_animationProgress),
-            interpolateValue(fromRange.second, toRange.second, m_animationProgress));
+            interpolateValue(kFromRange.first, kToRange.first, animationProgress_),
+            interpolateValue(kFromRange.second, kToRange.second, animationProgress_));
     }
-    return m_displayedAxisRanges.value(axis, currentRange);
+    return displayedAxisRanges_.value(axis, kCurrentRange);
 }
 
 void QChartView::paintEvent(QPaintEvent* event)
@@ -1422,61 +1422,61 @@ void QChartView::paintEvent(QPaintEvent* event)
     Q_UNUSED(event);
 
     QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing, m_antialiasingEnabled);
+    painter.setRenderHint(QPainter::Antialiasing, antialiasingEnabled_);
     painter.setRenderHint(QPainter::TextAntialiasing, true);
 
-    if (m_viewBackgroundBrush.style() != Qt::NoBrush)
+    if (viewBackgroundBrush_.style() != Qt::NoBrush)
     {
-        painter.fillRect(rect(), m_viewBackgroundBrush);
+        painter.fillRect(rect(), viewBackgroundBrush_);
     }
-    if (m_chart == nullptr)
+    if (chart_ == nullptr)
     {
         return;
     }
 
-    const QMargins margins = m_chart->margins();
+    const QMargins kMargins = chart_->margins();
     QRectF contentRect = QRectF(rect()).adjusted(
-        1.0 + margins.left(),
-        1.0 + margins.top(),
-        -1.0 - margins.right(),
-        -1.0 - margins.bottom());
+        1.0 + kMargins.left(),
+        1.0 + kMargins.top(),
+        -1.0 - kMargins.right(),
+        -1.0 - kMargins.bottom());
     if (contentRect.width() <= 2.0 || contentRect.height() <= 2.0)
     {
         return;
     }
 
-    if (m_chart->isBackgroundVisible())
+    if (chart_->isBackgroundVisible())
     {
-        const QBrush backgroundBrush = m_chart->backgroundBrush().style() == Qt::NoBrush
+        const QBrush kBackgroundBrush = chart_->backgroundBrush().style() == Qt::NoBrush
             ? palette().brush(QPalette::Base)
-            : m_chart->backgroundBrush();
+            : chart_->backgroundBrush();
         painter.setPen(Qt::NoPen);
-        painter.setBrush(backgroundBrush);
+        painter.setBrush(kBackgroundBrush);
         painter.drawRoundedRect(
             contentRect,
-            m_chart->backgroundRoundness(),
-            m_chart->backgroundRoundness());
+            chart_->backgroundRoundness(),
+            chart_->backgroundRoundness());
     }
 
-    QFont titleFont = m_chart->titleFont();
+    QFont titleFont = chart_->titleFont();
     if (titleFont.family().isEmpty())
     {
         titleFont = font();
     }
-    if (!m_chart->title().isEmpty())
+    if (!chart_->title().isEmpty())
     {
         painter.setFont(titleFont);
-        const QFontMetricsF titleMetrics(titleFont);
-        const qreal titleHeight = std::min<qreal>(
-            std::max<qreal>(16.0, titleMetrics.height() + 2.0),
+        const QFontMetricsF kTitleMetrics(titleFont);
+        const qreal kTitleHeight = std::min<qreal>(
+            std::max<qreal>(16.0, kTitleMetrics.height() + 2.0),
             std::max<qreal>(16.0, contentRect.height() * 0.28));
-        const QRectF titleRect(contentRect.left(), contentRect.top(), contentRect.width(), titleHeight);
-        painter.setPen(brushColorOr(m_chart->titleBrush(), palette().color(QPalette::WindowText)));
+        const QRectF kTitleRect(contentRect.left(), contentRect.top(), contentRect.width(), kTitleHeight);
+        painter.setPen(brushColorOr(chart_->titleBrush(), palette().color(QPalette::WindowText)));
         painter.drawText(
-            titleRect,
+            kTitleRect,
             Qt::AlignHCenter | Qt::AlignVCenter,
-            titleMetrics.elidedText(m_chart->title(), Qt::ElideRight, titleRect.width()));
-        contentRect.setTop(titleRect.bottom());
+            kTitleMetrics.elidedText(chart_->title(), Qt::ElideRight, kTitleRect.width()));
+        contentRect.setTop(kTitleRect.bottom());
     }
 
     struct LegendEntry
@@ -1486,7 +1486,7 @@ void QChartView::paintEvent(QPaintEvent* event)
     };
     QList<LegendEntry> legendEntries;
     QSet<QString> legendNames;
-    for (QAbstractSeries* abstractSeries : m_chart->series())
+    for (QAbstractSeries* abstractSeries : chart_->series())
     {
         QString entryName = abstractSeries != nullptr ? abstractSeries->name() : QString();
         QColor entryColor = palette().color(QPalette::Highlight);
@@ -1513,29 +1513,29 @@ void QChartView::paintEvent(QPaintEvent* event)
     }
 
     QRectF legendRect;
-    if (m_chart->legend()->isVisible() && !legendEntries.isEmpty())
+    if (chart_->legend()->isVisible() && !legendEntries.isEmpty())
     {
-        QFont legendFont = m_chart->legend()->font();
+        QFont legendFont = chart_->legend()->font();
         if (legendFont.family().isEmpty())
         {
             legendFont = font();
         }
-        const qreal legendHeight = std::min<qreal>(20.0, std::max<qreal>(14.0, QFontMetricsF(legendFont).height() + 2.0));
-        if (m_chart->legend()->alignment().testFlag(Qt::AlignBottom))
+        const qreal kLegendHeight = std::min<qreal>(20.0, std::max<qreal>(14.0, QFontMetricsF(legendFont).height() + 2.0));
+        if (chart_->legend()->alignment().testFlag(Qt::AlignBottom))
         {
-            legendRect = QRectF(contentRect.left(), contentRect.bottom() - legendHeight, contentRect.width(), legendHeight);
+            legendRect = QRectF(contentRect.left(), contentRect.bottom() - kLegendHeight, contentRect.width(), kLegendHeight);
             contentRect.setBottom(legendRect.top());
         }
         else
         {
-            legendRect = QRectF(contentRect.left(), contentRect.top(), contentRect.width(), legendHeight);
+            legendRect = QRectF(contentRect.left(), contentRect.top(), contentRect.width(), kLegendHeight);
             contentRect.setTop(legendRect.bottom());
         }
     }
 
     QAbstractAxis* horizontalAxis = nullptr;
     QAbstractAxis* verticalAxis = nullptr;
-    for (QAbstractAxis* axis : m_chart->axes())
+    for (QAbstractAxis* axis : chart_->axes())
     {
         if (axis == nullptr)
         {
@@ -1551,24 +1551,24 @@ void QChartView::paintEvent(QPaintEvent* event)
         }
     }
 
-    const qreal leftReserve = verticalAxis != nullptr && verticalAxis->labelsVisible() ? 42.0 : 3.0;
-    const qreal bottomReserve = horizontalAxis != nullptr && horizontalAxis->labelsVisible() ? 18.0 : 3.0;
-    const qreal leftTitleReserve = verticalAxis != nullptr && !verticalAxis->titleText().isEmpty() ? 13.0 : 0.0;
-    const qreal bottomTitleReserve = horizontalAxis != nullptr && !horizontalAxis->titleText().isEmpty() ? 14.0 : 0.0;
+    const qreal kLeftReserve = verticalAxis != nullptr && verticalAxis->labelsVisible() ? 42.0 : 3.0;
+    const qreal kBottomReserve = horizontalAxis != nullptr && horizontalAxis->labelsVisible() ? 18.0 : 3.0;
+    const qreal kLeftTitleReserve = verticalAxis != nullptr && !verticalAxis->titleText().isEmpty() ? 13.0 : 0.0;
+    const qreal kBottomTitleReserve = horizontalAxis != nullptr && !horizontalAxis->titleText().isEmpty() ? 14.0 : 0.0;
     QRectF plotRect = contentRect.adjusted(
-        leftReserve + leftTitleReserve,
+        kLeftReserve + kLeftTitleReserve,
         2.0,
         -3.0,
-        -bottomReserve - bottomTitleReserve);
+        -kBottomReserve - kBottomTitleReserve);
     if (plotRect.width() <= 3.0 || plotRect.height() <= 3.0)
     {
         return;
     }
 
-    if (m_chart->isPlotAreaBackgroundVisible())
+    if (chart_->isPlotAreaBackgroundVisible())
     {
-        painter.setPen(m_chart->plotAreaBackgroundPen());
-        painter.setBrush(m_chart->plotAreaBackgroundBrush());
+        painter.setPen(chart_->plotAreaBackgroundPen());
+        painter.setBrush(chart_->plotAreaBackgroundBrush());
         painter.drawRect(plotRect);
     }
 
@@ -1580,9 +1580,9 @@ void QChartView::paintEvent(QPaintEvent* event)
     }
     else if (QBarCategoryAxis* categoryAxis = dynamic_cast<QBarCategoryAxis*>(horizontalAxis))
     {
-        const int categoryCount = std::max(
+        const int kCategoryCount = std::max(
             1, static_cast<int>(categoryAxis->categories().size()));
-        defaultXRange = qMakePair(-0.5, static_cast<qreal>(categoryCount) - 0.5);
+        defaultXRange = qMakePair(-0.5, static_cast<qreal>(kCategoryCount) - 0.5);
     }
     if (QValueAxis* valueAxis = dynamic_cast<QValueAxis*>(verticalAxis))
     {
@@ -1594,8 +1594,8 @@ void QChartView::paintEvent(QPaintEvent* event)
         painter.setPen(verticalAxis->gridLinePen());
         for (int gridIndex = 0; gridIndex <= 4; ++gridIndex)
         {
-            const qreal y = plotRect.bottom() - plotRect.height() * static_cast<qreal>(gridIndex) / 4.0;
-            painter.drawLine(QPointF(plotRect.left(), y), QPointF(plotRect.right(), y));
+            const qreal kY = plotRect.bottom() - plotRect.height() * static_cast<qreal>(gridIndex) / 4.0;
+            painter.drawLine(QPointF(plotRect.left(), kY), QPointF(plotRect.right(), kY));
         }
     }
     if (horizontalAxis != nullptr && horizontalAxis->isGridLineVisible())
@@ -1603,8 +1603,8 @@ void QChartView::paintEvent(QPaintEvent* event)
         painter.setPen(horizontalAxis->gridLinePen());
         for (int gridIndex = 0; gridIndex <= 4; ++gridIndex)
         {
-            const qreal x = plotRect.left() + plotRect.width() * static_cast<qreal>(gridIndex) / 4.0;
-            painter.drawLine(QPointF(x, plotRect.top()), QPointF(x, plotRect.bottom()));
+            const qreal kX = plotRect.left() + plotRect.width() * static_cast<qreal>(gridIndex) / 4.0;
+            painter.drawLine(QPointF(kX, plotRect.top()), QPointF(kX, plotRect.bottom()));
         }
     }
 
@@ -1628,13 +1628,13 @@ void QChartView::paintEvent(QPaintEvent* event)
         QValueAxis* valueAxis = dynamic_cast<QValueAxis*>(verticalAxis);
         for (int labelIndex = 0; labelIndex <= 4; ++labelIndex)
         {
-            const qreal ratio = static_cast<qreal>(labelIndex) / 4.0;
-            const qreal value = defaultYRange.first + (defaultYRange.second - defaultYRange.first) * ratio;
-            const qreal y = plotRect.bottom() - plotRect.height() * ratio;
+            const qreal kRatio = static_cast<qreal>(labelIndex) / 4.0;
+            const qreal kValue = defaultYRange.first + (defaultYRange.second - defaultYRange.first) * kRatio;
+            const qreal kY = plotRect.bottom() - plotRect.height() * kRatio;
             painter.drawText(
-                QRectF(contentRect.left() + leftTitleReserve, y - 8.0, leftReserve - 4.0, 16.0),
+                QRectF(contentRect.left() + kLeftTitleReserve, kY - 8.0, kLeftReserve - 4.0, 16.0),
                 Qt::AlignRight | Qt::AlignVCenter,
-                formatAxisValue(valueAxis, value));
+                formatAxisValue(valueAxis, kValue));
         }
     }
     if (horizontalAxis != nullptr && horizontalAxis->labelsVisible())
@@ -1642,31 +1642,31 @@ void QChartView::paintEvent(QPaintEvent* event)
         painter.setPen(brushColorOr(horizontalAxis->labelsBrush(), palette().color(QPalette::Text)));
         if (QBarCategoryAxis* categoryAxis = dynamic_cast<QBarCategoryAxis*>(horizontalAxis))
         {
-            const QStringList categories = categoryAxis->categories();
-            const int categoryCount = categories.size();
-            const int labelStep = std::max(1, (categoryCount + 11) / 12);
-            for (int categoryIndex = 0; categoryIndex < categoryCount; categoryIndex += labelStep)
+            const QStringList kCategories = categoryAxis->categories();
+            const int kCategoryCount = kCategories.size();
+            const int kLabelStep = std::max(1, (kCategoryCount + 11) / 12);
+            for (int categoryIndex = 0; categoryIndex < kCategoryCount; categoryIndex += kLabelStep)
             {
-                const qreal slotWidth = plotRect.width() / std::max(1, categoryCount);
-                const QRectF labelRect(
-                    plotRect.left() + slotWidth * categoryIndex,
+                const qreal kSlotWidth = plotRect.width() / std::max(1, kCategoryCount);
+                const QRectF kLabelRect(
+                    plotRect.left() + kSlotWidth * categoryIndex,
                     plotRect.bottom(),
-                    slotWidth * labelStep,
-                    bottomReserve);
-                painter.drawText(labelRect, Qt::AlignHCenter | Qt::AlignTop, categories.at(categoryIndex));
+                    kSlotWidth * kLabelStep,
+                    kBottomReserve);
+                painter.drawText(kLabelRect, Qt::AlignHCenter | Qt::AlignTop, kCategories.at(categoryIndex));
             }
         }
         else if (QValueAxis* valueAxis = dynamic_cast<QValueAxis*>(horizontalAxis))
         {
             for (int labelIndex = 0; labelIndex <= 4; ++labelIndex)
             {
-                const qreal ratio = static_cast<qreal>(labelIndex) / 4.0;
-                const qreal value = defaultXRange.first + (defaultXRange.second - defaultXRange.first) * ratio;
-                const qreal x = plotRect.left() + plotRect.width() * ratio;
+                const qreal kRatio = static_cast<qreal>(labelIndex) / 4.0;
+                const qreal kValue = defaultXRange.first + (defaultXRange.second - defaultXRange.first) * kRatio;
+                const qreal kX = plotRect.left() + plotRect.width() * kRatio;
                 painter.drawText(
-                    QRectF(x - 28.0, plotRect.bottom(), 56.0, bottomReserve),
+                    QRectF(kX - 28.0, plotRect.bottom(), 56.0, kBottomReserve),
                     Qt::AlignHCenter | Qt::AlignTop,
-                    formatAxisValue(valueAxis, value));
+                    formatAxisValue(valueAxis, kValue));
             }
         }
     }
@@ -1687,12 +1687,12 @@ void QChartView::paintEvent(QPaintEvent* event)
     {
         painter.setPen(brushColorOr(horizontalAxis->titleBrush(), palette().color(QPalette::Text)));
         painter.drawText(
-            QRectF(plotRect.left(), contentRect.bottom() - bottomTitleReserve, plotRect.width(), bottomTitleReserve),
+            QRectF(plotRect.left(), contentRect.bottom() - kBottomTitleReserve, plotRect.width(), kBottomTitleReserve),
             Qt::AlignCenter,
             horizontalAxis->titleText());
     }
 
-    const auto seriesAxis = [this](QAbstractSeries* series, const bool horizontal) -> QAbstractAxis* {
+    const auto kSeriesAxis = [this](QAbstractSeries* series, const bool horizontal) -> QAbstractAxis* {
         if (series != nullptr)
         {
             for (QAbstractAxis* axis : series->attachedAxes())
@@ -1703,7 +1703,7 @@ void QChartView::paintEvent(QPaintEvent* event)
                 }
             }
         }
-        for (QAbstractAxis* axis : m_chart->axes())
+        for (QAbstractAxis* axis : chart_->axes())
         {
             if (axis != nullptr && isHorizontalAlignment(axis->alignment()) == horizontal)
             {
@@ -1712,70 +1712,70 @@ void QChartView::paintEvent(QPaintEvent* event)
         }
         return nullptr;
     };
-    const auto axisRange = [this](QAbstractAxis* axis, const bool horizontal) {
+    const auto kAxisRange = [this](QAbstractAxis* axis, const bool horizontal) {
         if (QValueAxis* valueAxis = dynamic_cast<QValueAxis*>(axis))
         {
             return renderedAxisRange(valueAxis);
         }
         if (QBarCategoryAxis* categoryAxis = dynamic_cast<QBarCategoryAxis*>(axis))
         {
-            const int count = std::max(
+            const int kCount = std::max(
                 1, static_cast<int>(categoryAxis->categories().size()));
-            return qMakePair(-0.5, static_cast<qreal>(count) - 0.5);
+            return qMakePair(-0.5, static_cast<qreal>(kCount) - 0.5);
         }
         return horizontal ? qMakePair(0.0, 1.0) : qMakePair(0.0, 1.0);
     };
 
     painter.save();
     painter.setClipRect(plotRect.adjusted(-1.0, -1.0, 1.0, 1.0));
-    for (QAbstractSeries* abstractSeries : m_chart->series())
+    for (QAbstractSeries* abstractSeries : chart_->series())
     {
         if (abstractSeries == nullptr)
         {
             continue;
         }
 
-        QAbstractAxis* xAxis = seriesAxis(abstractSeries, true);
-        QAbstractAxis* yAxis = seriesAxis(abstractSeries, false);
-        const QPair<qreal, qreal> xRange = axisRange(xAxis, true);
-        const QPair<qreal, qreal> yRange = axisRange(yAxis, false);
+        QAbstractAxis* xAxis = kSeriesAxis(abstractSeries, true);
+        QAbstractAxis* yAxis = kSeriesAxis(abstractSeries, false);
+        const QPair<qreal, qreal> kXRange = kAxisRange(xAxis, true);
+        const QPair<qreal, qreal> kYRange = kAxisRange(yAxis, false);
 
         if (QAreaSeries* areaSeries = dynamic_cast<QAreaSeries*>(abstractSeries))
         {
-            const QList<QPointF> upperPoints = renderedPoints(areaSeries->upperSeries());
+            const QList<QPointF> kUpperPoints = renderedPoints(areaSeries->upperSeries());
             QList<QPointF> lowerPoints = renderedPoints(areaSeries->lowerSeries());
             if (lowerPoints.isEmpty())
             {
-                lowerPoints.reserve(upperPoints.size());
-                for (const QPointF& upperPoint : upperPoints)
+                lowerPoints.reserve(kUpperPoints.size());
+                for (const QPointF& upperPoint : kUpperPoints)
                 {
                     lowerPoints.append(QPointF(upperPoint.x(), 0.0));
                 }
             }
-            const int pointCount = std::min(
-                static_cast<int>(upperPoints.size()),
+            const int kPointCount = std::min(
+                static_cast<int>(kUpperPoints.size()),
                 static_cast<int>(lowerPoints.size()));
-            if (pointCount > 0)
+            if (kPointCount > 0)
             {
                 QPainterPath fillPath;
                 QPainterPath borderPath;
-                for (int pointIndex = 0; pointIndex < pointCount; ++pointIndex)
+                for (int pointIndex = 0; pointIndex < kPointCount; ++pointIndex)
                 {
-                    const QPointF mappedPoint = mapChartPoint(upperPoints.at(pointIndex), plotRect, xRange, yRange);
+                    const QPointF kMappedPoint = mapChartPoint(kUpperPoints.at(pointIndex), plotRect, kXRange, kYRange);
                     if (pointIndex == 0)
                     {
-                        fillPath.moveTo(mappedPoint);
-                        borderPath.moveTo(mappedPoint);
+                        fillPath.moveTo(kMappedPoint);
+                        borderPath.moveTo(kMappedPoint);
                     }
                     else
                     {
-                        fillPath.lineTo(mappedPoint);
-                        borderPath.lineTo(mappedPoint);
+                        fillPath.lineTo(kMappedPoint);
+                        borderPath.lineTo(kMappedPoint);
                     }
                 }
-                for (int pointIndex = pointCount - 1; pointIndex >= 0; --pointIndex)
+                for (int pointIndex = kPointCount - 1; pointIndex >= 0; --pointIndex)
                 {
-                    fillPath.lineTo(mapChartPoint(lowerPoints.at(pointIndex), plotRect, xRange, yRange));
+                    fillPath.lineTo(mapChartPoint(lowerPoints.at(pointIndex), plotRect, kXRange, kYRange));
                 }
                 fillPath.closeSubpath();
                 painter.fillPath(fillPath, areaSeries->brush());
@@ -1792,21 +1792,21 @@ void QChartView::paintEvent(QPaintEvent* event)
 
         if (QLineSeries* lineSeries = dynamic_cast<QLineSeries*>(abstractSeries))
         {
-            const QList<QPointF> points = renderedPoints(lineSeries);
-            if (!points.isEmpty() && lineSeries->pen().style() != Qt::NoPen
+            const QList<QPointF> kPoints = renderedPoints(lineSeries);
+            if (!kPoints.isEmpty() && lineSeries->pen().style() != Qt::NoPen
                 && lineSeries->pen().color().alpha() > 0)
             {
                 QPainterPath linePath;
-                for (int pointIndex = 0; pointIndex < points.size(); ++pointIndex)
+                for (int pointIndex = 0; pointIndex < kPoints.size(); ++pointIndex)
                 {
-                    const QPointF mappedPoint = mapChartPoint(points.at(pointIndex), plotRect, xRange, yRange);
+                    const QPointF kMappedPoint = mapChartPoint(kPoints.at(pointIndex), plotRect, kXRange, kYRange);
                     if (pointIndex == 0)
                     {
-                        linePath.moveTo(mappedPoint);
+                        linePath.moveTo(kMappedPoint);
                     }
                     else
                     {
-                        linePath.lineTo(mappedPoint);
+                        linePath.lineTo(kMappedPoint);
                     }
                 }
                 painter.setPen(lineSeries->pen());
@@ -1818,60 +1818,60 @@ void QChartView::paintEvent(QPaintEvent* event)
 
         if (QBarSeries* barSeries = dynamic_cast<QBarSeries*>(abstractSeries))
         {
-            const QList<QBarSet*> sets = barSeries->barSets();
+            const QList<QBarSet*> kSets = barSeries->barSets();
             int maximumValueCount = 0;
-            for (QBarSet* set : sets)
+            for (QBarSet* set : kSets)
             {
                 maximumValueCount = std::max(
                     maximumValueCount,
                     static_cast<int>(renderedBarValues(set).size()));
             }
-            const bool setsAreCategories = maximumValueCount <= 1 && sets.size() > 1;
-            const int categoryCount = setsAreCategories
-                ? static_cast<int>(sets.size())
+            const bool kSetsAreCategories = maximumValueCount <= 1 && kSets.size() > 1;
+            const int kCategoryCount = kSetsAreCategories
+                ? static_cast<int>(kSets.size())
                 : std::max(1, maximumValueCount);
-            const int barsPerCategory = setsAreCategories
+            const int kBarsPerCategory = kSetsAreCategories
                 ? 1
-                : std::max(1, static_cast<int>(sets.size()));
-            const qreal slotWidth = plotRect.width() / std::max(1, categoryCount);
-            const qreal groupWidth = slotWidth * 0.78;
-            const qreal barWidth = groupWidth / barsPerCategory;
-            const qreal baselineY = mapChartPoint(QPointF(0.0, 0.0), plotRect, xRange, yRange).y();
+                : std::max(1, static_cast<int>(kSets.size()));
+            const qreal kSlotWidth = plotRect.width() / std::max(1, kCategoryCount);
+            const qreal kGroupWidth = kSlotWidth * 0.78;
+            const qreal kBarWidth = kGroupWidth / kBarsPerCategory;
+            const qreal kBaselineY = mapChartPoint(QPointF(0.0, 0.0), plotRect, kXRange, kYRange).y();
 
-            for (int setIndex = 0; setIndex < sets.size(); ++setIndex)
+            for (int setIndex = 0; setIndex < kSets.size(); ++setIndex)
             {
-                QBarSet* set = sets.at(setIndex);
+                QBarSet* set = kSets.at(setIndex);
                 if (set == nullptr)
                 {
                     continue;
                 }
-                const QVector<qreal> values = renderedBarValues(set);
-                const int valueCount = setsAreCategories
-                    ? std::min(1, static_cast<int>(values.size()))
-                    : static_cast<int>(values.size());
-                for (int valueIndex = 0; valueIndex < valueCount; ++valueIndex)
+                const QVector<qreal> kValues = renderedBarValues(set);
+                const int kValueCount = kSetsAreCategories
+                    ? std::min(1, static_cast<int>(kValues.size()))
+                    : static_cast<int>(kValues.size());
+                for (int valueIndex = 0; valueIndex < kValueCount; ++valueIndex)
                 {
-                    const int categoryIndex = setsAreCategories ? setIndex : valueIndex;
-                    const int groupBarIndex = setsAreCategories ? 0 : setIndex;
-                    const qreal groupLeft = plotRect.left()
-                        + slotWidth * categoryIndex
-                        + (slotWidth - groupWidth) / 2.0;
-                    const qreal barLeft = groupLeft + barWidth * groupBarIndex;
-                    const qreal valueY = mapChartPoint(
-                        QPointF(categoryIndex, values.at(valueIndex)),
+                    const int kCategoryIndex = kSetsAreCategories ? setIndex : valueIndex;
+                    const int kGroupBarIndex = kSetsAreCategories ? 0 : setIndex;
+                    const qreal kGroupLeft = plotRect.left()
+                        + kSlotWidth * kCategoryIndex
+                        + (kSlotWidth - kGroupWidth) / 2.0;
+                    const qreal kBarLeft = kGroupLeft + kBarWidth * kGroupBarIndex;
+                    const qreal kValueY = mapChartPoint(
+                        QPointF(kCategoryIndex, kValues.at(valueIndex)),
                         plotRect,
-                        xRange,
-                        yRange).y();
-                    const QRectF barRect(
-                        barLeft + 0.5,
-                        std::min(valueY, baselineY),
-                        std::max<qreal>(1.0, barWidth - 1.0),
-                        std::max<qreal>(0.5, std::abs(baselineY - valueY)));
+                        kXRange,
+                        kYRange).y();
+                    const QRectF kBarRect(
+                        kBarLeft + 0.5,
+                        std::min(kValueY, kBaselineY),
+                        std::max<qreal>(1.0, kBarWidth - 1.0),
+                        std::max<qreal>(0.5, std::abs(kBaselineY - kValueY)));
                     painter.setBrush(set->brush());
                     painter.setPen(set->borderColor().alpha() > 0
                         ? QPen(set->borderColor(), 0.8)
                         : QPen(Qt::NoPen));
-                    painter.drawRect(barRect);
+                    painter.drawRect(kBarRect);
                 }
             }
         }
@@ -1880,31 +1880,31 @@ void QChartView::paintEvent(QPaintEvent* event)
 
     if (!legendRect.isEmpty())
     {
-        QFont legendFont = m_chart->legend()->font();
+        QFont legendFont = chart_->legend()->font();
         if (legendFont.family().isEmpty())
         {
             legendFont = font();
         }
         painter.setFont(legendFont);
-        painter.setPen(brushColorOr(m_chart->legend()->labelBrush(), palette().color(QPalette::Text)));
-        const QFontMetricsF legendMetrics(legendFont);
+        painter.setPen(brushColorOr(chart_->legend()->labelBrush(), palette().color(QPalette::Text)));
+        const QFontMetricsF kLegendMetrics(legendFont);
         qreal totalWidth = 0.0;
         for (const LegendEntry& entry : legendEntries)
         {
-            totalWidth += 13.0 + legendMetrics.horizontalAdvance(entry.name) + 12.0;
+            totalWidth += 13.0 + kLegendMetrics.horizontalAdvance(entry.name) + 12.0;
         }
         qreal currentX = legendRect.left() + std::max<qreal>(0.0, (legendRect.width() - totalWidth) / 2.0);
         for (const LegendEntry& entry : legendEntries)
         {
-            const qreal textWidth = legendMetrics.horizontalAdvance(entry.name);
+            const qreal kTextWidth = kLegendMetrics.horizontalAdvance(entry.name);
             painter.fillRect(
                 QRectF(currentX, legendRect.center().y() - 3.0, 8.0, 6.0),
                 entry.color);
             painter.drawText(
-                QRectF(currentX + 11.0, legendRect.top(), textWidth, legendRect.height()),
+                QRectF(currentX + 11.0, legendRect.top(), kTextWidth, legendRect.height()),
                 Qt::AlignLeft | Qt::AlignVCenter,
                 entry.name);
-            currentX += 13.0 + textWidth + 12.0;
+            currentX += 13.0 + kTextWidth + 12.0;
             if (currentX > legendRect.right())
             {
                 break;

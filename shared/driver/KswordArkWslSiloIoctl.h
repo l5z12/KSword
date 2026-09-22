@@ -4,10 +4,10 @@
 
 // ============================================================
 // KswordArkWslSiloIoctl.h
-// 作用：
-// - 定义 Phase-13 WSL/Pico 与 Silo 只读诊断协议；
-// - lxcore 私有字段仍由 DynData capability 门控；
-// - 第一版不跨线程强制 APC，只对当前线程上下文解析 Linux PID/TID。
+// Purpose:
+// - Defines Phase-13 WSL/Pico and Silo read-only diagnostic protocol;
+// - The lxcore private field is still gated by the DynData capability.
+// - Version 1 does not force cross-thread APC; it only resolves Linux PID/TID within the current thread context.
 // ============================================================
 
 #define KSWORD_ARK_WSL_SILO_PROTOCOL_VERSION 1UL

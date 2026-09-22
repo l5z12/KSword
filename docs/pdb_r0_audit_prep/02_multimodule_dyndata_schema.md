@@ -100,7 +100,7 @@ v3 在 v1/v2 兼容布局上新增 `items`：
 - R0 EX apply 对 `StructOffset` 做 `!= KSW_DYN_OFFSET_UNAVAILABLE` 且 `<= KSW_DYN_PROFILE_OFFSET_MAX` 校验。
 - R0 apply 是 copy-on-success：任何 rejected/unknown item 都会导致 active state 不变。
 
-对当前 `Ksword5.1\Ksword5.1\profiles\ark_dyndata_pack_v3.json` 的摘要审计：
+对当前 `apps\desktop\profiles\ark_dyndata_pack_v3.json` 的摘要审计：
 
 - `schemaVersion = 1`
 - `packVersion = 3`

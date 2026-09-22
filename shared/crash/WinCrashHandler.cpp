@@ -57,9 +57,9 @@ namespace ks
                 wchar_t restartFailedText[256] = {};
             };
 
-            CrashState g_state;
+            CrashState gState;
 
-            void CopyText(wchar_t* destination, const std::size_t destinationCount, const wchar_t* source)
+            void copyText(wchar_t* destination, const std::size_t destinationCount, const wchar_t* source)
             {
                 if (destination == nullptr || destinationCount == 0 || source == nullptr)
                 {
@@ -68,58 +68,58 @@ namespace ks
                 (void)::StringCchCopyW(destination, destinationCount, source);
             }
 
-            bool IsChineseSystemUi()
+            bool isChineseSystemUi()
             {
                 return PRIMARYLANGID(::GetUserDefaultUILanguage()) == LANG_CHINESE;
             }
 
-            void InitializeDefaultDialogText()
+            void initializeDefaultDialogText()
             {
-                if (g_state.chinese)
+                if (gState.chinese)
                 {
-                    CopyText(g_state.title, ARRAYSIZE(g_state.title), L"KswordARK 崩溃");
-                    CopyText(g_state.instruction, ARRAYSIZE(g_state.instruction), L"KswordARK 因未处理的异常停止运行。");
-                    CopyText(g_state.exceptionCodeLabel, ARRAYSIZE(g_state.exceptionCodeLabel), L"异常");
-                    CopyText(g_state.exceptionAddressLabel, ARRAYSIZE(g_state.exceptionAddressLabel), L"地址");
-                    CopyText(g_state.dumpPathLabel, ARRAYSIZE(g_state.dumpPathLabel), L"转储文件");
-                    CopyText(g_state.dumpUnavailableText, ARRAYSIZE(g_state.dumpUnavailableText), L"转储文件未能写入。");
-                    CopyText(g_state.restartQuestion, ARRAYSIZE(g_state.restartQuestion), L"选择“是”重新启动 KswordARK，选择“否”退出。");
-                    CopyText(g_state.repeatedCrashText, ARRAYSIZE(g_state.repeatedCrashText), L"程序刚刚重启后再次崩溃，建议先退出并检查转储文件。");
-                    CopyText(g_state.restartFailedText, ARRAYSIZE(g_state.restartFailedText), L"重新启动 KswordARK 失败，程序即将退出。");
+                    copyText(gState.title, ARRAYSIZE(gState.title), L"KswordARK 崩溃");
+                    copyText(gState.instruction, ARRAYSIZE(gState.instruction), L"KswordARK 因未处理的异常停止运行。");
+                    copyText(gState.exceptionCodeLabel, ARRAYSIZE(gState.exceptionCodeLabel), L"异常");
+                    copyText(gState.exceptionAddressLabel, ARRAYSIZE(gState.exceptionAddressLabel), L"地址");
+                    copyText(gState.dumpPathLabel, ARRAYSIZE(gState.dumpPathLabel), L"转储文件");
+                    copyText(gState.dumpUnavailableText, ARRAYSIZE(gState.dumpUnavailableText), L"转储文件未能写入。");
+                    copyText(gState.restartQuestion, ARRAYSIZE(gState.restartQuestion), L"选择“是”重新启动 KswordARK，选择“否”退出。");
+                    copyText(gState.repeatedCrashText, ARRAYSIZE(gState.repeatedCrashText), L"程序刚刚重启后再次崩溃，建议先退出并检查转储文件。");
+                    copyText(gState.restartFailedText, ARRAYSIZE(gState.restartFailedText), L"重新启动 KswordARK 失败，程序即将退出。");
                 }
                 else
                 {
-                    CopyText(g_state.title, ARRAYSIZE(g_state.title), L"KswordARK crashed");
-                    CopyText(g_state.instruction, ARRAYSIZE(g_state.instruction), L"KswordARK stopped because of an unhandled exception.");
-                    CopyText(g_state.exceptionCodeLabel, ARRAYSIZE(g_state.exceptionCodeLabel), L"Exception");
-                    CopyText(g_state.exceptionAddressLabel, ARRAYSIZE(g_state.exceptionAddressLabel), L"Address");
-                    CopyText(g_state.dumpPathLabel, ARRAYSIZE(g_state.dumpPathLabel), L"Dump file");
-                    CopyText(g_state.dumpUnavailableText, ARRAYSIZE(g_state.dumpUnavailableText), L"The dump file could not be written.");
-                    CopyText(g_state.restartQuestion, ARRAYSIZE(g_state.restartQuestion), L"Choose Yes to restart KswordARK, or No to exit.");
-                    CopyText(g_state.repeatedCrashText, ARRAYSIZE(g_state.repeatedCrashText), L"The program crashed again immediately after a restart. Exit and inspect the dump file.");
-                    CopyText(g_state.restartFailedText, ARRAYSIZE(g_state.restartFailedText), L"KswordARK could not be restarted and will now exit.");
+                    copyText(gState.title, ARRAYSIZE(gState.title), L"KswordARK crashed");
+                    copyText(gState.instruction, ARRAYSIZE(gState.instruction), L"KswordARK stopped because of an unhandled exception.");
+                    copyText(gState.exceptionCodeLabel, ARRAYSIZE(gState.exceptionCodeLabel), L"Exception");
+                    copyText(gState.exceptionAddressLabel, ARRAYSIZE(gState.exceptionAddressLabel), L"Address");
+                    copyText(gState.dumpPathLabel, ARRAYSIZE(gState.dumpPathLabel), L"Dump file");
+                    copyText(gState.dumpUnavailableText, ARRAYSIZE(gState.dumpUnavailableText), L"The dump file could not be written.");
+                    copyText(gState.restartQuestion, ARRAYSIZE(gState.restartQuestion), L"Choose Yes to restart KswordARK, or No to exit.");
+                    copyText(gState.repeatedCrashText, ARRAYSIZE(gState.repeatedCrashText), L"The program crashed again immediately after a restart. Exit and inspect the dump file.");
+                    copyText(gState.restartFailedText, ARRAYSIZE(gState.restartFailedText), L"KswordARK could not be restarted and will now exit.");
                 }
             }
 
-            void ResolveExecutablePaths()
+            void resolveExecutablePaths()
             {
-                g_state.executablePath[0] = L'\0';
+                gState.executablePath[0] = L'\0';
                 (void)::GetModuleFileNameW(
                     nullptr,
-                    g_state.executablePath,
-                    static_cast<DWORD>(ARRAYSIZE(g_state.executablePath)));
+                    gState.executablePath,
+                    static_cast<DWORD>(ARRAYSIZE(gState.executablePath)));
 
-                CopyText(
-                    g_state.executableDirectory,
-                    ARRAYSIZE(g_state.executableDirectory),
-                    g_state.executablePath);
-                wchar_t* const separator = wcsrchr(g_state.executableDirectory, L'\\');
-                wchar_t* const alternateSeparator = wcsrchr(g_state.executableDirectory, L'/');
-                wchar_t* finalSeparator = separator;
+                copyText(
+                    gState.executableDirectory,
+                    ARRAYSIZE(gState.executableDirectory),
+                    gState.executablePath);
+                wchar_t* const kSeparator = wcsrchr(gState.executableDirectory, L'\\');
+                wchar_t* const kAlternateSeparator = wcsrchr(gState.executableDirectory, L'/');
+                wchar_t* finalSeparator = kSeparator;
                 if (finalSeparator == nullptr
-                    || (alternateSeparator != nullptr && alternateSeparator > finalSeparator))
+                    || (kAlternateSeparator != nullptr && kAlternateSeparator > finalSeparator))
                 {
-                    finalSeparator = alternateSeparator;
+                    finalSeparator = kAlternateSeparator;
                 }
                 if (finalSeparator != nullptr)
                 {
@@ -127,17 +127,17 @@ namespace ks
                 }
                 else
                 {
-                    CopyText(g_state.executableDirectory, ARRAYSIZE(g_state.executableDirectory), L".");
+                    copyText(gState.executableDirectory, ARRAYSIZE(gState.executableDirectory), L".");
                 }
 
                 (void)::StringCchPrintfW(
-                    g_state.launcherPath,
-                    ARRAYSIZE(g_state.launcherPath),
+                    gState.launcherPath,
+                    ARRAYSIZE(gState.launcherPath),
                     L"%s\\Launcher.exe",
-                    g_state.executableDirectory);
+                    gState.executableDirectory);
             }
 
-            bool EnsureCrashDirectory()
+            bool ensureCrashDirectory()
             {
                 wchar_t baseDirectory[32768] = {};
                 DWORD copied = ::GetEnvironmentVariableW(
@@ -167,14 +167,14 @@ namespace ks
                 (void)::CreateDirectoryW(productDirectory, nullptr);
 
                 if (FAILED(::StringCchPrintfW(
-                    g_state.dumpDirectory,
-                    ARRAYSIZE(g_state.dumpDirectory),
+                    gState.dumpDirectory,
+                    ARRAYSIZE(gState.dumpDirectory),
                     L"%s\\CrashDumps",
                     productDirectory)))
                 {
                     return false;
                 }
-                if (::CreateDirectoryW(g_state.dumpDirectory, nullptr) != FALSE
+                if (::CreateDirectoryW(gState.dumpDirectory, nullptr) != FALSE
                     || ::GetLastError() == ERROR_ALREADY_EXISTS)
                 {
                     return true;
@@ -189,20 +189,20 @@ namespace ks
                     return false;
                 }
                 if (FAILED(::StringCchPrintfW(
-                    g_state.dumpDirectory,
-                    ARRAYSIZE(g_state.dumpDirectory),
+                    gState.dumpDirectory,
+                    ARRAYSIZE(gState.dumpDirectory),
                     L"%sKswordARK-CrashDumps",
                     temporaryDirectory)))
                 {
                     return false;
                 }
-                return ::CreateDirectoryW(g_state.dumpDirectory, nullptr) != FALSE
+                return ::CreateDirectoryW(gState.dumpDirectory, nullptr) != FALSE
                     || ::GetLastError() == ERROR_ALREADY_EXISTS;
             }
 
-            const wchar_t* ExceptionDescription(const DWORD exceptionCode)
+            const wchar_t* exceptionDescription(const DWORD exceptionCode)
             {
-                if (g_state.chinese)
+                if (gState.chinese)
                 {
                     switch (exceptionCode)
                     {
@@ -228,12 +228,12 @@ namespace ks
                 }
             }
 
-            bool WriteMinidump(
+            bool writeMinidump(
                 PEXCEPTION_POINTERS exceptionPointers,
                 wchar_t* dumpPath,
                 const std::size_t dumpPathCount)
             {
-                if (dumpPath == nullptr || dumpPathCount == 0 || g_state.miniDumpWriteDump == nullptr)
+                if (dumpPath == nullptr || dumpPathCount == 0 || gState.miniDumpWriteDump == nullptr)
                 {
                     return false;
                 }
@@ -244,8 +244,8 @@ namespace ks
                     dumpPath,
                     dumpPathCount,
                     L"%s\\%s-%04u%02u%02u-%02u%02u%02u-%lu.dmp",
-                    g_state.dumpDirectory,
-                    g_state.dumpFilePrefix,
+                    gState.dumpDirectory,
+                    gState.dumpFilePrefix,
                     static_cast<unsigned int>(localTime.wYear),
                     static_cast<unsigned int>(localTime.wMonth),
                     static_cast<unsigned int>(localTime.wDay),
@@ -275,31 +275,31 @@ namespace ks
                 exceptionInformation.ThreadId = ::GetCurrentThreadId();
                 exceptionInformation.ExceptionPointers = exceptionPointers;
                 exceptionInformation.ClientPointers = FALSE;
-                const MINIDUMP_TYPE dumpType = static_cast<MINIDUMP_TYPE>(
+                const MINIDUMP_TYPE kDumpType = static_cast<MINIDUMP_TYPE>(
                     MiniDumpNormal
                     | MiniDumpWithThreadInfo
                     | MiniDumpWithUnloadedModules
                     | MiniDumpWithIndirectlyReferencedMemory);
-                const BOOL writeOk = g_state.miniDumpWriteDump(
+                const BOOL kWriteOk = gState.miniDumpWriteDump(
                     ::GetCurrentProcess(),
                     ::GetCurrentProcessId(),
                     dumpFile,
-                    dumpType,
+                    kDumpType,
                     exceptionPointers != nullptr ? &exceptionInformation : nullptr,
                     nullptr,
                     nullptr);
                 ::CloseHandle(dumpFile);
-                return writeOk != FALSE;
+                return kWriteOk != FALSE;
             }
 
-            bool LaunchSelfForRestart()
+            bool launchSelfForRestart()
             {
                 wchar_t commandLine[32768] = {};
                 if (FAILED(::StringCchPrintfW(
                     commandLine,
                     ARRAYSIZE(commandLine),
                     L"\"%s\" %s %lu %s",
-                    g_state.executablePath,
+                    gState.executablePath,
                     kCrashRestartWaitPidArgument,
                     static_cast<unsigned long>(::GetCurrentProcessId()),
                     kCrashRestartedArgument)))
@@ -312,18 +312,18 @@ namespace ks
                 startupInfo.dwFlags = STARTF_USESHOWWINDOW;
                 startupInfo.wShowWindow = SW_SHOWNORMAL;
                 PROCESS_INFORMATION processInformation = {};
-                const BOOL createOk = ::CreateProcessW(
-                    g_state.executablePath,
+                const BOOL kCreateOk = ::CreateProcessW(
+                    gState.executablePath,
                     commandLine,
                     nullptr,
                     nullptr,
                     FALSE,
                     0,
                     nullptr,
-                    g_state.executableDirectory,
+                    gState.executableDirectory,
                     &startupInfo,
                     &processInformation);
-                if (createOk == FALSE)
+                if (kCreateOk == FALSE)
                 {
                     return false;
                 }
@@ -332,15 +332,15 @@ namespace ks
                 return true;
             }
 
-            bool LaunchExternalReporter(
+            bool launchExternalReporter(
                 const DWORD exceptionCode,
                 const ULONG_PTR exceptionAddress,
                 const wchar_t* dumpPath,
                 const bool dumpWritten)
             {
-                if (!g_state.preferLauncherReporter
-                    || g_state.launcherPath[0] == L'\0'
-                    || ::GetFileAttributesW(g_state.launcherPath) == INVALID_FILE_ATTRIBUTES)
+                if (!gState.preferLauncherReporter
+                    || gState.launcherPath[0] == L'\0'
+                    || ::GetFileAttributesW(gState.launcherPath) == INVALID_FILE_ATTRIBUTES)
                 {
                     return false;
                 }
@@ -362,22 +362,22 @@ namespace ks
                 }
 
                 wchar_t commandLine[32768] = {};
-                const HRESULT formatResult = ::StringCchPrintfW(
+                const HRESULT kFormatResult = ::StringCchPrintfW(
                     commandLine,
                     ARRAYSIZE(commandLine),
                     L"\"%s\" --launcher-crash-report --launcher-crash-pid %lu "
                     L"--launcher-crash-code 0x%08lX --launcher-crash-address 0x%llX "
                     L"--launcher-crash-dump \"%s\" --launcher-crash-dump-written %u "
                     L"--launcher-crash-ready-event \"%s\"%s",
-                    g_state.launcherPath,
+                    gState.launcherPath,
                     static_cast<unsigned long>(::GetCurrentProcessId()),
                     static_cast<unsigned long>(exceptionCode),
                     static_cast<unsigned long long>(exceptionAddress),
                     dumpPath == nullptr ? L"" : dumpPath,
                     dumpWritten ? 1u : 0u,
                     eventName,
-                    g_state.restartAlreadyAttempted ? L" --launcher-crash-repeat" : L"");
-                if (FAILED(formatResult))
+                    gState.restartAlreadyAttempted ? L" --launcher-crash-repeat" : L"");
+                if (FAILED(kFormatResult))
                 {
                     ::CloseHandle(readyEvent);
                     return false;
@@ -388,111 +388,111 @@ namespace ks
                 startupInfo.dwFlags = STARTF_USESHOWWINDOW;
                 startupInfo.wShowWindow = SW_SHOWNORMAL;
                 PROCESS_INFORMATION processInformation = {};
-                const BOOL createOk = ::CreateProcessW(
-                    g_state.launcherPath,
+                const BOOL kCreateOk = ::CreateProcessW(
+                    gState.launcherPath,
                     commandLine,
                     nullptr,
                     nullptr,
                     FALSE,
                     0,
                     nullptr,
-                    g_state.executableDirectory,
+                    gState.executableDirectory,
                     &startupInfo,
                     &processInformation);
-                if (createOk == FALSE)
+                if (kCreateOk == FALSE)
                 {
                     ::CloseHandle(readyEvent);
                     return false;
                 }
 
-                const DWORD waitResult = ::WaitForSingleObject(readyEvent, 5000);
+                const DWORD kWaitResult = ::WaitForSingleObject(readyEvent, 5000);
                 ::CloseHandle(processInformation.hThread);
                 ::CloseHandle(processInformation.hProcess);
                 ::CloseHandle(readyEvent);
-                return waitResult == WAIT_OBJECT_0;
+                return kWaitResult == WAIT_OBJECT_0;
             }
 
-            int ShowLocalCrashDialog(
+            int showLocalCrashDialog(
                 const DWORD exceptionCode,
                 const ULONG_PTR exceptionAddress,
                 const wchar_t* dumpPath,
                 const bool dumpWritten)
             {
                 wchar_t message[8192] = {};
-                const wchar_t* const description = ExceptionDescription(exceptionCode);
-                const wchar_t* const pathText = dumpWritten && dumpPath != nullptr && dumpPath[0] != L'\0'
+                const wchar_t* const kDescription = exceptionDescription(exceptionCode);
+                const wchar_t* const kPathText = dumpWritten && dumpPath != nullptr && dumpPath[0] != L'\0'
                     ? dumpPath
-                    : g_state.dumpUnavailableText;
-                const HRESULT formatResult = ::StringCchPrintfW(
+                    : gState.dumpUnavailableText;
+                const HRESULT kFormatResult = ::StringCchPrintfW(
                     message,
                     ARRAYSIZE(message),
                     L"%s\r\n\r\n%s: %s (0x%08lX)\r\n%s: 0x%llX\r\n%s: %s\r\n\r\n%s%s",
-                    g_state.instruction,
-                    g_state.exceptionCodeLabel,
-                    description,
+                    gState.instruction,
+                    gState.exceptionCodeLabel,
+                    kDescription,
                     static_cast<unsigned long>(exceptionCode),
-                    g_state.exceptionAddressLabel,
+                    gState.exceptionAddressLabel,
                     static_cast<unsigned long long>(exceptionAddress),
-                    g_state.dumpPathLabel,
-                    pathText,
-                    g_state.restartAlreadyAttempted ? g_state.repeatedCrashText : L"",
-                    g_state.restartAlreadyAttempted ? L"\r\n\r\n" : g_state.restartQuestion);
-                if (FAILED(formatResult))
+                    gState.dumpPathLabel,
+                    kPathText,
+                    gState.restartAlreadyAttempted ? gState.repeatedCrashText : L"",
+                    gState.restartAlreadyAttempted ? L"\r\n\r\n" : gState.restartQuestion);
+                if (FAILED(kFormatResult))
                 {
                     return IDNO;
                 }
 
-                const UINT flags = (g_state.restartAlreadyAttempted ? MB_OK : MB_YESNO)
+                const UINT kFlags = (gState.restartAlreadyAttempted ? MB_OK : MB_YESNO)
                     | MB_ICONERROR
                     | MB_DEFBUTTON2
                     | MB_SETFOREGROUND
                     | MB_TOPMOST;
-                return static_cast<int>(::MessageBoxW(nullptr, message, g_state.title, flags));
+                return static_cast<int>(::MessageBoxW(nullptr, message, gState.title, kFlags));
             }
 
-            LONG WINAPI TopLevelExceptionFilter(PEXCEPTION_POINTERS exceptionPointers)
+            LONG WINAPI topLevelExceptionFilter(PEXCEPTION_POINTERS exceptionPointers)
             {
-                if (::InterlockedCompareExchange(&g_state.handling, 1, 0) != 0)
+                if (::InterlockedCompareExchange(&gState.handling, 1, 0) != 0)
                 {
                     return EXCEPTION_EXECUTE_HANDLER;
                 }
 
-                const DWORD exceptionCode = exceptionPointers != nullptr
+                const DWORD kExceptionCode = exceptionPointers != nullptr
                     && exceptionPointers->ExceptionRecord != nullptr
                     ? exceptionPointers->ExceptionRecord->ExceptionCode
                     : ERROR_UNHANDLED_EXCEPTION;
-                const ULONG_PTR exceptionAddress = exceptionPointers != nullptr
+                const ULONG_PTR kExceptionAddress = exceptionPointers != nullptr
                     && exceptionPointers->ExceptionRecord != nullptr
                     ? reinterpret_cast<ULONG_PTR>(exceptionPointers->ExceptionRecord->ExceptionAddress)
                     : 0;
                 wchar_t dumpPath[32768] = {};
-                const bool dumpWritten = WriteMinidump(exceptionPointers, dumpPath, ARRAYSIZE(dumpPath));
+                const bool kDumpWritten = writeMinidump(exceptionPointers, dumpPath, ARRAYSIZE(dumpPath));
 
-                if (LaunchExternalReporter(exceptionCode, exceptionAddress, dumpPath, dumpWritten))
+                if (launchExternalReporter(kExceptionCode, kExceptionAddress, dumpPath, kDumpWritten))
                 {
                     return EXCEPTION_EXECUTE_HANDLER;
                 }
 
-                const int dialogResult = ShowLocalCrashDialog(
-                    exceptionCode,
-                    exceptionAddress,
+                const int kDialogResult = showLocalCrashDialog(
+                    kExceptionCode,
+                    kExceptionAddress,
                     dumpPath,
-                    dumpWritten);
-                if (dialogResult == IDYES && !g_state.restartAlreadyAttempted)
+                    kDumpWritten);
+                if (kDialogResult == IDYES && !gState.restartAlreadyAttempted)
                 {
-                    if (!LaunchSelfForRestart())
+                    if (!launchSelfForRestart())
                     {
                         (void)::MessageBoxW(
                             nullptr,
-                            g_state.restartFailedText,
-                            g_state.title,
+                            gState.restartFailedText,
+                            gState.title,
                             MB_OK | MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST);
                     }
                 }
                 return EXCEPTION_EXECUTE_HANDLER;
             }
 
-            bool TryReadArgumentValue(const wchar_t* argumentName, unsigned long long* value)
+            bool tryReadArgumentValue(const wchar_t* argumentName, unsigned long long* value)
             {
                 if (argumentName == nullptr || value == nullptr)
                 {
@@ -510,10 +510,10 @@ namespace ks
                     if (_wcsicmp(argumentVector[index], argumentName) == 0)
                     {
                         wchar_t* end = nullptr;
-                        const unsigned long long parsed = _wcstoui64(argumentVector[index + 1], &end, 0);
+                        const unsigned long long kParsed = _wcstoui64(argumentVector[index + 1], &end, 0);
                         if (end != argumentVector[index + 1] && *end == L'\0')
                         {
-                            *value = parsed;
+                            *value = kParsed;
                             found = true;
                         }
                         break;
@@ -523,7 +523,7 @@ namespace ks
                 return found;
             }
 
-            bool IsCurrentProcessDirectChildOf(const DWORD expectedParentProcessId)
+            bool isCurrentProcessDirectChildOf(const DWORD expectedParentProcessId)
             {
                 HANDLE snapshot = ::CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
                 if (snapshot == INVALID_HANDLE_VALUE)
@@ -549,7 +549,7 @@ namespace ks
                 return matches;
             }
 
-            bool IsSameExecutableProcess(const HANDLE processHandle)
+            bool isSameExecutableProcess(const HANDLE processHandle)
             {
                 wchar_t processPath[32768] = {};
                 DWORD processPathCount = static_cast<DWORD>(ARRAYSIZE(processPath));
@@ -561,54 +561,54 @@ namespace ks
                 {
                     return false;
                 }
-                return _wcsicmp(processPath, g_state.executablePath) == 0;
+                return _wcsicmp(processPath, gState.executablePath) == 0;
             }
         }
 
-        void InstallCrashHandler(const Configuration& configuration)
+        void installCrashHandler(const Configuration& configuration)
         {
-            if (g_state.installed)
+            if (gState.installed)
             {
                 return;
             }
-            g_state.installed = true;
-            g_state.chinese = IsChineseSystemUi();
-            g_state.preferLauncherReporter = configuration.preferLauncherReporter;
-            CopyText(
-                g_state.productName,
-                ARRAYSIZE(g_state.productName),
+            gState.installed = true;
+            gState.chinese = isChineseSystemUi();
+            gState.preferLauncherReporter = configuration.preferLauncherReporter;
+            copyText(
+                gState.productName,
+                ARRAYSIZE(gState.productName),
                 configuration.productName == nullptr ? L"KswordARK" : configuration.productName);
-            CopyText(
-                g_state.dumpFilePrefix,
-                ARRAYSIZE(g_state.dumpFilePrefix),
+            copyText(
+                gState.dumpFilePrefix,
+                ARRAYSIZE(gState.dumpFilePrefix),
                 configuration.dumpFilePrefix == nullptr ? L"KswordARK" : configuration.dumpFilePrefix);
-            g_state.restartAlreadyAttempted = CommandLineHasArgument(kCrashRestartedArgument);
-            ResolveExecutablePaths();
-            (void)EnsureCrashDirectory();
-            g_state.dbgHelpModule = ::LoadLibraryW(L"dbghelp.dll");
-            if (g_state.dbgHelpModule != nullptr)
+            gState.restartAlreadyAttempted = commandLineHasArgument(kCrashRestartedArgument);
+            resolveExecutablePaths();
+            (void)ensureCrashDirectory();
+            gState.dbgHelpModule = ::LoadLibraryW(L"dbghelp.dll");
+            if (gState.dbgHelpModule != nullptr)
             {
-                g_state.miniDumpWriteDump = reinterpret_cast<MiniDumpWriteDumpFunction>(
-                    ::GetProcAddress(g_state.dbgHelpModule, "MiniDumpWriteDump"));
+                gState.miniDumpWriteDump = reinterpret_cast<MiniDumpWriteDumpFunction>(
+                    ::GetProcAddress(gState.dbgHelpModule, "MiniDumpWriteDump"));
             }
-            InitializeDefaultDialogText();
-            ::SetUnhandledExceptionFilter(TopLevelExceptionFilter);
+            initializeDefaultDialogText();
+            ::SetUnhandledExceptionFilter(topLevelExceptionFilter);
         }
 
-        void UpdateCrashDialogText(const DialogText& text)
+        void updateCrashDialogText(const DialogText& text)
         {
-            if (text.title != nullptr) CopyText(g_state.title, ARRAYSIZE(g_state.title), text.title);
-            if (text.instruction != nullptr) CopyText(g_state.instruction, ARRAYSIZE(g_state.instruction), text.instruction);
-            if (text.exceptionCodeLabel != nullptr) CopyText(g_state.exceptionCodeLabel, ARRAYSIZE(g_state.exceptionCodeLabel), text.exceptionCodeLabel);
-            if (text.exceptionAddressLabel != nullptr) CopyText(g_state.exceptionAddressLabel, ARRAYSIZE(g_state.exceptionAddressLabel), text.exceptionAddressLabel);
-            if (text.dumpPathLabel != nullptr) CopyText(g_state.dumpPathLabel, ARRAYSIZE(g_state.dumpPathLabel), text.dumpPathLabel);
-            if (text.dumpUnavailableText != nullptr) CopyText(g_state.dumpUnavailableText, ARRAYSIZE(g_state.dumpUnavailableText), text.dumpUnavailableText);
-            if (text.restartQuestion != nullptr) CopyText(g_state.restartQuestion, ARRAYSIZE(g_state.restartQuestion), text.restartQuestion);
-            if (text.repeatedCrashText != nullptr) CopyText(g_state.repeatedCrashText, ARRAYSIZE(g_state.repeatedCrashText), text.repeatedCrashText);
-            if (text.restartFailedText != nullptr) CopyText(g_state.restartFailedText, ARRAYSIZE(g_state.restartFailedText), text.restartFailedText);
+            if (text.title != nullptr) copyText(gState.title, ARRAYSIZE(gState.title), text.title);
+            if (text.instruction != nullptr) copyText(gState.instruction, ARRAYSIZE(gState.instruction), text.instruction);
+            if (text.exceptionCodeLabel != nullptr) copyText(gState.exceptionCodeLabel, ARRAYSIZE(gState.exceptionCodeLabel), text.exceptionCodeLabel);
+            if (text.exceptionAddressLabel != nullptr) copyText(gState.exceptionAddressLabel, ARRAYSIZE(gState.exceptionAddressLabel), text.exceptionAddressLabel);
+            if (text.dumpPathLabel != nullptr) copyText(gState.dumpPathLabel, ARRAYSIZE(gState.dumpPathLabel), text.dumpPathLabel);
+            if (text.dumpUnavailableText != nullptr) copyText(gState.dumpUnavailableText, ARRAYSIZE(gState.dumpUnavailableText), text.dumpUnavailableText);
+            if (text.restartQuestion != nullptr) copyText(gState.restartQuestion, ARRAYSIZE(gState.restartQuestion), text.restartQuestion);
+            if (text.repeatedCrashText != nullptr) copyText(gState.repeatedCrashText, ARRAYSIZE(gState.repeatedCrashText), text.repeatedCrashText);
+            if (text.restartFailedText != nullptr) copyText(gState.restartFailedText, ARRAYSIZE(gState.restartFailedText), text.restartFailedText);
         }
 
-        bool CommandLineHasArgument(const wchar_t* argumentName)
+        bool commandLineHasArgument(const wchar_t* argumentName)
         {
             if (argumentName == nullptr || argumentName[0] == L'\0')
             {
@@ -633,36 +633,36 @@ namespace ks
             return found;
         }
 
-        bool WaitForCrashRestartTargetFromCommandLine(const DWORD timeoutMilliseconds)
+        bool waitForCrashRestartTargetFromCommandLine(const DWORD timeoutMilliseconds)
         {
             unsigned long long processId = 0;
-            if (!TryReadArgumentValue(kCrashRestartWaitPidArgument, &processId)
+            if (!tryReadArgumentValue(kCrashRestartWaitPidArgument, &processId)
                 || processId == 0
                 || processId > static_cast<unsigned long long>(MAXDWORD))
             {
                 return false;
             }
 
-            const DWORD predecessorProcessId = static_cast<DWORD>(processId);
+            const DWORD kPredecessorProcessId = static_cast<DWORD>(processId);
             HANDLE processHandle = ::OpenProcess(
                 SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
                 FALSE,
-                predecessorProcessId);
+                kPredecessorProcessId);
             if (processHandle == nullptr)
             {
                 return false;
             }
-            if (!IsCurrentProcessDirectChildOf(predecessorProcessId)
-                || !IsSameExecutableProcess(processHandle))
+            if (!isCurrentProcessDirectChildOf(kPredecessorProcessId)
+                || !isSameExecutableProcess(processHandle))
             {
                 ::CloseHandle(processHandle);
                 return false;
             }
-            const DWORD waitResult = ::WaitForSingleObject(
+            const DWORD kWaitResult = ::WaitForSingleObject(
                 processHandle,
                 timeoutMilliseconds);
             ::CloseHandle(processHandle);
-            return waitResult == WAIT_OBJECT_0;
+            return kWaitResult == WAIT_OBJECT_0;
         }
     }
 }

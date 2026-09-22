@@ -41,11 +41,11 @@
 #define KSWORD_ARK_IOCTL_FUNCTION_TERMINATE_PROCESS 0x801
 #define KSWORD_ARK_IOCTL_FUNCTION_SUSPEND_PROCESS 0x802
 /*
- * 恢复是挂起的对称操作，不是它的一个标志位。
+ * Resume is the symmetric operation of suspend, not a flag of it.
  *
- * 用独立功能码而不是给挂起请求加一个 resume 位：那种借字段的做法会让一条破坏性
- * 操作和它的逆操作共用同一个访问控制与同一条审计记录，事后分不出某次调用到底
- * 挂起了还是恢复了。
+ * Use a dedicated function code instead of adding a resume bit to the suspend request: borrowing a field
+ * would cause a destructive operation and its inverse to share the same access control and audit record,
+ * making it impossible to distinguish after the fact whether a specific call suspended or resumed.
  */
 #define KSWORD_ARK_IOCTL_FUNCTION_RESUME_PROCESS 0x834UL
 #define KSWORD_ARK_IOCTL_FUNCTION_SET_PPL_LEVEL 0x803
@@ -105,15 +105,15 @@ typedef struct _KSWORD_ARK_RESUME_PROCESS_REQUEST
         FILE_WRITE_ACCESS)
 
 // ------------------------------------------------------------
-// EPROCESS.Protection（PS_PROTECTION）位域
+// EPROCESS.Protection (PS_PROTECTION) bitfield
 // ------------------------------------------------------------
-// 单字节布局：Type 位 0-2、Audit 位 3、Signer 位 4-7。
-// IOCTL 名沿用历史的 SET_PPL_LEVEL，但协议本身同时覆盖 PPL 与完整 PP：
-// - LIGHT(1) 是 PPL（PsProtectedTypeProtectedLight），同级 signer 之间可互相打开；
-// - FULL(2) 是 PP（PsProtectedTypeProtected），比同 signer 的 PPL 更强，
-//   连 PPL 进程也无法取得它的高权限句柄。
-// 两者只差类型位，签名级别按 signer 查表，因此 R3 只要换 Type 就能在 PPL / PP
-// 之间切换，不需要新的 IOCTL。
+// Single-byte layout: Type bits 0-2, Audit bit 3, Signer bits 4-7.
+// The IOCTL name retains the historical SET_PPL_LEVEL, but the protocol itself covers both PPL and full PP:
+// - LIGHT (1) corresponds to PPL (PsProtectedTypeProtectedLight), allowing mutual opening between peers with the same signer.
+// - FULL (2) corresponds to PP (PsProtectedTypeProtected), which is stronger than PPL
+//   with the same signer; even PPL processes cannot obtain its high-privilege handles.
+// The two differ only by the type bit. Since the signature level is looked up via the signer table,
+// R3 can switch between PPL and PP simply by changing the Type, without requiring a new IOCTL.
 #define KSWORD_PS_PROTECTED_TYPE_NONE  ((unsigned char)0x00)
 #define KSWORD_PS_PROTECTED_TYPE_LIGHT ((unsigned char)0x01)
 #define KSWORD_PS_PROTECTED_TYPE_FULL  ((unsigned char)0x02)
@@ -128,7 +128,7 @@ typedef struct _KSWORD_ARK_RESUME_PROCESS_REQUEST
 #define KSWORD_PS_PROTECTED_SIGNER_WINSYSTEM_VALUE    ((unsigned char)0x07)
 #define KSWORD_PS_PROTECTED_SIGNER_APP_VALUE          ((unsigned char)0x08)
 
-// 组装 Protection 字节。Audit 位不参与：本驱动没有它的签名级别映射，带上会被拒。
+// Assemble the Protection byte. The Audit bit is excluded: this driver lacks a signature level mapping for it; including it would cause rejection.
 #define KSWORD_PS_PROTECTION_MAKE(protectedType, signerValue) \
     ((unsigned char)((((unsigned char)(signerValue)) << 4) | ((unsigned char)(protectedType) & 0x07)))
 
@@ -195,13 +195,13 @@ typedef struct _KSWORD_ARK_SET_PROCESS_INTEGRITY_RESPONSE
         METHOD_BUFFERED, \
         FILE_WRITE_ACCESS)
 
-// 进程令牌特权协议：
-// - QUERY 返回目标主令牌当前持有的 LUID 与属性，名称由 R3 通过
-//   LookupPrivilegeNameW 本地解析，避免把可变长字符串放入内核协议；
-// - ADJUST 按 LUID 批量启用、禁用或永久移除特权；
-// - expectedCreateTime100ns 绑定 PID 对应的进程实例，防止详情窗口或右键菜单
-//   停留期间 PID 被复用后修改到另一个进程。
-// - origin/main 的 QUERY/ADJUST 双 IOCTL 协议保留用于兼容。
+// Process token privilege protocol:
+// - QUERY returns the current LUIDs and attributes held by the target primary token; names are resolved
+//   locally by R3 via LookupPrivilegeNameW to avoid embedding variable-length strings in the kernel protocol.
+// - ADJUST: Batch enable, disable, or permanently remove privileges by LUID;
+// - expectedCreateTime100ns binds to the process instance corresponding to the PID to prevent the process details
+//   window or right-click menu from being modified to another process after the PID is reused during the stay period.
+// - The QUERY/ADJUST dual IOCTL protocol from origin/main is retained for compatibility.
 #define KSWORD_ARK_PROCESS_TOKEN_PRIVILEGE_PROTOCOL_VERSION 1UL
 #define KSWORD_ARK_PROCESS_TOKEN_PRIVILEGE_MAX_ENTRIES 64UL
 #define KSWORD_ARK_PROCESS_TOKEN_PRIVILEGE_FAILED_INDEX_NONE 0xFFFFFFFFUL
@@ -379,7 +379,7 @@ typedef struct _KSWORD_ARK_PROCESS_TOKEN_PRIVILEGE_RESPONSE
 #define KSWORD_ARK_PROCESS_FIELD_SECTION_OBJECT_AVAILABLE        0x00000080UL
 #define KSWORD_ARK_PROCESS_FIELD_SECTION_OBJECT_VALUE_PRESENT    0x00000100UL
 
-// Field source labels are intentionally protocol-local so ProcessIoctl.h does
+// Field source labels are intentionally protocol-local so processIoctl.h does
 // not depend on the DynData protocol header and can remain the base include.
 #define KSWORD_ARK_PROCESS_FIELD_SOURCE_UNAVAILABLE             0UL
 #define KSWORD_ARK_PROCESS_FIELD_SOURCE_PUBLIC_API              1UL
@@ -548,10 +548,10 @@ typedef struct _KSWORD_ARK_PROCESS_CROSSVIEW_RESPONSE
         METHOD_BUFFERED, \
         FILE_ANY_ACCESS)
 
-// 进程运行时详情协议：
-// - 输入：只接受 PID 和展示 flags，不接受 R3 传入的 EPROCESS 地址；
-// - 处理：R0 通过 PsLookupProcessByProcessId 定位对象，再按 DynData/PDB 偏移只读采样；
-// - 输出：固定响应包，字段缺失时用 fieldFlags/missingCapabilityMask/detail 解释原因。
+// Process runtime details protocol:
+// - Input: Accepts only PID and display flags; does not accept EPROCESS addresses passed from R3.
+// - Handling: R0 locates the object via PsLookupProcessByProcessId, then performs read-only sampling based on DynData/PDB offsets.
+// - Output: Fixed response packet; use fieldFlags/missingCapabilityMask/detail to explain reasons for missing fields.
 #define IOCTL_KSWORD_ARK_QUERY_PROCESS_DETAIL \
     CTL_CODE( \
         KSWORD_ARK_IOCTL_DEVICE_TYPE, \
@@ -570,10 +570,10 @@ typedef struct _KSWORD_ARK_PROCESS_CROSSVIEW_RESPONSE
 #define KSWORD_ARK_RUNTIME_DETAIL_TEXT_CHARS 256U
 #define KSWORD_ARK_RUNTIME_IMAGE_NAME_CHARS 16U
 
-// 通用 runtime field sample 协议：
-// - 输入：R3 只提交 PDB deep JSON 中的 runtimeItemId、offset、size；
-// - 处理：R0 仅从自身 lookup/reference 得到的 EPROCESS/ETHREAD 基址读取小字段；
-// - 返回：每个字段的状态、原始小字节和值摘要，不接受也不回写任意 R3 内核指针。
+// Generic runtime field sample protocol:
+// - Input: R3 submits only runtimeItemId, offset, and size from the PDB deep JSON.
+// - Handling: R0 reads small fields only from EPROCESS/ETHREAD base addresses obtained via its own lookup/reference.
+// - Returns: status, raw little-endian bytes, and value summary for each field; does not accept or write back arbitrary R3 kernel pointers.
 #define KSWORD_ARK_RUNTIME_FIELD_SAMPLE_PROTOCOL_VERSION 1UL
 #define KSWORD_ARK_RUNTIME_FIELD_SAMPLE_MAX_ITEMS 64UL
 #define KSWORD_ARK_RUNTIME_FIELD_SAMPLE_MAX_VALUE_BYTES 16UL
@@ -677,10 +677,10 @@ typedef struct _KSWORD_ARK_RUNTIME_FIELD_SAMPLE_RESPONSE
 #define KSWORD_ARK_PROCESS_DETAIL_FIELD_OFFSET_SOURCES        0x00001000UL
 #define KSWORD_ARK_PROCESS_DETAIL_FIELD_KERNEL_GLOBALS        0x00002000UL
 
-// 运行时 detail 通用内核全局 RVA 包：
-// - 输入：R0 DynData/PDB profile EX 中已校验的 GlobalRva item；
-// - 处理：R0 返回 RVA、来源以及按当前 ntoskrnl imageBase 推导出的只读地址；
-// - 返回：结构体本身无返回值，仅供 R3 展示 PspCidTable/模块链表等证据来源。
+// Runtime detail common kernel global RVA package:
+// - Input: The validated GlobalRva item from the R0 DynData/PDB profile EX;
+// - Processing: R0 returns the RVA, source, and the read-only address derived from the current ntoskrnl imageBase.
+// - Return: The structure itself has no return value; it is provided solely for R3 to display evidence sources such as PspCidTable and module lists.
 typedef struct _KSWORD_ARK_RUNTIME_KERNEL_GLOBALS
 {
     unsigned long pspCidTableRva;
@@ -717,10 +717,10 @@ typedef struct _KSWORD_ARK_PROCESS_DETAIL_OFFSETS
     unsigned long epSectionSignatureLevel;
 } KSWORD_ARK_PROCESS_DETAIL_OFFSETS;
 
-// 进程 detail 偏移来源包：
-// - 输入：R0 当前 KSW_DYN_STATE.KernelSources；
-// - 处理：与 offsets 同名一一对应，记录 System Informer/PDB profile/runtime pattern；
-// - 返回：结构体本身无返回值，仅用于 UI 把 offset 解释成人可读来源。
+// Process detail offset source package:
+// - Input: R0 current KswDynState.KernelSources;
+// - Processing: Corresponds one-to-one with the offsets names, recording System Informer/PDB profile/runtime pattern.
+// - Return: The struct itself has no return value; used solely to interpret offsets as human-readable sources in the UI.
 typedef struct _KSWORD_ARK_PROCESS_DETAIL_SOURCES
 {
     unsigned long epUniqueProcessId;

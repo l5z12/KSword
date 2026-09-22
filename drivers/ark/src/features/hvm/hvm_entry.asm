@@ -1,0 +1,1059 @@
+;------------------------------------------------------------------------------
+;
+; Module Name:
+;
+;     hvm_entry.asm
+;
+; Abstract:
+;
+;     Captures selector state, supplies one-shot and resident VM-entry
+;     continuations, preserves resident guest registers, and performs INVEPT.
+;
+;------------------------------------------------------------------------------
+
+OPTION CASEMAP:NONE
+
+KSW_ACTIVE_GUEST_S_CET EQU 60h
+KSW_ACTIVE_GUEST_SSP EQU 68h
+KSW_ACTIVE_GUEST_INTERRUPT_SSP_TABLE EQU 70h
+KSW_ACTIVE_GUEST_DEBUGCTL EQU 88h
+KSW_ACTIVE_GUEST_DR7 EQU 90h
+KSW_ACTIVE_GUEST_CET_MANAGED EQU 98h
+KSW_ACTIVE_GUEST_DEBUG_MANAGED EQU 9Bh
+KSW_ACTIVE_GUEST_RFLAGS EQU 0A0h
+
+KSW_RESIDENT_GUEST_S_CET EQU 50h
+KSW_RESIDENT_GUEST_SSP EQU 58h
+KSW_RESIDENT_GUEST_INTERRUPT_SSP_TABLE EQU 60h
+KSW_RESIDENT_GUEST_DEBUGCTL EQU 78h
+KSW_RESIDENT_GUEST_DR7 EQU 80h
+KSW_RESIDENT_CET_MANAGED EQU 88h
+KSW_RESIDENT_DEBUG_MANAGED EQU 8Bh
+KSW_RESIDENT_FX_STATE EQU 90h
+KSW_RESIDENT_ACTIVE EQU 290h
+
+EXTERN KswordARKHvmVmExitDispatch:PROC
+EXTERN KswordARKHvmConfigureResidentVmcsFromAsm:PROC
+EXTERN KswordARKHvmWriteResidentGuestSspFromAsm:PROC
+EXTERN KswordARKHvmResidentVmExitDispatch:PROC
+EXTERN KswordARKHvmResidentVmResumeFailure:PROC
+
+PUBLIC KswordARKHvmCaptureSegments
+PUBLIC KswordARKHvmAsmRestoreDescriptorTables
+PUBLIC KswordARKHvmAsmReadSsp
+PUBLIC KswordARKHvmControlledGuestEntry
+PUBLIC KswordARKHvmAsmLaunch
+PUBLIC KswordARKHvmVmExitEntry
+PUBLIC KswordARKHvmAsmLaunchResident
+PUBLIC KswordARKHvmAsmResidentHypercall
+PUBLIC KswordARKHvmResidentGuestResume
+PUBLIC KswordARKHvmResidentVmExitEntry
+PUBLIC KswordARKHvmAsmInveptSingleRaw
+PUBLIC KswordARKHvmAsmHostNmiStub
+PUBLIC KswordARKHvmAsmNestedL2Enter
+PUBLIC KswordARKHvmAsmProbeVmcsMemory
+PUBLIC KswordARKHvmAsmProbeLaunchL2
+PUBLIC KswordARKHvmAsmProbeL2ResumePoint
+EXTERN g_KswordHvmOriginalNmiHandler:QWORD
+EXTERN g_KswordHvmPendingTlbNmi:DWORD
+
+.CODE
+
+KswordARKHvmAsmRestoreDescriptorTables PROC
+    ; Restore the guest GDT base and limit from the packed snapshot.
+    lgdt FWORD PTR [rcx]
+    ; Restore the guest IDT base and limit, replacing the private host IDT.
+    lidt FWORD PTR [rcx + 10]
+    ; Return while the caller still keeps interrupts disabled.
+    ret
+KswordARKHvmAsmRestoreDescriptorTables ENDP
+
+KswordARKHvmCaptureSegments PROC
+    ; Store the packed ten-byte GDTR at snapshot offset zero.
+    sgdt FWORD PTR [rcx]
+    ; Store the packed ten-byte IDTR at snapshot offset ten.
+    sidt FWORD PTR [rcx + 10]
+    ; Capture ES into its packed snapshot slot.
+    mov ax, es
+    ; Publish the captured ES selector.
+    mov WORD PTR [rcx + 20], ax
+    ; Capture CS into its packed snapshot slot.
+    mov ax, cs
+    ; Publish the captured CS selector.
+    mov WORD PTR [rcx + 22], ax
+    ; Capture SS into its packed snapshot slot.
+    mov ax, ss
+    ; Publish the captured SS selector.
+    mov WORD PTR [rcx + 24], ax
+    ; Capture DS into its packed snapshot slot.
+    mov ax, ds
+    ; Publish the captured DS selector.
+    mov WORD PTR [rcx + 26], ax
+    ; Capture FS into its packed snapshot slot.
+    mov ax, fs
+    ; Publish the captured FS selector.
+    mov WORD PTR [rcx + 28], ax
+    ; Capture GS into its packed snapshot slot.
+    mov ax, gs
+    ; Publish the captured GS selector.
+    mov WORD PTR [rcx + 30], ax
+    ; Capture the current local-descriptor-table selector.
+    sldt ax
+    ; Publish the captured LDTR selector.
+    mov WORD PTR [rcx + 32], ax
+    ; Capture the current task-register selector.
+    str ax
+    ; Publish the captured task-register selector.
+    mov WORD PTR [rcx + 34], ax
+    ; Return to the VMCS builder.
+    ret
+KswordARKHvmCaptureSegments ENDP
+
+; Read the CET shadow stack pointer from before the caller entered this function.
+KswordARKHvmAsmReadSsp PROC
+    ; Use byte encoding compatible with MASM versions that do not yet recognize the RDSSPQ mnemonic.
+    db 0F3h, 048h, 00Fh, 01Eh, 0C8h
+    ; CALL pushed a shadow return address; compensate for this 8-byte slot.
+    add rax, 8
+    ; Returns: The SSP before the caller entered this function.
+    ret
+KswordARKHvmAsmReadSsp ENDP
+
+KswordARKHvmControlledGuestEntry PROC
+    ; Produce the single expected, deterministic VM-exit reason.
+    vmcall
+    ; Force a second intercept if a future dispatcher accidentally resumes.
+    hlt
+    ; Prevent fall-through into adjacent executable bytes.
+    jmp KswordARKHvmControlledGuestEntry
+KswordARKHvmControlledGuestEntry ENDP
+
+KswordARKHvmAsmLaunch PROC
+    ; Save the full RFLAGS before VMX transition, specifically IF and AC.
+    pushfq
+    pop QWORD PTR [rcx + KSW_ACTIVE_GUEST_RFLAGS]
+    ; Save the original wrapper stack pointer in context field zero.
+    mov QWORD PTR [rcx], rsp
+    ; Attempt the first VM entry for the current clear-state VMCS.
+    vmlaunch
+    ; Default a returning VMLAUNCH to VMfailInvalid.
+    mov eax, 2
+    ; Preserve result two when the carry flag reports VMfailInvalid.
+    jc KswordARKHvmAsmLaunchComplete
+    ; Select result one for a VMfailValid zero-flag result.
+    mov eax, 1
+    ; Preserve result one when the zero flag reports VMfailValid.
+    jz KswordARKHvmAsmLaunchComplete
+    ; Retain a defensive zero for an architecturally unreachable flag state.
+    xor eax, eax
+KswordARKHvmAsmLaunchComplete:
+    ; Similarly restore the complete RFLAGS of the call site when returning from a VM-entry failure.
+    push QWORD PTR [rcx + KSW_ACTIVE_GUEST_RFLAGS]
+    popfq
+    ; Return the VM-entry failure code to the C launch lifecycle.
+    ret
+KswordARKHvmAsmLaunch ENDP
+
+KswordARKHvmVmExitEntry PROC FRAME
+    ; Reserve the Windows x64 caller home area on the dedicated exit stack.
+    sub rsp, 20h
+    ; Describe the fixed stack allocation to the x64 unwinder.
+    .ALLOCSTACK 20h
+    ; End the unwindable prologue before the first C call.
+    .ENDPROLOG
+    ; Transfer the current VMCS to the exit dispatcher.
+    call KswordARKHvmVmExitDispatch
+    ; Require the dispatcher to return the exact active launch context.
+    test rax, rax
+    ; Trap if the dispatcher could not recover a launch continuation.
+    jz KswordARKHvmVmExitFatal
+    ; Preserve the context pointer; after switching back to the wrapper stack, no longer depend on the host stack.
+    mov r11, rax
+    ; Restore the wrapper stack that contains the original C return address.
+    mov rsp, QWORD PTR [r11]
+    ; Pre-read debug state to avoid accessing context after restoring breakpoints before re-enabling CET.
+    mov r8, QWORD PTR [r11 + KSW_ACTIVE_GUEST_DEBUGCTL]
+    mov r9, QWORD PTR [r11 + KSW_ACTIVE_GUEST_DR7]
+    ; Restore the interrupt shadow stack table address before re-enabling CET.
+    cmp BYTE PTR [r11 + KSW_ACTIVE_GUEST_CET_MANAGED], 0
+    je KswordARKHvmVmExitRestoreDebug
+    mov ecx, 06A8h
+    mov rax, QWORD PTR [r11 + KSW_ACTIVE_GUEST_INTERRUPT_SSP_TABLE]
+    mov rdx, rax
+    shr rdx, 32
+    wrmsr
+    ; Rebuild the SSP restore token only if shadow stacks were enabled in the original state.
+    mov r10, QWORD PTR [r11 + KSW_ACTIVE_GUEST_S_CET]
+    test r10, 1
+    jz KswordARKHvmVmExitRestoreExactCet
+    mov ecx, 06A2h
+    mov rax, r10
+    or rax, 2
+    mov rdx, rax
+    shr rdx, 32
+    wrmsr
+    mov rax, QWORD PTR [r11 + KSW_ACTIVE_GUEST_SSP]
+    sub rax, 8
+    mov rdx, QWORD PTR [r11 + KSW_ACTIVE_GUEST_SSP]
+    or rdx, 1
+    ; WRSSQ [RAX], RDX writes a 64-bit SSP restore token.
+    db 048h, 00Fh, 038h, 0F6h, 010h
+    ; RSTORSSP [RAX] selects the guest's SSP saved during VM-exit.
+    db 0F3h, 00Fh, 001h, 028h
+KswordARKHvmVmExitRestoreExactCet:
+    ; Restore the guest's original IA32_S_CET.
+    mov ecx, 06A2h
+    mov rax, r10
+    mov rdx, rax
+    shr rdx, 32
+    wrmsr
+KswordARKHvmVmExitRestoreDebug:
+    ; Prefetch RFLAGS before restoring debug state; the context will not be read again afterwards.
+    mov r10, QWORD PTR [r11 + KSW_ACTIVE_GUEST_RFLAGS]
+    cmp BYTE PTR [r11 + KSW_ACTIVE_GUEST_DEBUG_MANAGED], 0
+    je KswordARKHvmVmExitStateRestored
+    ; Finally restore the debug MSRs and DR7 to avoid the breakpoint hit during the restoration process itself.
+    mov ecx, 01D9h
+    mov rax, r8
+    mov rdx, rax
+    shr rdx, 32
+    wrmsr
+    mov dr7, r9
+KswordARKHvmVmExitStateRestored:
+    ; Report successful VM entry and handled VM exit to the C lifecycle.
+    xor eax, eax
+    ; A VM-exit resets host flags; restore the complete RFLAGS of the caller frame before returning.
+    push r10
+    popfq
+    ; Return through the original KswordARKHvmAsmLaunch caller frame.
+    ret
+KswordARKHvmVmExitFatal:
+    ; Trap immediately if the dispatcher violates its context contract.
+    int 3
+    ; Keep the fallback path bounded even when a debugger continues the trap.
+    pause
+    ; Never execute bytes outside the fallback loop.
+    jmp KswordARKHvmVmExitFatal
+KswordARKHvmVmExitEntry ENDP
+
+KswordARKHvmAsmLaunchResident PROC FRAME
+    ; Preserve the caller's nonvolatile RBX before using it as context storage.
+    push rbx
+    ; Describe the saved nonvolatile register to the x64 unwinder.
+    .PUSHREG rbx
+    ; Reserve the Windows x64 caller home area for the VMCS configuration call.
+    sub rsp, 20h
+    ; Describe the fixed home-area allocation to the x64 unwinder.
+    .ALLOCSTACK 20h
+    ; End the unwindable prologue before privileged state changes.
+    .ENDPROLOG
+    ; Preserve the resident context across the C configuration call.
+    mov rbx, rcx
+    ; Recover the original wrapper RSP that points at the C return address.
+    lea rax, QWORD PTR [rsp + 28h]
+    ; Publish the exact guest stack continuation at context offset zero.
+    mov QWORD PTR [rbx], rax
+    ; Capture guest RFLAGS before the VMCS configuration call changes flags.
+    pushfq
+    ; Store the captured guest RFLAGS at context offset eight.
+    pop QWORD PTR [rbx + 8]
+    ; Pass the resident context to the VMCS configuration callback.
+    mov rcx, rbx
+    ; Program guest and host state after exact RSP/RFLAGS capture.
+    call KswordARKHvmConfigureResidentVmcsFromAsm
+    ; Preserve the configuration status for validation.
+    test eax, eax
+    ; Skip VM entry when VMCS programming failed.
+    jnz KswordARKHvmAsmLaunchResidentConfigFailed
+    ; Skip SSP capture when VM-exit does not manage CET state.
+    cmp BYTE PTR [rbx + KSW_RESIDENT_CET_MANAGED], 0
+    je KswordARKHvmAsmLaunchResidentStateReady
+    ; Skip SSP capture when supervisor shadow stacks are disabled.
+    test QWORD PTR [rbx + KSW_RESIDENT_GUEST_S_CET], 1
+    jz KswordARKHvmAsmLaunchResidentStateReady
+    ; Capture the exact SSP after every nested configuration call returned.
+    db 0F3h, 048h, 00Fh, 01Eh, 0C8h
+    ; Publish the exact shadow-stack continuation for VM-entry and VMXOFF.
+    mov QWORD PTR [rbx + KSW_RESIDENT_GUEST_SSP], rax
+    ; Pass the resident context to the bounded VMCS SSP writer.
+    mov rcx, rbx
+    ; Replace the builder placeholder with the exact assembly-captured SSP.
+    call KswordARKHvmWriteResidentGuestSspFromAsm
+    ; Preserve the SSP writer status for validation.
+    test eax, eax
+    ; Skip VM entry when the exact SSP could not be committed.
+    jnz KswordARKHvmAsmLaunchResidentConfigFailed
+KswordARKHvmAsmLaunchResidentStateReady:
+    ; Release the C caller home area before guest entry.
+    add rsp, 20h
+    ; Restore the caller's nonvolatile RBX before guest state is captured.
+    pop rbx
+    ; Attempt first entry for the current clear-state resident VMCS.
+    vmlaunch
+    ; Default a returning VMLAUNCH to VMfailInvalid.
+    mov eax, 2
+    ; Preserve result two when carry reports VMfailInvalid.
+    jc KswordARKHvmAsmLaunchResidentComplete
+    ; Select result one for a VMfailValid zero-flag result.
+    mov eax, 1
+    ; Preserve result one when zero reports VMfailValid.
+    jz KswordARKHvmAsmLaunchResidentComplete
+    ; Retain a defensive zero for an architecturally unreachable flag state.
+    xor eax, eax
+KswordARKHvmAsmLaunchResidentComplete:
+    ; Return the resident VM-entry result to the current-processor lifecycle.
+    ret
+KswordARKHvmAsmLaunchResidentConfigFailed:
+    ; Release the C caller home area after configuration failure.
+    add rsp, 20h
+    ; Restore the caller's nonvolatile RBX after configuration failure.
+    pop rbx
+    ; Return a distinct never-attempted VM-entry result.
+    mov eax, 3
+    ; Return to the current-processor lifecycle without VMLAUNCH.
+    ret
+KswordARKHvmAsmLaunchResident ENDP
+
+;------------------------------------------------------------------------------
+; UCHAR KswordARKHvmAsmNestedL2Enter(Frame, IsResume, GuestFxState)
+;
+; Enter L2 with L1's general-purpose registers actually in the registers.
+;
+; VM entry does not load GPRs from the VMCS: the guest keeps whatever the
+; processor held when the entry instruction executed.  For an ordinary
+; hypervisor that is free, because the guest's VMLAUNCH *is* the entry.  For a
+; nested one it is not: L1's VMLAUNCH traps to us, and the entry that actually
+; runs is ours, issued from the exit handler with the exit handler's registers.
+; L2 therefore started with our values in every register.
+;
+; The synthetic L2 the probe has been running never noticed - it loads every
+; register it reads before reading it.  Any real guest dereferences one and
+; faults inside L2, where nothing is intercepting exceptions, which is not a
+; crash and not an exit: the processor never comes back and the machine stops
+; answering with no dump and no host-side event.  That is the measured failure
+; this exists to fix.
+;
+; RSP is deliberately not restored here: it is a VMCS guest field, loaded by
+; the entry itself.  Not touching it is also what leaves this routine a stack
+; to return on when the entry fails.
+;------------------------------------------------------------------------------
+KswordARKHvmAsmNestedL2Enter PROC
+    ; Preserve every callee-saved register the frame load below overwrites.
+    push rbx
+    push rbp
+    push rsi
+    push rdi
+    push r12
+    push r13
+    push r14
+    push r15
+    ; L2 inherits x87/SSE state as well as GPRs. Preserve C's state for VMfail.
+    ; Eight pushes leave RSP at 8 mod 16; this allocation aligns FXSAVE.
+    sub rsp, 208h
+    fxsave64 [rsp]
+    fxrstor64 [r8]
+    ; Branch on the selector before loading, since loading destroys it.
+    test dl, dl
+    jnz KswordARKHvmAsmNestedL2Resume
+    ; --- VMLAUNCH path ---------------------------------------------------
+    mov rax, [rcx + 00h]
+    mov rdx, [rcx + 10h]
+    mov rbx, [rcx + 18h]
+    mov rbp, [rcx + 20h]
+    mov rsi, [rcx + 28h]
+    mov rdi, [rcx + 30h]
+    mov r8,  [rcx + 38h]
+    mov r9,  [rcx + 40h]
+    mov r10, [rcx + 48h]
+    mov r11, [rcx + 50h]
+    mov r12, [rcx + 58h]
+    mov r13, [rcx + 60h]
+    mov r14, [rcx + 68h]
+    mov r15, [rcx + 70h]
+    ; RCX last, because it is the pointer every load above went through.
+    mov rcx, [rcx + 08h]
+    vmlaunch
+    jmp KswordARKHvmAsmNestedL2Failed
+KswordARKHvmAsmNestedL2Resume:
+    ; --- VMRESUME path ---------------------------------------------------
+    mov rax, [rcx + 00h]
+    mov rdx, [rcx + 10h]
+    mov rbx, [rcx + 18h]
+    mov rbp, [rcx + 20h]
+    mov rsi, [rcx + 28h]
+    mov rdi, [rcx + 30h]
+    mov r8,  [rcx + 38h]
+    mov r9,  [rcx + 40h]
+    mov r10, [rcx + 48h]
+    mov r11, [rcx + 50h]
+    mov r12, [rcx + 58h]
+    mov r13, [rcx + 60h]
+    mov r14, [rcx + 68h]
+    mov r15, [rcx + 70h]
+    mov rcx, [rcx + 08h]
+    vmresume
+KswordARKHvmAsmNestedL2Failed:
+    ; Reached only when the entry did not happen; RSP is still ours.
+    fxrstor64 [rsp]
+    add rsp, 208h
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rdi
+    pop rsi
+    pop rbp
+    pop rbx
+    ; Report that the entry failed; the caller reads the architectural reason.
+    mov eax, 1
+    ret
+KswordARKHvmAsmNestedL2Enter ENDP
+
+; ULONG ProbeVmcsMemory(Field, Source, Destination): force both memory forms.
+KswordARKHvmAsmProbeVmcsMemory PROC
+    vmwrite rcx, QWORD PTR [rdx]
+    jbe KswordARKHvmAsmProbeVmcsMemoryFailed
+    vmread QWORD PTR [r8], rcx
+    jbe KswordARKHvmAsmProbeVmcsMemoryFailed
+    xor eax, eax
+    ret
+KswordARKHvmAsmProbeVmcsMemoryFailed:
+    mov eax, 1
+    ret
+KswordARKHvmAsmProbeVmcsMemory ENDP
+
+;------------------------------------------------------------------------------
+; ULONG KswordARKHvmAsmProbeLaunchL2(VOID)
+;
+; Launch L2 so that it resumes where L1's registers already belong.
+;
+; The probe's earlier attempt pointed vmcs12's guest RIP at an RtlCaptureContext
+; site and then ran C there.  L2 does resume at that address, but with L1's
+; registers as of L1's VMLAUNCH - a different point in the same function - so
+; every pointer the compiler happened to be holding was wrong, and any branch
+; L2 took on shared state was decided by garbage.  Measured: a store and the
+; adjacent load of the same volatile global disagreed, which only happens when
+; the store is not the instruction that ran.
+;
+; A hypervisor does not have this problem because its guest resumes at its own
+; launch site.  This reproduces that exactly: guest RIP is a stub whose only
+; job is to return, and guest RSP is the RSP at the VMLAUNCH - which still
+; points at the return address the C caller pushed.  L2 therefore begins by
+; returning from this function, into C, with the caller's non-volatile
+; registers and stack intact, because they were never disturbed.
+;
+; Returns 0 when the caller is now executing as L2, non-zero when the entry
+; did not happen.  Both answers arrive as an ordinary function return, so the
+; C side never has to ask memory where it is.
+;------------------------------------------------------------------------------
+KswordARKHvmAsmProbeLaunchL2 PROC
+    ; RCX points at this CPU's result, carried through the actual L2 entry.
+    mov r9, rcx
+    mov DWORD PTR [r9], 0
+    ; Aim vmcs12's guest RIP at the resume stub.  RIP-relative, so it is the
+    ; runtime address rather than a link-time one.
+    lea rdx, KswordARKHvmProbeL2Resume
+    mov rcx, 681Eh
+    vmwrite rcx, rdx
+    jbe KswordARKHvmAsmProbeLaunchFailed
+    ; Aim guest RSP at this frame, so the stub's RET lands in the C caller.
+    mov rdx, rsp
+    mov rcx, 681Ch
+    vmwrite rcx, rdx
+    jbe KswordARKHvmAsmProbeLaunchFailed
+    ; Enter.  On success this does not return here - it returns through the
+    ; stub below, as L2.
+    mov rax, 04B535746584C3231h
+    movq xmm0, rax
+    movq xmm5, rax
+    vmlaunch
+KswordARKHvmAsmProbeLaunchFailed:
+    ; Reached only when the entry did not happen.
+    mov eax, 1
+    ret
+KswordARKHvmAsmProbeLaunchL2 ENDP
+
+;------------------------------------------------------------------------------
+; The address L2 resumes at: return zero to the C caller of the launcher.
+;------------------------------------------------------------------------------
+KswordARKHvmProbeL2Resume PROC
+    mov rcx, 04B535746584C3231h
+    movq rax, xmm0
+    cmp rax, rcx
+    jne KswordARKHvmProbeL2FxChecked
+    movq rax, xmm5
+    cmp rax, rcx
+    jne KswordARKHvmProbeL2FxChecked
+    mov DWORD PTR [r9], 1
+KswordARKHvmProbeL2FxChecked:
+    xor eax, eax
+    ret
+KswordARKHvmProbeL2Resume ENDP
+
+;------------------------------------------------------------------------------
+; ULONGLONG KswordARKHvmAsmProbeL2ResumePoint(VOID)
+;
+; Report the address above, so the probe can publish the RIP it aimed at next
+; to the RIP the exit reports.  Comparing those two is only meaningful within
+; one run - the driver loads at a different base every time.
+;------------------------------------------------------------------------------
+KswordARKHvmAsmProbeL2ResumePoint PROC
+    lea rax, KswordARKHvmProbeL2Resume
+    ret
+KswordARKHvmAsmProbeL2ResumePoint ENDP
+
+KswordARKHvmResidentGuestResume PROC
+    ; Report successful VM entry when the guest wrapper resumes.
+    xor eax, eax
+    ; Return through the exact C caller address on the guest stack.
+    ret
+KswordARKHvmResidentGuestResume ENDP
+
+KswordARKHvmAsmResidentHypercall PROC
+    ; Publish the KSword-private hypercall signature in guest RAX.
+    mov rax, 4B53574F52444856h
+    ; Enter the resident VM-exit dispatcher with RCX command and RDX argument.
+    vmcall
+    ; Return the dispatcher-provided result in RAX.
+    ret
+KswordARKHvmAsmResidentHypercall ENDP
+
+KswordARKHvmResidentVmExitEntry PROC
+    ; Preserve guest R15 at the top of the host stack.
+    push r15
+    ; Preserve guest R14.
+    push r14
+    ; Preserve guest R13.
+    push r13
+    ; Preserve guest R12.
+    push r12
+    ; Preserve guest R11.
+    push r11
+    ; Preserve guest R10.
+    push r10
+    ; Preserve guest R9.
+    push r9
+    ; Preserve guest R8.
+    push r8
+    ; Preserve guest RDI.
+    push rdi
+    ; Preserve guest RSI.
+    push rsi
+    ; Preserve guest RBP.
+    push rbp
+    ; Preserve guest RBX.
+    push rbx
+    ; Preserve guest RDX.
+    push rdx
+    ; Preserve guest RCX.
+    push rcx
+    ; Preserve guest RAX at register-frame offset zero.
+    push rax
+    ; Load the anchored resident context above the 120-byte register frame.
+    mov rdx, QWORD PTR [rsp + 78h]
+    ; Save x87, MMX, MXCSR, and XMM state before any C code can alter it.
+    fxsave64 [rdx + KSW_RESIDENT_FX_STATE]
+    ; Pass the fixed register-frame base as the first C argument.
+    mov rcx, rsp
+    ; Reserve the Windows x64 caller home area.
+    sub rsp, 20h
+    ; Dispatch the current VMCS without allocation or waiting.
+    call KswordARKHvmResidentVmExitDispatch
+    ; Release the Windows x64 caller home area.
+    add rsp, 20h
+    ; Select ordinary VMRESUME for action zero.
+    test eax, eax
+    ; Restore guest registers before VMRESUME.
+    jz KswordARKHvmResidentResume
+    ; Select verified devirtualization for action one.
+    cmp eax, 1
+    ; Restore guest registers before leaving the host stack.
+    je KswordARKHvmResidentDevirtualize
+    ; Trap when no verified guest continuation exists.
+    jmp KswordARKHvmResidentFatal
+
+KswordARKHvmResidentResume:
+    ; Reload the anchored context without consuming the saved guest RAX.
+    mov rax, QWORD PTR [rsp + 78h]
+    ; Restore x87, MMX, MXCSR, and XMM state before returning to the guest.
+    fxrstor64 [rax + KSW_RESIDENT_FX_STATE]
+    ; Restore guest RAX.
+    pop rax
+    ; Restore guest RCX.
+    pop rcx
+    ; Restore guest RDX.
+    pop rdx
+    ; Restore guest RBX.
+    pop rbx
+    ; Restore guest RBP.
+    pop rbp
+    ; Restore guest RSI.
+    pop rsi
+    ; Restore guest RDI.
+    pop rdi
+    ; Restore guest R8.
+    pop r8
+    ; Restore guest R9.
+    pop r9
+    ; Restore guest R10.
+    pop r10
+    ; Restore guest R11.
+    pop r11
+    ; Restore guest R12.
+    pop r12
+    ; Restore guest R13.
+    pop r13
+    ; Restore guest R14.
+    pop r14
+    ; Restore guest R15.
+    pop r15
+    ; Resume guest execution with the updated VMCS and GPR state.
+    vmresume
+    ; Recreate the register frame when VMRESUME fails.
+    push r15
+    ; Preserve guest R14 after failed VMRESUME.
+    push r14
+    ; Preserve guest R13 after failed VMRESUME.
+    push r13
+    ; Preserve guest R12 after failed VMRESUME.
+    push r12
+    ; Preserve guest R11 after failed VMRESUME.
+    push r11
+    ; Preserve guest R10 after failed VMRESUME.
+    push r10
+    ; Preserve guest R9 after failed VMRESUME.
+    push r9
+    ; Preserve guest R8 after failed VMRESUME.
+    push r8
+    ; Preserve guest RDI after failed VMRESUME.
+    push rdi
+    ; Preserve guest RSI after failed VMRESUME.
+    push rsi
+    ; Preserve guest RBP after failed VMRESUME.
+    push rbp
+    ; Preserve guest RBX after failed VMRESUME.
+    push rbx
+    ; Preserve guest RDX after failed VMRESUME.
+    push rdx
+    ; Preserve guest RCX after failed VMRESUME.
+    push rcx
+    ; Preserve guest RAX after failed VMRESUME.
+    push rax
+    ; Default the VMRESUME result to VMfailInvalid.
+    mov edx, 2
+    ; Preserve result two when carry reports VMfailInvalid.
+    jc KswordARKHvmResidentVmResumeResultReady
+    ; Select result one for VMfailValid.
+    mov edx, 1
+    ; Preserve result one when zero reports VMfailValid.
+    jz KswordARKHvmResidentVmResumeResultReady
+    ; Retain a defensive zero for an unreachable flag state.
+    xor edx, edx
+KswordARKHvmResidentVmResumeResultReady:
+    ; Load the anchored resident context as the first C argument.
+    mov rcx, QWORD PTR [rsp + 78h]
+    ; Reserve the Windows x64 caller home area.
+    sub rsp, 20h
+    ; Convert VMRESUME failure into a verified devirtualization continuation.
+    call KswordARKHvmResidentVmResumeFailure
+    ; Release the Windows x64 caller home area.
+    add rsp, 20h
+    ; Require a verified devirtualization action.
+    cmp eax, 1
+    ; Restore guest registers before leaving the host stack.
+    je KswordARKHvmResidentDevirtualize
+    ; Trap when VMRESUME failure has no verified continuation.
+    jmp KswordARKHvmResidentFatal
+
+KswordARKHvmResidentDevirtualize:
+    ; Load the anchored context while the host register frame remains intact.
+    mov rdx, QWORD PTR [rsp + 78h]
+    ; Restore the original extended state after the final VM-exit C call.
+    fxrstor64 [rdx + KSW_RESIDENT_FX_STATE]
+    ; Cache guest debug state before the final context release.
+    movzx ebp, BYTE PTR [rdx + KSW_RESIDENT_DEBUG_MANAGED]
+    mov r12, QWORD PTR [rdx + KSW_RESIDENT_GUEST_DEBUGCTL]
+    mov r13, QWORD PTR [rdx + KSW_RESIDENT_GUEST_DR7]
+    ; Skip CET restoration when VM-exit did not load host CET state.
+    cmp BYTE PTR [rdx + KSW_RESIDENT_CET_MANAGED], 0
+    je KswordARKHvmResidentCetRestored
+    ; Restore the interrupt shadow-stack table before enabling CET.
+    mov ecx, 06A8h
+    mov rax, QWORD PTR [rdx + KSW_RESIDENT_GUEST_INTERRUPT_SSP_TABLE]
+    mov r14, rdx
+    mov rdx, rax
+    shr rdx, 32
+    wrmsr
+    mov rdx, r14
+    ; Preserve the exact guest supervisor CET control value.
+    mov r10, QWORD PTR [rdx + KSW_RESIDENT_GUEST_S_CET]
+    ; Skip SSP token reconstruction when shadow stacks were disabled.
+    test r10, 1
+    jz KswordARKHvmResidentRestoreExactCet
+    ; Temporarily allow WRSS while rebuilding the SSP restore token.
+    mov ecx, 06A2h
+    mov rax, r10
+    or rax, 2
+    mov r14, rdx
+    mov rdx, rax
+    shr rdx, 32
+    wrmsr
+    mov rdx, r14
+    ; Reserve two shadow slots below the guest SSP for a synthetic continuation.
+    mov rax, QWORD PTR [rdx + KSW_RESIDENT_GUEST_SSP]
+    sub rax, 10h
+    ; Build a busy restore token targeting the synthetic shadow return slot.
+    mov r14, QWORD PTR [rdx + KSW_RESIDENT_GUEST_SSP]
+    sub r14, 8
+    or r14, 1
+    ; WRSSQ [RAX], R14 writes the 64-bit SSP restore token.
+    db 04Ch, 00Fh, 038h, 0F6h, 030h
+    ; Write the native continuation into the matching synthetic shadow slot.
+    add rax, 8
+    mov r14, QWORD PTR [rdx + 40h]
+    ; WRSSQ [RAX], R14 writes the synthetic shadow return address.
+    db 04Ch, 00Fh, 038h, 0F6h, 030h
+    ; Select the token again after publishing the synthetic return address.
+    sub rax, 8
+    ; RSTORSSP [RAX] selects GuestSsp-8 for the final native RET.
+    db 0F3h, 00Fh, 001h, 028h
+KswordARKHvmResidentRestoreExactCet:
+    ; Restore the exact guest IA32_S_CET value.
+    mov ecx, 06A2h
+    mov rax, r10
+    mov r14, rdx
+    mov rdx, rax
+    shr rdx, 32
+    wrmsr
+    mov rdx, r14
+KswordARKHvmResidentCetRestored:
+    ; Preserve the host register-frame base only until it is copied.
+    mov rsi, rsp
+    ; Load the verified exact guest stack continuation.
+    mov rax, QWORD PTR [rdx + 38h]
+    ; Load the verified instruction continuation.
+    mov r10, QWORD PTR [rdx + 40h]
+    ; Load the verified guest RFLAGS continuation.
+    mov r11, QWORD PTR [rdx + 48h]
+    ; Switch away from the host stack before publishing resource release.
+    mov rsp, rax
+    ; Place the continuation so the final RET restores the exact guest RSP.
+    push r10
+    ; Place guest RFLAGS immediately below the return continuation.
+    push r11
+    ; Copy original guest R15 from the immutable host register frame.
+    push QWORD PTR [rsi + 70h]
+    ; Copy original guest R14.
+    push QWORD PTR [rsi + 68h]
+    ; Copy original guest R13.
+    push QWORD PTR [rsi + 60h]
+    ; Copy original guest R12.
+    push QWORD PTR [rsi + 58h]
+    ; Copy original guest R11 without sacrificing it as a jump register.
+    push QWORD PTR [rsi + 50h]
+    ; Copy original guest R10 without sacrificing it as a flags register.
+    push QWORD PTR [rsi + 48h]
+    ; Copy original guest R9.
+    push QWORD PTR [rsi + 40h]
+    ; Copy original guest R8.
+    push QWORD PTR [rsi + 38h]
+    ; Copy original guest RDI.
+    push QWORD PTR [rsi + 30h]
+    ; Copy original guest RSI.
+    push QWORD PTR [rsi + 28h]
+    ; Copy original guest RBP.
+    push QWORD PTR [rsi + 20h]
+    ; Copy original guest RBX.
+    push QWORD PTR [rsi + 18h]
+    ; Copy original guest RDX.
+    push QWORD PTR [rsi + 10h]
+    ; Copy original guest RCX.
+    push QWORD PTR [rsi + 8]
+    ; Copy the dispatcher-provided guest RAX result.
+    push QWORD PTR [rsi]
+    ; Cache runtime and processor-row pointers before the final count commit.
+    mov r8, QWORD PTR [rdx + 10h]
+    mov r9, QWORD PTR [rdx + 18h]
+    ; Publish that this row is no longer resident only after stack handoff.
+    lock and DWORD PTR [r9 + 4], 0FFFFFEFFh
+    ; Publish completed processor-local devirtualization.
+    lock or DWORD PTR [r9 + 4], 00000400h
+    ; Clear Active exactly once after no host-stack access remains.
+    xor eax, eax
+    xchg DWORD PTR [rdx + KSW_RESIDENT_ACTIVE], eax
+    ; Skip the count update if another verified path already committed it.
+    test eax, eax
+    jz KswordARKHvmResidentCommitComplete
+    ; Make the final resident-count decrement the last context-related access.
+    lock dec DWORD PTR [r8 + 28h]
+KswordARKHvmResidentCommitComplete:
+    ; Restore debug state only after the final resident-context access.
+    test ebp, ebp
+    jz KswordARKHvmResidentDebugRestored
+    mov ecx, 01D9h
+    mov rax, r12
+    mov rdx, rax
+    shr rdx, 32
+    wrmsr
+    mov dr7, r13
+KswordARKHvmResidentDebugRestored:
+    ; Restore guest RAX from the guest-stack continuation frame.
+    pop rax
+    ; Restore guest RCX.
+    pop rcx
+    ; Restore guest RDX.
+    pop rdx
+    ; Restore guest RBX.
+    pop rbx
+    ; Restore guest RBP.
+    pop rbp
+    ; Restore guest RSI.
+    pop rsi
+    ; Restore guest RDI.
+    pop rdi
+    ; Restore guest R8.
+    pop r8
+    ; Restore guest R9.
+    pop r9
+    ; Restore guest R10.
+    pop r10
+    ; Restore guest R11.
+    pop r11
+    ; Restore guest R12.
+    pop r12
+    ; Restore guest R13.
+    pop r13
+    ; Restore guest R14.
+    pop r14
+    ; Restore guest R15.
+    pop r15
+    ; Restore the exact guest RFLAGS from the synthetic continuation frame.
+    popfq
+    ; Consume the synthetic RIP and leave RSP exactly at DevirtualizeRsp.
+    ret
+
+KswordARKHvmResidentFatal:
+    ; Trap immediately when no verified guest continuation exists.
+    int 3
+    ; Keep the fallback path bounded if a debugger continues the trap.
+    pause
+    ; Never execute bytes outside the fatal fallback loop.
+    jmp KswordARKHvmResidentFatal
+KswordARKHvmResidentVmExitEntry ENDP
+
+KswordARKHvmAsmInveptSingleRaw PROC
+    ; Reserve one 16-byte INVEPT descriptor on the current root stack.
+    sub rsp, 10h
+    ; Store the caller-provided EPT pointer in descriptor qword zero.
+    mov QWORD PTR [rsp], rcx
+    ; Clear reserved descriptor qword one.
+    mov QWORD PTR [rsp + 8], 0
+    ; Select single-context invalidation type one.
+    mov rax, 1
+    ; Invalidate translations associated with the exact EPT pointer.
+    invept rax, OWORD PTR [rsp]
+    ; Default the instruction result to VMfailInvalid.
+    mov eax, 2
+    ; Preserve result two when carry reports VMfailInvalid.
+    jc KswordARKHvmAsmInveptSingleComplete
+    ; Select result one for VMfailValid.
+    mov eax, 1
+    ; Preserve result one when zero reports VMfailValid.
+    jz KswordARKHvmAsmInveptSingleComplete
+    ; Select result zero for successful invalidation.
+    xor eax, eax
+KswordARKHvmAsmInveptSingleComplete:
+    ; Release the local INVEPT descriptor.
+    add rsp, 10h
+    ; Return the exact VMX instruction result.
+    ret
+KswordARKHvmAsmInveptSingleRaw ENDP
+
+; ULONG KswordARKHvmAsmForwardHypercall(KSW_HVM_GPR_FRAME* Frame, PVOID FxState)
+;
+; Re-issue the guest's VMCALL from VMX root so the hypervisor above us answers
+; it.  The guest here IS the Windows that was running before residency began,
+; so its hypercall page, its SynIC and its synthetic MSRs are all owned by that
+; outer hypervisor; refusing the call with #UD bugchecks the machine the moment
+; storvsc sends its first VMBus packet (observed: 0x1E / c000001d with
+; winhv!WinHvpFastHypercall on the stack).
+;
+; Under nested virtualization the processor is physically in the outer
+; hypervisor's non-root operation even while we believe we are in root, so
+; VMCALL exits to it exactly as it would from the guest.
+;
+; Returns 0 when the call was answered and 1 when nothing serviced it.  The
+; check is a sentinel in RAX rather than the carry and zero flags: VMCALL never
+; writes RAX on any outcome - neither a VM exit nor a VMfail does - while the
+; Hyper-V x64 ABI leaves the input value of RAX undefined and returns the status
+; there, so overwriting it costs nothing and an unchanged sentinel is
+; unambiguous.  The flags cannot serve the same purpose because nothing
+; promises a hypercall preserves guest RFLAGS.  Without this the caller cannot
+; distinguish "answered" from "silently ignored", and CPUID reporting a
+; hypervisor is not proof that one answers VMCALL - the guest would then be
+; handed back its own pre-call RAX as a hypercall status and advanced past the
+; instruction, on the storvsc and VMBus paths.  That is worse than a bugcheck.
+;
+; Hyper-V x64 hypercall ABI: RCX carries the control word, RDX and R8 carry the
+; input and output (a GPA for slow calls, the operands themselves for fast
+; ones), the result comes back in RAX, and extended fast calls pass further
+; operands in XMM0-XMM5.  Only those six are moved, and with MOVAPS rather than
+; FXRSTOR64: XMM6-XMM15 are non-volatile in the Windows x64 calling convention,
+; so restoring the whole area would clobber registers the C dispatcher is
+; entitled to find intact, and it would also load the guest's MXCSR underneath
+; every subsequent instruction executed in root operation.  Legacy SSE stores
+; leave the upper YMM and ZMM halves alone, which matches what the surrounding
+; FXSAVE64 design already assumes.
+;
+; Six XMM registers is the whole of it, not a truncation.  TLFS states that the
+; XMM fast hypercall interface uses six XMM registers to pass an input parameter
+; block of up to 112 bytes, and both the input-only and the input-and-output
+; register maps list exactly RCX, RDX, R8 and XMM0 through XMM5.  The arithmetic
+; closes: XMM0-5 is 96 bytes plus RDX and R8 is 112.  A third-party
+; implementation documents that it cannot forward extended fast hypercalls
+; because its exit stub snapshots XMM0-5 and only restores them before resuming
+; the guest, leaving the wrong values in the registers at the moment of
+; forwarding.  Loading them from the saved area first, as below, is what closes
+; that gap - keep it.
+;
+; One known and deliberate omission: TLFS says a rep hypercall also modifies RCX
+; with the new rep start index, and the frame's RCX is not written back below.
+; It is narrower than it sounds, because a continuation returns without advancing
+; the instruction pointer past the invoking instruction - here that instruction
+; is this stub's own VMCALL, so the continuation is absorbed by re-execution
+; inside the stub with the updated value already in the register, never passing
+; through the frame.  The reps-completed field returned in RAX is an absolute
+; count rather than one relative to the start index, so a guest loop terminating
+; on it converges regardless.  Changing this is a separate commit with its own
+; soak, and the real hazard on this path is a different one: that absorption
+; loop spins in VMX root with interrupts disabled.
+
+KswordARKHvmAsmForwardHypercall PROC FRAME
+    ; Keep both pointers on the stack rather than in registers - the outer
+    ; hypervisor owns every volatile register across the call.
+    sub rsp, 20h
+    ; Describe the allocation so an exception here unwinds to a true stack.
+    .ALLOCSTACK 20h
+    .ENDPROLOG
+    ; Preserve the register-frame pointer.
+    mov QWORD PTR [rsp + 00h], rcx
+    ; Preserve the extended-state pointer.
+    mov QWORD PTR [rsp + 08h], rdx
+    ; Reload only the six volatile registers the extended fast ABI reads.
+    movaps xmm0, XMMWORD PTR [rdx + 0A0h]
+    movaps xmm1, XMMWORD PTR [rdx + 0B0h]
+    movaps xmm2, XMMWORD PTR [rdx + 0C0h]
+    movaps xmm3, XMMWORD PTR [rdx + 0D0h]
+    movaps xmm4, XMMWORD PTR [rdx + 0E0h]
+    movaps xmm5, XMMWORD PTR [rdx + 0F0h]
+    ; Load the guest control word.
+    mov r10, rcx
+    ; Publish the guest input operand.
+    mov rdx, QWORD PTR [r10 + 10h]
+    ; Publish the guest output operand.
+    mov r8, QWORD PTR [r10 + 38h]
+    ; Publish the sentinel that proves whether anything answered the call.
+    mov rax, 0FFFFFFFFFFFFFFFFh
+    ; Publish the guest control word last so RCX survives the loads above.
+    mov rcx, QWORD PTR [r10 + 08h]
+    ; Hand the call to the hypervisor above us.
+    vmcall
+    ; Recover the register-frame pointer the outer hypervisor could not touch.
+    mov r10, QWORD PTR [rsp + 00h]
+    ; Detect the sentinel surviving, which means nothing wrote a status.
+    mov r11, 0FFFFFFFFFFFFFFFFh
+    ; Compare the returned status against the untouched sentinel.
+    cmp rax, r11
+    ; Leave guest state untouched when no hypervisor answered.
+    je KswordARKHvmAsmForwardHypercallUnserviced
+    ; Return the hypercall result in guest RAX.
+    mov QWORD PTR [r10 + 00h], rax
+    ; Return the fast-call output operands the guest expects.
+    mov QWORD PTR [r10 + 10h], rdx
+    ; Return the second fast-call output operand.
+    mov QWORD PTR [r10 + 38h], r8
+    ; Recover the extended-state pointer.
+    mov r10, QWORD PTR [rsp + 08h]
+    ; Capture the six XMM results so the guest resume path restores them.
+    movaps XMMWORD PTR [r10 + 0A0h], xmm0
+    movaps XMMWORD PTR [r10 + 0B0h], xmm1
+    movaps XMMWORD PTR [r10 + 0C0h], xmm2
+    movaps XMMWORD PTR [r10 + 0D0h], xmm3
+    movaps XMMWORD PTR [r10 + 0E0h], xmm4
+    movaps XMMWORD PTR [r10 + 0F0h], xmm5
+    ; Report that the call was answered.
+    xor eax, eax
+    ; Release the local pointer slots.
+    add rsp, 20h
+    ; Return to the C dispatcher.
+    ret
+
+KswordARKHvmAsmForwardHypercallUnserviced:
+    ; Report that nothing serviced the call, leaving the frame unmodified.
+    mov eax, 1
+    ; Release the local pointer slots.
+    add rsp, 20h
+    ; Return to the C dispatcher.
+    ret
+KswordARKHvmAsmForwardHypercall ENDP
+
+;------------------------------------------------------------------------------
+; Vector 2 of the private host IDT.
+;
+; Only NMIs that arrive while this processor is in VMX **root** reach here; one
+; that arrives in non-root is converted to a VM exit by the pin control and
+; handled in C.  Both halves exist because an NMI cannot be told to wait.
+;
+; Claim one NMI this driver asked for, or forward the guest's own.
+;
+; The claim is a decrement of this processor's slot in
+; g_KswordHvmPendingTlbNmi, which the sender raised before broadcasting.
+; Decrement-then-restore rather than test-then-decrement, so two senders racing
+; cannot both claim the same delivery: the only NMI swallowed is one whose slot
+; was really positive.  Getting it wrong in the other direction is cheap - the
+; guest receives a spurious NMI, which its handler must already tolerate.
+;
+; CPUID.1:EBX[31:24] is the initial APIC id, and it is how this stub knows which
+; slot is its own.  There is no per-processor context to read here: GS is the
+; host base, and the VCPU structure is not reachable without one.  CPUID is
+; serializing and executes natively - the processor is in VMX root, so it does
+; not exit.
+;
+; Forwarding preserves the interrupt frame byte for byte: registers are restored
+; before the jump and the stack is back where the processor left it.  The IST
+; index copied from the guest descriptor already put us on the stack the real
+; handler expects.  A jump, not a call - that handler owns the IRETQ.
+;------------------------------------------------------------------------------
+KswordARKHvmAsmHostNmiStub PROC
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    ; Identify this processor without touching any per-CPU pointer.
+    mov eax, 1
+    cpuid
+    shr ebx, 24
+    and ebx, 0FFh
+    lea rax, [g_KswordHvmPendingTlbNmi]
+    ; Claim speculatively; a non-negative result means the slot really was ours.
+    lock dec DWORD PTR [rax + rbx * 4]
+    jns KswordARKHvmAsmHostNmiSwallow
+    ; Underflow: nothing was pending, so this NMI belongs to the guest.
+    lock inc DWORD PTR [rax + rbx * 4]
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    jmp QWORD PTR [g_KswordHvmOriginalNmiHandler]
+
+KswordARKHvmAsmHostNmiSwallow:
+    ; Ours.  Returning is the whole point: this processor already left non-root,
+    ; so its stale linear mappings die on the next VM entry.
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    iretq
+KswordARKHvmAsmHostNmiStub ENDP
+
+END

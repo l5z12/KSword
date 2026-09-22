@@ -1,49 +1,49 @@
 <#
 .SYNOPSIS
-    在 Hyper-V 测试机里自动推进 KSword HVM 生命周期：先读状态、再决定该做什么、
-    进 VMX 之前打检查点、之后确认虚拟机还活着，全程输出机器可读的 JSON 记录。
+    Automatically advance the KSword HVM lifecycle on a Hyper-V test machine: read the status first, decide the next action, take
+    a checkpoint before entering VMX, and verify the VM is still alive afterward; output machine-readable JSON records throughout.
 
 .DESCRIPTION
-    必须以**管理员**运行。
+    Must run as **Administrator**.
 
-    与上一版的关键区别是：**这一版自己看状态再决定动作**，不再无条件按顺序发命令。
+    The key difference from the previous version is: **this version checks the status first to decide the action**, rather than unconditionally sending commands in sequence.
 
-      * 重复 PREPARE 会把状态打成 FAULTED。已就绪时驱动返回
-        STATUS_ALREADY_REGISTERED，那是 NT_ERROR，会落进 hvm_runtime.c 的
-        `StateFlags |= FAULTED` 分支；而 FAULTED 会让后面的 START_RESIDENT 被
-        hvm_resident.c 判 STATUS_INVALID_DEVICE_STATE 直接拒掉。也就是说
-        「多跑一次 prepare」这种看上去幂等的操作会把后续流程堵死。
-        本脚本因此先 status，RESOURCES_READY 已置位就跳过 prepare。
+      * Repeating PREPARE sets the state to FAULTED. When already ready, the driver returns
+        STATUS_ALREADY_REGISTERED, which is an NT_ERROR and triggers the `StateFlags |=
+        FAULTED` branch in hvm_runtime.c; FAULTED then causes START_RESIDENT to be rejected
+        by hvm_resident.c with STATUS_INVALID_DEVICE_STATE. Thus, an operation that appears
+        idempotent like "running prepare again" blocks the subsequent flow.
+        This script first checks status; if RESOURCES_READY is set, it skips prepare.
 
-      * 看到 FAULTED / ROLLBACK_REQUIRED 就先 reset-fault 再往下走。
+      * If FAULTED or ROLLBACK_REQUIRED is seen, reset-fault first before proceeding.
 
-      * 每条命令的标志集合由 hvm_ctl.exe 按 hvm_runtime.c 的 allowedFlags 表给出。
-        SELF_TEST / START_RESIDENT / SOAK / RESET_FAULT 都需要 FORCE 位，缺了
-        一律是 CONFIRMATION_REQUIRED —— 那个状态码**看上去**像安全策略没开，
-        实际与安全策略无关（安全策略这一侧默认就是 0x3fbff，已经放行）。
+      * The set of flags for each command is provided by hvm_ctl.exe according to the allowedFlags table in hvm_runtime.c.
+        SELF_TEST, START_RESIDENT, SOAK, and RESET_FAULT all require the FORCE bit; without it, the result is always
+        CONFIRMATION_REQUIRED. That status code *looks* like a security policy is disabled, but it is actually unrelated
+        to security policies (the default value on the security policy side is 0x3fbff, which already allows this).
 
-    分级是刻意的，不要跳步：
+    The levels are intentional; do not skip steps:
 
-      prepare    分配每处理器资源，**不进 VMX**。失败只是资源问题，不会蓝屏。
-      self-test  **逐处理器 VMXON 然后 VMXOFF**。第一次真的进 VMX root，但不常驻。
-                 嵌套环境下这是关键一步 —— 它证明 L1 里能不能 VMXON。
-      resident   全处理器常驻 VMM + EPT 激活。之后系统一直跑在 VMX non-root。
-      soak       常驻一段有界时间再停，证明常驻扛得住正常系统活动。
+      prepare: allocates per-processor resources, **does not enter VMX**. Failure is only a resource issue and will not cause a BSOD.
+      self-test: Executes VMXON followed by VMXOFF on each processor. The first execution enters VMX root mode but does not remain resident.
+                 In a nested environment, this is the crucial step: it establishes whether VMXON can run in L1.
+      resident: VMM resident on all processors with EPT enabled. The system runs continuously in VMX non-root mode thereafter.
+      soak: Run for a bounded duration then stop to prove stability under normal system activity.
 
 .PARAMETER Stage
-    safe      = status + 必要的 reset-fault/prepare + self-test（默认，不常驻）
-    prepare   = 只到 prepare
-    self-test = 只跑 self-test（前置条件不满足会先补齐）
-    resident  = 一路到常驻，跑完 stop
-    soak      = 一路到常驻并做有界浸泡
-    full      = soak + stop + teardown，跑完把状态清干净
-    status / stop / teardown / reset-fault = 单条命令
+    safe = status + necessary reset-fault/prepare + self-test
+    (default, non-resident); prepare = only up to prepare
+    self-test = run only self-test (preconditions are auto-satisfied
+    if missing) resident = proceed to resident mode and run stop
+    soak soak = proceed to resident mode and perform bounded soak
+    full = soak + stop + teardown; clear all state after completion
+    status / stop / teardown / reset-fault = single commands
 
 .PARAMETER ResultPath
-    JSON 记录的落地路径。默认写到 docs\next\logs\hvm-autotest-<时间戳>.json。
+    Path where JSON records are persisted. Defaults to docs\next\logs\hvm-autotest-<timestamp>.json.
 
 .PARAMETER SkipCheckpoint
-    跳过进 VMX 前的检查点。**不建议**，只在你刚打过检查点时用。
+    Skip pre-VMX checkpoints. **Not recommended**; use only immediately after applying a checkpoint.
 
 .EXAMPLE
     .\Invoke-KswordHvmControl.ps1
@@ -60,8 +60,8 @@ param(
     [string] $GuestUser     = 'felix',
     [string] $GuestPassword = 'password',
     [int]    $SoakMs        = 2000,
-    # 本脚本自己造的 before-* 检查点保留几个。每个约占 8 GiB 内存映像 +
-    # 一个差分盘，留多了会把系统盘吃光。手工基线（clean-install）不受此限。
+    # This script retains a few before-* checkpoints it creates. Each consumes approximately 8 GiB of memory image +
+    # A differencing disk; keeping too many will exhaust the system disk. Manual baselines (clean-install) are exempt.
     [int]    $KeepCheckpoints = 2,
     [string] $ResultPath,
     [switch] $SkipCheckpoint
@@ -72,7 +72,7 @@ Import-Module Hyper-V -ErrorAction Stop
 
 $repo = Split-Path $PSScriptRoot -Parent
 $tool = Join-Path $repo 'tools\hvm_ctl\hvm_ctl.exe'
-if (-not (Test-Path $tool)) { throw "缺少 $tool（先跑 scripts\Build-KswordHvmTools.ps1）" }
+if (-not (Test-Path $tool)) { throw "Missing $tool (run scripts\Build-KswordHvmTools.ps1 first)" }
 
 if (-not $ResultPath) {
     $logDir = Join-Path $repo 'docs\next\logs'
@@ -83,7 +83,7 @@ if (-not $ResultPath) {
 $cred = New-Object System.Management.Automation.PSCredential(
     $GuestUser, (ConvertTo-SecureString $GuestPassword -AsPlainText -Force))
 
-# 整份记录。每一步都往里追加，脚本中途抛异常时也会落盘（见末尾的 finally）。
+# The entire record. Each step appends to it, and the record is persisted even if the script throws an exception mid-execution (see the finally block at the end).
 $record = [ordered]@{
     schema      = 'ksword.hvm.autotest/1'
     startedUtc  = (Get-Date).ToUniversalTime().ToString('o')
@@ -116,7 +116,7 @@ function Add-Step {
 
 function Save-Record {
     $record.finishedUtc = (Get-Date).ToUniversalTime().ToString('o')
-    # JSON 必须无 BOM，见文件末尾说明。
+    # JSON must be BOM-free; see the note at the end of the file.
     [IO.File]::WriteAllText(
         $ResultPath,
         ($record | ConvertTo-Json -Depth 12),
@@ -124,7 +124,7 @@ function Save-Record {
 }
 
 function Invoke-Guest {
-    # 参数名不能叫 $Args —— 那是 PowerShell 的自动变量，会让 -ArgumentList 收到空值。
+    # Parameter name cannot be $Args—that is a PowerShell automatic variable that causes -ArgumentList to receive an empty value.
     param([scriptblock] $Script, [object[]] $ScriptArgs)
     if ($null -eq $ScriptArgs -or $ScriptArgs.Count -eq 0) {
         Invoke-Command -VMName $VMName -Credential $cred -ScriptBlock $Script
@@ -146,11 +146,11 @@ function Test-GuestAlive {
     return $false
 }
 
-# guest 的开机时刻。用来把"活着"和"崩过又自己起来了"分开。
+# Guest boot time. Used to distinguish between 'alive' and 'crashed but self-recovered'.
 #
-# 光看"能不能应答"是不够的：部署脚本把 AutoReboot 设成 1（那是为了拿转储），
-# 所以一次蓝屏 + 自动重启只要在 Test-GuestAlive 的 120 秒窗口内起来，
-# 就和"从没崩过"一模一样 —— alive:OK。整晚的 PASS 里可能就混着这种。
+# Just checking "whether it can respond" is insufficient: the deployment script sets AutoReboot to 1 (to obtain dumps),
+# So if a BSOD + auto-reboot recovers within the 120-second window of Test-GuestAlive,
+# Exactly like 'never crashed' — alive: OK. Among a night's worth of PASS results, this might be the only one mixed in.
 function Get-GuestBootTime {
     try {
         $t = Invoke-Command -VMName $VMName -Credential $cred -ErrorAction Stop `
@@ -159,7 +159,7 @@ function Get-GuestBootTime {
     } catch { return $null }
 }
 
-# 崩没崩过：开机时刻变了就是重启过。再去事件日志里区分蓝屏与静默复位。
+# Check if a crash occurred: a change in boot time indicates a reboot. Then distinguish between BSOD and silent reset via event logs.
 function Get-GuestCrashEvidence {
     param($BootBefore)
 
@@ -180,21 +180,21 @@ function Get-GuestCrashEvidence {
     } catch { }
 
     if ($null -ne $code -and [int]$code -ne 0) {
-        return "本阶段**蓝屏并重启过** bugcheck=0x$('{0:X}' -f [int]$code)（开机时刻 $BootBefore -> $bootAfter）"
+        return "This stage **caused a BSOD and rebooted** bugcheck=0x$('{0:X}' -f [int]$code) (boot time $BootBefore -> $bootAfter)"
     }
-    return "本阶段**重启过但没有 bugcheck 码** —— 静默复位（三重故障的典型指纹），开机时刻 $BootBefore -> $bootAfter"
+    return "This phase **restarted but without a bugcheck code** — silent reset (typical fingerprint of triple fault), boot moment $BootBefore -> $bootAfter"
 }
 
 function New-Guard {
     param([string] $Label)
-    if ($SkipCheckpoint) { Add-Step "checkpoint:$Label" 'SKIP' $null '按 -SkipCheckpoint 跳过'; return $null }
+    if ($SkipCheckpoint) { Add-Step "checkpoint:$Label" 'SKIP' $null 'Skip by -SkipCheckpoint'; return $null }
 
-    # 每个检查点要存一份完整内存映像（本机 8 GiB）加一个差分盘，分级测试
-    # 每轮产生一到两个。不清理的话很快把系统盘吃光，表现是
-    # "Checkpoint operation failed ... 磁盘空间不足 (0x80070070)"，
-    # 而那时脚本已经跑到一半，看上去像 HVM 出了问题。
-    # 所以每次打检查点之前先修剪本脚本自己造的那些（名字以 before- 开头），
-    # 只保留最近 $KeepCheckpoints 个。**从不碰 clean-install 之类的手工基线。**
+    # Each checkpoint must store a full memory image (8 GiB locally) plus a differencing disk for tiered testing.
+    # Each round produces one or two. Without cleanup, the system drive will quickly fill up, manifesting as
+    # "Checkpoint operation failed ... insufficient disk space (0x80070070)",
+    # At that point, the script was already halfway through, making it appear as if an HVM issue occurred.
+    # Therefore, before creating each checkpoint, prune the ones created by this script itself (those with names starting with 'before-').
+    # Keep only the most recent $KeepCheckpoints. **Never touch manual baselines like clean-install.**
     try {
         $mine = @(Get-VMSnapshot -VMName $VMName -ErrorAction Stop |
                   Where-Object { $_.Name -like 'before-*' } |
@@ -202,9 +202,9 @@ function New-Guard {
         if ($mine.Count -gt $KeepCheckpoints) {
             foreach ($old in $mine[$KeepCheckpoints..($mine.Count - 1)]) {
                 Remove-VMSnapshot -VMName $VMName -Name $old.Name -Confirm:$false
-                Add-Step "prune:$($old.Name)" 'OK' $null '自动修剪旧检查点以回收磁盘'
+                Add-Step "prune:$($old.Name)" 'OK' $null 'Automatically prune old checkpoints to reclaim disk space'
             }
-            # 合并是异步的，不等的话下一次 Checkpoint-VM 仍可能撞上空间不足。
+            # Merging is asynchronous; without waiting, the next Checkpoint-VM may still encounter insufficient space.
             $deadline = (Get-Date).AddMinutes(15)
             while ((Get-Date) -lt $deadline -and
                    (Get-VM -Name $VMName).Status -match 'Merg|合并') {
@@ -212,17 +212,17 @@ function New-Guard {
             }
         }
     } catch {
-        [void]$record.notes.Add("检查点修剪失败（不影响后续）：$($_.Exception.Message)")
+        [void]$record.notes.Add("Checkpoint pruning failed (does not affect subsequent operations): $($_.Exception.Message)")
     }
 
     $name = "before-$Label-" + (Get-Date -Format 'MMdd-HHmmss')
     try {
         Checkpoint-VM -Name $VMName -SnapshotName $name
     } catch {
-        # 空间不足是可恢复的操作问题，不是 HVM 的失败。分开报，并给出清理命令。
+        # Insufficient space is a recoverable operational issue, not an HVM failure. Report separately and provide the cleanup command.
         Add-Step "checkpoint:$Label" 'FAIL' $null $_.Exception.Message
         if ("$($_.Exception.Message)" -match '0x80070070|磁盘空间不足|not enough space') {
-            [void]$record.notes.Add('检查点失败是磁盘空间不足，与 HVM 无关。清理：.\scripts\Clear-KswordVmCheckpoints.ps1 -Confirm')
+            [void]$record.notes.Add('Checkpoint failure is due to insufficient disk space, unrelated to HVM. Cleanup: .\scripts\Clear-KswordVmCheckpoints.ps1 -Confirm')
         }
         throw
     }
@@ -232,11 +232,11 @@ function New-Guard {
 }
 
 # ---------------------------------------------------------------------------
-# hvm_ctl.exe 的调用与 JSON 解析
+# hvm_ctl.exe invocation and JSON parsing.
 #
-# 原生 exe 的 stdout 穿过 PowerShell Direct 会被吞掉，所以在 guest 内重定向到
-# 文件再读回。这不是保险起见 —— 直接 `& exe | Out-String` 拿到的是一片空白，
-# 看上去像"命令没有输出"。
+# Native exe stdout is swallowed when passing through PowerShell Direct, so redirect within the guest.
+# Re-read the file. This is not for safety; directly using `& exe | Out-String` yields an empty string.
+# Looks like "command produced no output".
 # ---------------------------------------------------------------------------
 function Invoke-HvmCtl {
     param([string] $Command, [int] $Arg = 0)
@@ -250,16 +250,16 @@ function Invoke-HvmCtl {
         if ($cmdArg -gt 0) { $argList += "$cmdArg" }
         $p = Start-Process -FilePath 'C:\ksword\hvm_ctl.exe' -ArgumentList $argList `
                  -NoNewWindow -Wait -PassThru -RedirectStandardOutput $o -RedirectStandardError $e
-        # 用 ReadAllText 而不是 Get-Content -Raw，理由是它**不可能返回 null**：
-        #   * `Get-Content -Raw` 读一个真正的空文件时输出零个对象；
-        #   * `[string]$( 零个对象 )` 求值结果仍然是 $null，不是 ''（实测过，
-        #     以为加了 [string] 就安全是错的）；
-        #   * 那个 $null 穿过 PowerShell Direct 的序列化边界会变成一个**空的
-        #     PSCustomObject**，它在 `if ($x)` 里为**真**（任何非 null 对象都为真）
-        #     却没有任何字符串方法，下游调 .Trim() 就抛
+        # Use ReadAllText instead of Get-Content -Raw because it **can never return null**:
+        #   * `Get-Content -Raw` outputs zero objects when reading a truly empty file;
+        #   * `[string]$( zero objects )` evaluates to $null, not '' (verified empirically,
+        #     Assuming [string] casting ensures safety is incorrect);
+        #   * That $null crossing the PowerShell Direct serialization boundary becomes an **empty**
+        #     PSCustomObject** is **true** in `if ($x)` (any non-null object is true).
+        #     However, no string method exists; downstream calls to .Trim() will throw.
         #     "does not contain a method named 'Trim'"。
-        # 实测踩过两次，第二次正好在 resident 返回非零那条分支上，
-        # 把最需要的那份失败响应弄丢了。ReadAllText 空文件返回 ''，链条从源头断掉。
+        # Observed this issue twice; the second occurrence happened exactly on the branch where resident returns a non-zero value.
+        # The most critical failure response was lost. ReadAllText returns '' for an empty file, breaking the chain at the source.
         $outText = ''
         $errText = ''
         if (Test-Path $o) { $outText = [IO.File]::ReadAllText($o) }
@@ -286,20 +286,20 @@ function Invoke-HvmCtl {
     }
 }
 
-# 把穿过 PowerShell Direct 回来的东西安全地变成字符串。
-# 空文件读回来是 $null，序列化后是空 PSCustomObject —— 它非空为真，
-# 但没有任何字符串方法。凡是要当文本用的都先过这里。
+# Safely convert data returned via PowerShell Direct into a string.
+# Reading an empty file returns $null, but after serialization it becomes an empty PSCustomObject — which evaluates to true when non-null.
+# However, there are no string methods. Anything used as text must pass through here first.
 function ConvertTo-Text {
     param($Value)
     if ($null -eq $Value) { return '' }
     if ($Value -is [string]) { return $Value }
     $s = "$Value"
-    # 空 PSCustomObject 的字符串化结果是空串或类型名，两者都不是内容
+    # The stringified result of an empty PSCustomObject is either an empty string or the type name, neither of which represents actual content.
     if ($s -eq '' -or $s -eq 'System.Management.Automation.PSCustomObject') { return '' }
     return $s
 }
 
-# 状态位名字是否出现在 status/control 的结果里
+# Check if the state bit name appears in the status/control result.
 function Test-StateBit {
     param($StateNames, [string] $Bit)
     if ($null -eq $StateNames) { return $false }
@@ -313,14 +313,14 @@ try {
     $record.vm = [ordered]@{
         state = "$($vm.State)"; vcpu = $vm.ProcessorCount; nested = [bool]$nested
     }
-    Write-Host ("=== KSword HVM 自动化：{0} ===" -f $Stage) -ForegroundColor Cyan
-    Write-Host ("虚拟机 {0}  {1}  {2} vCPU  嵌套={3}" -f $vm.Name, $vm.State, $vm.ProcessorCount, $nested)
-    Write-Host ("记录 -> {0}`n" -f $ResultPath) -ForegroundColor DarkGray
+    Write-Host ("=== KSword HVM Automation: {0} ===" -f $Stage) -ForegroundColor Cyan
+    Write-Host ("VM {0} {1} {2} vCPU nested={3}" -f $vm.Name, $vm.State, $vm.ProcessorCount, $nested)
+    Write-Host ("Record -> {0}`n" -f $ResultPath) -ForegroundColor DarkGray
 
-    if ($vm.State -ne 'Running') { throw "虚拟机不在运行状态（$($vm.State)）。先 Start-VM。" }
-    if (-not $nested) { throw '嵌套虚拟化没开 —— 关机后 Set-VMProcessor -ExposeVirtualizationExtensions $true' }
+    if ($vm.State -ne 'Running') { throw "Virtual machine is not in Running state ($($vm.State)). Start-VM first." }
+    if (-not $nested) { throw 'Nested virtualization is not enabled —— after shutdown, run Set-VMProcessor -ExposeVirtualizationExtensions $true' }
 
-    # ---- 送工具（每次都送，保证跑的是刚编译的那个）------------------------
+    # ---- Send tool (send every time to ensure running the freshly compiled version) ------------------------
     Invoke-Guest { New-Item -ItemType Directory -Force -Path 'C:\ksword' | Out-Null } | Out-Null
     try {
         Copy-VMFile -Name $VMName -SourcePath $tool -DestinationPath 'C:\ksword\hvm_ctl.exe' `
@@ -334,22 +334,22 @@ try {
     }
     Add-Step 'deploy:hvm_ctl' 'OK' ((Get-Item $tool).Length)
 
-    # ---- 第一步永远是只读状态 --------------------------------------------
+    # ---- Step 1 is always a read-only status --------------------------------------------
     $st = Invoke-HvmCtl 'status'
     if ($st.Exit -ne 0 -or $null -eq $st.Json) {
-        Add-Step 'status' 'FAIL' $st.Stderr '设备查询失败 —— 驱动可能没加载'
+        Add-Step 'status' 'FAIL' $st.Stderr 'Device query failed - driver may not be loaded'
         $record.verdict = 'BLOCKED'
-        [void]$record.notes.Add('hvm_ctl status 拿不到结果，后续全部未运行。先跑 Deploy-KswordDriverToVm.ps1。')
+        [void]$record.notes.Add('hvm_ctl status failed to get result, subsequent operations did not run. First run Deploy-KswordDriverToVm.ps1.')
         $exitCode = 1
         return
     }
     Add-Step 'status' 'OK' $st.Json
     $names = $st.Json.stateNames
-    Write-Host ("  状态位: {0}" -f ($names -join ' ')) -ForegroundColor DarkGray
+    Write-Host ("  Status bits: {0}" -f ($names -join ' ')) -ForegroundColor DarkGray
 
     if ($Stage -eq 'status') { $record.verdict = 'OK'; return }
 
-    # ---- 单条命令模式 ------------------------------------------------------
+    # ---- Single-command mode ------------------------------------------------------
     if ($Stage -in @('stop', 'teardown', 'reset-fault')) {
         $r = Invoke-HvmCtl $Stage
         Add-Step $Stage $(if ($r.Exit -eq 0) { 'OK' } else { 'FAIL' }) $r.Json
@@ -358,52 +358,52 @@ try {
         return
     }
 
-    # ---- 前置条件自愈：FAULTED 先清，未就绪才 prepare ----------------------
+    # ---- Precondition self-healing: clear FAULTED first; only prepare if not ready ----------------------
     if ((Test-StateBit $names 'FAULTED') -or (Test-StateBit $names 'ROLLBACK_REQUIRED')) {
         $r = Invoke-HvmCtl 'reset-fault'
         Add-Step 'reset-fault' $(if ($r.Exit -eq 0) { 'OK' } else { 'FAIL' }) $r.Json `
-                 '状态里带 FAULTED/ROLLBACK_REQUIRED，先清掉否则 resident 必被拒'
+                 'If the status contains FAULTED/ROLLBACK_REQUIRED, clear it first, otherwise the resident hypervisor will definitely be rejected'
         if ($r.Exit -ne 0) { $record.verdict = 'FAIL'; $exitCode = $r.Exit; return }
         $names = $r.Json.newStateNames
     }
 
-    # 后端只能在 PREPARE 里选，所以"这一级要哪个后端"决定用哪个 prepare 动词。
+    # Since the backend can only be selected in PREPARE, the choice of 'which backend at this level' determines which prepare verb to use.
     #
-    # view-effect 要 EPTP 切换后端（它是唯一真正走到那条退出路径的一级）。
-    # view-probe 要**私有 EPT**，理由完全不同：它验的是"拒绝发生在该拒的那道门
-    # 上"，而多核且私有 EPT 未武装时，多核安全门会先命中并返回与能力门同一个
-    # 状态码 —— 探针只能如实报空过，整个套件因此永远判 PARTIAL。
+    # view-effect requires EPTP switching (it is the only one that truly traverses that exit path at the first level).
+    # view-probe requires **private EPT** for a completely different reason: it verifies that the rejection occurs at the specific gate where the rejection happens.
+    # When multi-core and private EPT are not armed, the multi-core security gate triggers first and returns the same result as the capability gate.
+    # Status code — the probe can only report an empty pass honestly, causing the entire suite to always be marked as PARTIAL.
     $requiredArm =
         switch ($Stage) {
-            'view-effect' { @{ Verb = 'prepare-eptpsw';   Feature = 'EPTP_SWITCH_ARMED'; Why = 'EPTP 切换后端' } }
-            'view-probe'  { @{ Verb = 'prepare-localept'; Feature = 'LOCAL_EPT_ARMED';   Why = '每处理器私有 EPT' } }
+            'view-effect' { @{ Verb = 'prepare-eptpsw';   Feature = 'EPTP_SWITCH_ARMED'; Why = 'EPTP switch backend' } }
+            'view-probe'  { @{ Verb = 'prepare-localept'; Feature = 'LOCAL_EPT_ARMED';   Why = 'Per-processor private EPT' } }
             default       { $null }
         }
     $prepareVerb = if ($requiredArm) { $requiredArm.Verb } else { 'prepare' }
 
     if ((Test-StateBit $names 'RESOURCES_READY') -and $requiredArm) {
-        # 已经 prepare 过、但可能是**用另一个后端**准备的。
-        # 直接跳过 prepare 会让这一级安静地在错误的后端上跑完并报通过 ——
-        # 那正是这条线上最贵的一类错误。先拆再按需要的后端重来。
+        # Already prepared, but possibly with a different backend.
+        # Skipping prepare directly causes this level to silently run to completion on the wrong backend and report success.
+        # This is the most expensive class of errors on this line. Unpack first, then rebuild with the required backend.
         $armed = Invoke-HvmCtl 'status'
         $isArmed = ($armed.Json.featureNames -contains $requiredArm.Feature)
         if (-not $isArmed) {
             $r = Invoke-HvmCtl 'teardown'
             Add-Step 'teardown' $(if ($r.Exit -eq 0) { 'OK' } else { 'FAIL' }) $r.Json `
-                     "已 prepare 但没有武装$($requiredArm.Why)；先拆掉，否则这一级会在错误的后端上测"
+                     "Prepared but not armed $($requiredArm.Why); remove it first, otherwise this level will be tested on the wrong backend"
             if ($r.Exit -ne 0) { $record.verdict = 'FAIL'; $exitCode = $r.Exit; return }
             $names = @()
         }
     }
 
     if (Test-StateBit $names 'RESOURCES_READY') {
-        Add-Step 'prepare' 'SKIP' $null 'RESOURCES_READY 已置位；重复 prepare 会返回 ALREADY_PREPARED 并把状态打成 FAULTED'
+        Add-Step 'prepare' 'SKIP' $null 'RESOURCES_READY is set; repeating prepare will return ALREADY_PREPARED and set the state to FAULTED'
     } else {
         $r = Invoke-HvmCtl $prepareVerb
         Add-Step $prepareVerb $(if ($r.Exit -eq 0) { 'OK' } else { 'FAIL' }) $r.Json
         if ($r.Exit -ne 0) {
             $record.verdict = 'FAIL'
-            [void]$record.notes.Add("prepare 返回 $($r.Json.statusName)（lastStatus=$($r.Json.lastStatus)）")
+            [void]$record.notes.Add("prepare returned $($r.Json.statusName) (lastStatus=$($r.Json.lastStatus))")
             $exitCode = $r.Exit
             return
         }
@@ -411,56 +411,56 @@ try {
     }
     if ($Stage -eq 'prepare') { $record.verdict = 'OK'; return }
 
-    # ---- 会真的进 VMX 的级别：检查点 -> 执行 -> 存活确认 -------------------
+    # --- Actually enters VMX level: checkpoint -> execute -> liveness confirmation
     $plan = switch ($Stage) {
         'safe'      { @('self-test') }
         'self-test' { @('self-test') }
-        # launch-test-guest 是 self-test 与 resident 之间缺失的那一级：
-        # self-test 只做 VMXON/VMXOFF，不写 VMCS、不装 EPTP、不 VMLAUNCH。
-        # 这一级真写 VMCS、真装 EPTP、真 VMLAUNCH 进一个只执行 VMCALL 的
-        # guest，爆炸半径是一个 4KiB guest 栈。它回答的是"L0 认不认我们的
-        # VMCS 构造"，而那是 self-test 完全没碰过的一块。
+        # launch-test-guest is the missing tier between self-test and resident:
+        # self-test only performs VMXON/VMXOFF; it does not write VMCS, install EPTP, or execute VMLAUNCH.
+        # This level actually writes VMCS, actually installs EPTP, and actually performs VMLAUNCH into a guest that only executes VMCALL.
+        # guest, the blast radius is a 4KiB guest stack. It answers whether L0 recognizes us.
+        # VMCS construction, which is a part never touched by self-test.
         'launch-guest' { @('self-test', 'launch-test-guest') }
         'resident'  { @('self-test', 'resident', 'stop') }
-        # 平台探针是纯只读：不进 VMX、不改任何执行路径、不分配、不加锁。
-        # 所以它既不进 risky 列表，也不需要 self-test 垫在前面。
+        # Platform probes are purely read-only: they do not enter VMX, modify any execution paths, allocate resources, or acquire locks.
+        # Thus, it is neither added to the risky list nor requires a self-test to precede it.
         'probe-platform' { @('probe-platform') }
-        # 负向探针要垫 self-test。
+        # Negative probes require a self-test.
         #
-        # 驱动的前置检查（RESOURCES_READY|EPT_READY|SELF_TEST_PASSED 三个齐）
-        # 排在**所有能力门之前**，没齐就先返回 NOT_PREPARED。那时"能力门有没有
-        # 放行"这个问题根本没被问到，用例会**空过** —— 报通过而什么都没测。
-        # 所以顺序不是可选的，它决定这一组测不测得到东西。
+        # Driver pre-checks (RESOURCES_READY | EPT_READY | SELF_TEST_PASSED all present)
+        # Placed **before all capability gates**: if not complete, return NOT_PREPARED immediately. At that point, whether the capability gate exists
+        # Allowing this issue to go unasked results in the test case being **skipped** entirely — reporting success without performing any checks.
+        # Therefore, the order is not optional; it determines whether this group of tests can obtain results.
         'probe-flags' { @('self-test', 'probe-flags') }
-        # 探针**自己**管常驻的起停，这里不要替它起。
-        # 原因是驱动的硬约束：常驻期间规则表不可变（退出路径不加锁扫它），
-        # 所以顺序只能是 装规则 → 起常驻 → 读 → 停常驻 → 清规则；
-        # 而那一页是工具进程的内存，必须活到常驻起来 —— 只能同进程做完。
+        # The probe manages its own resident start/stop; do not start it on its behalf here.
+        # This follows a strict driver invariant: the rule table is immutable during resident operation because the exit path scans it without a lock,
+        # Therefore, the order must be: install rules → start resident → read → stop resident → clear rules.
+        # That page belongs to the tool process and must remain alive until the resident hypervisor starts, so the entire operation must stay in one process.
         'probe-xonly' { @('self-test', 'probe-xonly') }
-        # 视图安装期归因探针：只发一次 VIEW_OP_ADD，装上会立刻卸掉。
-        # 它不需要 self-test（不进 VMX），但需要 EPT_READY，而那由前面的
-        # prepare 保证；垫 self-test 只为了与其它探针的前置一致。
+        # View installation attribution probe: sends VIEW_OP_ADD only once; it is installed and immediately uninstalled.
+        # It does not require self-test (does not enter VMX), but requires EPT_READY, which is provided by the preceding step:
+        # prepare guarantee; the self-test is only included to maintain consistency with prerequisites of other probes.
         'view-probe'  { @('self-test', 'view-probe') }
-        # 端到端生效判据。探针**自己**管常驻起停 —— 与 probe-xonly 同一个理由：
-        # 视图表常驻期间不可变，所以顺序只能是 装视图 → 起常驻 → 读 → 停 → 卸，
-        # 而那一页是工具进程的内存，必须活到常驻起来，只能同进程做完。
+        # End-to-end validity criteria. The probe **itself** manages resident start/stop — for the same reason as probe-xonly:
+        # The view table cannot change during resident operation, so the order must be: install view -> start resident mode -> read -> stop -> uninstall view,
+        # That page belongs to the tool process and must remain alive until the resident hypervisor starts, so the entire operation must stay in one process.
         'view-effect' { @('self-test', 'view-effect') }
-        # 嵌套端到端。必须自己起常驻并且**要带嵌套派发位**，所以用
-        # resident-nested 而不是 resident —— 后者起来的常驻里 VMX 指令仍被注
-        # #UD，探针会在 VMXON 那一步就停。
+        # Nested end-to-end test. It must start the resident hypervisor itself **with the nested-dispatch bit set**, so use
+        # resident-nested instead of resident — the latter's resident VMX instructions are still trapped.
+        # #UD: the probe will stop at the VMXON step.
         #
-        # 探针的 L2 程序是两条 RDMSR：第一条 L1 的位图里清着、必须放行，第二条
-        # 置着、必须退出。判据在 hvm_ctl 里（原因 31、停在 +12、投递给 L1），
-        # 这里只看它的退出码。收尾的 stop 不能省：常驻会活过发起它的进程。
-        # nested-ad 验 accessed/dirty：L1 在 EPT12 指针里请求它，必须被接受、
-        # 真的维护、并在 L2 停下时折回 L1 自己的表。折不回去的后果是 L1 读回
-        # 全零，据此跳过来宾真正写过的页 —— 那条路上没有任何读数会变，
-        # 只有这条用例看得见。
-        # nested-selfvirt-all 排在 nested-probe-all 之后：前者验的是"我们能托住
-        # 一个自己写的 L1"，后者验的是"我们能托住一个**做和我们自己一样的事**的
-        # hypervisor" —— 捕获状态、把 guest RIP 指回自己下一条指令、VMLAUNCH，
-        # 于是自己成了自己的来宾，然后走 VMRESUME 反复往返。真 hypervisor
-        # （我们的常驻路径、VMware 的 VMM）做的就是这件事，段/CR3/页表全得当真。
+        # The L2 probe program consists of two RDMSR instructions: the first is cleared in L1's bitmap and must be allowed; the second
+        # Must exit. The criterion is in hvm_ctl (reason 31, stopped at +12, dispatched to L1), and the consequence of failing to roll back is L1 reading stale data.
+        # Here we only check its exit code. The cleanup stop cannot be omitted: the resident process will outlive the one that launched it.
+        # nested-ad verifies accessed/dirty: L1 requests it via the EPT12 pointer, which must be accepted.
+        # When truly maintaining state and returning to L1's own tables upon pausing at L2, the consequence of failing to return is that L1 reads back
+        # All zeros; jump to the pages the guest actually wrote to—no reads on that path will change.
+        # Only this test case is visible.
+        # nested-selfvirt-all follows nested-probe-all: the former verifies that we can host a hypervisor that performs the same actions as ourselves.
+        # A self-written L1"; the latter verifies that we can host something that does the same thing we do.
+        # hypervisor: Captures state, redirects guest RIP to its own next instruction, and executes VMLAUNCH.
+        # It becomes its own guest and repeatedly enters and exits through VMRESUME. A real hypervisor
+        # This is what our resident path and VMware's VMM do: treat segments, CR3, and page tables with full seriousness.
         'nested'    { @('self-test', 'resident-nested', 'nested-probe-all',
                         'nested-selfvirt-all', 'nested-ad', 'stop') }
         'soak'      { @('self-test', 'soak') }
@@ -468,22 +468,22 @@ try {
         default     { @() }
     }
 
-    # 只增不减：任何一步空过就置真，末尾据此把这一段判成 PARTIAL 而不是 OK。
+    # Only increment, never decrement: if any step is skipped, set to true; at the end, use this to mark this section as PARTIAL instead of OK.
     $anyBlocked = $false
-    # 同样只增不减，但含义不同：这台机器上问不出，没东西可修。
+    # Similarly, it only increases and never decreases, but the meaning differs: this machine cannot query it, so there is nothing to fix.
     $anyNotApplicable = $false
 
     foreach ($step in $plan) {
-        # probe-xonly 自己会起一次常驻，所以它和 resident/soak 一样危险，
-        # 必须先打检查点。
-        # probe-flags 也算 risky：它的用例 2/3 发的是带 FORCE 的 START_RESIDENT，
-        # 靶机若真有 #VE 能力，那一条会**把常驻真的起起来**，而工具里没有配对的
-        # stop。打个检查点是这条路上最便宜的保险。
-        # view-effect 自己会起一次常驻并且**真的让 EPT 强制一次访问**，
-        # 是这条路上唯一会走到 EPTP 切换退出路径的一级，所以必须打检查点。
-        # view-probe 只发请求、不进 VMX，不算 risky。
-        # resident-nested 与 resident 同样危险，而且更甚：它起的常驻允许来宾
-        # 执行 VMX 指令，随后探针真的会进出 L2 一次。
+        # probe-xonly starts a resident instance itself, so it is as dangerous as resident/soak.
+        # A checkpoint must be taken first.
+        # probe-flags is also risky: its use cases 2/3 send START_RESIDENT with FORCE.
+        # If the target machine supports #VE, that path **actually starts the resident hypervisor**, but the tool has no matching
+        # Note: Taking a checkpoint on this path is the cheapest insurance.
+        # view-effect spawns its own resident thread and **forces an actual EPT access**.
+        # This is the only level-one case on this path that triggers an EPTP switch exit, so a checkpoint is mandatory.
+        # view-probe only sends requests and does not enter VMX, so it is not considered risky.
+        # resident-nested is as dangerous as resident, and even more so: its resident mode allows the guest to...
+        # Executes VMX instructions, causing the probe to enter and exit L2 once.
         $risky = $step -in @('self-test', 'launch-test-guest', 'resident',
                              'resident-nested', 'nested-probe-all',
                              'nested-selfvirt-all', 'nested-ad',
@@ -492,7 +492,7 @@ try {
         $bootBefore = $null
         if ($risky) {
             $snap = New-Guard $step
-            # 记下开机时刻，回来对一次 —— "能应答"不等于"没崩过"。
+            # Record boot time for later comparison — 'responsive' does not equal 'never crashed'.
             $bootBefore = Get-GuestBootTime
         }
 
@@ -506,17 +506,17 @@ try {
                     Add-Step "alive:$step" 'FAIL' $null $crash
                     $record.verdict = 'FAIL'
                     [void]$record.notes.Add($crash)
-                    [void]$record.notes.Add("转储取证：.\scripts\Get-KswordVmBugcheck.ps1")
-                    [void]$record.notes.Add("回滚：Restore-VMCheckpoint -VMName '$VMName' -Name '$snap' -Confirm:`$false")
+                    [void]$record.notes.Add("Dump forensics: .\scripts\Get-KswordVmBugcheck.ps1")
+                    [void]$record.notes.Add("Rollback: Restore-VMCheckpoint -VMName '$VMName' -Name '$snap' -Confirm:`$false")
                     $exitCode = 1
                     return
                 }
-                Add-Step "alive:$step" 'OK' $null '虚拟机仍然响应，且没有重启过'
+                Add-Step "alive:$step" 'OK' $null 'The virtual machine is still responsive and has not been restarted'
             } else {
-                Add-Step "alive:$step" 'FAIL' "$((Get-VM -Name $VMName).State)" '虚拟机失联，很可能蓝屏'
+                Add-Step "alive:$step" 'FAIL' "$((Get-VM -Name $VMName).State)" 'Virtual machine disconnected, likely blue screen'
                 $record.verdict = 'FAIL'
-                [void]$record.notes.Add("在 $step 阶段失去响应。回滚：Restore-VMCheckpoint -VMName '$VMName' -Name '$snap' -Confirm:`$false")
-                [void]$record.notes.Add('转储应在 guest 的 C:\Windows\MEMORY.DMP（部署脚本已提前开启内核转储）')
+                [void]$record.notes.Add("Lost response at $step stage. Rollback: Restore-VMCheckpoint -VMName '$VMName' -Name '$snap' -Confirm:`$false")
+                [void]$record.notes.Add('Dump should be in guest C:\Windows\MEMORY.DMP (kernel dump was enabled in advance by deployment script)')
                 $exitCode = 1
                 return
             }
@@ -525,46 +525,46 @@ try {
         if ($r.Exit -eq 0) {
             Add-Step $step 'OK' $r.Json
         } elseif ($r.Exit -eq 4) {
-            # 退出码 4 = **这台机器上问不出这个问题**，与 3 不是一回事。
+            # Exit code 4 = **this machine cannot query this issue**, which is distinct from 3.
             #
-            # 3 是"这次没准备好"：有东西可修，不修就测不到，所以必须拖着整段
-            # 判 PARTIAL 直到有人去修。4 是"没东西可修"——判据依赖的能力这台
-            # 硬件根本不提供（实例：缺 Monitor Trap Flag 的嵌套客户机上，私有
-            # EPT 永远武装不了，多核安全门必先命中）。
+            # 3 means 'not ready this time': there is something to fix; without fixing it, the test won't detect it, so the entire segment must be deferred.
+            # Check for PARTIAL until someone fixes it. 4 means "nothing to fix"—the capability required by the check is not available on this
+            # Hardware does not provide it (e.g., nested guests lacking the Monitor Trap Flag), private
+            # EPT can never be armed; multi-core safety gates will trigger first).
             #
-            # 把 4 也算成 BLOCKED 的后果，是套件在这一整类机器上永远判 PARTIAL。
-            # 而一份永远不绿的报告等于没有报告：下次真出问题时，多出来的那一行
-            # 不会有任何人多看一眼。所以它记 NOT_APPLICABLE、进 notes、**不**置
+            # Treating case 4 as BLOCKED would cause the suite to always be marked PARTIAL for this entire class of machines.
+            # And a report that never turns green is equivalent to no report: the extra line added when a real issue occurs next time
+            # No one will look at it again. So we record NOT_APPLICABLE, add it to notes, and do NOT set
             # anyBlocked。
             Add-Step $step 'NOT_APPLICABLE' $r.Json `
-                '这台机器上问不出这个问题：判据依赖的硬件能力不存在，不是这次没准备好'
-            [void]$record.notes.Add("$step 在本机不适用 —— 判据依赖的能力这台硬件不提供。")
-            # 透传上去，别让这一段印成 PASS。
+                'This machine cannot answer this question: the hardware capability required by the criterion does not exist, and it is not that it is not ready this time'
+            [void]$record.notes.Add("$step Not applicable on local machine — the capabilities required by the criteria are not provided by this hardware.")
+            # Propagate up; do not let this segment print as PASS.
             #
-            # 不置 anyBlocked（它不该把总判定拖成 PARTIAL），但也绝不能让
-            # verdict 落成 OK —— 这一项**什么都没测到**，印成通过就是本仓库
-            # 反复吃亏的那个形状：把"跑完了没崩"读成"测到了东西"。
+            # Do not set anyBlocked (it should not drag the overall verdict to PARTIAL), but absolutely must not allow
+            # verdict is OK — this item **detected nothing**, so printing it as passed is the repository's standard.
+            # Note: The recurring pitfall is interpreting 'ran without crashing' as 'detected something'.
             $anyNotApplicable = $true
         } elseif ($r.Exit -eq 3) {
-            # 退出码 3 = 探针"跑完了但没测到" —— 前置没建立、或者标定不全。
-            # 它既不是通过也不是失败：记 BLOCKED 并继续，但**不许**被读成通过。
+            # Exit code 3 = probe 'completed but detected nothing' — prerequisites not established or calibration incomplete.
+            # It is neither pass nor fail: mark as BLOCKED and continue, but **do not** interpret it as a pass.
             Add-Step $step 'BLOCKED' $r.Json `
-                '探针空过：跑完了但没有区分力（前置未建立或标定不全），不算通过'
-            [void]$record.notes.Add("$step 空过 —— 这一项这次什么都没测到。")
-            # 记在一个**只增不减**的标志上，不要在这里改 verdict。
+                'Probe skipped: completed but lacks discriminative power (prerequisites not established or calibration incomplete), does not count as passed'
+            [void]$record.notes.Add("$step Skipped -- This item did not test anything this time.")
+            # Record this in a **sticky** flag that can be set but never cleared; do not change verdict here.
             #
-            # 上一版写的是 `if ($record.verdict -eq 'OK') { ... = 'PARTIAL' }`，
-            # 而这一刻 verdict 还是初值 'NOT_RUN'（第 99 行），**那个条件永远不成立**；
-            # 紧接着计划循环末尾又无条件写 'OK'，于是 BLOCKED 被静默升级成通过。
-            # 2026-09-07 实测：2 vCPU 上 view-effect 因多核门装不上视图、工具如实
-            # 报「测不到生效与否」并退 3，套件却把这一段印成 [PASS]。
+            # The previous version used `if ($record.verdict -eq 'OK') { ... = 'PARTIAL' }`,
+            # At this moment, the verdict is still the initial value 'NOT_RUN' (line 99), **that condition never holds**;
+            # Immediately after, the plan loop unconditionally writes 'OK', so BLOCKED is silently upgraded to PASS.
+            # Measured on 2026-09-07: On a 2 vCPU configuration, the multicore gate prevents view-effect from installing a view; the tool accurately
+            # Report "unable to detect if effective" and exit with code 3, yet the suite prints this section as [PASS].
             $anyBlocked = $true
         } else {
-            # **先把响应记下来再做任何别的事。** 上一版在这里先格式化 note、
-            # 后 Add-Step，结果格式化抛异常时把整份失败响应弄丢了 ——
-            # 而失败时那份响应恰恰是唯一有价值的东西。
+            # Log the response first before doing anything else. The previous version formatted the note here first,
+            # After Add-Step, when result formatting throws an exception, the entire failure response is lost.
+            # However, the response upon failure is the only valuable piece of information.
             $sn = if ($r.Json) { "$($r.Json.statusName)" } else { 'NO_JSON' }
-            # 能力缺失与代码失败要分开记：前者是 BLOCKED，后者是 FAIL。
+            # Record capability missing and code failure separately: the former is BLOCKED, the latter is FAIL.
             $blockedStatuses = @('UNSUPPORTED_CPU', 'FIRMWARE_DISABLED', 'HYPERVISOR_CONFLICT',
                                  'NESTED_UNSUPPORTED', 'EVMCS_UNSUPPORTED', 'PARTIAL_IMPLEMENTATION')
             $outcome = if ($blockedStatuses -contains $sn) { 'BLOCKED' } else { 'FAIL' }
@@ -572,13 +572,13 @@ try {
             Add-Step $step $outcome $r.Json $note
             $record.verdict = $outcome
             $ls = if ($r.Json) { "$($r.Json.lastStatus)" } else { '?' }
-            [void]$record.notes.Add("$step 返回 $sn（lastStatus=$ls）；后续级别不再执行。")
+            [void]$record.notes.Add("$step returns $sn (lastStatus=$ls); subsequent levels will not be executed.")
 
-            # LIFECYCLE_GUARD_FAILED 是 KswordARKHvmArmUnloadGuard 的失败，
-            # 而它三条失败分支里唯一还没被排除的那条比较的是
-            # DriverObject->DriverUnload 与注册时捕获的原值。所以这里直接把
-            # 驱动自己的 DriverObject 读回来 —— 现值是不是 0 一眼就能定案，
-            # 不用再靠推理。
+            # LIFECYCLE_GUARD_FAILED indicates a failure of KswordARKHvmArmUnloadGuard.
+            # Among its three failure branches, the only one not yet excluded compares
+            # DriverObject->DriverUnload compared to the original value captured at registration. Thus, here we directly...
+            # Read back the driver's own DriverObject — the current value being 0 settles the matter immediately.
+            # No longer need to infer.
             if ($sn -eq 'LIFECYCLE_GUARD_FAILED') {
                 try {
                     $doRaw = Invoke-Guest {
@@ -589,31 +589,31 @@ try {
                                  -ArgumentList @('kernel', 'query-driver-object', '--driver', 'KswordARK') `
                                  -NoNewWindow -Wait -PassThru -RedirectStandardOutput $o `
                                  -RedirectStandardError 'C:\ksword\drvobj_err.txt'
-                        if (Test-Path $o) { [IO.File]::ReadAllText($o) } else { "（无输出，退出码 $($p.ExitCode)）" }
+                        if (Test-Path $o) { [IO.File]::ReadAllText($o) } else { "(No output, exit code $($p.ExitCode))" }
                     }
                     $doText = ConvertTo-Text $doRaw
                     if ($doText) {
                         $record.driverObject = $doText
-                        Write-Host "`n--- KswordARK 的 DriverObject（现值）---" -ForegroundColor Cyan
+                        Write-Host "`n--- KswordARK's DriverObject (current value)---" -ForegroundColor Cyan
                         Write-Host $doText
                         $unload = ([regex]::Match($doText, 'driverUnload=(0x[0-9A-Fa-f]+)')).Groups[1].Value
                         if ($unload) {
-                            [void]$record.notes.Add("当前 DriverObject->DriverUnload = $unload（注册时捕获的是非 0 值，否则 EnableResidentLifecycle 会提前返回）")
+                            [void]$record.notes.Add("Current DriverObject->DriverUnload = $unload (a non-0 value was captured during registration; otherwise EnableResidentLifecycle would return early)")
                         }
                     }
-                } catch { [void]$record.notes.Add('DriverObject 查询失败') }
+                } catch { [void]$record.notes.Add('DriverObject query failed') }
             }
-            if ($r.Stdout) { [void]$record.notes.Add("原始 stdout: $((ConvertTo-Text $r.Stdout).Trim())") }
+            if ($r.Stdout) { [void]$record.notes.Add("Original stdout: $((ConvertTo-Text $r.Stdout).Trim())") }
             $exitCode = $r.Exit
             return
         }
     }
 
-    # 有任何一步空过，这一段就不是 OK。
-    # 「跑完了没崩」与「测到了东西」是两件事，把前者印成后者正是本仓库反复吃亏的形状。
+    # If any step is skipped, this segment is not OK.
+    # 「Finished without crashing」and「Found something」are two different things; printing the former as the latter is exactly the shape of repeated losses in this repository.
     #
-    # 三态而不是两态：PARTIAL 是"有东西要修"，NOT_APPLICABLE 是"这台机器上问
-    # 不出、没东西可修"。两者都不是 OK，但只有前者该催人动手。
+    # Three states, not two: PARTIAL means "there is something to fix", NOT_APPLICABLE means "this machine is not applicable"
+    # No output or nothing to fix. Neither is OK, but only the former should prompt manual intervention.
     if ($anyBlocked) {
         $record.verdict = 'PARTIAL'
     } elseif ($anyNotApplicable) {
@@ -625,61 +625,61 @@ try {
 }
 catch {
     $record.verdict = 'ERROR'
-    [void]$record.notes.Add("脚本异常：$($_.Exception.Message)")
-    Write-Host "`n脚本异常：$($_.Exception.Message)" -ForegroundColor Red
+    [void]$record.notes.Add("Script exception: $($_.Exception.Message)")
+    Write-Host "`nScript exception: $($_.Exception.Message)" -ForegroundColor Red
     $exitCode = 1
 }
 finally {
-    # 无论怎么退出，最终状态都要读一次并落盘 —— 半路抛异常时这份记录尤其重要。
-    # 收尾之前先确保常驻不会被留在跑着的状态。
+    # Regardless of how the exit occurs, read and persist the final state once — this record is especially critical when an exception occurs mid-process.
+    # Before cleanup, ensure the resident hypervisor will not be left running.
     #
-    # 常驻会活过发起它的进程（这是设计，也实测过），所以一个计划中途失败
-    # 直接 return 时，常驻就那么留着了。下一次部署会撞上一个很有迷惑性的
-    # 报错：CPUID 看不到 VMX —— 因为我们自己的 CPUID 处理按设计抹掉了那一位。
-    # 报错指向"嵌套虚拟化没开"，实际却是上一轮没收干净。踩过一次。
+    # A resident component survives the process that launched it (by design and verified), so a failed plan mid-execution
+    # Returning directly leaves the resident component lingering; the next deployment will encounter a highly misleading issue.
+    # Error: CPUID does not show VMX — because our CPUID handler intentionally clears that bit by design.
+    # The error points to 'nested virtualization not enabled', but the actual cause is leftover state from the previous round. Learned this the hard way.
     try {
         $pre = Invoke-HvmCtl 'status'
         if ($pre.Json -and $pre.Json.residentProcessorCount -gt 0) {
-            Write-Host "`n收尾：常驻仍在跑（residentProcessorCount=$($pre.Json.residentProcessorCount)），停掉它" -ForegroundColor Yellow
+            Write-Host "`nCleanup: resident hypervisor still running (residentProcessorCount=$($pre.Json.residentProcessorCount)), stopping it" -ForegroundColor Yellow
             $cleanup = Invoke-HvmCtl 'stop'
             Add-Step 'cleanup:stop' $(if ($cleanup.Exit -eq 0) { 'OK' } else { 'FAIL' }) $cleanup.Json `
-                '计划未跑到 stop 就退出，这里补一次'
+                'Exit before reaching stop in the plan, perform a backup here'
         }
-    } catch { [void]$record.notes.Add('收尾停机检查失败（虚拟机可能已失联）') }
+    } catch { [void]$record.notes.Add('Final shutdown check failed (virtual machine may be disconnected)') }
 
     try {
         $final = Invoke-HvmCtl 'status'
         if ($final.Json) {
             $record.finalStatus = $final.Json
-            # 退出遥测直接打在控制台上。这是目前唯一一条不经过串口的退出观测面：
-            # 内核调试器的报告通道自己就是端口 I/O，而端口 I/O 正是待查的现象。
+            # Exit telemetry is printed directly to the console. This is currently the only exit observation surface that does not go through the serial port:
+            # The kernel debugger's reporting channel is itself port I/O, which is precisely the phenomenon under investigation.
             $j = $final.Json
             if ($null -ne $j.vmExitCount) {
                 Write-Host ""
-                Write-Host "--- 退出遥测 ---" -ForegroundColor Cyan
+                Write-Host "--- Exit Telemetry ---" -ForegroundColor Cyan
                 Write-Host ("  count={0}  reason={1}  instrLen={2}" -f
                     $j.vmExitCount, $j.lastExitReason, $j.lastExitInstructionLength)
                 Write-Host ("  qualification={0}  guestRip={1}  guestRsp={2}" -f
                     $j.lastExitQualification, $j.lastGuestRip, $j.lastGuestRsp)
                 if ($j.lastExitReason -eq 30) {
-                    # SDM Table 28-5：bits31:16 端口号，bit3 方向（1=IN），bits2:0 宽度
+                    # SDM Table 28-5: bits31:16 port number, bit3 direction (1=IN), bits2:0 width.
                     $qs = "$($j.lastExitQualification)"
                     if ($qs.StartsWith('0x')) { $qs = $qs.Substring(2) }
                     $q = [Convert]::ToUInt64($qs, 16)
                     $port = [int](($q -shr 16) -band 0xFFFF)
                     $dir  = if ((($q -shr 3) -band 1) -eq 1) { 'IN' } else { 'OUT' }
                     $size = @(1,2,0,4,0,0,0,0)[[int]($q -band 0x7)]
-                    Write-Host ("  >>> I/O 退出：{0} 端口 0x{1:X4} ({1})  {2} 字节" -f
+                    Write-Host ("  >>> I/O Exit: {0} port 0x{1:X4} ({1}) {2} bytes" -f
                         $dir, $port, $size) -ForegroundColor Green
                 }
             }
         }
-        # 驱动事件环。
+        # Driver event loop.
         #
-        # 这一段之前引用了一个**从未被赋值**的 $ev，所以 driverEvents 永远不写 ——
-        # 一段看着像在取证、实际是死代码的东西。现在真的去取。
-        # 注意事件环实测丢包 97%（每次退出都无条件发事件而环只有 1024 槽），
-        # 所以它只能当补充线索，不能当判据。
+        # This section previously referenced an **uninitialized** $ev, so driverEvents is never written to.
+        # Looks like forensic code but is actually dead code. Now actually performing the collection.
+        # The event ring showed 97% loss in measurements: every exit emits an event unconditionally, but the ring has only 1024 slots,
+        # Therefore, it can only serve as supplementary evidence, not as a criterion.
         $ev = Invoke-Guest {
             $o = 'C:\ksword\hvm_events.txt'
             Remove-Item $o -ErrorAction SilentlyContinue
@@ -689,33 +689,33 @@ finally {
                      -NoNewWindow -Wait -PassThru -RedirectStandardOutput $o `
                      -RedirectStandardError 'C:\ksword\hvm_events_err.txt'
             if (Test-Path $o) { [IO.File]::ReadAllText($o) }
-            else { "（无输出，退出码 $($p.ExitCode)）" }
+            else { "(No output, exit code $($p.ExitCode))" }
         }
         $evText = ConvertTo-Text $ev
         if ($evText) {
             $record.driverEvents = $evText
             if ($record.verdict -ne 'OK') {
-                Write-Host "`n--- 驱动事件环（丢包率高，仅作线索）---" -ForegroundColor Cyan
+                Write-Host "`n--- Driver Event Ring (high packet loss, for clues only)---" -ForegroundColor Cyan
                 Write-Host $evText
             }
         }
-    } catch { [void]$record.notes.Add('事件环查询失败') }
+    } catch { [void]$record.notes.Add('Event ring query failed') }
 
     try { $record.checkpointsNow = @(Get-VMSnapshot -VMName $VMName | ForEach-Object { $_.Name }) } catch { }
 
-    # 空过必须有自己的退出码。
+    # Skipped tests must have their own exit code.
     #
-    # 否则调用方（无人值守套件）看到 0 就记 PASS，而那一项其实什么都没测到 ——
-    # 那正是这条线上最贵的一类错误：一个看起来全绿的报告。
+    # Otherwise, the caller (unattended suite) sees 0 and records PASS, while that item actually tested nothing.
+    # This is the most expensive class of error on this line: a report that looks entirely green.
     if ($record.verdict -eq 'PARTIAL' -and $exitCode -eq 0) { $exitCode = 3 }
 
     Save-Record
-    Write-Host ("`n判定: {0}" -f $record.verdict) -ForegroundColor $(
+    Write-Host ("`nVerdict: {0}" -f $record.verdict) -ForegroundColor $(
         switch ($record.verdict) { 'OK' { 'Green' } 'PARTIAL' { 'Yellow' } 'BLOCKED' { 'Yellow' } default { 'Red' } })
     foreach ($n in $record.notes) { Write-Host "  · $n" -ForegroundColor Yellow }
-    Write-Host ("记录已写入 {0}" -f $ResultPath) -ForegroundColor Cyan
+    Write-Host ("Record written to {0}" -f $ResultPath) -ForegroundColor Cyan
 
-    # exit 放在 finally 里：try 里的 `return` 会直接结束脚本，写在 finally 之后
-    # 的语句根本不会执行，退出码就会永远是 0 —— 那会让 CI 把失败当成通过。
+    # Placing exit in finally: a return in the try block will terminate the script directly, so writing it after finally is ineffective.
+    # The statement will never execute, causing the exit code to always be 0, which would make CI treat failures as successes.
     exit $exitCode
 }

@@ -4,10 +4,10 @@
 
 // ============================================================
 // KswordArkSectionIoctl.h
-// 作用：
-// - 定义进程 SectionObject / ControlArea 查询协议；
-// - 输入只接受 PID，禁止 R3 把任意内核 Section/ControlArea 地址作为凭据；
-// - 映射关系只返回诊断信息，私有字段全部由 DynData capability 门控。
+// Purpose:
+// - Defines the protocol for querying process SectionObject / ControlArea.
+// - Input accepts only PID; R3 is prohibited from using arbitrary kernel Section/ControlArea addresses as credentials;
+// - The mapping relationship returns only diagnostic information; private fields are gated by the DynData capability.
 // ============================================================
 
 #define KSWORD_ARK_SECTION_PROTOCOL_VERSION 1UL

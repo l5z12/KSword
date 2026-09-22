@@ -6,7 +6,7 @@ On 2026-09-16 UTC, HVM-target was upgraded by its owner to Windows 11 Pro.
 We enabled its full Hyper-V role, rebooted the lab target, and created a
 generation-1 TinyCore fixture with two vCPUs and 768 MiB fixed memory. The outer
 HVM-target retained four vCPUs and 8 GiB. Target VM definitions and ISO hashes
-are in the [raw dataset](paper-data/20260916-followup/).
+are in the [raw dataset](paper-data/20260916-followup).
 
 ```text
 Outer Hyper-V

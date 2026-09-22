@@ -25,7 +25,7 @@ $$ bu defers until the module loads.
 
 .echo === symbol path ===
 .symfix+ C:\symbols
-.sympath+ C:\Users\Felix\CLionProjects\KSword\Ksword5.1\x64\Release\KswordARKDriver
+.sympath+ C:\Users\Felix\CLionProjects\KSword\artifacts/bin\x64\Release\drivers/ark
 
 .echo === break once when the driver loads (only then can symbols be verified) ===
 sxe ld:KswordARK.sys

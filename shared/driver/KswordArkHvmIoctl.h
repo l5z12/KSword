@@ -52,25 +52,25 @@
 #define KSWORD_ARK_HVM_STAGE_FAILED 7UL
 
 /*
- * VMCS 配置失败的判别码，承载在既有的 lastVmInstructionError 字段里。
+ * Discriminator for VMCS configuration failure, carried in the existing lastVmInstructionError field.
  *
- * 存在的理由：VMCS 编程阶段有**至少八个**不同的返回点会让 START_RESIDENT 以
- * 完全相同的现象失败 —— 每处理器行一律是
- * vmxInstructionResult=3（汇编包装器的 "never-attempted VM entry"）、
+ * Rationale: During VMCS programming, there are at least eight distinct return points
+ * where START_RESIDENT fails with the exact same symptom — on every processor line,
+ * vmxInstructionResult=3 ("never-attempted VM entry" from the assembly wrapper),
  * stateFlags=0x27、lastStatus=STATUS_HV_OPERATION_FAILED、
- * lastVmInstructionError=0。从协议面**分不出**是哪一个。
+ * lastVmInstructionError=0. From the protocol perspective, it is impossible to distinguish which one caused it.
  *
- * 尤其要注意 lastVmInstructionError=0 **不能**用来排除 VMWRITE 失败：
- * 那个 0 有三个来源（没走到写、VMfailInvalid 不带错误码、以及 VMfailValid
- * 但随后读 VMCS 0x4400 自身也失败）。把 0 当成"没有 VMWRITE 失败"是错的。
+ * Pay special attention: lastVmInstructionError=0 **cannot** be used to rule out VMWRITE failures:
+ * The value 0 has three sources: not reaching the write path, VMfailInvalid without an error code, and
+ * VMfailValid followed by a failed read of VMCS 0x4400 itself. Treating 0 as 'no VMWRITE failure' is incorrect.
  *
- * 编码（bit 31 是判别标记，为 0 时整个值仍是架构 VM-instruction error，
- * 旧语义不变，因此这不是协议破坏性变更、不需要版本号）：
+ * Encoding (bit 31 is the discriminator flag; when 0, the value remains an architecture VM-instruction error,
+ * preserving the old semantics, so this is not a protocol-breaking change and requires no version bump):
  *
- *   bits 31    : 1 = KSword 判别码
- *   bits 30-24 : 站点号 KSWORD_ARK_HVM_VMCS_DIAG_SITE_*
- *   bits 23-8  : 细节（VMCS 字段编码 / 缺失能力位掩码 / 异常码低 16 位）
- *   bits  7-0  : 架构 VM-instruction error，取不到时为 0
+ *   bits 31: 1 = KSword discriminator; bits 30-24: site ID
+ *   (KSWORD_ARK_HVM_VMCS_DIAG_SITE_*); bits 23-8: detail (VMCS field
+ *   encoding / missing capability bitmask / low 16 bits of exception
+ *   code); bits 7-0: VM-instruction error (0 if unavailable)
  */
 #define KSWORD_ARK_HVM_VMCS_DIAG_FLAG 0x80000000UL
 
@@ -85,38 +85,38 @@
 #define KSWORD_ARK_HVM_VMCS_DIAG_DETAIL(v) (((v) >>  8) & 0xFFFFUL)
 #define KSWORD_ARK_HVM_VMCS_DIAG_ARCH(v)    ((v)        & 0xFFUL)
 
-/* VMWRITE 被拒。detail = VMCS 字段编码，arch = 架构错误码（0 = 未取到）。 */
+/* VMWRITE rejected. detail = VMCS field encoding, arch = architecture error code (0 = not retrieved). */
 #define KSWORD_ARK_HVM_VMCS_DIAG_SITE_VMWRITE            1UL
-/* 已启用的可选 CR4 状态没有 VMCS 传输能力。detail = 下面的 STATE_* 掩码。 */
+/* Enabled optional CR4 states lack VMCS transfer capability. detail = the STATE_* mask below. */
 #define KSWORD_ARK_HVM_VMCS_DIAG_SITE_STATE_NO_TRANSFER  2UL
-/* 提供了 MSR bitmap 页但 primary 控制没拿到 USE_MSR_BITMAPS。 */
+/* Provides MSR bitmap page but primary controls did not acquire USE_MSR_BITMAPS. */
 #define KSWORD_ARK_HVM_VMCS_DIAG_SITE_MSR_BITMAP         3UL
-/* CR3/DR 拦截被请求但对应 primary 控制没拿到。detail: 1=TrackCr3 2=InterceptDr。 */
+/* CR3/DR interception requested but corresponding primary control not acquired. detail: 1=TrackCr3 2=InterceptDr. */
 #define KSWORD_ARK_HVM_VMCS_DIAG_SITE_CR_POLICY          4UL
-/* 必需的 primary/secondary/exit/entry 控制缺失。detail = 下面的 CTL_* 掩码。 */
+/* Required primary/secondary/exit/entry controls are missing. detail = CTL_* mask below. */
 #define KSWORD_ARK_HVM_VMCS_DIAG_SITE_REQUIRED_CONTROLS  5UL
-/* 调试状态的保存与加载控制不成对。 */
+/* Save and load of debug state are not paired. */
 #define KSWORD_ARK_HVM_VMCS_DIAG_SITE_DEBUG_PAIRING      6UL
-/* 可选状态的 exit/entry 控制不成对。detail = STATE_* 掩码。 */
+/* Optional exit/entry controls are not paired. detail = STATE_* bitmask. */
 #define KSWORD_ARK_HVM_VMCS_DIAG_SITE_STATE_PAIRING      7UL
-/* 必需的 secondary 指令控制缺失。detail = 最低缺失位的位号(0-31)。 */
+/* Required secondary instruction control is missing. detail = bit number of the lowest missing bit (0-31). */
 #define KSWORD_ARK_HVM_VMCS_DIAG_SITE_INSTRUCTION_CTL    8UL
-/* 读可选状态 MSR 时抛异常并被就地吞掉。detail = 异常码低 16 位。 */
+/* An exception is thrown when reading the optional status MSR and is caught locally. detail = lower 16 bits of the exception code. */
 #define KSWORD_ARK_HVM_VMCS_DIAG_SITE_MSR_EXCEPTION      16UL
-/* 读能力 MSR 时抛异常并被就地吞掉。detail = 异常码低 16 位。 */
+/* Throw an exception when reading capability MSRs and catch it locally. detail = lower 16 bits of the exception code. */
 #define KSWORD_ARK_HVM_VMCS_DIAG_SITE_CAP_EXCEPTION      17UL
-/* 诊断用的无条件 I/O 退出被请求但能力 MSR 不允许，判据会静默失效。 */
+/* The unconditional I/O exit for diagnostics was requested but the capability MSR disallows it; the predicate will silently fail. */
 #define KSWORD_ARK_HVM_VMCS_DIAG_SITE_DIAG_IO_EXITING    18UL
-/* 主机页目录基址为零；装上去会三重故障且既无蓝屏也无转储。 */
+/* Note: Host page directory base address is zero; loading it causes a triple fault with no BSOD or dump. */
 #define KSWORD_ARK_HVM_VMCS_DIAG_SITE_HOST_CR3           19UL
 
-/* STATE_* 掩码：哪一个可选处理器状态出的问题。 */
+/* STATE_* masks: which optional processor state had the issue. */
 #define KSWORD_ARK_HVM_VMCS_DIAG_STATE_CET   0x0001UL
 #define KSWORD_ARK_HVM_VMCS_DIAG_STATE_PKS   0x0002UL
 #define KSWORD_ARK_HVM_VMCS_DIAG_STATE_UINTR 0x0004UL
 #define KSWORD_ARK_HVM_VMCS_DIAG_STATE_FRED  0x0008UL
 
-/* CTL_* 掩码：REQUIRED_CONTROLS 站点具体缺哪一类。 */
+/* CTL_* masks: REQUIRED_CONTROLS indicates which specific category is missing at the site. */
 #define KSWORD_ARK_HVM_VMCS_DIAG_CTL_SECONDARY_ACTIVATE 0x0001UL
 #define KSWORD_ARK_HVM_VMCS_DIAG_CTL_EPT                0x0002UL
 #define KSWORD_ARK_HVM_VMCS_DIAG_CTL_HOST_64            0x0004UL
@@ -443,79 +443,79 @@
  */
 #define KSWORD_ARK_HVM_CONTROL_FLAG_ENABLE_EPTP_SWITCH 0x00000400UL
 /*
- * 测量用：每次 VM exit 额外执行一批 VMREAD，结果丢弃。
+ * For measurement: execute an extra batch of VMREADs on each VM exit, then discard the results.
  *
- * 存在的理由是一个没人量过的数：在嵌套之下，L1 执行 VMREAD 到底贵不贵。它决定
- * 「把 VMCS 字段访问改成读共享页」值不值得做 —— 那是个要映射一百多个字段、而且
- * 会丢掉几个较新字段（中断影子栈表、PKRS、UINV）的工程，收益不明就不该开工。
+ * The rationale for this value is an unmeasured number: under nesting, how expensive is L1 VMREAD execution? It determines whether
+ * changing VMCS field access to read shared pages is worthwhile—a significant engineering effort involving mapping over 100 fields and
+ * potentially losing several newer fields (interrupt shadow stack table, PKRS, UINV). Work should not begin without clear benefits.
  *
- * 直接测单条指令的周期数需要在退出路径上取时间戳，本身就有观测代价；改成**加负载**
- * 反而干净：多读 N 次，看退出吞吐掉多少，单次成本就出来了，而且完全不改变任何一条
- * 退出的语义 —— 读出来的值直接丢弃，正常遥测照旧。
+ * Measuring single-instruction cycle counts requires taking timestamps on the exit path, which incurs observation overhead.
+ * Adding load is cleaner instead: read N times, observe the drop in exit throughput, and derive the single-operation cost. This
+ * approach does not alter the semantics of any exit—the read values are discarded, and normal telemetry continues unchanged.
  *
- * 只在需要这个读数时置位。置位期间退出会变慢，这正是它要量的东西。
+ * Set this flag only when this measurement is needed. Exiting becomes slower while set, which is exactly what it measures.
  */
 #define KSWORD_ARK_HVM_CONTROL_FLAG_VMREAD_BENCH 0x00000800UL
 /*
- * 请求里不给次数时用的默认值。
+ * Default value used when the count is not provided in the request.
  *
- * 取 512 而不是几十：实测 32 次的效应完全淹没在噪声里（三轮交替得到
- * +18.1% / -13.5% / -6%，符号都不一致，基线自身极差就有 14%），那只说明
- * 「效应 < 噪声」，并不说明 VMREAD 便宜。**要得出结论就得把信号加大到测得出为止**，
- * 否则测不出和不存在分不开。512 次给出了干净信号（四轮 -42% ~ -43.9%）。
+ * Use 512 instead of dozens: Empirical tests show that 32 iterations are completely drowned in noise (three alternating rounds
+ * yielded +18.1% / -13.5% / -6%, with inconsistent signs; the baseline itself had a 14% variance). This only indicates that 'effect
+ * < noise', not that VMREAD is cheap. To draw a conclusion, the signal must be amplified until it is measurable; otherwise,
+ * 'unmeasurable' and 'non-existent' are indistinguishable. 512 iterations provided a clean signal (four rounds: -42% ~ -43.9%).
  */
 #define KSWORD_ARK_HVM_VMREAD_BENCH_DEFAULT 512UL
 /*
- * 次数上限。
+ * Maximum count.
  *
- * 每次退出都要跑这么多遍，取值过大等于把 guest 拖停；而这条路径在 VMX root、
- * 关中断、拿着退出栈，停在这里没有人能把它救回来。上限让一个手滑的数字变成
- * 一次被夹住的测量，而不是一台需要重启的机器。
+ * Running this many times per exit stalls the guest if the value is too large; this path runs in
+ * VMX root with interrupts disabled, holding the exit stack, where no one can recover if it hangs.
+ * The limit turns a typo into a single trapped measurement instead of a machine requiring a reboot.
  */
 #define KSWORD_ARK_HVM_VMREAD_BENCH_MAX 4096UL
 /*
- * 把每一条普通退出也逐条写进事件环。默认关闭。
+ * Log every standard exit entry into the event ring. Disabled by default.
  *
- * 关掉它不是为了省开销，是为了让环还能装得下证据。实测（2026-09-07，2 vCPU、
- * 30 秒常驻）：发布 682829 条、抢槽失败 0 条、被环回挤掉 681805 条。也就是说
- * 环从来没有写不进去的问题，它的问题是**一秒钟轮空二十二次** —— 1024 个槽在
- * 22750 次/秒的退出率下 45 毫秒就翻一遍。
+ * Disabling this keeps room for evidence in the ring. A test on 2026-09-07 with 2 vCPU and 30 seconds
+ * of resident operation published 682829 entries, had 0 slot-acquisition failures, and evicted 681805
+ * entries through wraparound. The problem was never an inability to write: the ring wrapped 22 times
+ * per second. At 22750 exits per second, all 1024 slots are overwritten in 45 milliseconds.
  *
- * 而这 68 万条几乎全是同一类：普通退出（type VMEXIT）。它们的聚合答案退出原因
- * 直方图已经免费给了，逐条留着只做一件事——把 EPT 违例、嵌套 VMX、致命退出、
- * 生命周期这四类真正稀有的证据在 45 毫秒内挤出去。查一次罕见事件要求轮询快过
- * 环的翻转速度，这个条件在实机上没法成立。
+ * These 680,000 entries are almost all of the same type: normal exits (type VMEXIT). Their aggregated exit reason
+ * histogram is already provided for free; retaining them individually serves only one purpose: to squeeze out the four
+ * truly rare evidence types—EPT violations, nested VMX, fatal exits, and lifecycle events—within 45ms. Polling for a
+ * rare event requires a speed faster than the ring flip rate, a condition that cannot be met on physical hardware.
  *
- * 所以默认只留那四类，普通退出交给直方图与 lastExit* 字段。需要逐条轨迹时置位
- * 本位，行为回到原来的样子——**能力没有被删掉，只是不再是默认**。
+ * Therefore, by default only those four types remain; ordinary exits are handled by the histogram and lastExit* fields. When
+ * per-trace is needed, set this bit to restore the original behavior — **the capability is not removed, just not the default**.
  */
 #define KSWORD_ARK_HVM_CONTROL_FLAG_TRACE_ROUTINE_EXITS 0x00001000UL
 
 /*
- * 对**用户态**的 CPUID 隐藏"有 hypervisor 在下面"这件事。
+ * Hide the presence of a hypervisor from user-mode CPUID.
  *
- * 为什么需要这一位：真机上量到的第一个拦路读数不是能力不够，是**身份**。
- * VMware Workstation 17.6 在初始化时先用 CPUID 认出外层是 Hyper-V，然后去要
- * Windows Hypervisor Platform；这台来宾里没装 WHP，两边对不上，它就在装载
- * 任何虚拟机之前拒绝启动：
+ * Why this bit is needed: the first blocking reading observed on real hardware is not due to insufficient capability, but due to identity.
+ * VMware Workstation 17.6 first uses CPUID during initialization to detect that the outer
+ * layer is Hyper-V, then requests Windows Hypervisor Platform. Since this guest does not have
+ * WHP installed, the mismatch causes it to refuse to start any virtual machine before loading:
  *
  *     IOPL_Init: Hyper-V detected by CPUID
  *     WHP_CanBeInstalled: Hyper-V is not present, function should not be called.
  *     [msg.vmx.nestedHyperV] ... not compatible ...
  *     Module 'IOPL' initialization failed.
  *
- * 它看到的那个身份不是我们选的 —— 是 L0 的 Hyper-V 透过我们传上去的。常驻起来
- * 之后 CPUID 每一条都退出到我们手里，报什么由我们决定，而"把外层的身份原样转
- * 给我们自己的来宾"本来就谈不上正确。
+ * The identity it sees is not what we selected—it is the L0 Hyper-V identity passed through
+ * us. Once resident, every CPUID instruction exits to us, and we decide the response.
+ * Passing the outer identity unchanged to our own guest is fundamentally incorrect.
  *
- * 影响面被刻意压到最小：**只在来宾 CPL=3 时改**。Windows 内核自己的 Hyper-V
- * enlightenment 走的是 CPL=0 的 CPUID 与 hypercall 页，那条路一个位都不动。
- * 做这个区分不是优化，是因为开机时就绑定了外层 hypervisor 的内核如果中途被告知
- * "没有 hypervisor"，后果无法预期，而我们要骗的那一个（vmware-vmx.exe）恰好
- * 完全在用户态。
+ * Impact is deliberately minimized: **only modify when the guest is at CPL=3**. Windows kernel's
+ * own Hyper-V enlightenment uses CPL=0 CPUID and hypercall pages; that path remains untouched.
+ * This distinction is not an optimization; it is necessary because if a kernel bound to an outer
+ * hypervisor at boot is later told "there is no hypervisor," the consequences are unpredictable.
+ * The target we need to deceive (vmware-vmx.exe) happens to reside entirely in user mode.
  *
- * 这不是"完美伪装成裸机"，也不打算是：它只解决按身份拒绝这一件事。任何在内核
- * 里做同样检查的软件都仍然会看到真相 —— 那时读数会直接告诉我们，再谈要不要放宽。
+ * This is not 'perfectly masquerading as bare metal' nor intended to be: it only addresses identity-based rejection. Any software performing the
+ * same check within the kernel will still see the truth; at that point, the readings will directly inform us whether to relax the restrictions.
  */
 #define KSWORD_ARK_HVM_CONTROL_FLAG_HIDE_HYPERVISOR 0x00002000UL
 /* Same-binary performance reference: retain unused CPUID diagnostic VMREADs. */
@@ -559,19 +559,19 @@
 /* Nested VMX composes its own EPT pointer and cannot share this mechanism. */
 #define KSWORD_ARK_HVM_CONTROL_STATUS_LOCAL_EPT_CONFLICTS_WITH_NESTED 27UL
 /*
- * 这台机器的客户物理地址空间比这一版能建的身份映射窗口大。
+ * The guest physical address space on this machine exceeds the size of the identity-mapped window supported by this version.
  *
- * 与 UNSUPPORTED_CPU 分家，因为它们要人做的事**相反**：那个说"换一台机器"，
- * 这个说"这台机器什么都支持，是我们的窗口太小"。
+ * Separated from UNSUPPORTED_CPU because they require opposite actions: the former says 'switch to a
+ * different machine', while this one says 'this machine supports everything, but our window is too small'.
  *
- * 两者混在一起的代价是实测过的：一台 Intel Core Ultra 报 CPUID.80000008H:EAX
- * 的物理地址宽度是 45 位（32 TiB），而当时的窗口是 8 TiB，于是构建器截断、
- * 置 EPT_TRUNCATED、常驻拒绝，一路翻译成"处理器不支持"——由一台每一项能力
- * 都齐备的处理器说出来。用户只能去查 CPU 和 BIOS，而那两处都没有问题。
+ * The cost of mixing these two is empirically verified: on an Intel Core Ultra system, CPUID.80000008H:EAX reports a physical address width
+ * of 45 bits (32 TiB), while the configured window was only 8 TiB. Consequently, the builder truncated the address, set EPT_TRUNCATED, and
+ * rejected the resident request, ultimately translating this to "processor not supported"—a message issued by a processor that fully
+ * supports all required capabilities. Users were forced to check the CPU and BIOS, both of which were found to be correct.
  *
- * 界面看到这个码时要说出三个数：本机的物理地址宽度（用户态一条 CPUID 就读得
- * 到）、这一版实际映射到哪里（查询响应里的 highestMappedPhysicalAddress）、
- * 以及需要多少个 PML4 项。
+ * When the UI sees this code, it must report three values: the host's physical address width
+ * (readable via a single CPUID instruction in user mode), where this version is actually mapped
+ * (highestMappedPhysicalAddress from the query response), and the number of PML4 entries required.
  */
 #define KSWORD_ARK_HVM_CONTROL_STATUS_EPT_WINDOW_TOO_SMALL 28UL
 
@@ -592,13 +592,13 @@
 #define KSWORD_ARK_HVM_EPT_RULE_CLEAR  3UL
 #define KSWORD_ARK_HVM_EPT_RULE_QUERY  4UL
 /*
- * 把一条已经命中过的 WATCH_ONCE 规则重新武装。
+ * Rearm a WATCH_ONCE rule that has already been triggered.
  *
- * 不是"再 ADD 一条"：watchId 要保持不变，历史命中计数也要留着，否则用户在
- * 界面上看到的是一条新记录，而"同一个目标被动过几次"正是这个功能要回答的。
+ * Not 'ADD another rule': keep watchId unchanged and retain the historical hit count; otherwise the UI would
+ * show a new record, while this feature's purpose is to answer 'how many times the same target was touched'.
  */
 #define KSWORD_ARK_HVM_EPT_RULE_REARM  5UL
-/* 读回整张 watch 表。普通 QUERY 一次只回一条，列表页要的是全部。 */
+/* Read back the entire watch table. A standard QUERY returns only one entry at a time, but the list page requires all entries. */
 #define KSWORD_ARK_HVM_EPT_RULE_WATCH_QUERY 6UL
 
 #define KSWORD_ARK_HVM_EPT_RULE_FLAG_LOG          0x00000001UL
@@ -622,72 +622,72 @@
  */
 #define KSWORD_ARK_HVM_EPT_RULE_FLAG_ENFORCE      0x00000008UL
 /*
- * WATCH_ONCE：首次访问归因（first-touch attribution）。
+ * WATCH_ONCE: First-touch attribution.
  *
- * 与同一页上的另外三种处置都不同，值得逐条对照：
+ * Unlike the other three dispositions on the same page, this one warrants a line-by-line comparison:
  *
- * - 严格 tripwire 命中后**退出虚拟化**。作为安全兜底是对的——它保证 guest 最终
- *   一定能完成那次访问——但作为用户层的"看看下次是谁动它"就完全不能用：抓到
- *   一次访问的代价是整台机器的 VMM 没了。
- * - ALLOW_ONCE 放行一条指令再用 monitor-trap 把权限收回来。它要 MTF，而嵌套
- *   Hyper-V 实测不给 MTF，所以在靶机上恒不可用；多核共享层次下那个放宽窗口
- *   还是全机可见的。
- * - ENFORCE 是持久拒绝，注 #PF —— 已被判 UNIMPLEMENTED（活锁）。
+ * - Exit virtualization after a strict tripwire hit. This is a valid safety fallback because it
+ *   guarantees that the guest can eventually complete the access. However, it is unusable for a user-level
+ *   request to see who touches the address next: catching one access costs the entire machine its VMM.
+ * - ALLOW_ONCE permits one instruction, then uses monitor-trap to reclaim permissions. It requires MTF, while nested...
+ *   Hyper-V does not provide MTF in practice, so it is permanently unavailable on the target
+ *   machine; under multi-core sharing, the relaxed window remains visible across the entire machine.
+ * - ENFORCE is a persistent deny; note #PF — marked as UNIMPLEMENTED (livelock).
  *
- * WATCH_ONCE 正好是"ALLOW_ONCE 去掉收回那一步"：
+ * WATCH_ONCE is exactly "ALLOW_ONCE" without the revocation step:
  *
  *     EPT violation
  *         ↓
- *     原子 ARMED → TRIGGERED（只有一个 CPU 赢）
+ *     Atomic ARMED → TRIGGERED transition (only one CPU wins).
  *         ↓
- *     把这一页的权限**永久**恢复（这条规则从此不再拒绝）
+ *     Permanently restore permissions for this page (this rule will no longer deny).
  *         ↓
  *     INVEPT
  *         ↓
- *     RIP 不推进，VMRESUME
+ *     RIP not advanced, VMRESUME.
  *         ↓
- *     原指令重执行并正常完成；常驻继续
+ *     Original instruction re-execution and normal completion; continue resident.
  *
- * 因为没有"再收回来"这一步，它**不需要 MTF**，也就不需要那道"单核或私有层次"
- * 的门：权限是朝放开方向单向变化的，别的处理器提前看到放开的权限，结果只是
- * 它们那次访问也正常完成——而这条 watch 本来就已经决定不再拦了。
+ * Since there is no 'reclaim' step, it **does not require MTF**, nor the 'single-core or private-level' gate:
+ * permissions change unidirectionally toward being relaxed. If other processors see the relaxed permissions
+ * early, their accesses simply complete normally—and this watch was already decided to no longer block.
  *
- * 语义上它**不是**安全边界：它不阻止访问，只记录一次现场然后让路。
+ * Semantically, it is **not** a security boundary: it does not block access, only records a snapshot once and then yields.
  */
 #define KSWORD_ARK_HVM_EPT_RULE_FLAG_WATCH_ONCE   0x00000010UL
 
 /*
- * Watch 生命周期。
+ * Watch lifecycle.
  *
- * 单靠"规则在不在表里"表达不了这条时间线：命中之后规则必须留在表里（要报
- * hitCount 和最近一次命中的现场），但它已经不拦任何访问了。两件事必须分开。
+ * The rule's presence in the table alone cannot express this timeline: after a hit, the rule must remain in the table (to
+ * report hitCount and the context of the last hit), yet it no longer blocks any access. These two concerns must be separated.
  */
 #define KSWORD_ARK_HVM_EPT_WATCH_STATE_NONE        0UL
-/* 已装上并正在拦截，等待第一次访问。 */
+/* Installed and currently intercepting, waiting for the first access. */
 #define KSWORD_ARK_HVM_EPT_WATCH_STATE_ARMED       1UL
-/* 某个 CPU 赢下了原子转换，正在恢复权限。瞬时态。 */
+/* A CPU won the atomic transition and is restoring permissions. Transient state. */
 #define KSWORD_ARK_HVM_EPT_WATCH_STATE_TRIGGERED   2UL
-/* 已命中并解除，权限已恢复。要再看下一次必须显式 REARM。 */
+/* Hit and disarmed; permissions restored. To check again, explicit REARM is required. */
 #define KSWORD_ARK_HVM_EPT_WATCH_STATE_DISARMED    3UL
 /*
- * 常驻停过/释放过/故障过，这条 watch 绑定的那一代已经不存在了。
+ * The generation associated with this watch no longer exists because it was paused, released, or faulted.
  *
- * 与 DISARMED 分开是因为两者对用户意味着完全不同的事：DISARMED 是"目标被动过
- * 了，证据在这儿"，INVALIDATED 是"我什么都没看到，因为中途没人在看"。把后者
- * 显示成前者，等于报告一次不存在的观测结果。
+ * Separated from DISARMED because they imply completely different things to the user: DISARMED means 'the
+ * target was tampered with, here is the evidence', while INVALIDATED means 'I saw nothing because no one was
+ * watching in the middle'. Displaying the latter as the former equates to reporting a non-existent observation.
  */
 #define KSWORD_ARK_HVM_EPT_WATCH_STATE_INVALIDATED 4UL
-/* 安装期就失败，没有进入过拦截。 */
+/* Failed during installation; interception was never entered. */
 #define KSWORD_ARK_HVM_EPT_WATCH_STATE_FAULTED     5UL
 
-/* 命中时事件成功发布。 */
+/* Event successfully published on hit. */
 #define KSWORD_ARK_HVM_EPT_WATCH_HIT_NONE      0UL
 #define KSWORD_ARK_HVM_EPT_WATCH_HIT_PUBLISHED 1UL
 /*
- * 命中了，但事件环没接住。
+ * Hit occurred, but the event ring buffer did not capture it
  *
- * 必须与"从未命中"分开：两者在事件列表里长得一模一样（都是没有事件），而
- * 结论正好相反——一个是目标没被动过，一个是目标被动过但证据丢了。
+ * This must be distinguished from 'never hit': both appear identical in the event list (no event), but the conclusions are
+ * opposite—one means the target was untouched, while the other means the target was touched but the evidence was lost.
  */
 #define KSWORD_ARK_HVM_EPT_WATCH_HIT_EVENT_LOST 2UL
 
@@ -700,59 +700,59 @@
 #define KSWORD_ARK_HVM_EPT_RULE_STATUS_SPLIT_FAILED          6UL
 #define KSWORD_ARK_HVM_EPT_RULE_STATUS_PARTIAL               7UL
 /*
- * 请求的处置在当前机制下无法实现，安装期就拒绝。
+ * The requested action cannot be implemented under the current mechanism; reject it during installation.
  *
- * 目前只有一个来源：ENFORCE。它的语义是"持久拒绝"，实现是往 guest 注 #PF ——
- * 而拒绝发生在 EPT 层，guest 的页表说那一页好好的，缺页处理器什么都不修就
- * 返回、重执行、再违规、再注 #PF。实测是无限活锁，把整台机器挂在那里，
- * 而且异常从没交付到用户态，SEH 也接不住。
+ * Currently, there is only one source: ENFORCE. Its semantics are 'persistent denial', implemented by injecting a #PF
+ * into the guest. The denial occurs at the EPT layer; the guest page table indicates the page is valid, so the page-fault
+ * handler performs no fix, returns, re-executes, violates again, and injects another #PF. In practice, this causes an
+ * infinite livelock that hangs the entire machine, and the exception never reaches user mode, so SEH cannot handle it.
  *
- * 在 guest 看不见 EPT 的前提下，注入一个 guest 能自己解决的 fault 是做不到的；
- * 真正的"读到假页"要靠分离视图重定向，不是靠拒绝。所以宁可在这里挡住，
- * 也不要装上一条一旦命中就挂机器的规则。
+ * Given that the guest cannot see EPT, injecting a fault that the guest can resolve on its own is impossible.
+ * Actually reading a substitute page requires redirection through split views rather than denying
+ * access. Reject the request here instead of installing a rule that hangs the machine when triggered.
  */
 #define KSWORD_ARK_HVM_EPT_RULE_STATUS_UNIMPLEMENTED         8UL
 /*
- * 这台机器上这条规则的处置无法安全实现，安装期就拒绝。
+ * The handling of this rule on this machine cannot be safely implemented; reject it during installation.
  *
- * 目前只有一个来源：多核机器上的 ALLOW_ONCE。它的实现是把 EPT 叶临时放宽一条
- * 指令再用 monitor-trap 复原，而在**共享**层次上那个窗口是全机可见的 —— 别的
- * 处理器在同一瞬间也拿到了放宽后的权限。所以运行期有一道门（hvm_ept.c 的
- * allAllowOnce 分支）要求"独占一个处理器，或者走私有层次"，两者都不满足就
- * 判 fail-closed。
+ * Currently the only source is ALLOW_ONCE on multicore machines. It temporarily relaxes EPT leaf
+ * permissions for one instruction and restores them through a monitor-trap. With a shared hierarchy,
+ * that window is visible to the whole machine: other processors receive the relaxed permissions at the
+ * same moment. The runtime gate in the allAllowOnce branch of hvm_ept.c therefore requires exclusive use
+ * of a single processor or a private hierarchy. If neither condition holds, the result is fail-closed.
  *
- * 问题不在那道门，在于**它太晚了**：规则装得上，看上去是成功的，直到某次真的
- * 命中 —— 然后整台机器退出 VMX（fail-closed 现在是全机停机，不再只停当前核，
- * 见 hvm_internal.h 的 ResidentFaultStopRequested）。用户得到的是"装好了"然后
- * 某个时刻虚拟化悄悄没了，中间没有任何东西把这两件事联系起来。
+ * The issue is not the rule itself, but that it is applied too late: the rule appears to install successfully
+ * until it is actually hit, at which point the entire machine exits VMX (fail-closed now halts the whole machine,
+ * not just the current core; see hvm_internal.h's ResidentFaultStopRequested). The user sees 'installed' and then
+ * virtualization silently disappears at some point, with no link established between these two events.
  *
- * 私有层次这条出路在嵌套下走不通：它要 LocalEptArmed，而那要求 INVEPT_SINGLE
- * **和** MONITOR_TRAP_FLAG，嵌套 Hyper-V 不给 MTF。所以在嵌套靶机上"多核 +
- * ALLOW_ONCE"是恒不可用的组合，更该在安装期说清楚。
+ * This exit path in the private hierarchy fails under nesting: it requires LocalEptArmed, which in turn requires INVEPT_SINGLE.
+ * **And** MONITOR_TRAP_FLAG: nested Hyper-V does not provide MTF. Therefore, on a nested target machine, the
+ * combination of "multi-core + ALLOW_ONCE" is permanently unavailable and should be clarified during installation.
  *
- * 这不是"ALLOW_ONCE 做不到"，是"这台机器上做不到"：单核、或者武装了私有 EPT
- * 的多核，都照旧放行。
+ * This is not 'ALLOW_ONCE is impossible'; it is 'impossible on this machine'.
+ * Single-core or multi-core systems with private EPT are still allowed through.
  */
 #define KSWORD_ARK_HVM_EPT_RULE_STATUS_MULTIPROCESSOR_UNSAFE 9UL
 /*
- * 这一页已经被别的 EPT 机制占着（分离视图、执行域、或另一条 watch）。
+ * This page is already occupied by another EPT mechanism (split view, execution domain, or another watch).
  *
- * 不做自动合并，也不静默覆盖：两套机制对同一个叶项的期望值不同，谁后写谁赢，
- * 而赢的那一方会在对方毫不知情的情况下把对方的功能改掉。一页一个明确的主人，
- * 冲突时直接说清楚是谁占着，让用户自己决定先撤哪一个。
+ * No automatic merging or silent overwriting: The two mechanisms have conflicting expectations for the same leaf entry.
+ * The last write wins, and the winner modifies the loser's functionality without the loser's knowledge. Each page has a
+ * single explicit owner; on conflict, clearly indicate the owner so the user can decide which one to withdraw first.
  */
 #define KSWORD_ARK_HVM_EPT_RULE_STATUS_LEAF_CONFLICT         10UL
 /*
- * 常驻正在跑，而规则表在整个常驻期间是冻结的。
+ * Resident and running; the rule table is frozen throughout the entire resident period.
  *
- * 这不是"部分成功"：一个字段都没改过。它原先复用 PARTIAL（"部分处理器未能完成
- * 失效"）上报，而那句话描述的是一件根本没发生的事，还把用户引向失效机制去查。
+ * This is not 'partial success': no fields were modified. It previously reused PARTIAL ("some processors failed to complete invalidation")
+ * reporting, but the description refers to an event that never occurred, misleading users toward the invalidation mechanism for investigation.
  *
- * 冻结本身不是保守，是必需的：常驻期间的 VM-exit 路径不取 PASSIVE 级别的锁就
- * 扫规则表与 split 叶，PASSIVE 侧同时改它就是一场没有诊断面的竞争。
+ * Freezing itself is not conservative but required: during residency, the VM-exit path must not acquire PASSIVE-level locks to scan the
+ * rule table and split leaves; if the PASSIVE side modifies it concurrently, it becomes a race condition with no diagnostic surface.
  *
- * 所以所有 EPT 规则（含内存监视）的安装、重新武装、移除都在常驻停着时做，
- * 启动常驻后生效——这与分离视图、MSR 策略、CR 策略的窗口期是同一个。
+ * Install, rearm, and remove all EPT rules, including memory watches, while the resident hypervisor is stopped. They
+ * take effect after startup, using the same configuration window as split views, MSR policies, and CR policies.
  */
 #define KSWORD_ARK_HVM_EPT_RULE_STATUS_RESIDENT_FROZEN       11UL
 
@@ -861,19 +861,19 @@ typedef struct _KSWORD_ARK_QUERY_HVM_RESPONSE
     unsigned long nestedImplementation;
     unsigned long evmcsImplementation;
     /*
-     * 有多少个处理器备好了退出安全的物理映射窗口。
+     * Number of processors ready with a safe physical mapping window for exit.
      *
-     * 单独报，因为窗口的准备期自检**在外面完全看不见**：过不了只会让需要它的
-     * 路径（嵌套 L2 进入、影子 EPT 合成）安静地拒绝，而状态位、实现成熟度、
-     * 处理器计数没有一个会变。一个验不出结果的自检和没有自检，从读数上分不开。
+     * Report separately because the window's preparation phase self-check is completely invisible from the outside: if it fails, only the
+     * paths requiring it (nested L2 entry, shadow EPT synthesis) silently reject, while status bits, implementation maturity, and processor
+     * count remain unchanged. A self-check that yields no observable result is indistinguishable from no self-check when reading values.
      *
-     * 比对的分母**不是 processorCount**。那是"已准备的处理器数"，准备资源之前
-     * 是 0；而窗口在**驱动初始化**时就建好了。拿它当分母，刚加载完驱动去读会得
-     * 到「N / 0」，把一台好机器报成坏的。
+     * The denominator for comparison is **not processorCount**. That represents the 'count of prepared processors',
+     * which is 0 before resources are prepared; the window is created during **driver initialization**. Using it as
+     * a denominator immediately after driver load results in 'N / 0', falsely reporting a healthy machine as faulty.
      *
-     * 正确的分母是调用方自己查到的逻辑处理器数（GetActiveProcessorCount /
-     * KeQueryActiveProcessorCountEx，ALL_PROCESSOR_GROUPS）：相等才说明每个核
-     * 都有。驱动初始化之前本字段为零。
+     * The correct denominator is the logical processor count retrieved by the caller
+     * (GetActiveProcessorCount / KeQueryActiveProcessorCountEx, ALL_PROCESSOR_GROUPS): equality
+     * indicates every core is present. This field is zero before driver initialization.
      */
     unsigned long physWindowReadyCount;
     unsigned long eptRuleCount;
@@ -913,27 +913,27 @@ typedef struct _KSWORD_ARK_QUERY_HVM_RESPONSE
     unsigned long evmcsState;
     unsigned short evmcsVersion;
     /*
-     * 最后一次 L2 进入被哪一处拒绝，1..7；0 表示没有拒绝过。
+     * The site that last refused L2 entry, 1..7; 0 indicates no refusal occurred.
      *
-     * 占用原先的 reservedVersion 槽位（没有任何读写方），结构大小不变。
+     * Occupies the original 'reservedVersion' slot (no readers or writers), keeping the structure size unchanged.
      *
-     * 存在的理由：七处不同的条件返回**同一个**架构错误码 7（invalid control
-     * field），因为架构只有这一个号码、没有第二个字段说明是哪一处。L1 拿到 7、
-     * 报出 7，从外面看七种情况一模一样 —— 而唯一真正需要知道的就是哪一处。
-     * 编号的含义见 hvm_nested_l2.c 里各个赋值点。
+     * Rationale: Seven different conditions return the same architecture error code 7 (invalid control field) because the architecture defines
+     * only this single code number, with no second field to specify which condition triggered it. L1 receives and reports 7; from an external
+     * perspective, all seven scenarios appear identical, yet the only critical information needed is which specific condition occurred.
+     * See the assignment points in hvm_nested_l2.c for the meaning of these IDs.
      */
     unsigned short nestedLastRefusalSite;
     unsigned long evmcsFlags;
     /*
-     * 无进展熔断跳闸的次数，整机累计。
+     * Number of fuse trips due to no progress, cumulative across the entire machine.
      *
-     * 熔断本身在别处**看不见**：它的读数一直只在嵌套探针的行里，而真正的 L1
-     * （VMware 的 VMM、别人的 hypervisor）不会去跑我们的探针。于是"L2 打转被我们
-     * 拦下来了"这件事，在真实场景里没有任何地方读得到 —— 而那恰恰是最需要知道的
-     * 时候：机器没挂，但某个 hypervisor 的来宾被我们停了。
+     * The fuse itself is **invisible** elsewhere: its reading is only available within the nested probe
+     * lines, and the real L1 (VMware's VMM or other hypervisors) does not run our probes. Thus, the
+     * event "L2 was stopped by us" cannot be read anywhere in a real scenario — yet this is precisely
+     * the moment we need to know: the machine is up, but a guest of a hypervisor has been stopped by us.
      *
-     * 占用原先的 reservedEvmcs 槽位（没有任何读写方），结构大小不变，旧 GUI 读到的
-     * 每个字段都不移位。
+     * Occupies the original reservedEvmcs slot (no readers or writers), keeping the structure
+     * size unchanged so that each field read by the old GUI remains at the same offset.
      */
     unsigned long nestedFuseTripCount;
     unsigned long long evmcsVpAssistMsr;
@@ -1019,18 +1019,18 @@ typedef struct _KSWORD_ARK_QUERY_HVM_RESPONSE
     unsigned long activeExitControls;
     unsigned long activeEntryControls;
     /*
-     * 有多少份 vmcs12 因为每处理器的池满了而被丢掉。
+     * Number of vmcs12 instances dropped because the per-processor pool was full.
      *
-     * 一个 L1 手里的 VMCS 常常不止一份，它会不停 VMPTRLD 在其中切换。被驱逐的
-     * 那一份下次 VMPTRLD 回来时字段全是零 —— 在 L1 看来，跟"这个 hypervisor
-     * 只建模了一份 vmcs12"那个缺陷一模一样。所以真出了问题，这个数是唯一能把
-     * 两者分开的东西：非零就是池太小，零就得往别处查。
+     * An L1 often holds multiple VMCS instances and continuously switches among them via VMPTRLD. When an evicted instance
+     * is reloaded via VMPTRLD, its fields are all zero — from L1's perspective, this looks identical to the defect where
+     * the hypervisor models only a single vmcs12. Therefore, if a real issue occurs, this count is the only thing that can
+     * distinguish the two: a non-zero value indicates the pool is too small, while zero requires investigation elsewhere.
      *
-     * 放在运行时而不是每处理器：池在退虚拟化时就释放了，一个跟着被测对象一起
-     * 消失的计数器只能回答"现在有没有在发生"，而问题是"有没有发生过"。
+     * Placed in runtime rather than per-processor: the pool is released during un-virtualization. A counter that disappears
+     * with the object under test can only answer 'is it happening now?', but the question is 'has it ever happened?'.
      *
-     * 占用原先的 activeControlsReserved 槽位（它只是显式化的对齐填充，没有任何
-     * 读写方），结构大小不变，协议版本不动 —— 旧 GUI 读到的每一个字段都不移位。
+     * Occupies the original activeControlsReserved slot (which is merely explicit alignment padding with no readers or writers); the
+     * structure size remains unchanged, the protocol version is unchanged, and every field read by the old GUI remains at the same offset.
      */
     unsigned long nestedVmcs12EvictionCount;
     unsigned long long pinCapability;
@@ -1052,17 +1052,17 @@ typedef struct _KSWORD_ARK_CONTROL_HVM_REQUEST
     /* Requested soak window in milliseconds; only SOAK reads this field. */
     unsigned long soakMilliseconds;
     /*
-     * 每次 VM exit 额外执行多少次结果丢弃的 VMREAD。
+     * Perform extra VMREADs per VM exit to discard results.
      *
-     * 只有 START_RESIDENT 且带 VMREAD_BENCH 位时读这个字段；0 表示用默认值。
+     * Read this field only when START_RESIDENT is set and the VMREAD_BENCH bit is present; 0 means use the default value.
      *
-     * 做成可配置而不是编译期常量，是因为**这个数必须能当场调**：取 32 时三轮交替
-     * 的符号都不一致（+18.1% / -13.5% / -6%），完全淹没在噪声里；取 512 才有干净
-     * 信号（四轮 -42% ~ -43.9%）。"测不出"和"不存在"只能靠加大信号来区分，而每
-     * 换一个数就重编译一次驱动，会让人倾向于接受第一个读数 —— 那正是得出错误
-     * 结论的路径。
+     * Made configurable instead of a compile-time constant because **this value must be adjustable on the
+     * fly**: at 32, the three alternating rounds show inconsistent signs (+18.1% / -13.5% / -6%), completely
+     * drowned in noise; only at 512 is a clean signal obtained (four rounds: -42% ~ -43.9%). Distinguishing
+     * 'unmeasurable' from 'non-existent' requires amplifying the signal. Forcing a driver recompile for
+     * every value change encourages accepting the first reading—the very path to a wrong conclusion.
      *
-     * 占用原先的 reserved 槽位，结构大小不变，协议版本不动。
+     * Reuse the original reserved slot; keep the structure size and protocol version unchanged.
      */
     unsigned long vmreadBenchIterations;
 } KSWORD_ARK_CONTROL_HVM_REQUEST;
@@ -1101,17 +1101,17 @@ typedef struct _KSWORD_ARK_CONTROL_HVM_RESPONSE
     unsigned char launchWasNested;
     long lastStatus;
     /*
-     * 本驱动的身份映射窗口有多少个 PML4 项，每项 512 GiB。
+     * Number of PML4 entries in the identity mapping window for this driver, with each entry covering 512 GiB.
      *
-     * 占用原先的 reserved2 槽位（没有任何读写方），结构大小不变，协议版本不动。
+     * Occupies the original reserved2 slot (no readers or writers), keeping the structure size and protocol version unchanged.
      *
-     * 存在的理由只有一个：配 EPT_WINDOW_TOO_SMALL 时，界面要说得出"本机需要多少
-     * 项、这一版有多少项"。前者界面自己用一条 CPUID 就算得出来，后者算不出——
-     * 它是**这个驱动**编译时的常量，而一个从旧头文件构建的界面手里的那个值正好
-     * 是错的。恰恰在版本不齐时这条消息最需要准确。
+     * The sole reason for this: when EPT_WINDOW_TOO_SMALL is configured, the interface must be able to state "how many entries
+     * the host needs" and "how many entries this build has". The former can be calculated by the interface itself using a single
+     * CPUID instruction, but the latter cannot—it is a compile-time constant of this driver, and the value held by an interface
+     * built from an old header file is exactly wrong. This message needs to be accurate precisely when versions are mismatched.
      *
-     * 每次控制调用都填，不只在失败时填：一个只在出事时才有值的字段，没出事的
-     * 时候没有任何地方能确认它是对的。
+     * Populate on every control call, not just on failure: A field that only has a value when something
+     * goes wrong; otherwise, there is no way to confirm it is correct when nothing goes wrong.
      */
     unsigned long eptPml4EntryBudget;
     /* Milliseconds residency actually held during the last soak. */
@@ -1144,78 +1144,78 @@ typedef struct _KSWORD_ARK_HVM_EPT_RULE_REQUEST
     unsigned long long physicalAddress;
     unsigned long long pageCount;
     /*
-     * ——— 以下字段只服务于 WATCH_ONCE，其余处置一律忽略 ———
+     * —— Fields below serve only WATCH_ONCE; all other handling is ignored ———
      *
-     * 它们记录的是**用户请求的东西**，而不是硬件实际监视的东西。这两者在 EPT
-     * 上永远不相等：EPT 权限是 4 KiB 页粒度，而用户往往是从一个 8 字节的
-     * DriverObject->MajorFunction[14] 建的 watch。驱动不会因为存了这两个值就
-     * 监视得更细；存它们是为了让命中之后能回答"这次访问落没落在你真正关心的
-     * 那几个字节上"，以及让界面能如实地把两套数字并排显示出来。
+     * These record what the user requested, not what the hardware actually monitors. These two are never
+     * equal on EPT: EPT permissions are 4 KiB page-granular, while users often access 8-byte boundaries.
+     * The watch created by DriverObject->MajorFunction[14]. The driver does not monitor more finely just by storing
+     * these two values; they are stored so that upon a hit, it can answer 'whether this access falls within the
+     * specific bytes you truly care about' and allow the UI to display both sets of numbers side-by-side accurately.
      *
-     * 把它们丢掉、只留页地址，界面就只能把一次页内其它偏移的访问说成"你的
-     * 目标被访问了"——那是一句读起来完全正确、实际上可能完全不相干的话。
+     * Discarding them and keeping only the page address would cause the interface to report 'your target was accessed'
+     * for other offsets within a page—a statement that reads correctly but is actually completely irrelevant.
      */
     unsigned long long requestedAddress;
     unsigned long long requestedLength;
     /*
-     * 用户勾的那几项，未经架构归一化。
+     * The items selected by the user, before architecture normalization.
      *
-     * deniedAccess 是归一化之后的**实际**生效掩码（去掉 READ 必然连带去掉
-     * WRITE，没有 execute-only 时还要连带去掉 EXECUTE）。两者必须都留着：
-     * 只留归一化后的值，界面就会把"你要求监视读"显示成"你要求监视读写"，
-     * 那是替用户改了他的请求；只留请求值，界面又会谎称只监视了读。
+     * deniedAccess is the normalized **actual** effective mask (removing READ necessarily removes
+     * WRITE; if there is no execute-only, EXECUTE must also be removed). Both must be retained:
+     * Only keep the normalized value, and the UI will display "you requested read monitoring" as "you requested read-write monitoring",
+     * which alters the user's request. Only keep the request value, and the UI will falsely claim only read monitoring occurred.
      */
     unsigned long requestedAccess;
-    /* 请求用的地址种类，见 KSWORD_ARK_HVM_WATCH_ADDRESS_*。仅作回显。 */
+    /* Address kind for the request; see KSWORD_ARK_HVM_WATCH_ADDRESS_*. Echo-only. */
     unsigned long addressKind;
 } KSWORD_ARK_HVM_EPT_RULE_REQUEST;
 
-/* requestedAddress 是内核虚拟地址，安装时由驱动翻译成物理页。 */
+/* requestedAddress is a kernel virtual address; it is translated to a physical page by the driver during installation. */
 #define KSWORD_ARK_HVM_WATCH_ADDRESS_VIRTUAL  0UL
-/* requestedAddress 就是物理地址，不做翻译。 */
+/* requestedAddress is a physical address; do not translate. */
 #define KSWORD_ARK_HVM_WATCH_ADDRESS_PHYSICAL 1UL
 
-/* 一次 watch 表快照里最多回报多少条。 */
+/* Maximum number of entries reported in a single watch table snapshot. */
 #define KSWORD_ARK_HVM_MAX_EPT_WATCH_ROWS 32UL
 
-/* 一条 watch 的完整协议快照。 */
+/* A complete protocol snapshot of a watch entry. */
 typedef struct _KSWORD_ARK_HVM_EPT_WATCH_ROW
 {
-    /* 与 ruleId 同一个值：watch 就是一条带 WATCH_ONCE 处置的 EPT 规则。 */
+    /* Same value as ruleId: a watch is an EPT rule with a WATCH_ONCE disposition. */
     unsigned long watchId;
-    /* 见 KSWORD_ARK_HVM_EPT_WATCH_STATE_*。 */
+    /* See KSWORD_ARK_HVM_EPT_WATCH_STATE_*. */
     unsigned long state;
-    /* 用户请求的访问类型，未归一化。 */
+    /* The access type requested by the user, before normalization. */
     unsigned long requestedAccess;
-    /* 实际装到 EPT 上的访问类型，已归一化。 */
+    /* Actual access type loaded into EPT, already normalized. */
     unsigned long effectiveAccess;
-    /* 安装时的地址种类。 */
+    /* Address kind during installation. */
     unsigned long addressKind;
     /*
-     * 累计命中次数。
+     * Cumulative hit count.
      *
-     * 一条 one-shot watch 正常只会到 1；REARM 之后继续累加，所以它回答的是
-     * "这个目标一共被动过几次"，而不是"当前这一轮有没有命中"。
+     * A one-shot watch typically reaches 1; after REARM, it continues to accumulate, so this field answers
+     * "how many times the target has been hit in total" rather than "whether it was hit in the current round."
      */
     unsigned long hitCount;
-    /* 最近一次命中的事件序号；配合 lastHitStatus 判断证据在不在。 */
+    /* Sequence number of the most recent hit; used with lastHitStatus to determine if evidence exists. */
     unsigned long long lastHitSequence;
-    /* 见 KSWORD_ARK_HVM_EPT_WATCH_HIT_*。 */
+    /* See KSWORD_ARK_HVM_EPT_WATCH_HIT_*. */
     unsigned long lastHitStatus;
     /*
-     * 武装这一轮时的 HVM 代次。
+     * HVM generation when this round was armed.
      *
-     * 常驻停过、释放过、故障过都会推进代次；代次对不上就说明这条 watch 跨过了
-     * 一次"没有人在看"的空档，此时它报的任何"未命中"都不成立。
+     * Stopping resident mode, releasing it, or encountering a fault advances the generation. A
+     * mismatch means the watch crossed an unobserved gap, so any no-hit result it reports is invalid.
      */
     unsigned long armedGeneration;
-    /* 用户请求的地址与长度，原样回显。 */
+    /* The address and length requested by the user, echoed back as-is. */
     unsigned long long requestedAddress;
     unsigned long long requestedLength;
-    /* 实际监视的物理页与页内偏移。 */
+    /* Actual monitored physical pages and offsets within pages. */
     unsigned long long physicalPage;
     unsigned long long pageCount;
-    /* 最近一次命中的现场，够界面直接列出来而不必再去翻事件环。 */
+    /* The most recent hit context, displayed directly in the UI without needing to scan the event ring. */
     unsigned long long lastHitRip;
     unsigned long long lastHitGuestLinearAddress;
     unsigned long long lastHitGuestPhysicalAddress;
@@ -1224,9 +1224,9 @@ typedef struct _KSWORD_ARK_HVM_EPT_WATCH_ROW
     unsigned long long lastHitTimestamp;
     unsigned short lastHitProcessorGroup;
     unsigned char lastHitProcessorNumber;
-    /* 命中时 CPU 是否报告了有效的客户线性地址。 */
+    /* Whether the CPU reported a valid guest linear address upon a hit. */
     unsigned char lastHitGuestLinearValid;
-    /* 命中的 GLA 是否落在 requestedAddress/Length 之内。 */
+    /* Whether the matched GLA falls within the requestedAddress/Length range. */
     unsigned long lastHitRangeMatch;
 } KSWORD_ARK_HVM_EPT_WATCH_ROW;
 
@@ -1248,32 +1248,32 @@ typedef struct _KSWORD_ARK_HVM_EPT_RULE_RESPONSE
     long lastStatus;
     unsigned long reserved2;
     /*
-     * ——— 以下字段服务于 WATCH_ONCE ———
+     * ——— The following fields serve WATCH_ONCE ——
      *
-     * 追加在结构尾部而不是插进中间：中间插字段会让所有既有字段的偏移平移，
-     * 而增量构建出来的 .sys 与 GUI 只要有一边没重建，读到的就是错位的值——
-     * 那种故障没有任何编译期或运行期提示。
+     * Append at the end of the structure rather than inserting in the middle: inserting fields in the middle
+     * shifts offsets of all existing fields. If either side of an incremental build (.sys or GUI) is not
+     * rebuilt, the read values will be misaligned—such faults provide no compile-time or runtime warnings.
      */
-    /* 占着这一页的另一个机制的标识，仅在 LEAF_CONFLICT 时有意义。 */
+    /* Identifier for another mechanism occupying this page; meaningful only during LEAF_CONFLICT. */
     unsigned long conflictOwnerId;
-    /* 见 KSWORD_ARK_HVM_WATCH_CONFLICT_*。 */
+    /* See KSWORD_ARK_HVM_WATCH_CONFLICT_*. */
     unsigned long conflictOwnerKind;
-    /* WATCH_QUERY 回报的条数，以及表内总条数。 */
+    /* Number of rows returned by WATCH_QUERY, and the total number of rows in the table. */
     unsigned long returnedWatchRows;
     unsigned long watchRowCount;
-    /* 单条操作（ADD / REARM / QUERY）回报的那一条 watch 的完整快照。 */
+    /* Complete snapshot of the single watch entry returned for a single operation (ADD / REARM / QUERY). */
     KSWORD_ARK_HVM_EPT_WATCH_ROW watch;
-    /* WATCH_QUERY 专用。 */
+    /* For WATCH_QUERY only. */
     KSWORD_ARK_HVM_EPT_WATCH_ROW watchRows[KSWORD_ARK_HVM_MAX_EPT_WATCH_ROWS];
 } KSWORD_ARK_HVM_EPT_RULE_RESPONSE;
 
-/* 这一页没有别的主人。 */
+/* This page has no other owner. */
 #define KSWORD_ARK_HVM_WATCH_CONFLICT_NONE   0UL
-/* 被一条 EPT 分离视图（CLOAK / HOOK）占着。 */
+/* Occupied by an EPT split view (CLOAK / HOOK). */
 #define KSWORD_ARK_HVM_WATCH_CONFLICT_VIEW   1UL
-/* 被另一条 EPT 规则占着。 */
+/* Occupied by another EPT rule. */
 #define KSWORD_ARK_HVM_WATCH_CONFLICT_RULE   2UL
-/* 被另一条 watch 占着。 */
+/* Occupied by another watch rule. */
 #define KSWORD_ARK_HVM_WATCH_CONFLICT_WATCH  3UL
 
 typedef struct _KSWORD_ARK_HVM_EVENT_ROW
@@ -1294,36 +1294,36 @@ typedef struct _KSWORD_ARK_HVM_EVENT_ROW
     long status;
     unsigned long reserved1;
     /*
-     * ——— 以下字段追加于 2026-09-19，服务于 watch 命中归因 ———
+     * —— Fields added on 2026-09-19 to support watch hit attribution ———
      *
-     * 追加在尾部，既有字段的偏移一个都不动。
+     * Append to the end; offsets of all existing fields remain unchanged.
      *
-     * 这三样是**必须在 VM-exit 现场取**的：RSP 和 CR3 一旦 VMRESUME 回去就
-     * 不再是命中那一刻的值，事后从 R0 去问只会得到另一个线程的答案。相对地，
-     * 模块名、符号、PID 这些都**不在**这里——在 VMX root 里解析 Windows 对象
-     * 是拿整台机器冒险，那些留给 R0 普通上下文和 R3 做后处理。
+     * These three must be captured at the VM-exit context: RSP and CR3 are no longer the values at the
+     * moment of the hit once VMRESUME returns. Asking from R0 afterward yields answers from another thread.
+     * In contrast, module names, symbols, and PIDs are not included here—resolving Windows objects in the
+     * VMX root risks the entire machine; those are left for R0 normal context and R3 post-processing.
      */
     unsigned long long guestRsp;
     /*
-     * 命中那一刻的 guest CR3。
+     * Guest CR3 at the moment of match.
      *
-     * 它是"当时处于哪个地址空间"的唯一可信来源，也是 PID 归因的输入。但它只是
-     * 一个观测值：KVA shadow、系统地址空间、内核工作线程、CR3 复用都会让
-     * CR3 → PID 这一步不成立，所以协议只回报观测到的 CR3，把"解析成了哪个
-     * 进程"和"有多大把握"留给上层各自标注。
+     * It is the sole trusted source for 'which address space was active' and an input for PID attribution.
+     * However, it is merely an observation: KVA shadowing, system address space, kernel worker threads,
+     * and CR3 reuse can invalidate the CR3 → PID mapping. Thus, the protocol reports only the observed
+     * CR3, leaving 'which process it resolved to' and 'confidence level' for the upper layer to annotate.
      */
     unsigned long long guestCr3;
-    /* 命中后这条 watch 的状态，见 KSWORD_ARK_HVM_EPT_WATCH_STATE_*。 */
+    /* The state of this watch after a hit; see KSWORD_ARK_HVM_EPT_WATCH_STATE_*. */
     unsigned long watchState;
-    /* 见 KSWORD_ARK_HVM_EVENT_FLAG_*。 */
+    /* See KSWORD_ARK_HVM_EVENT_FLAG_*. */
     unsigned long eventFlags;
 } KSWORD_ARK_HVM_EVENT_ROW;
 
-/* CPU 报告了有效的客户线性地址（EPT violation qualification 位 7）。 */
+/* CPU reported a valid Guest Linear Address (EPT violation qualification bit 7). */
 #define KSWORD_ARK_HVM_EVENT_FLAG_GLA_VALID   0x00000001UL
-/* 该 GLA 落在用户请求的那一段字节范围内，而不只是落在同一页上。 */
+/* This GLA falls within the byte range requested by the user, not merely within the same page. */
 #define KSWORD_ARK_HVM_EVENT_FLAG_RANGE_MATCH 0x00000002UL
-/* 这一条是 watch 的首次命中。 */
+/* This entry is the first hit of the watch. */
 #define KSWORD_ARK_HVM_EVENT_FLAG_WATCH_HIT   0x00000004UL
 
 typedef struct _KSWORD_ARK_HVM_EVENT_QUERY_REQUEST
@@ -1758,17 +1758,17 @@ typedef struct _KSWORD_ARK_HVM_CR_POLICY_RESPONSE
 #define KSWORD_ARK_HVM_MAX_DOMAIN_ROWS 8UL
 
 /*
- * 只读平台探针。
+ * Read-only platform probe.
  *
- * 存在的理由很窄：有三个量各自能独立否决"让退虚拟化返回用户态"这条路，
- * 而仓库里从没记录过它们在靶机上的实测值 —— CR4.CET（影子栈开着的话
- * ring-3 的 IRET 有自己的协议，`IA32_U_CET`/`IA32_PL3_SSP` 都不是 VMCS 字段）、
- * KVA shadow（开着的话用户态退出时 GUEST_CR3 是用户影子 PML4，
- * VMXOFF 之后写回去等于把内核抹掉）、以及 GS base 到底是不是我们以为的东西。
+ * The rationale is narrow: there are three quantities that can independently veto the path of 'returning from virtualization to user
+ * mode', yet the repository has never recorded their measured values on the target machine — CR4.CET (if shadow stacks are enabled).
+ * ring-3 IRET has its own protocol (IA32_U_CET/IA32_PL3_SSP are not VMCS fields), KVA shadow
+ * (if enabled, GUEST_CR3 is the user shadow PML4 upon user-mode exit; writing it back after
+ * VMXOFF erases the kernel), and whether GS base is actually what we think it is.
  *
- * 这个 IOCTL **只读**：不进 VMX、不改任何执行路径、不分配、不加锁。
- * 每个值都配一个"读到了没"的位，因为 0 恰好是很多东西的合法值 ——
- * 一个读失败被当成 0 用出去，比读不到更糟。
+ * This IOCTL is **read-only**: it does not enter VMX, does not modify any execution path, does not allocate, and does not lock.
+ * Each value is paired with a 'read-ack' bit, because 0 is a valid value for
+ * many things—using a failed read as 0 is worse than not reading at all.
  */
 #define KSWORD_ARK_IOCTL_FUNCTION_HVM_PLATFORM 0x8BFUL
 #define IOCTL_KSWORD_ARK_HVM_PLATFORM \
@@ -1776,7 +1776,7 @@ typedef struct _KSWORD_ARK_HVM_CR_POLICY_RESPONSE
 
 #define KSWORD_ARK_HVM_PLATFORM_PROTOCOL_VERSION 1UL
 
-/* 每个 valid 位对应一个字段读成功；一位一个字段，不设总开关。 */
+/* Each valid bit corresponds to a successful field read; one bit per field, with no global switch. */
 #define KSWORD_ARK_HVM_PLATFORM_VALID_CR4        0x00000001UL
 #define KSWORD_ARK_HVM_PLATFORM_VALID_S_CET      0x00000002UL
 #define KSWORD_ARK_HVM_PLATFORM_VALID_U_CET      0x00000004UL
@@ -1785,7 +1785,7 @@ typedef struct _KSWORD_ARK_HVM_CR_POLICY_RESPONSE
 #define KSWORD_ARK_HVM_PLATFORM_VALID_KERNEL_GS  0x00000020UL
 #define KSWORD_ARK_HVM_PLATFORM_VALID_CPUID7     0x00000040UL
 #define KSWORD_ARK_HVM_PLATFORM_VALID_EFER       0x00000080UL
-/* 八项全读到才算标定完成；少一项这一轮就没有达成它存在的目的。 */
+/* All eight fields must be read to complete calibration; missing any one means this round fails its purpose. */
 #define KSW_PLATFORM_VALID_ALL                   0x000000FFUL
 
 typedef struct _KSWORD_ARK_HVM_PLATFORM_REQUEST
@@ -1800,28 +1800,28 @@ typedef struct _KSWORD_ARK_HVM_PLATFORM_RESPONSE
 {
     unsigned long version;
     unsigned long size;
-    /* 哪些字段真的读到了。见 KSWORD_ARK_HVM_PLATFORM_VALID_*。 */
+    /* Which fields were actually read. See KSWORD_ARK_HVM_PLATFORM_VALID_*. */
     unsigned long validMask;
-    /* 读某个字段时抛出的异常码；没抛就是 0。 */
+    /* Exception code thrown when reading a field; 0 if no exception is thrown. */
     unsigned long exceptionCode;
     /* CR4；bit23 = CET。 */
     unsigned long long cr4;
-    /* IA32_S_CET (0x6A2)：内核影子栈控制。 */
+    /* IA32_S_CET (0x6A2): Kernel shadow stack control. */
     unsigned long long supervisorCet;
-    /* IA32_U_CET (0x6A0)：用户影子栈控制。 */
+    /* IA32_U_CET (0x6A0): User shadow stack control. */
     unsigned long long userCet;
     /* IA32_FS_BASE (0xC0000100)。 */
     unsigned long long fsBase;
-    /* IA32_GS_BASE (0xC0000101)：内核态下应当是 KPCR。 */
+    /* IA32_GS_BASE (0xC0000101): In kernel mode, it should be KPCR. */
     unsigned long long gsBase;
-    /* IA32_KERNEL_GS_BASE (0xC0000102)：内核态下应当是用户 TEB。 */
+    /* IA32_KERNEL_GS_BASE (0xC0000102): in kernel mode, it should be the user TEB. */
     unsigned long long kernelGsBase;
     /* IA32_EFER (0xC0000080)。 */
     unsigned long long efer;
     /* CPUID.(EAX=7,ECX=0)：ECX bit7 = CET_SS，EDX bit20 = CET_IBT。 */
     unsigned long cpuid7Ecx;
     unsigned long cpuid7Edx;
-    /* 采样时的 IRQL，用来确认这确实是 PASSIVE_LEVEL 的读数。 */
+    /* IRQL at the time of sampling, used to confirm this is indeed a PASSIVE_LEVEL reading. */
     unsigned long irql;
     unsigned long reserved2;
 } KSWORD_ARK_HVM_PLATFORM_RESPONSE;
@@ -1900,84 +1900,84 @@ typedef struct _KSWORD_ARK_HVM_DOMAIN_RESPONSE
 } KSWORD_ARK_HVM_DOMAIN_RESPONSE;
 
 /*
- * R-1 层的进程处置。
+ * R-1 layer process handling.
  *
- * 名字里的"进程"要小心读：hypervisor 不认识进程，它只看得见 CR3 与客户物理页。
- * 这条通路做的事是——**在目标地址空间里拒绝执行**，再决定拒绝时给客户机什么。
- * 两个操作的差别只在注入哪个向量：
+ * The word "process" in the name requires careful interpretation: the hypervisor does not recognize processes; it only sees CR3 and guest physical pages.
+ * This path's purpose is to **reject execution in the target address space**, then decide what to tell the guest upon rejection.
+ * The difference between the two operations lies only in which vector is injected:
  *
- *   冻结  注入 #PF(present=1)。故障指令永不退休，进程状态一个字节都没变，
- *         撤掉规则它就从原地继续。这是真正意义上的挂起——**可逆**是它与
- *         结束的本质区别，而不是程度差别。代价明写在这里：被冻结的线程会在
- *         故障上自旋，占着自己的时间片；机器不会挂，但那个核在空转。
- *   结束  注入 #UD。用户态未处理异常，Windows 走它自己的进程拆除路径。
- *         我们不调用任何内核 API，进程是被客户机自己收掉的。
+ *   Freeze injection #PF (present=1). The faulting instruction never retires, and the process state remains unchanged
+ *         by a single byte. Removing the rule allows it to resume from the exact spot. This is true suspension—the essence
+ *         of reversibility distinguishes it from termination, not a matter of degree. The cost is explicit: the frozen
+ *         thread spins on the fault, consuming its time slice. The machine does not hang, but that core idles.
+ *   Ends the #UD injection. If the user-mode handler doesn't process the exception, Windows follows its own process teardown path.
+ *         We do not call any kernel APIs; the process is terminated by the guest itself.
  *
- * 作用域靠 CR3 而不是逐页判权限：常驻打开 CR3-load exiting，地址空间切进来时
- * 选受限层次、切出去时选基础层次。这样非目标进程从来不在受限层次下运行，
- * 也就不存在"拒绝一次再放行一次"那套需要 MTF 的翻转——嵌套靶机上没有 MTF，
- * 走逐页判权限这条路在那里根本跑不起来。
+ * Scope is determined by CR3 rather than per-page permission checks: The channel remains open for CR3 load/exiting. When the
+ * address space switches in, it selects the restricted hierarchy; when it switches out, it selects the base hierarchy. This ensures
+ * the non-target process never runs under the restricted hierarchy, eliminating the need for MTF-based flip-flopping ("deny once,
+ * allow once"). Since nested target machines lack MTF support, the per-page permission check path cannot function there.
  *
- * **这不是安全边界。** 与隐蔽 Hook 同源的性质：失败即放行。目标进程若能让
- * 自己的代码页换一个客户物理页（重定位、自改写、换映射），它就不在被拒绝的
- * 那一页上了；能改 CR3 的代码也不受本机制约束。它是一条 R0 之外的处置通路，
- * 用来在内核 API 被挡住时仍然能动手，不是用来对抗一个知道它存在的对手。
+ * **Not a security boundary.** Shares the same nature as stealth hooks: failure implies allow. If the target process can remap
+ * its own code page to a different guest physical page (via relocation, self-modification, or remapping), it is no longer on
+ * the page being denied; code capable of modifying CR3 is also unconstrained by this mechanism. This is a handling path
+ * outside R0, used to take action when kernel APIs are blocked, not to defend against an adversary aware of its existence.
  */
 #define KSWORD_ARK_IOCTL_FUNCTION_HVM_PROCESS 0x90FUL
 #define IOCTL_KSWORD_ARK_HVM_PROCESS \
     CTL_CODE(KSWORD_ARK_IOCTL_DEVICE_TYPE, KSWORD_ARK_IOCTL_FUNCTION_HVM_PROCESS, METHOD_BUFFERED, FILE_WRITE_ACCESS)
 
 /*
- * 版本 2 加入 CR3 归因（OP_RESOLVE_CR3）。
+ * Version 2 adds CR3 attribution (OP_RESOLVE_CR3).
  *
- * 请求与响应都长了，所以版本必须跟着动：旧界面配新驱动会因为 size 对不上被
- * 当场拒掉，而那正是想要的结果 —— 这两个结构里装的是进程身份，一次"谁多谁少
- * 几个字节"的静默误读，换来的是把一次访问归到另一个进程头上。
+ * Since requests and responses have grown, the version must be updated: old interfaces paired with new drivers will be
+ * rejected immediately due to size mismatches, which is the desired outcome. These structures contain process identities;
+ * a silent misread of 'a few bytes more or less' would incorrectly attribute an access to a different process.
  */
 #define KSWORD_ARK_HVM_PROCESS_PROTOCOL_VERSION 2UL
 
-/* 只读当前处置表。 */
+/* Read-only current disposition table. */
 #define KSWORD_ARK_HVM_PROCESS_OP_QUERY     0UL
-/* 冻结：拒绝执行 + 注入 #PF，可逆。 */
+/* Freeze: reject execution + inject #PF, reversible. */
 #define KSWORD_ARK_HVM_PROCESS_OP_FREEZE    1UL
-/* 结束：拒绝执行 + 注入 #UD，不可逆。 */
+/* Terminate: reject execution + inject #UD, irreversible. */
 #define KSWORD_ARK_HVM_PROCESS_OP_TERMINATE 2UL
 /*
- * 撤销一条处置。
+ * Revoke a disposition.
  *
- * 常驻停着时是完整撤销：清记录、放层次。常驻期间是**解除**：记录留着、层次也
- * 留着，但不再有人会切进去，而已经卡在受限层次里自旋的那个核会在自己的下一次
- * 违规上把 EPT_POINTER 换回基座、继续执行。
+ * When resident and stopped, this performs a full revoke: clear records and release hierarchy. While resident,
+ * this is a **release**: records and hierarchy remain, but no one will switch into them, and the core spinning in
+ * a restricted hierarchy will revert the EPT_POINTER to the base on its next violation and continue execution.
  *
- * 分两种不是保守：常驻期间真把层次的页放掉，而某个核此刻正指着它，那是没有任何
- * 症状可循的内存破坏。而只清记录不管正在自旋的核，被冻结的线程会永远冻着——
- * 于是"解除冻结"要求先关掉整个 hypervisor，那样它就只是半个功能。
+ * Two scenarios are not conservative: releasing pages at a certain level while a core is actively referencing them
+ * during residency causes memory corruption with no symptoms; clearing records while a core spins leaves frozen threads
+ * frozen forever—thus 'unfreezing' would require shutting down the entire hypervisor, rendering it only half-functional.
  */
 #define KSWORD_ARK_HVM_PROCESS_OP_RELEASE   3UL
 /*
- * 已解除但层次还没回收。只会出现在常驻期间被撤销的记录上。
+ * Released but hierarchy not yet reclaimed. Will only appear on records revoked during residency.
  *
- * 作为一个显式状态而不是直接清掉记录：退出路径要靠"这一页属于一条已解除的
- * 处置"才知道该把指针换回基座，记录一清它就什么都不知道了。
+ * As an explicit state rather than directly clearing the record: the exit path relies on 'this page belongs to a
+ * released disposition' to know to switch the pointer back to the base; if the record is cleared, it knows nothing.
  */
 #define KSWORD_ARK_HVM_PROCESS_DISPOSITION_RELEASED 3UL
-/* 清空整张表。 */
+/* Clear the entire table. */
 #define KSWORD_ARK_HVM_PROCESS_OP_RELEASE_ALL 4UL
 /*
- * 把一个观测到的 CR3 归到一个进程头上。只读，不碰任何 HVM 状态。
+ * Associate an observed CR3 with a specific process. Read-only; do not touch any HVM state.
  *
- * 存在的理由是内存监视：命中现场记下来的是 CR3，而 CR3 本身对用户没有意义。
- * 但这件事**只能在驱动里做**——判据是"attach 进去读回来的那个寄存器值"，
- * 用户态既读不到别的进程的 CR3，也没有别的办法得到同一个判据。
+ * The reason for existence is memory monitoring: when a hit occurs, the recorded CR3 is meaningless to users.
+ * However, this **must be done in the driver**—the criterion is the register value read after attaching; user
+ * mode cannot read other processes' CR3 values, nor is there any other way to obtain the same criterion.
  *
- * 这条通路不回报任何进程的 CR3，只回报"哪个 PID 的 CR3 等于你给的这个"。
- * 方向是单向的：调用方必须先有一个 CR3 才问得出东西来，而 CR3 的唯一来源是
- * 一次它自己装的监视命中。
+ * This path does not return the CR3 of any process; it only returns 'which PID's CR3 matches the one provided'.
+ * The direction is one-way: the caller must already have a CR3 to query
+ * anything, and the only source of that CR3 is a self-installed monitor hit.
  *
- * 结果一定是 best-effort，§十一列的每一条都成立：PID 会被回收、地址空间会在
- * 事件与解析之间消失、内核工作线程借用别人的地址空间跑、KVA Shadow 下用户态
- * 与内核态用的根本不是同一个 CR3。所以协议只回报"扫了多少个"与"匹配到谁"，
- * 由界面把它标成推断而不是事实。
+ * The result is best-effort, and every item listed in §11 holds true: PIDs get recycled, address spaces
+ * disappear between events and resolution, kernel worker threads borrow other address spaces, and under
+ * KVA Shadow, user mode and kernel mode do not use the same CR3. Therefore, the protocol only reports 'how
+ * many were scanned' and 'who matched,' leaving the UI to label them as inferred rather than factual.
  */
 #define KSWORD_ARK_HVM_PROCESS_OP_RESOLVE_CR3 5UL
 
@@ -1985,12 +1985,12 @@ typedef struct _KSWORD_ARK_HVM_DOMAIN_RESPONSE
 #define KSWORD_ARK_HVM_PROCESS_STATUS_INVALID_REQUEST       1UL
 #define KSWORD_ARK_HVM_PROCESS_STATUS_CONFIRMATION_REQUIRED 2UL
 /*
- * 常驻正在跑，而安装要求它停着。
+ * Resident and running, but installation requires it to be stopped.
  *
- * 占 3 号不是随意的：这个码原先叫 NOT_RESIDENT，两种条件共用，而实际发生的
- * 几乎总是这一种（常驻起来之后才想起来处置某个进程）。把它留在 3 号，新界面
- * 配旧驱动时给出的建议仍然是对的；反过来编号，那段窗口里界面会说"还没
- * prepare"——与实情正好相反，照着做只会越走越远。
+ * Using 3 is not arbitrary: this code was originally named NOT_RESIDENT, shared by two conditions, but the actual
+ * occurrence is almost always this one (residency is established before the process is handled). Keeping it at 3 ensures
+ * that when the new interface configures an old driver, the advice remains correct; reversing the numbering would cause the
+ * interface to say "not yet prepared" in that window—exactly opposite to reality, leading users further astray if followed.
  */
 #define KSWORD_ARK_HVM_PROCESS_STATUS_REQUIRES_RESIDENT_STOPPED 3UL
 #define KSWORD_ARK_HVM_PROCESS_STATUS_PROCESS_LOOKUP_FAILED 4UL
@@ -1998,43 +1998,43 @@ typedef struct _KSWORD_ARK_HVM_DOMAIN_RESPONSE
 #define KSWORD_ARK_HVM_PROCESS_STATUS_NOT_FOUND             6UL
 #define KSWORD_ARK_HVM_PROCESS_STATUS_ALREADY_ARMED         7UL
 /*
- * 缺 CR3-load exiting。作用域完全依赖它：没有它就没法知道哪个地址空间正在跑，
- * 拒绝就会落到全机器而不是一个进程头上——那是必须拒绝执行的情形，不是降级。
+ * Missing CR3-load exiting. The scope depends entirely on it: without it, we cannot determine which address space is running. Rejecting
+ * would apply to the entire machine rather than a single process—that is a scenario requiring execution denial, not a downgrade.
  */
 #define KSWORD_ARK_HVM_PROCESS_STATUS_CR3_TRACKING_REQUIRED 8UL
-/* 缺 EPTP 切换后端；没有第二个层次就没有"受限"可选。 */
+/* Missing EPTP switch backend; without a second level, the 'restricted' option is unavailable. */
 #define KSWORD_ARK_HVM_PROCESS_STATUS_EPTP_SWITCH_REQUIRED  9UL
-/* 目标地址空间里那一页翻译不出客户物理地址。 */
+/* Translation of that page in the target address space to a guest physical address failed. */
 #define KSWORD_ARK_HVM_PROCESS_STATUS_TRANSLATION_FAILED    10UL
-/* 拒绝对自己或系统进程动手。 */
+/* Refuse to act on self or system processes. */
 #define KSWORD_ARK_HVM_PROCESS_STATUS_PROTECTED_TARGET      11UL
 /*
- * 驱动还没 prepare 过，运行时里什么都没有。
+ * The driver has not been prepared yet; nothing exists in the runtime.
  *
- * 与上面那个分成两个码，是因为它们要人做的事**相反**：一个是"还没起来，先
- * prepare"，一个是"正在跑，先停下"。原先合用一个叫 NOT_RESIDENT 的码更糟——
- * 那个名字描述的条件恰恰是实际条件的反面，照着它排查会一路走反方向。
+ * Split into two separate codes because they represent opposite actions: one is 'not started yet, prepare first',
+ * the other is 'running, stop first'. Merging them into a single code named NOT_RESIDENT was worse—the name
+ * described the exact opposite of the actual condition, causing troubleshooting to proceed in the wrong direction.
  */
 #define KSWORD_ARK_HVM_PROCESS_STATUS_NOT_PREPARED          12UL
 
-/* 表的上限。每条占一个 EPT 受限层次，层次数由 EPTP 列表容量决定。 */
+/* Table upper limit. Each entry occupies one EPT restricted level; the number of levels is determined by the EPTP list capacity. */
 #define KSWORD_ARK_HVM_MAX_PROCESS_DISPOSITIONS 8UL
 
 typedef struct _KSWORD_ARK_HVM_PROCESS_ROW
 {
-    /* 下达处置时的 PID。PID 会被回收，所以判据是 directoryBase 不是它。 */
+    /* Specify the PID for the disposition action. Since the PID may be recycled, the check is based on directoryBase not matching it. */
     unsigned long processId;
-    /* 本条的处置类型，取 OP_FREEZE / OP_TERMINATE。 */
+    /* The disposition type for this entry takes OP_FREEZE or OP_TERMINATE. */
     unsigned long disposition;
-    /* 目标地址空间。低位的 PCID/标志已经掩掉，只留层次物理页帧。 */
+    /* Target address space. Lower bits of PCID/flags are masked, leaving only hierarchical physical page frames. */
     unsigned long long directoryBase;
-    /* 被拒绝执行的那一页的客户物理地址。 */
+    /* Guest physical address of the page that was denied execution. */
     unsigned long long guestPhysicalAddress;
-    /* 下达时给的客户线性地址，用来回溯这一页是怎么选出来的。 */
+    /* The guest linear address provided during dispatch, used to trace how this page was selected. */
     unsigned long long guestLinearAddress;
-    /* 本条已经拦下多少次执行。冻结下会持续增长，那正是自旋的证据。 */
+    /* Number of times this entry has been intercepted. If frozen, it will continue to grow, which is evidence of spinning. */
     unsigned long long interceptCount;
-    /* 本条占用的受限层次序号。 */
+    /* The restricted hierarchy index occupied by this entry. */
     unsigned long hierarchyIndex;
     unsigned long reserved;
 } KSWORD_ARK_HVM_PROCESS_ROW;
@@ -2048,19 +2048,19 @@ typedef struct _KSWORD_ARK_HVM_PROCESS_REQUEST
     unsigned long confirmationToken;
     unsigned long processId;
     /*
-     * 要拒绝执行的客户线性地址。给 0 表示由驱动取该进程主映像的入口页。
+     * Guest linear address to be rejected. Setting to 0 indicates the driver should fetch the entry page of the process's main image.
      *
-     * 允许调用方指定是因为"哪一页代表这个进程"没有普适答案：入口页对刚起来的
-     * 进程有效，对已经跑进消息循环的进程则未必会再被执行到，而没被执行到的
-     * 拒绝等于什么都没做。
+     * Allowing the caller to specify is because there is no universal answer to 'which page represents this
+     * process': the entry page is valid for a freshly started process but may not be executed again for a
+     * process already running in a message loop; rejecting an unexecuted page is equivalent to doing nothing.
      */
     unsigned long long guestLinearAddress;
     /*
-     * OP_RESOLVE_CR3 要归因的那个 CR3。其余操作必须留零。
+     * OP_RESOLVE_CR3: The CR3 to be attributed. All other operations must be zero.
      *
-     * 单独一个字段而不是借 guestLinearAddress：那个字段在别的操作里是线性
-     * 地址，两者都是 64 位、都像地址、互相传错了谁也不会报错——一个指望拿
-     * 页目录基址的比较会安静地永远不匹配，看起来就像"这个进程已经退出了"。
+     * Use a separate field instead of guestLinearAddress: that field represents a linear address in other
+     * operations. Both are 64-bit and look like addresses; if passed incorrectly, no error occurs. A comparison
+     * expecting a page directory base would silently and permanently fail, appearing as if 'the process has exited'.
      */
     unsigned long long directoryBase;
 } KSWORD_ARK_HVM_PROCESS_REQUEST;
@@ -2078,61 +2078,61 @@ typedef struct _KSWORD_ARK_HVM_PROCESS_RESPONSE
     unsigned long long stateFlags;
     KSWORD_ARK_HVM_PROCESS_ROW rows[KSWORD_ARK_HVM_MAX_PROCESS_DISPOSITIONS];
     /*
-     * OP_RESOLVE_CR3 的结果。放在 rows 后面，所以前面每个字段的偏移都没动。
+     * Result of OP_RESOLVE_CR3. Placed after rows, so offsets of all preceding fields remain unchanged.
      *
-     * resolvedProcessId 为 0 表示没有匹配上（0 是 Idle 进程，永远不会是答案）。
+     * resolvedProcessId being 0 indicates no match (0 is the Idle process, which will never be the answer).
      */
     unsigned long resolvedProcessId;
     /*
-     * 这次实际问过 CR3 的进程数。
+     * Actual count of processes that queried CR3.
      *
-     * 必须和"匹配到谁"分开回报，否则"扫了 180 个都不是它"与"一个都没扫成"
-     * 在界面上长得一模一样，而这两者要人做的事相反：前者说明那个地址空间已经
-     * 不在了，后者说明这次归因根本没跑起来。
+     * This must be reported separately from "matched whom"; otherwise, "scanned 180 processes but none matched"
+     * and "failed to scan any" appear identical in the UI, yet they require opposite actions: the former
+     * indicates the address space no longer exists, while the latter indicates the attribution run never started.
      */
     unsigned long resolvedScannedProcesses;
 } KSWORD_ARK_HVM_PROCESS_RESPONSE;
 
 /*
- * R-1 层的进程注入。
+ * R-1 layer process injection.
  *
- * 与 R0 那条注入（ZwAllocateVirtualMemory + ZwCreateThreadEx，见
- * process_inject.c）是**两条不同的通路**，不是同一件事换个标签：R0 那条的每一
- * 步都要调内核 API，每一步都能被进程/线程创建回调、镜像加载回调、PatchGuard
- * 与 EDR 看见；这一条一个内核 API 都不调，目标进程里也不会多出线程或内存区域。
+ * This injection path is **distinct** from the R0 path (ZwAllocateVirtualMemory + ZwCreateThreadEx, see
+ * process_inject.c); they are not the same operation with a different label. The R0 path invokes kernel APIs at
+ * every step, making each step visible to process/thread creation callbacks, image load callbacks, PatchGuard,
+ * and EDR. This path invokes no kernel APIs and adds no threads or memory regions to the target process.
  *
- * 机制是**分离视图 + 线程劫持**，四步：
+ * Mechanism is **separated view + thread hijacking**, in four steps:
  *
- *   1. 选目标地址空间里一页已经可执行、且会被执行到的页；
- *   2. 建一张影子页 = 真页的完整副本 + 载荷写进它的空隙（节尾填充、code cave）；
- *   3. 装一张 KIND_HOOK 视图：**读写看真页，执行跑影子**。载荷因此只存在于
- *      执行视图里——任何读这一页的东西（完整性校验、内存转储、进程自查）看到
- *      的都是未改动的原始字节；
- *   4. 在一次受控的 VM exit 上把 RIP 指向影子里载荷的位置，载荷执行完跳回原
- *      来那条指令。
+ *   1. Select a page in the target address space that is already executable and will be executed.
+ *   2. Create a shadow page = a full copy of the real page + inject payload into its gaps (tail padding, code cave);
+ *   3. Install a KIND_HOOK view: **Read/Write/Execute access the real page, but execution runs on the
+ *      shadow page**. Consequently, the payload exists only in the execution view; any read operation on
+ *      this page (integrity checks, memory dumps, or self-inspection) sees the unmodified original bytes.
+ *   4. On a controlled VM exit, point RIP to the shadow payload location;
+ *      after payload execution, jump back to the original instruction.
  *
- * **不新建映射，也不改客户页表。** 那条路会和 Windows 的内存管理器竞争同一份
- * 页表：我们塞进去的 PTE 随时可能被回收，而回收发生在我们看不见的地方，症状是
- * 目标在某个不确定的时刻崩掉。写进已有可执行页的空隙则不碰任何管理结构。
+ * **Do not create new mappings or modify guest page tables.** That path competes with Windows' memory manager for the same page
+ * tables: PTEs we insert can be reclaimed at any time, and reclamation happens in places we cannot see, causing the target to
+ * crash at an unpredictable moment. Writing into gaps within existing executable pages avoids touching any management structures.
  *
- * ## 载荷的硬约束
+ * Hard constraints on the payload
  *
- * 载荷跑在**一个任意线程的任意指令边界上**——不是新线程，是把某个正在跑的线程
- * 借用一小段时间。这不是实现偷懒，是这条通路的本质：R-1 没有"创建线程"这个
- * 概念，它只能在已有的执行流里插队。由此：
+ * The payload executes at an arbitrary instruction boundary of an arbitrary thread—not a new thread, but borrowing
+ * an existing running thread for a brief moment. This is not an implementation shortcut; it is the essence of this
+ * channel: R-1 has no concept of 'creating threads' and can only interject into existing execution flows. Thus:
  *
- *   - 必须位置无关，必须可重入，必须短。被借用的线程可能正持有锁、正在系统调用
- *     的中途；在里面做任何会阻塞或会重入同一把锁的事都会死锁；
- *   - 不要用 ret 返回。这台机器上 CET 影子栈是开着的，由 hypervisor 压进去的
- *     返回地址与影子栈对不上，会直接吃一个 #CP。驱动自己包的外壳用绝对跳转
- *     回去，不走 ret；
- *   - 寄存器与标志位由驱动包的外壳负责保存和恢复，载荷本体不必自己做，但也
- *     **不能**假设外壳之外还有别的保护。
+ *   - Must be position-independent, reentrant, and short. The borrowed thread may hold a lock or be
+ *     mid-system call; doing anything blocking or reentrant on the same lock inside will cause a deadlock.
+ *   - Do not return via 'ret'. CET shadow stacks are enabled on this machine; return
+ *     addresses pushed by the hypervisor do not match the shadow stack, causing a direct #CP
+ *     fault. The driver's own wrapper must use absolute jumps to return, avoiding 'ret'.
+ *   - Registers and flags are saved and restored by the driver package's shell; the payload itself need not do so, but also
+ *     **Do not** assume there are other protections outside the shell.
  *
- * ## 这不是隐蔽性保证
+ * ## This is not a stealth guarantee
  *
- * 与隐蔽 Hook 同源的性质：执行视图能被同样的手段拆掉（见隐蔽Hook安全边界决策）。
- * 它躲开的是"读这一页"这类检查，不是一个知道这套机制存在的对手。
+ * Shares the same nature as stealth hooks: the execution view can be dismantled by the same means (see stealth hook security boundary decision).
+ * This bypasses checks like 'read this page', not an adversary aware of this mechanism.
  */
 #define KSWORD_ARK_IOCTL_FUNCTION_HVM_INJECT 0x910UL
 #define IOCTL_KSWORD_ARK_HVM_INJECT \
@@ -2140,41 +2140,41 @@ typedef struct _KSWORD_ARK_HVM_PROCESS_RESPONSE
 
 #define KSWORD_ARK_HVM_INJECT_PROTOCOL_VERSION 1UL
 
-/* 只读当前注入表。 */
+/* Read-only current injection table. */
 #define KSWORD_ARK_HVM_INJECT_OP_QUERY   0UL
-/* 装一次注入：建影子、装视图、武装触发。 */
+/* One-time injection: create shadow, install view, arm trigger. */
 #define KSWORD_ARK_HVM_INJECT_OP_ARM     1UL
-/* 撤销一条：摘视图、解除触发。已经执行过的载荷不会被撤回。 */
+/* Revoke a single operation: Detach the view and cancel the trigger. Payloads that have already been executed cannot be revoked. */
 #define KSWORD_ARK_HVM_INJECT_OP_RELEASE 2UL
-/* 清空整张表。 */
+/* Clear the entire table. */
 #define KSWORD_ARK_HVM_INJECT_OP_RELEASE_ALL 3UL
 
 /*
- * 载荷本体的上限。
+ * Upper limit of the payload body.
  *
- * 影子只有一页，而外壳（保存/恢复寄存器与标志位、绝对跳转回去）要占掉几十字节，
- * 页里还得留下真页原有的内容不动——能用的只有空隙。给 1024 而不是"剩下多少算
- * 多少"：一个会随目标页内容浮动的上限，会让同一份载荷在这个进程装得上、在那个
- * 进程装不上，而失败原因看起来与载荷无关。
+ * The shadow page is only one page in size. The shellcode (which saves/restores registers and flags, plus an absolute jump
+ * back) takes up dozens of bytes, and the original content of the real page must remain untouched within that page. Only the
+ * gaps are usable. We use 1024 instead of "whatever remains": a limit that floats with the target page's content would cause
+ * the same payload to fit in one process but fail in another, making the failure reason appear unrelated to the payload.
  */
 #define KSWORD_ARK_HVM_INJECT_MAX_PAYLOAD_BYTES 1024UL
 
 /*
- * 两种载荷，与 R0 那条注入保持同样的分法。
+ * Two payload types, maintaining the same classification as the R0 injection.
  *
- * SHELLCODE 是这条通路的原语：一段位置无关的机器码，跑在被借用的线程上。
- * DLL_PATH 是它上面的一层：外壳把路径地址放进 RCX，再 call 调用方给出的
- * LoadLibraryW。分成两种而不是只留 shellcode，是因为"注入一个 DLL"是实际要做
- * 的事，而让每个调用方自己拼一段调用 LoadLibraryW 的机器码，等于把同一段容易
- * 出错的代码复制很多份。
+ * SHELLCODE is the primitive for this channel: position-independent machine code running on a borrowed thread.
+ * DLL_PATH is a higher-level abstraction: the shellcode places the path address in RCX and then
+ * calls LoadLibraryW provided by the caller. We support two types instead of just shellcode
+ * because "injecting a DLL" is the actual operation; requiring each caller to manually
+ * construct machine code to call LoadLibraryW would duplicate error-prone code many times.
  */
 #define KSWORD_ARK_HVM_INJECT_TYPE_SHELLCODE 1UL
 #define KSWORD_ARK_HVM_INJECT_TYPE_DLL_PATH  2UL
 
 /*
- * 空隙至少要这么长才认。
+ * The gap must be at least this long to be recognized.
  *
- * 太短的"空隙"多半不是填充而是真代码里恰好连续的零字节，写进去就是把目标打死。
+ * A gap that is too short is likely not padding but just consecutive zero bytes in actual code; writing into it would crash the target.
  */
 #define KSWORD_ARK_HVM_INJECT_MIN_CAVE_BYTES 64UL
 
@@ -2188,45 +2188,45 @@ typedef struct _KSWORD_ARK_HVM_PROCESS_RESPONSE
 #define KSWORD_ARK_HVM_INJECT_STATUS_NOT_FOUND             7UL
 #define KSWORD_ARK_HVM_INJECT_STATUS_ALREADY_ARMED         8UL
 #define KSWORD_ARK_HVM_INJECT_STATUS_PROTECTED_TARGET      9UL
-/* 前提：作用域靠 CR3-load exiting，缺了拒绝落到全机器而不是一个进程头上。 */
+/* Prerequisite: scope relies on CR3-load exiting; without it, the rejection would apply to the entire machine rather than a single process. */
 #define KSWORD_ARK_HVM_INJECT_STATUS_CR3_TRACKING_REQUIRED 10UL
-/* 前提：执行视图与受限层次都由 EPTP 切换后端提供。 */
+/* Prerequisite: View execution and restricted hierarchy are both provided by the EPTP switch backend. */
 #define KSWORD_ARK_HVM_INJECT_STATUS_EPTP_SWITCH_REQUIRED  11UL
-/* 这一页里找不到足够长的空隙来放外壳加载荷。 */
+/* No sufficiently large gap can be found in this page to place the shellcode payload. */
 #define KSWORD_ARK_HVM_INJECT_STATUS_NO_CAVE               12UL
-/* 装执行视图失败。 */
+/* Inject view execution failed. */
 #define KSWORD_ARK_HVM_INJECT_STATUS_VIEW_FAILED           13UL
-/* 目标页不可执行——把载荷放在一页永远不会被执行的地方等于什么都没做。 */
+/* The target page is non-executable: placing the payload in a page that will never be executed is equivalent to doing nothing. */
 #define KSWORD_ARK_HVM_INJECT_STATUS_PAGE_NOT_EXECUTABLE   14UL
 
 #define KSWORD_ARK_HVM_MAX_INJECTIONS 4UL
 
 typedef struct _KSWORD_ARK_HVM_INJECT_ROW
 {
-    /* 下达时的 PID。PID 会被回收，判据是 directoryBase。 */
+    /* PID at dispatch. PID is reclaimed based on directoryBase. */
     unsigned long processId;
-    /* 载荷本体长度。 */
+    /* Payload body length. */
     unsigned long payloadBytes;
-    /* 目标地址空间，低位的 PCID 与标志已掩掉。 */
+    /* Target address space; the lower bits of PCID and flags are masked. */
     unsigned long long directoryBase;
-    /* 被劫持那一页的客户线性地址（页对齐）。 */
+    /* Guest linear address (page-aligned) of the page being hijacked. */
     unsigned long long guestLinearAddress;
-    /* 该页的客户物理地址。 */
+    /* Guest physical address of the page. */
     unsigned long long guestPhysicalAddress;
-    /* 外壳在页内的偏移，也就是 RIP 会被指向的位置。 */
+    /* Offset of the shellcode within the page, i.e., the location where RIP will be pointed. */
     unsigned long caveOffset;
-    /* 外壳加载荷占掉的总字节数。 */
+    /* Total bytes occupied by the shell loader. */
     unsigned long caveBytes;
-    /* 载荷已经被执行了多少次。一次性注入完成后应为 1。 */
+    /* Number of times the payload has been executed. Should be 1 after one-time injection completes. */
     unsigned long long executionCount;
-    /* 这次注入占用的执行视图标识。 */
+    /* The execution view identifier occupied by this injection. */
     unsigned long viewId;
     /*
-     * 这段空隙是由哪种填充字节构成的：0x00 / 0xCC / 0x90。
+     * The type of padding byte constituting this gap: 0x00 / 0xCC / 0x90.
      *
-     * 回报它是为了归因：0xCC 与 0x90 是编译器在函数之间放的对齐填充，0x00 多半
-     * 是节尾或未初始化区域。出问题时"用的是哪一种"决定了该怀疑什么——比如在
-     * 一段本该是填充的 0xCC 上出事，要查的是那里是不是其实嵌着数据。
+     * Reporting it enables attribution: 0xCC and 0x90 are compiler-inserted alignment padding between functions; 0x00 is mostly
+     * section tails or uninitialized regions. When an issue occurs, 'which type is used' determines what to suspect—for
+     * example, if an incident happens on 0xCC where padding was expected, investigate whether data was actually embedded there.
      */
     unsigned long caveFiller;
 } KSWORD_ARK_HVM_INJECT_ROW;
@@ -2240,36 +2240,36 @@ typedef struct _KSWORD_ARK_HVM_INJECT_REQUEST
     unsigned long confirmationToken;
     unsigned long processId;
     /*
-     * 要劫持的那一页里的任意一个客户线性地址。**必填**。
+     * Any guest linear address within the page to be hijacked. **Required**.
      *
-     * 驱动不猜这一页。"哪一页会被执行到"没有普适答案，而猜错的表现是载荷装上了
-     * 却永远不执行——从外面看和成功完全一样。调用方能答得比驱动好：取目标某个
-     * 线程此刻正在执行的位置，那一页**按定义**会被执行到。
+     * The driver does not guess which page will be executed. There is no universal answer to "which page will be executed," and guessing
+     * wrong results in the payload being loaded but never executed—indistinguishable from success from the outside. The caller can answer
+     * better: take the location currently being executed by a specific thread of the target; that page **by definition** will be executed.
      *
-     * 驱动侧拿不到这个答案：用户态 RIP 要从线程的陷阱帧里取，而那是调用方在
-     * PASSIVE 上下文里顺手能做、驱动要绕一大圈的事。
+     * The driver cannot determine this answer: the user-mode RIP must be retrieved from the thread's trap frame, which
+     * is trivial for the caller in PASSIVE context but would require significant overhead for the driver to handle.
      */
     unsigned long long guestLinearAddress;
-    /* 见 KSWORD_ARK_HVM_INJECT_TYPE_*。 */
+    /* See KSWORD_ARK_HVM_INJECT_TYPE_*. */
     unsigned long injectType;
-    /* 载荷本体长度，不含驱动包的外壳。 */
+    /* Length of the payload body, excluding the driver package wrapper. */
     unsigned long payloadBytes;
     /*
-     * DLL 类型专用：目标进程里 LoadLibraryW 的客户线性地址。
+     * DLL-specific: Customer linear address of LoadLibraryW in the target process.
      *
-     * 由调用方解析而不是驱动：同一个 DLL 在不同进程里的基址不同，而调用方本来
-     * 就在枚举目标的模块表。驱动去解析等于把同一件事做第二遍，还容易与调用方
-     * 看到的不一致。
+     * Parsed by the caller, not the driver: The base address of the same DLL differs across
+     * processes, and the caller is already enumerating the target module table. Having the
+     * driver parse it again duplicates work and risks inconsistency with what the caller sees.
      */
     unsigned long long loadLibraryAddress;
     /*
-     * 载荷本体。
+     * Payload body.
      *
-     * SHELLCODE：位置无关、可重入的机器码，寄存器与标志位由外壳保存恢复。
-     * DLL_PATH：以零结尾的 UTF-16 路径，外壳会把它的地址放进 RCX 再 call
-     *           loadLibraryAddress。这里的 call 与它自己的 ret 是配对的，
-     *           因此不会踩 CET 影子栈——只有"压一个没有对应 call 的返回地址"
-     *           才会。
+     * SHELLCODE: position-independent, reentrant machine code; registers and flags are saved and restored by the shell.
+     * DLL_PATH: A null-terminated UTF-16 path. The shell places its address into
+     *           RCX before calling loadLibraryAddress. The call and its corresponding ret
+     *           are paired, so they do not corrupt the CET shadow stack—only pushing a
+     *           return address without a corresponding call would do so.
      */
     unsigned char payload[KSWORD_ARK_HVM_INJECT_MAX_PAYLOAD_BYTES];
 } KSWORD_ARK_HVM_INJECT_REQUEST;
@@ -2289,25 +2289,25 @@ typedef struct _KSWORD_ARK_HVM_INJECT_RESPONSE
 } KSWORD_ARK_HVM_INJECT_RESPONSE;
 
 /*
- * 嵌套 VMX 自检。
+ * Nested VMX self-test.
  *
- * ## 为什么必须在驱动里做
+ * ## Why this must be done in the driver
  *
- * VMX 指令只能在 CPL 0 执行，所以这一段无法像 probe-xonly 那样在工具里用现成
- * IOCTL 组合出来。而它要验的恰恰是"客户机执行 VMX 指令时，我们的嵌套派发有没有
- * 按架构语义服务它" —— 那就需要有人在**客户机上下文**里真的执行一次。
+ * VMX instructions can only execute at CPL 0, so this section cannot be constructed from existing IOCTLs in the tool like probe-xonly
+ * does. What it needs to verify is exactly whether "our nested dispatch correctly services the guest when it executes VMX instructions
+ * according to architectural semantics" — which requires someone to actually execute a VMX instruction in the **guest context**.
  *
- * 驱动自己来做这件事并不矛盾：驱动的 L0 部分跑在 VMX root，而这条 IOCTL 路径跑
- * 在客户机里。客户机执行 VMXON 必定产生 VM 退出，退出落到我们自己的派发上 ——
- * 这正是被测对象。
+ * It is not contradictory for the driver to perform this operation: the driver's L0 component runs in VMX
+ * root, while this IOCTL path runs inside the guest. Executing VMXON in the guest inevitably triggers a
+ * VM exit, which is handled by our own dispatch logic—this is precisely the object under test.
  *
- * ## 前提是硬的
+ * ## Hard prerequisite
  *
- * 嵌套派发没开时，`KswordARKHvmNestedHandleExit` 返回不处理，退出路径会注 #UD ——
- * 而那个 #UD 落在**我们自己的内核代码**上，直接蓝屏。所以这条命令在嵌套未启用或
- * 本处理器未常驻时必须拒绝，而不是"试试看"。
+ * When nested dispatch is disabled, `kswordArkHvmNestedHandleExit` returns 'not handled', and the exit path
+ * injects a #UD. Since that #UD lands in our own kernel code, it causes a BSOD. Therefore, this command must
+ * be rejected when nested mode is disabled or the processor is not resident, rather than 'trying it out'.
  *
- * 同理，CR4.VMXE 没能置上就执行 VMXON 会吃 #UD。必须回读确认之后才往下走。
+ * Similarly, executing VMXON without setting CR4.VMXE triggers a #UD. A read-back confirmation is required before proceeding.
  */
 #define KSWORD_ARK_IOCTL_FUNCTION_HVM_NESTED_PROBE 0x911UL
 #define IOCTL_KSWORD_ARK_HVM_NESTED_PROBE \
@@ -2315,72 +2315,72 @@ typedef struct _KSWORD_ARK_HVM_INJECT_RESPONSE
 
 #define KSWORD_ARK_HVM_NESTED_PROBE_PROTOCOL_VERSION 1UL
 
-/* 整段自检成功完成（每一步的结果仍要逐条看）。 */
+/* The entire self-check completed successfully (each step's result still needs to be reviewed individually). */
 #define KSWORD_ARK_HVM_NESTED_PROBE_STATUS_OK 0UL
-/* 请求本身不合契约。 */
+/* The request itself violates the contract. */
 #define KSWORD_ARK_HVM_NESTED_PROBE_STATUS_INVALID_REQUEST 1UL
-/* 缺 UI_CONFIRMED。 */
+/* Missing UI_CONFIRMED. */
 #define KSWORD_ARK_HVM_NESTED_PROBE_STATUS_CONFIRMATION_REQUIRED 2UL
-/* 本处理器没有常驻，或嵌套派发没开——执行下去会把自己打死。 */
+/* This processor is not resident, or nested dispatch is disabled—proceeding would crash the system. */
 #define KSWORD_ARK_HVM_NESTED_PROBE_STATUS_NOT_ARMED 3UL
-/* 自检要用的两页分配不出来。 */
+/* Failed to allocate the two pages required for self-check. */
 #define KSWORD_ARK_HVM_NESTED_PROBE_STATUS_NO_RESOURCES 4UL
-/* CR4.VMXE 置不上，后续每一步都不执行。 */
+/* Note: CR4.VMXE cannot be set; subsequent steps will not execute. */
 #define KSWORD_ARK_HVM_NESTED_PROBE_STATUS_VMXE_REFUSED 5UL
 /* A required VMCS12 configuration write failed; L2 was not entered. */
 #define KSWORD_ARK_HVM_NESTED_PROBE_STATUS_CONFIGURATION_FAILED 6UL
 
-/* 这一步根本没有执行到。 */
+/* This step was never executed. */
 #define KSWORD_ARK_HVM_NESTED_PROBE_STEP_SKIPPED 3UL
 
 /*
- * 在**每个**处理器上并发跑一遍，而不是只在当前这个上跑一遍。
+ * Run concurrently on **every** processor, not just the current one.
  *
- * 单核跑通不能推出多核跑通：每核有自己的 vmcs02、影子层次与映射窗口，它们**结构上**
- * 互不干涉 —— 而这个仓库里"结构上互不干涉"已经栽过不止一次（共享 EPT 根的陈旧标签、
- * fail-closed 只停下一个核）。并发是唯一能把这句话变成读数的办法。
+ * Single-core success does not guarantee multi-core success: each core has its own vmcs02, shadow hierarchy, and mapping windows, which are structurally
+ * independent. This project has already encountered issues due to 'structural independence' multiple times (e.g., stale tags for shared EPT roots).
+ * fail-closed: Stops only one core. Concurrency is the only way to turn this statement into a read.
  */
 #define KSWORD_ARK_HVM_NESTED_PROBE_FLAG_ALL_PROCESSORS 0x00010000UL
 /*
- * 让探针的 L1 在 EPT12 指针里请求 accessed/dirty 位，用来验证**拒绝**。
+ * Instruct the L1 probe to request accessed/dirty bits in the EPT12 pointer to verify the **denial**.
  *
- * 这是一条负向用例：A/D 必须被挡在影子层次武装的那一步，而不是放行之后由
- * 硬件把位置在我们的影子叶上、让 L1 读回自己的 EPT12 发现全是零。后者没有
- * 任何读数会变，而 L1 会据此跳过它的来宾真正改过的页。
+ * This is a negative test case: A/D must be blocked at the step where shadow layers are armed, not allowed
+ * through and then having the hardware place it in our shadow leaf, causing L1 to read its own EPT12 and find
+ * all zeros. In the latter case, no reads change, and L1 will skip pages that the guest actually modified.
  *
- * 期望结果是 VMLAUNCH 拿到 Intel 错误 7（控制字段非法），且「L2 跑过」为否。
+ * Expected result: VMLAUNCH returns Intel error 7 (invalid control field), and 'L2 executed' is false.
  */
 #define KSWORD_ARK_HVM_NESTED_PROBE_FLAG_REQUEST_AD 0x00020000UL
 /*
- * 让 L1 虚拟化**正在跑的这个上下文**，而不是一页玩具代码。
+ * Let L1 virtualize the **currently running context**, not a toy code snippet.
  *
- * 这是"能不能托住一个真 hypervisor"与"能不能托住我们写的那个 L2 小程序"之间的
- * 分界线。真 hypervisor（我们自己的常驻路径、VMware 的 VMM）做的都是同一件事：
- * 捕获当前处理器状态、把 vmcs 的 guest RIP 指回自己紧接着的那条指令、VMLAUNCH，
- * 于是**它自己**变成了来宾。玩具 L2 用的是合成的 RIP、合成的栈和一页恒等映射的
- * 代码，段/CR3/页表全都不必当真。
+ * This is the boundary between "whether we can support a real hypervisor" and "whether we can support the
+ * L2 micro-program we wrote." A real hypervisor (our own resident path, VMware's VMM) does the same thing:
+ * Capture the current processor state, redirect the VMCS guest RIP to the instruction immediately following itself,
+ * and execute VMLAUNCH, so **it** becomes the guest. The toy L2 uses synthesized RIP, a synthesized stack, and a
+ * one-page identity-mapped code segment; segment registers, CR3, and page tables need not be taken seriously.
  *
- * 单独一个 flag 而不是替换原来的 L2：MSR 路由那条判据依赖 L2 程序里确定的指令
- * 偏移，换掉它等于把一条已经绿的、来之不易的判据拆掉去换一条新的。
+ * Use a separate flag instead of replacing the original L2: The MSR routing criterion depends on instruction offsets
+ * determined by the L2 program. Replacing it would dismantle a hard-won, already-green criterion to adopt a new one.
  */
 #define KSWORD_ARK_HVM_NESTED_PROBE_FLAG_SELF_VIRTUALIZE 0x00040000UL
 
 /*
- * L2 那段程序里三个有意义的停靠点，按距代码页起点的字节偏移。
+ * Three meaningful breakpoints in the L2 program, specified as byte offsets from the start of the code page.
  *
- * 放在协议头里而不是各自写死，是因为**一边造程序、另一边判结果**：驱动按这些
- * 偏移排指令，工具按同样的偏移判读 `l2RipOffset`。分开写的话，哪天程序的编码
- * 改一个字节，判据不会报错，只会开始判错。
+ * Placed in the protocol header rather than hardcoding separately because it follows a **build-then-verify** pattern: the driver arranges
+ * instructions based on these offsets, and the tool interprets `l2RipOffset` using the same offsets. If written separately, a one-byte
+ * change in the program's encoding would not trigger an error in the verification logic, but would instead cause incorrect results.
  *
- *   TRAPPED  = 第二条 RDMSR。停这儿说明处理器查的确实是 L1 那张位图。
- *   OPEN     = 第一条 RDMSR。本该放行却停这儿，说明查的是"全部拦截"的回退页。
- *   FALLBACK = CPUID。走到这儿说明 MSR 拦截根本没发生。
+ *   TRAPPED = second RDMSR. Stopping here confirms the processor is indeed checking the L1 bitmap.
+ *   OPEN = First RDMSR. If execution halts here despite being allowed, it indicates a fallback page for 'block all' checks.
+ *   FALLBACK = CPUID. Reaching here indicates MSR interception never occurred.
  */
 #define KSWORD_ARK_HVM_NESTED_PROBE_RIP_OPEN_MSR 5ULL
 #define KSWORD_ARK_HVM_NESTED_PROBE_RIP_TRAPPED_MSR 12ULL
 #define KSWORD_ARK_HVM_NESTED_PROBE_RIP_CPUID 14ULL
 
-/* 逐核结果的行数上限。 */
+/* Maximum number of rows for per-core results. */
 #define KSWORD_ARK_HVM_NESTED_PROBE_MAX_ROWS 64UL
 
 typedef struct _KSWORD_ARK_HVM_NESTED_PROBE_REQUEST
@@ -2391,17 +2391,17 @@ typedef struct _KSWORD_ARK_HVM_NESTED_PROBE_REQUEST
     unsigned long confirmationToken;
 } KSWORD_ARK_HVM_NESTED_PROBE_REQUEST;
 
-/* 一个处理器上一次完整自检的全部读数。 */
+/* All readings from a processor's previous complete self-test. */
 typedef struct _KSWORD_ARK_HVM_NESTED_PROBE_ROW
 {
     unsigned long status;
     unsigned long processorIndex;
     /*
-     * 每一步的架构结果：0=成功，1=VMfailValid，2=VMfailInvalid，3=没执行到。
+     * Architecture result for each step: 0=success, 1=VMfailValid, 2=VMfailInvalid, 3=not executed.
      *
-     * 用架构值而不是布尔，是因为"失败"分两种而它们含义不同：VMfailValid 说明
-     * 我们认下了这条指令并给了错误号，VMfailInvalid 说明连当前 VMCS 都没有。
-     * 合并成一个布尔就把"派发到了但拒绝"和"根本没派发"混成一样。
+     * We use architectural values instead of booleans because 'failure' has two distinct meanings: VMfailValid indicates we
+     * recognized the instruction and returned an error code, while VMfailInvalid indicates the current VMCS was not even valid.
+     * Merging into a single boolean conflates 'dispatched but rejected' with 'never dispatched'.
      */
     unsigned long vmxonResult;
     unsigned long vmptrldResult;
@@ -2409,70 +2409,70 @@ typedef struct _KSWORD_ARK_HVM_NESTED_PROBE_ROW
     unsigned long vmreadResult;
     unsigned long vmptrstResult;
     unsigned long vmxoffResult;
-    /* 写进去又读回来的那个字段是否逐位相同。 */
+    /* Check if the field written and read back matches bit-by-bit. */
     unsigned long vmreadMatched;
-    /* VMPTRST 取回的指针是否等于刚 VMPTRLD 的那个。 */
+    /* Whether the pointer returned by VMPTRST matches the one just loaded via VMPTRLD. */
     unsigned long vmptrstMatched;
-    /* 读回来的实际值，不匹配时用它归因。 */
+    /* The actual value read back; use it for attribution if it does not match. */
     unsigned long long vmreadValue;
-    /* 写进去的值。 */
+    /* Value to write. */
     unsigned long long vmwriteValue;
-    /* 自检期间这个处理器派发了多少条嵌套 VMX 指令。 */
+    /* Number of nested VMX instructions dispatched by this processor during self-check. */
     unsigned long long dispatchedInstructions;
-    /* 自检结束时本处理器的嵌套状态。 */
+    /* Nested state of this processor at the end of self-check. */
     unsigned long nestedStateAfter;
-    /* 最后一次 VMfailValid 的 Intel 错误号。 */
+    /* Intel error code from the last VMfailValid. */
     unsigned long lastInstructionError;
-    /* VMLAUNCH 的架构结果；0 也可能是"进去过又回来了"，看 l2Reached。 */
+    /* VMLAUNCH architectural result; 0 may also mean 'entered and returned', check l2Reached. */
     unsigned long vmlaunchResult;
     /*
-     * L2 真的跑起来过并且退出被反射回了 L1。
+     * L2 has actually started and the exit was reflected back to L1.
      *
-     * 这一位是整条链路唯一的正向判据：它为 1 意味着 vmcs02 合并被硬件接受、
-     * L2 执行了指令、退出落到我们手上、我们把它投递给了 L1，而 L1 的宿主
-     * 处理器真的拿到了控制权。中间任何一环断掉，它都是 0。
+     * This bit is the sole positive criterion for the entire chain: a value of 1 indicates that the vmcs02
+     * merge was accepted by hardware, L2 executed an instruction, the exit was caught by us, we dispatched it
+     * to L1, and the L1 host processor truly regained control. If any link in the chain breaks, the value is 0.
      */
     unsigned long l2Reached;
-    /* L1 从 vmcs12 里读到的退出原因；0x80000021 表示客户状态非法。 */
+    /* Exit reason read by L1 from vmcs12; 0x80000021 indicates an invalid guest state. */
     unsigned long long l2ExitReason;
-    /* 同上的 qualification。 */
+    /* Qualification as above. */
     unsigned long long l2Qualification;
-    /* L2 停在哪条指令上。 */
+    /* L2 instruction pointer. */
     unsigned long long l2GuestRip;
     /*
-     * 这次 L2 是跑在 L1 自带的 EPT12 上（1）还是我们自己的层次上（0）。
+     * This indicates whether L2 is running on L1's native EPT12 (1) or on our own hierarchy (0).
      *
-     * 分开报，是因为两条分支验的是不同的东西：为 1 时 L2 的每一次访问都要过
-     * EPT12 再过 EPT01，走的是影子层次的合成路径；为 0 时那条路径根本没参与。
-     * 不报这一位的话，一次"L2 跑通了"读数说不清到底验没验到合成。
+     * Report separately because the two branches validate different things: when set to 1, every L2 access must pass
+     * through both EPT12 and EPT01, following the shadow-layer composite path; when 0, that path is not involved at all.
+     * If this bit is not reported, a single 'L2 completed' reading cannot clarify whether the synthesis was actually verified.
      */
     unsigned long ept12Armed;
-    /* 影子层次为这次运行合成了多少张叶。 */
+    /* Number of leaf pages synthesized by the shadow layer for this run. */
     unsigned long shadowFillCount;
-    /* 因 EPT12 自己拒绝而交给 L1 的违规数。 */
+    /* Violations denied by EPT12 itself and passed to L1. */
     unsigned long shadowDenyCount;
-    /* 因表页用尽而没能合成的次数。 */
+    /* Count of failed merges due to page table exhaustion. */
     unsigned long shadowExhaustionCount;
     /*
-     * L1 发一次 INVEPT 的架构结果。
+     * Architectural result of an INVEPT issued by L1.
      *
-     * 单独记，是因为它验的东西与别处都不同：L1 发 INVEPT 是在通知"我装的某个映射
-     * 已经作废"，而那是它唯一的通知渠道 —— 我们的影子只在 EPT 指针本身变化时才丢。
-     * 这一格报失败，等于告诉 L1 通知没送到。
+     * Record separately because it validates something distinct: L1 issuing INVEPT notifies that "a mapping I installed is
+     * now invalid," which is its only notification channel—our shadow is discarded only when the EPT pointer itself changes.
+     * Note: A failure in this field indicates that the notification was not delivered to L1.
      */
     unsigned long inveptResult;
-    /* INVEPT 之后影子的代次有没有真的往前走。 */
+    /* Whether the shadow generation advanced after INVEPT. */
     unsigned long shadowGenerationAdvanced;
     /*
-     * vmcs02 在 VM entry 那一刻实际携带的控制位与三个位图地址。
+     * vmcs02 carries the actual control bits and three bitmap addresses at VM entry.
      *
-     * 这一组是**读回来的**，不是合并过程算出来的——两者只在"某个字段根本没被
-     * 写过"时才不同，而那正是它要暴露的故障。控制位是 L1 的与我们的并集，所以
-     * `USE_MSR_BITMAPS`（bit 28）会因为我们需要它而恒定活下来；如果配套的
-     * `msrBitmap` 是 0，处理器就会拿物理页 0 当 MSR 位图用。
+     * This group is **read back**, not computed during the merge process — they differ only when "a
+     * field was never written," which is exactly the failure this exposes. Control bits are the union
+     * of L1's and ours, so `USE_MSR_BITMAPS` (bit 28) will always remain active because we require it;
+     * if the corresponding `msrBitmap` is 0, the processor will use physical page 0 as the MSR bitmap.
      *
-     * 那种状态下没有任何别的读数会变：VM entry 成功、L2 照跑、退出照来。只有
-     * 把这两格摆在一起看，才说得清 L2 的 MSR/IO 拦截到底由谁决定。
+     * In this state, no other readings change: VM entry succeeds, L2 continues running, and exits still
+     * occur. Only by viewing these two fields together can we determine who decides L2's MSR/IO interception.
      */
     unsigned long vmcs02PrimaryControls;
     unsigned long vmcs02SecondaryControls;
@@ -2480,53 +2480,53 @@ typedef struct _KSWORD_ARK_HVM_NESTED_PROBE_ROW
     unsigned long long vmcs02IoBitmapA;
     unsigned long long vmcs02IoBitmapB;
     /*
-     * L2 停下来时距代码页起点的偏移。
+     * Offset from the start of the code page when L2 stops.
      *
-     * 这一格自己就是 MSR 位图合并的判据，不需要别的佐证。L2 的程序是两条
-     * RDMSR：第一条 L1 的位图里是清的（不该退出），第二条是置的（该退出）。
+     * This entry itself is the criterion for MSR bitmap merging; no other corroboration is needed. L2 programs involve two.
+     * RDMSR: The first L1 bitmap bit is clear (should not exit), while the second is set (should exit).
      *
-     *   12 = 停在第二条 —— 处理器查的确实是 L1 那张位图
-     *    5 = 停在第一条 —— 查的是"全部拦截"的回退页，说明 L1 的页没读到
-     *   14 = 走到了 CPUID —— MSR 拦截根本没发生
+     *   12 = Stop at second entry — processor checks L1 bitmap; 5 = Stop at
+     *    first entry — checks 'all intercept' fallback page, indicating L1 page
+     *   read failed; 14 = Reached CPUID — MSR interception never occurred
      *
-     * 三种结局都产生退出、都能反射成功，只有停在哪里能把它们分开。
+     * All three outcomes result in an exit and can be successfully reflected; only the stop location distinguishes them.
      */
     unsigned long long l2RipOffset;
-    /* L2 的 MSR 退出各有多少条投递给了 L1、多少条由我们就地服务。 */
+    /* Number of L2 MSR exits dispatched to L1 versus those handled locally. */
     unsigned long long l2MsrExitsReflected;
     unsigned long long l2MsrExitsHandled;
-    /* 同上，端口退出。 */
+    /* Same as above, port exit. */
     unsigned long long l2IoExitsReflected;
     unsigned long long l2IoExitsHandled;
-    /* 上一次合并是否把需要的每一页都读到了。 */
+    /* Whether the previous merge read every required page. */
     unsigned long bitmapMergeComplete;
-    /* L1 自己有没有要求 MSR 位图过滤（决定归属判定走哪条分支）。 */
+    /* Whether L1 requested MSR bitmap filtering (determines which branch to take for ownership judgment). */
     unsigned long l1UsesMsrBitmap;
     /*
-     * L1 在 EPT12 指针里请求了 accessed/dirty，因而被拒。
+     * L1 requested accessed/dirty in the EPT12 pointer, so it was rejected.
      *
-     * 单独报，因为拒绝到了 L1 那里只剩一个通用的"控制字段非法"——架构上是对的，
-     * 但它不说是哪一个控制。没有这一格的话，"L2 起不来"就分不清是能力不支持
-     * 还是 EPT 指针本身写坏了。
+     * Report separately, because once rejected at L1, only a generic 'invalid control field'
+     * remains—architecturally correct, but it doesn't specify which control. Without this, 'L2 fails
+     * to start' cannot be distinguished as either unsupported capability or a corrupted EPT pointer.
      */
     unsigned long l1RequestedAccessedDirty;
     /*
-     * A/D 真的在被维护并折回 L1 的表了没有，以及折了多少条。
+     * Whether A/D is truly being maintained and rolled back to the L1 table, and how many entries were rolled back.
      *
-     * 与上一格分开：上一格是 L1 **要了什么**，这两格是我们**做到了什么**。
-     * 两者只在处理器不支持、或记录表溢出时才不同，而那正是读者最需要分清的
-     * 情形 —— 半套传播比完全没有更糟，L1 会读到"这些页写过、那些没写过"，
-     * 而后半句是假的且它无从察觉。
+     * Separate from the previous field: the previous field indicates what L1 **requested**, while these two fields indicate what we **achieved**.
+     * The two differ only when the processor does not support the feature or when the record table overflows;
+     * these are precisely the scenarios the reader must distinguish. A partial propagation is worse than none:
+     * L1 may read "these pages were written, those were not," where the second part is false and undetectable.
      */
     /*
-     * 两份 vmcs12 交替之后，各自的字段还在不在。
+     * Whether each field remains after the two vmcs12 instances alternate.
      *
-     * 单份 VMCS 问不出这件事：派发器只建模一份 vmcs12 也能把上面每一项都跑过。
-     * 而真 hypervisor（VMware、VirtualBox、Hyper-V）每个 vCPU 至少一份 VMCS 并
-     * 不断 VMPTRLD 切换 —— 字段能不能活过一次切换，是能不能托住它们的前提。
+     * A single VMCS cannot reveal this: the dispatcher models only one vmcs12 yet can still exercise every item above.
+     * Real hypervisors (VMware, VirtualBox, Hyper-V) maintain at least one VMCS per vCPU and constantly
+     * switch via VMPTRLD. Whether a field survives a single switch is the prerequisite for supporting them.
      *
-     * 序列是最小可失败的那一个：写 A、写 B、读 A、读 B。只建模一份的派发器会
-     * 把 B 的值（或零）当成 A 的还回来。
+     * The sequence is the minimal failure case: write A, write B, read A, read B. A dispatcher
+     * modeling only one instance will return the value of B (or zero) when A is requested.
      */
     unsigned long vmcsSwitchResult;
     unsigned long vmcsSwitchMatched;
@@ -2536,36 +2536,36 @@ typedef struct _KSWORD_ARK_HVM_NESTED_PROBE_ROW
     unsigned long adPropagatedCount;
     unsigned long adOverflowCount;
     /*
-     * 位图合并的周期数，与整个 L2 进入的周期数。
+     * Cycle counts for bitmap merging and total L2 entry cycles.
      *
-     * 两个数一起报，因为合并的代价只有作为**份额**才有意义。"每次进入拷三页"
-     * 是个形状不是测量值，照着形状决定要不要加缓存就是在赌。
+     * Report both numbers together because the cost of merging only makes sense as a **share**. 'Three pages copied
+     * per entry' is a shape, not a measurement; deciding whether to add a cache based on that shape is a gamble.
      *
-     * 都是累计值，除以 l2EntryCount 得均值。RDTSC 在外层 hypervisor 下是它愿意
-     * 暴露的那个值 —— 同一次进入内取比例够用，当绝对时间不行。
+     * All are cumulative values; dividing by l2EntryCount yields the mean. RDTSC under the outer hypervisor returns the value
+     * it is willing to expose — the ratio of entries within the same invocation is sufficient, but absolute time is not.
      */
     unsigned long long l2MergeCycles;
     unsigned long long l2EntryCycles;
     unsigned long long l2EntryCount;
     /*
-     * 池子实际装得下几份 vmcs12，以及装不下的那些有没有真的被记一笔。
+     * Actual capacity of the pool for vmcs12 copies, and whether overflowed copies are recorded.
      *
-     * 上面那组"两份交替"只证明了**不止一份**。真 hypervisor 手里往往有十几份，
-     * 而"我们能存 N 份"到此为止一直是写在头文件注释里的断言，没有任何读数支持。
+     * The aforementioned pair of 'alternating copies' only proves that **more than one** exists. A real hypervisor often holds a dozen or more
+     * copies. The claim that 'we can store N copies' has always been an assertion in header file comments, with no supporting measurements.
      *
-     * 做法：给比池子深度多两份的区域各写一个互不相同的值，然后**从最近用过的
-     * 那份倒着读回来**。倒着读是必须的 —— 顺着读，每读一份就把更旧的一份挤掉，
-     * 测量本身会毁掉被测量的东西，最后全读成零，看起来像池子根本不存在。
+     * Approach: Write two distinct values to regions beyond the pool depth, then read them back in reverse order from
+     * the most recently used. Reverse reading is mandatory; reading forward would overwrite older entries with each
+     * read, destroying the measurement itself and resulting in all zeros, falsely suggesting the pool does not exist.
      *
-     * mask 的第 k 位表示第 k 份读回来了。只报个数不够：LRU、FIFO、随机驱逐能
-     * 给出同样的存活**个数**，但存活的是哪几份完全不同，而这决定了一个正在被
-     * L1 频繁使用的 vmcs12 会不会被挤掉。
+     * The k-th bit of the mask indicates that the k-th read was returned. Reporting only the count is insufficient:
+     * LRU, FIFO, and random eviction can all yield the same survival count, but which specific entries survive
+     * differs entirely. This distinction determines whether a vmcs12 frequently used by L1 will be evicted.
      *
-     * evictionDelta 是**这一个处理器**在这段窗口里的驱逐数，取自它自己的记录而
-     * 不是运行时那个全局总数 —— 探针在每个处理器上同时跑一个工作线程，从共享
-     * 计数器取差值会把别的核干的事算进这一行，看着精确，说的是另一回事。
-     * 它存在的唯一理由是：这个计数器在别处永远读到 0，而一个从没被人见过动的
-     * 计数器等于没有验证过。
+     * evictionDelta is the eviction count for this specific processor within this window, taken from its own record rather than the
+     * runtime global total. Since each processor runs a worker thread simultaneously, taking the difference from a shared counter
+     * would incorrectly attribute work done by other cores to this line, appearing precise but describing a different reality.
+     * It exists solely because this counter is always read as 0 elsewhere,
+     * and a counter that has never been observed to change is unverified.
      */
     unsigned long long vmcs12DepthMask;
     unsigned long vmcs12DepthRegions;
@@ -2573,29 +2573,29 @@ typedef struct _KSWORD_ARK_HVM_NESTED_PROBE_ROW
     unsigned long vmcs12EvictionDelta;
     unsigned long vmcs12DepthReserved;
     /*
-     * 来宾**此刻**读到的 VMX 能力，取自来宾上下文里的 RDMSR。
+     * The VMX capabilities read by the guest **at this moment** are taken from the guest context's RDMSR.
      *
-     * 这是能力过滤唯一能被证伪的地方。查询接口报的是驱动加载时采的原始值（走
-     * IOCTL，不经过 MSR 位图），所以它永远是硬件真相；而这两格走的是 RDMSR，
-     * 常驻起来之后就会退出到我们手里被收窄。两个数不一样，才说明过滤是活的。
+     * This is the only location where capability filtering can be falsified. The query interface reports raw values captured
+     * at driver load time (via IOCTL, bypassing the MSR bitmap), so it always reflects hardware truth. The two fields below
+     * use RDMSR and, once resident, are narrowed by our logic. A discrepancy between the two confirms the filtering is active.
      *
-     * 没有这一格的话，"我们过滤了能力"就只是一句代码读起来是对的断言 —— 而
-     * 位图里少设一个位、或者退出路由没走到过滤函数，表现都是**什么都不变**。
+     * Without this entry, the assertion 'we filtered capabilities' is merely a code statement that appears correct. If a
+     * bit is missing in the bitmap or the exit route fails to reach the filter function, the behavior remains unchanged.
      */
     unsigned long long guestVmxProcbased2;
     unsigned long long guestVmxEptVpidCap;
     /*
-     * L1 写了、我们此前从不往 vmcs02 里拷的那几个字段，进 entry 前从**加载着的
-     * vmcs02 里读回来**的值。
+     * L1 wrote; we previously never copied those fields into vmcs02; read
+     * back the values from the **currently loaded vmcs02** before entry.
      *
-     * 跟 msr 位图那组是同一个手法，也是同一个理由：算出来的值与处理器真正会用的
-     * 值，只在"这个字段根本没被写过"的时候才不一样，而那恰恰是不留任何痕迹的
-     * 那种失败。
+     * Same technique and rationale as the MSR bitmap group: The computed value
+     * differs from the value the processor actually uses only when "this field was
+     * never written," which is precisely the kind of failure that leaves no trace.
      *
-     * MSR 区比位图更隐蔽一层：位图至少还有个控制位，理论上可以不宣告；而 MSR
-     * 区的**计数字段是无条件生效的**，没有任何能力位可以用来表示"我不支持"。
-     * L1 让我们在进 L2 时装一批 MSR，我们就是不装，L2 于是拿着我们的 MSR 值跑，
-     * 而 L1 以为是它自己那批。
+     * The MSR region is one layer more hidden than the bitmap: the bitmap at least has a control bit that theoretically could be
+     * omitted, whereas the MSR region's count field is unconditionally effective, with no capability bit to indicate "not supported".
+     * L1 intends to load a batch of MSRs when entering L2, but we do not load them;
+     * L2 runs with our MSR values, while L1 believes it is using its own batch.
      */
     unsigned long long vmcs02TscOffset;
     unsigned long long vmcs02EntryMsrLoadAddress;
@@ -2603,74 +2603,74 @@ typedef struct _KSWORD_ARK_HVM_NESTED_PROBE_ROW
     unsigned long vmcs02EntryMsrLoadCount;
     unsigned long vmcs02ExitMsrStoreCount;
     /*
-     * 自虚拟化：L1 把**自己**变成来宾，跑完一圈再回来。
+     * Self-virtualization: L1 turns itself into a guest, runs a full cycle, and returns.
      *
-     * 三格分别是三次到达同一个捕获点，缺一不可：
-     *   reachedL2   —— VM entry 成功了，我们现在是以 L2 的身份在执行自己的代码
-     *   exitReason  —— L2 里那条 CPUID 退出之后，**L1 从 vmcs12 里读到的**原因，
-     *                  应当是 10。这一格才证明退出被正确投递给了 L1，而不是被
-     *                  外层自己吃掉
-     *   returnedToL1 —— L1 的宿主处理器跑完、VMXOFF、把上下文还了回来
+     * The three slots represent three arrivals at the same capture point; all three are required:
+     *   reachedL2: VM entry succeeded; we are now executing our own code as L2.
+     *   exitReason: The reason L1 reads from vmcs12 after the CPUID instruction
+     *                  exits in L2; it should be 10. This field proves the exit was correctly
+     *                  delivered to L1, not consumed by the outer layer. returnedToL1: L1's host
+     *   processor finished running, executed VMXOFF, and restored the context.
      *
-     * 只看 reachedL2 不够：进得去出不来，和根本进不去，对一个真 hypervisor 来说
-     * 一样是死的。
+     * Checking reachedL2 alone is insufficient: being unable to exit after
+     * entering is just as fatal as never entering at all for a real hypervisor.
      */
     unsigned long selfVirtAttempted;
     unsigned long selfVirtReachedL2;
     unsigned long selfVirtReturnedToL1;
     unsigned long selfVirtCpuidPassedThrough;
     /*
-     * L2 通过**自己找到的**槽位写的标记，与上面那个全局标记分开报。
+     * A marker written by L2 to the slot it found itself, reported separately from the global marker above.
      *
-     * 两个见证者问的是两件事：全局标记问"L2 的存储到底有没有进内存"（RIP 相对
-     * 寻址，不依赖任何继承来的东西）；这一格问"L2 靠 GS 找自己那个槽位这条路
-     * 通不通"。合成一格的话，两种完全不同的失败会塌成同一个 0。
+     * The two witnesses ask two different questions: the global marker asks 'Did L2's storage actually enter memory?'
+     * (RIP-relative addressing, independent of any inherited state); this slot asks 'Is the path for L2 to find its own
+     * slot via GS valid?' Combining them into a single slot would collapse two distinct failure modes into the same 0.
      */
     unsigned long selfVirtSlotMarker;
     unsigned long long selfVirtExitReason;
     unsigned long long selfVirtGuestRip;
     /*
-     * L1 写进 vmcs12 的那个入口 RIP，和退出 RIP 放在一起报。
+     * Report the entry RIP that L1 wrote into vmcs12 alongside the exit RIP.
      *
-     * 必须是**同一轮之内**的比较。驱动每次加载基址都不一样，所以跨两次运行去比
-     * 绝对地址什么也证明不了 —— 我就是这么误判过一次，把"地址随我改代码而移动"
-     * 当成了"L2 在跑我们的代码"。
+     * This must be compared **within the same run**. The driver's base address changes on each
+     * load, so comparing absolute addresses across two runs proves nothing—I once misjudged
+     * this, mistaking "addresses move when I change code" for "L2 is running our code."
      *
-     * 两者之差才是答案：差几十字节说明 L2 确实从我们指的地方开始、走到了那条
-     * CPUID；差得离谱说明它根本没从那儿开始。
+     * The difference between the two is the answer: a difference of a few dozen bytes confirms L2 started exactly where
+     * we specified and reached that CPUID; a wildly different difference means it didn't start from there at all.
      */
     unsigned long long selfVirtEntryRip;
     /*
-     * 这一轮里 L2 进了几次、又有几次退出被投递给 L1。
+     * Number of L2 entries and exits dispatched to L1 in this round.
      *
-     * "退出原因是 10 且回到了 L1"说不出**发生了几次退出**。一次干净的往返和
-     * "先被我们自己吃掉一次、L2 接着跑、后来才有一次被反射"，在单个退出原因上
-     * 读起来一模一样，而两者含义相反。
+     * "Exit reason is 10 and returned to L1" cannot express **how many exits occurred**. A
+     * clean round-trip and "consumed once by ourselves, then L2 runs, followed by a reflection"
+     * appear identical when reading a single exit reason, yet their meanings are opposite.
      */
     unsigned long selfVirtEntryCount;
     unsigned long selfVirtReflectCount;
     /*
-     * L2 的**全部**退出次数，以及 L1 把 L2 放回去的次数。
+     * **All** exit counts for L2, and the count of L1 resuming L2.
      *
-     * 全部退出与被投递的退出之差，正是"有多少条退出被我们自己消化掉、L1 从不知道
-     * 它的来宾问过"。那是嵌套正确性的全部要害：我们替 L1 回答它自己的来宾，L1 无从
-     * 察觉。只数被投递的那些，永远看不见这个差。
+     * The difference between total exits and dispatched exits represents exactly how many exits were consumed by us,
+     * which the L1 never knew its guest asked about. This is the crux of nested correctness: we answer the L1's guest
+     * on its behalf, and the L1 remains unaware. Counting only dispatched exits will never reveal this difference.
      *
-     * resume 次数单列：回程走的是 VMRESUME 而不是 VMLAUNCH —— 不同指令、不同的
-     * launch-state 检查。一个能通过首次进入的 vmcs12，完全可能在这里失败。
+     * Resume count listed separately: the return path uses VMRESUME instead of VMLAUNCH — different instructions, different behavior.
+     * Launch-state check. A vmcs12 that passes the initial entry check may still fail here.
      */
     unsigned long selfVirtTotalExitCount;
     unsigned long selfVirtResumeCount;
     /*
-     * 无进展熔断：L2 一直在同一条指令上以同样的原因退出。
+     * No-progress fuse: L2 keeps exiting on the same instruction with the same reason.
      *
-     * 这三格是**挂死唯一会留下的东西**。实测过：这种挂死没有蓝屏、没有转储、
-     * 宿主 Hyper-V 日志里也没有任何事件 —— 处理器一直很忙，所以什么超时都不会
-     * 触发，机器只是不再应答。熔断把它变成一条可读的记录。
+     * These three fields are the **only things left after a hang**. Verified: such hangs cause no
+     * BSOD, no dump, and no events in the host Hyper-V logs—the processor stays busy, so no timeouts
+     * trigger, and the machine simply stops responding. The fuse converts this into a readable record.
      *
-     * 进展的判定键是 RIP + 退出原因 + RCX 三者。只看 RIP 是错的：带 I/O 拦截的
-     * REP 串指令每迭代一次就在同一个 RIP 上退出一次，完全合法，而 RCX 正是把
-     * 那种情况和"真的没往前走"分开的东西。
+     * The progress determination key is RIP + exit reason + RCX. Looking at RIP alone is wrong:
+     * with I/O interception, REP string instructions exit at the same RIP on every iteration,
+     * which is fully legal; RCX is what distinguishes that case from 'truly not moving forward'.
      */
     unsigned long l2FuseTripped;
     unsigned long l2FuseReason;
@@ -2681,10 +2681,10 @@ typedef struct _KSWORD_ARK_HVM_NESTED_PROBE_ROW
 } KSWORD_ARK_HVM_NESTED_PROBE_ROW;
 
 /*
- * 探针写进 vmcs12 的 TSC 偏移。
+ * Probe writes the TSC offset into vmcs12.
  *
- * 值本身没有架构含义，只要求一眼认得出、且不可能是"字段没写"留下的 0。判据两侧
- * 共用这一个定义，免得一边改了另一边还在比旧值 —— 那会变成一条永远为真的判据。
+ * The value itself has no architectural meaning; it only needs to be instantly recognizable and impossible to be a 'field not written' 0. Both sides of the comparison share
+ * this definition to avoid a scenario where one side is updated while the other still compares against the old value, which would result in a condition that is always true.
  */
 #define KSWORD_ARK_HVM_NESTED_PROBE_TSC_OFFSET 0x0000ABCD00000000ULL
 
@@ -2692,9 +2692,9 @@ typedef struct _KSWORD_ARK_HVM_NESTED_PROBE_RESPONSE
 {
     unsigned long version;
     unsigned long size;
-    /* 整体结果：任何一行不达标就不是 OK。 */
+    /* Overall result: if any row fails to meet the criteria, the result is not OK. */
     unsigned long status;
-    /* 本次实际跑了几个处理器。 */
+    /* The number of processors actually executed in this run. */
     unsigned long returnedRows;
     unsigned long long stateFlags;
     KSWORD_ARK_HVM_NESTED_PROBE_ROW rows[

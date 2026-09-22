@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Ksword DynData pack / deep-offset 覆盖审计脚本。
+Ksword DynData pack / deep-offset coverage audit script.
 
-用途：
-- 只读检查主 GUI 随包携带的 ark_dyndata_pack_v4.json；
-- 只读检查 profiles/pdb_deep_offsets 里的 ntoskrnl / win32k 深度偏移库；
-- 验证 deep alias 字段是否已经进入 v4 pack 的 items；
-- 记录 win32k public PDB 是否已具备 tagWND/tagTHREADINFO 等私有 GUI 布局；
-- 输出 JSON 报告，帮助发布前确认程序不依赖 E 盘 PDB 缓存。
+Purpose:
+- Read-only check of the ark_dyndata_pack_v4.json bundled with the main GUI;
+- Read-only check the ntoskrnl / win32k deep offset libraries in profiles/pdb_deep_offsets;
+- Verify whether the 'deep alias' field has been included in the v4 pack's items;
+- Record whether the win32k public PDB already contains private GUI layout tags such as tagWND/tagTHREADINFO.
+- Output JSON report to help confirm the program does not depend on E: drive PDB cache before release.
 
-边界：
-- 不解析 PDB，不访问驱动，不编译，不修改 profile pack；
-- 只读取仓库内 JSON，并把审计报告写到用户指定位置。
+Boundary:
+- Does not parse PDBs, access drivers, compile, or modify profile packs.
+- Reads only JSON files within the repository and writes the audit report to the user-specified location.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_PROFILE_ROOT = REPO_ROOT / "Ksword5.1" / "Ksword5.1" / "profiles"
+DEFAULT_PROFILE_ROOT = REPO_ROOT / 'apps/desktop/profiles'
 DEFAULT_PACK_PATH = DEFAULT_PROFILE_ROOT / "ark_dyndata_pack_v4.json"
 DEFAULT_MANIFEST_PATH = DEFAULT_PROFILE_ROOT / "ark_dyndata_manifest.json"
 DEFAULT_OUTPUT_PATH = Path(r"D:\Temp\ksword_pdb_deep_offsets\ksword_dyndata_pack_deep_audit.json")
@@ -88,7 +88,7 @@ TOKEN_INTEGRITY_REQUIRED = [
 
 @dataclass(frozen=True)
 class PackProfileView:
-    """保存一个 pack profile 的归一化视图。"""
+    """Save a normalized view of a pack profile."""
 
     profile: dict[str, Any]
     field_names: set[str]
@@ -97,7 +97,7 @@ class PackProfileView:
 
 @dataclass(frozen=True)
 class PackProfileMatch:
-    """保存一个 deep library 与 pack profile 的匹配证据。"""
+    """Save matching evidence between a deep library and a pack profile."""
 
     profile: dict[str, Any]
     match_method: str
@@ -107,14 +107,14 @@ class PackProfileMatch:
 
 
 def read_json(path: Path) -> dict[str, Any]:
-    """读取 JSON 文件。
+    """Read JSON file.
 
-    输入：
-    - path：目标 JSON 路径。
-    处理：
-    - 使用 UTF-8 读取并解析对象。
-    返回：
-    - dict JSON 对象；格式不符时抛出 ValueError。
+    Inputs:
+    - path: target JSON path.
+    Processing:
+    - Reads and parses the object using UTF-8.
+    Returns:
+    - dict JSON object; raises ValueError if format is invalid.
     """
     with path.open("r", encoding="utf-8") as handle:
         data = json.load(handle)
@@ -124,21 +124,21 @@ def read_json(path: Path) -> dict[str, Any]:
 
 
 def normalize_guid(value: Any) -> str:
-    """归一化 PDB GUID 字符串。
+    """Normalize PDB GUID string.
 
-    输入：
-    - value：JSON 内的 GUID 字段。
-    处理：
-    - 去掉大括号和横线，并转成小写。
-    返回：
-    - 可用于比较的 32 位十六进制文本。
+    Inputs:
+    - value: The GUID field within the JSON.
+    Processing:
+    - Remove braces and hyphens, then convert to lowercase.
+    Returns:
+    - 32-bit hexadecimal text suitable for comparison.
     """
     text = str(value or "").strip().strip("{}")
     return text.replace("-", "").lower()
 
 
 def optional_int(value: Any) -> int | None:
-    """把 JSON 数字字段安全转换为 int。"""
+    """Safely convert JSON numeric fields to int."""
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -146,16 +146,16 @@ def optional_int(value: Any) -> int | None:
 
 
 def symbol_cache_age_from_path(path_text: str, source_guid: str) -> int | None:
-    """从 PDB symbol-cache 路径父目录解析 GUID+Age。
+    """Parse GUID and Age from the parent directory of the PDB symbol-cache path.
 
-    输入：
+    Inputs:
     - path_text：deep source.pdbPath；
-    - source_guid：归一化后的 GUID。
-    处理：
-    - 检查父目录是否为 32 hex GUID + hex age；
-    - GUID 必须与 source_guid 一致。
-    返回：
-    - 匹配到的 symbol-cache age；否则 None。
+    - source_guid: Normalized GUID.
+    Processing:
+    - Check if the parent directory is a 32-character hex GUID followed by a hex age.
+    - GUID must match source_guid.
+    Returns:
+    - The symbol-cache age of the matched entry; otherwise None.
     """
     if not path_text or not source_guid:
         return None
@@ -170,7 +170,7 @@ def symbol_cache_age_from_path(path_text: str, source_guid: str) -> int | None:
 
 
 def filename_age(deep_path: Path) -> int | None:
-    """从 deep JSON 文件名中的 _ageN_ 片段解析年龄。"""
+    """Parse the age from the _ageN_ segment in the deep JSON filename."""
     match = FILENAME_AGE_RE.search(deep_path.name)
     if not match:
         return None
@@ -178,17 +178,17 @@ def filename_age(deep_path: Path) -> int | None:
 
 
 def add_age_candidate(output: list[dict[str, Any]], method: str, age_value: int | None) -> None:
-    """追加去重后的 age 候选。
+    """Append deduplicated age candidates.
 
-    输入：
-    - output：候选列表；
-    - method：候选来源；
-    - age_value：候选 age。
-    处理：
-    - 忽略 None/负数；
-    - 同一 age 只保留第一次来源，保证优先级稳定。
-    返回：
-    - 无返回值，直接修改 output。
+    Inputs:
+    - output: candidate list
+    - method: candidate source
+    - age_value: candidate age.
+    Processing:
+    - Ignore None/negative values;
+    - For the same age, retain only the first source to ensure priority stability.
+    Returns:
+    - No return value; directly modifies `output`.
     """
     if age_value is None or age_value < 0:
         return
@@ -199,16 +199,16 @@ def add_age_candidate(output: list[dict[str, Any]], method: str, age_value: int 
 
 
 def deep_identity(deep_library: dict[str, Any], deep_path: Path) -> dict[str, Any]:
-    """提取 deep library 的多来源 PDB 身份。
+    """Extract multi-source PDB identities from the deep library.
 
-    输入：
+    Inputs:
     - deep_library：deep-offset JSON；
-    - deep_path：deep JSON 路径。
-    处理：
-    - runtime 匹配优先使用 source.pdbAge / symbolCacheAge / pdbPath 父目录 GUID+Age；
-    - 保留 pdbSummaryAge 和 filename age 作为诊断。
-    返回：
-    - 包含 guid、ageCandidates 和诊断字段的字典。
+    - deep_path: deep JSON path.
+    Processing:
+    - Runtime matching prioritizes source.pdbAge / symbolCacheAge / the parent directory GUID+Age of pdbPath.
+    - Retain pdbSummaryAge and filename age for diagnostics.
+    Returns:
+    - Dictionary containing guid, ageCandidates, and diagnostic fields.
     """
     source = deep_library.get("source", {})
     if not isinstance(source, dict):
@@ -233,15 +233,15 @@ def deep_identity(deep_library: dict[str, Any], deep_path: Path) -> dict[str, An
 
 
 def deep_library_paths(manifest: dict[str, Any], manifest_path: Path) -> list[Path]:
-    """从 manifest 中解析 deep-offset 库路径。
+    """Parse deep-offset library paths from the manifest.
 
-    输入：
-    - manifest：ark_dyndata_manifest.json 对象。
-    - manifest_path：manifest 文件路径，用于解析相对路径。
-    处理：
-    - 读取 deepOffsetLibraries[].path。
-    返回：
-    - 仓库内实际 JSON 路径列表。
+    Inputs:
+    - manifest: ark_dyndata_manifest.json object.
+    - manifest_path: Path to the manifest file, used for resolving relative paths.
+    Processing:
+    - Read deepOffsetLibraries[].path.
+    Returns:
+    - List of actual JSON paths within the repository.
     """
     output: list[Path] = []
     manifest_dir = manifest_path.parent
@@ -268,14 +268,14 @@ def deep_library_paths(manifest: dict[str, Any], manifest_path: Path) -> list[Pa
 
 
 def build_profile_view(profile: dict[str, Any]) -> PackProfileView:
-    """把 compact pack profile 转成可审计集合。
+    """Convert the compact pack profile into an auditable set.
 
-    输入：
-    - profile：pack 中的一条 profile。
-    处理：
-    - 直接从 v4 items 抽取 name。
-    返回：
-    - PackProfileView，供覆盖检查使用。
+    Inputs:
+    - profile: A profile entry within the pack.
+    Processing:
+    - Directly extracts names from v4 items.
+    Returns:
+    - PackProfileView, used for override checks.
     """
     item_names: set[str] = set()
     for item in profile.get("items", []):
@@ -286,17 +286,17 @@ def build_profile_view(profile: dict[str, Any]) -> PackProfileView:
 
 
 def find_matching_profiles(pack: dict[str, Any], deep_library: dict[str, Any], deep_path: Path) -> list[PackProfileMatch]:
-    """查找与 deep 库 PDB identity 匹配的 pack profile。
+    """Find pack profiles matching the deep library PDB identity.
 
-    输入：
-    - pack：ark_dyndata_pack_v4.json 对象。
-    - deep_library：单个 deep-offset JSON 对象。
-    处理：
-    - 优先使用 deep source.pdbGuid/pdbAge；
-    - 同时兼容 source.symbolCacheAge、pdbPath 父目录 GUID+Age 和文件名 age；
-    - 只有 GUID+候选 age 命中才算 strict identity。
-    返回：
-    - 匹配 profile 列表及匹配证据。
+    Inputs:
+    - pack: ark_dyndata_pack_v4.json object.
+    - deep_library: A single deep-offset JSON object.
+    Processing:
+    - Prioritize using deep source.pdbGuid/pdbAge;
+    - Also compatible with source.symbolCacheAge, parent directory GUID+Age of pdbPath, and filename age.
+    - Only GUID + candidate age hit counts as strict identity.
+    Returns:
+    - Matches profile lists and matching evidence.
     """
     identity = deep_identity(deep_library, deep_path)
     source_guid = str(identity.get("normalizedPdbGuid", ""))
@@ -337,8 +337,8 @@ def find_matching_profiles(pack: dict[str, Any], deep_library: dict[str, Any], d
     if matches:
         return matches
 
-    # 没有 strict 命中时退到 GUID-only 诊断：这不证明运行时可安全匹配，
-    # 但能帮助定位 pack/deep 库的 age 来源差异。
+    # Fall back to GUID-only diagnostics when there is no strict match: this does not prove safe runtime matching.
+    # But helps locate age source differences in the pack/deep library.
     for profile in pack.get("profiles", []):
         if not isinstance(profile, dict):
             continue
@@ -359,15 +359,15 @@ def find_matching_profiles(pack: dict[str, Any], deep_library: dict[str, Any], d
 
 
 def required_status(view: PackProfileView, required_names: list[str]) -> dict[str, Any]:
-    """检查一组 runtime detail 必需字段是否存在。
+    """Check if a set of required runtime detail fields are present.
 
-    输入：
-    - view：pack profile 归一化视图。
-    - required_names：功能所需字段名。
-    处理：
-    - 只接受 v4 items 中的字段。
-    返回：
-    - present/missing/ready 三元状态。
+    Inputs:
+    - view: Normalized view of the pack profile.
+    - required_names: Field names required for the functionality.
+    Processing:
+    - Accepts fields only from v4 items.
+    Returns:
+    - present/missing/ready ternary state.
     """
     present: list[str] = []
     missing: list[str] = []
@@ -385,17 +385,17 @@ def required_status(view: PackProfileView, required_names: list[str]) -> dict[st
 
 
 def audit_deep_library(pack: dict[str, Any], deep_path: Path, deep_library: dict[str, Any]) -> dict[str, Any]:
-    """审计一个 deep-offset 库与 pack 的覆盖关系。
+    """Audit the coverage relationship between a deep-offset library and the pack.
 
-    输入：
-    - pack：发布 pack；
-    - deep_path：deep JSON 路径；
-    - deep_library：deep JSON 对象。
-    处理：
-    - 统计 alias 是否进入匹配 profile 的 fields/items；
-    - 检查 process/thread/module detail 关键字段 ready 状态。
-    返回：
-    - JSON 可序列化审计结果。
+    Inputs:
+    - pack: publish pack.
+    - deep_path: deep JSON path.
+    - deep_library: the deep JSON object.
+    Processing:
+    - Count whether aliases match fields/items in the profile.
+    - Check the ready status of key fields in process/thread/module details.
+    Returns:
+    - JSON-serializable audit results.
     """
     alias_rows = [
         row for row in deep_library.get("kswordAliasFields", [])
@@ -445,17 +445,17 @@ def audit_deep_library(pack: dict[str, Any], deep_path: Path, deep_library: dict
 
 
 def audit_win32k_deep_library(deep_path: Path, deep_library: dict[str, Any]) -> dict[str, Any]:
-    """审计 win32k public 深度库的仓库内可用性。
+    """Audit the availability of the win32k public deep library within the repository.
 
-    输入：
-    - deep_path：win32k deep-offset JSON 路径；
-    - deep_library：已解析的 JSON 对象。
-    处理：
-    - 汇总每个 win32k* PDB 模块的 PDB identity、字段数和 public symbol 数；
-    - 汇总 tagWND/tagTHREADINFO/tagHOOK 等私有 GUI 类型缺失状态；
-    - 不与 ntoskrnl dyn-data pack 做匹配，因为当前 win32k public 库是旁路审计资料。
-    返回：
-    - JSON 可序列化的 win32k 审计结果；privateTypeReady=false 表示运行时对象细读仍需私有布局来源。
+    Inputs:
+    - deep_path: path to the win32k deep-offset JSON
+    - deep_library: the parsed JSON object.
+    Processing:
+    - Aggregate PDB identity, field count, and public symbol count for each win32k* PDB module.
+    - Aggregate missing status for private GUI types such as tagWND, tagTHREADINFO, and tagHOOK.
+    - Do not match with ntoskrnl dyn-data pack, as the current win32k public library is bypass audit data.
+    Returns:
+    - JSON-serializable win32k audit results; privateTypeReady=false indicates that runtime object introspection still requires a private layout source.
     """
     stats = deep_library.get("stats", {})
     if not isinstance(stats, dict):
@@ -561,16 +561,16 @@ def audit_win32k_deep_library(deep_path: Path, deep_library: dict[str, Any]) -> 
 
 
 def build_report(pack_path: Path, manifest_path: Path) -> dict[str, Any]:
-    """构建完整审计报告。
+    """Build the complete audit report.
 
-    输入：
+    Inputs:
     - pack_path：ark_dyndata_pack_v4.json。
     - manifest_path：ark_dyndata_manifest.json。
-    处理：
-    - 读取 pack/manifest/deep libraries；
-    - 汇总错误、警告和每个 deep 库的覆盖状态。
-    返回：
-    - JSON 报告对象。
+    Processing:
+    - Read pack, manifest, and deep libraries;
+    - Aggregates errors, warnings, and the coverage status for each deep library.
+    Returns:
+    - JSON report object.
     """
     pack = read_json(pack_path)
     manifest = read_json(manifest_path)
@@ -655,14 +655,14 @@ def build_report(pack_path: Path, manifest_path: Path) -> dict[str, Any]:
 
 
 def main() -> int:
-    """命令行入口。
+    """Command-line entry point.
 
-    输入：
-    - --pack/--manifest/--output 参数。
-    处理：
-    - 构建报告并写入 JSON。
-    返回：
-    - 0 表示审计文件写出；存在 errors 时返回 2。
+    Inputs:
+    - Parameters: --pack, --manifest, --output.
+    Processing:
+    - Builds the report and writes it to JSON.
+    Returns:
+    - 0 indicates audit file write; returns 2 when errors exist.
     """
     parser = argparse.ArgumentParser(description="Audit Ksword DynData pack coverage against deep-offset libraries.")
     parser.add_argument("--pack", default=str(DEFAULT_PACK_PATH), help="Path to ark_dyndata_pack_v4.json.")

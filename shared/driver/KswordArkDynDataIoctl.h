@@ -262,8 +262,8 @@
 #define KSW_DYN_FIELD_ID_RTL_AVL_RESTART_KEY 98UL
 #define KSW_DYN_FIELD_ID_RTL_AVL_DELETE_COUNT 99UL
 #define KSW_DYN_FIELD_ID_RTL_AVL_TYPE_SIZE 100UL
-// Optional _EPROCESS field offsets. 中文说明：追加在现有 ID 之后，保持旧
-// profile/pack 的字段编号稳定；这些字段默认可选，不影响旧 capability。
+// Optional _EPROCESS field offsets. Appended after existing IDs to keep field numbers stable for
+// old profiles/packs; these fields are optional by default and do not affect old capabilities.
 #define KSW_DYN_FIELD_ID_EP_FLAGS 101UL
 #define KSW_DYN_FIELD_ID_EP_FLAGS2 102UL
 #define KSW_DYN_FIELD_ID_EP_RUNDOWN_PROTECT 103UL
@@ -345,8 +345,8 @@
 #define KSW_DYN_FIELD_ID_EP_WNF_CONTEXT 179UL
 #define KSW_DYN_FIELD_ID_EP_FLAGS3 180UL
 #define KSW_DYN_FIELD_ID_EP_DISK_COUNTERS 181UL
-// Optional _TOKEN field offsets. 中文说明：这些 ID 追加在现有字段之后，
-// 用于 PDB 精确匹配后的 Token 私有字段读取/修改，不改变旧字段编号。
+// Optional _TOKEN field offsets. Note: These IDs are appended after existing fields to enable
+// private Token field read/write after precise PDB matching, without altering old field numbers.
 #define KSW_DYN_FIELD_ID_TOK_TOKEN_SOURCE 182UL
 #define KSW_DYN_FIELD_ID_TOK_TOKEN_ID 183UL
 #define KSW_DYN_FIELD_ID_TOK_AUTHENTICATION_ID 184UL
@@ -430,8 +430,8 @@
 #define KSW_DYN_V4_MISSING_KIND_REQUIRED 1UL
 #define KSW_DYN_V4_MISSING_KIND_OPTIONAL 2UL
 
-// v4 capability groups and stable item IDs. 这些编号独立于 PDB 字段 ID，
-// 用于跨版本保持 timer/DPC 等业务项的身份稳定。
+// v4 capability groups and stable item IDs. These IDs are independent of PDB field IDs,
+// used to maintain stable identities for business items like timer/DPC across versions.
 #define KSW_DYN_V4_CAPABILITY_GROUP_NTOS_CORE 1UL
 #define KSW_DYN_V4_CAPABILITY_GROUP_TIMER_DPC 2UL
 #define KSW_DYN_V4_CAPABILITY_GROUP_FLTMGR_MINIFILTER 3UL

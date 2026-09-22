@@ -1,0 +1,1591 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <Filter Include="include">
+      <UniqueIdentifier>{2EA80B79-5C46-5CC5-BCDB-49E9E6E30278}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\ark">
+      <UniqueIdentifier>{814265BA-8D41-5372-B627-996434E732B9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared">
+      <UniqueIdentifier>{88C97AC4-A8D5-5DCE-8965-90E68D9A917B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared\driver">
+      <UniqueIdentifier>{B20AFA14-1342-55FF-8508-4C50846FD698}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src">
+      <UniqueIdentifier>{CDB2BCA8-3022-54AB-9C93-A186322439F2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\dispatch">
+      <UniqueIdentifier>{85C5868B-4A32-5BD2-BB86-22AAB830B5A2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features">
+      <UniqueIdentifier>{A2E5A5A8-EA94-53E0-907E-9F83D042C1CE}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\alpc">
+      <UniqueIdentifier>{03E3EBE4-EA4B-5777-8A57-4314843AD9BB}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\bugcheck">
+      <UniqueIdentifier>{D6DB3168-022F-5CA6-9161-428F2DCE79EA}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\bugcheck\generated">
+      <UniqueIdentifier>{83751CB6-29E7-5003-B25A-B96F291372B8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\callback">
+      <UniqueIdentifier>{A980097A-A90D-510E-BA03-EBCD1DC22800}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\capability">
+      <UniqueIdentifier>{DCB6643C-AE58-5B59-BC33-29B6F2434F6B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\cpu_power">
+      <UniqueIdentifier>{F312A3AD-E2A5-58E7-820F-4C9A02347244}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\debug_output">
+      <UniqueIdentifier>{0CF9BB0F-6F00-59AF-B2A0-65A675F11B55}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\device_audit">
+      <UniqueIdentifier>{2B2BE2FB-DE07-532C-800D-5F97B8E500ED}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\dyndata">
+      <UniqueIdentifier>{E67A18F5-3792-5F91-AC38-14C67E100F21}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\file">
+      <UniqueIdentifier>{534DA349-EB7B-54DE-9FEA-E6AFE2818F8A}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\file_monitor">
+      <UniqueIdentifier>{CB676B1E-D711-5D0E-A6A4-6C16D1770F38}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\handle">
+      <UniqueIdentifier>{EB49180F-B6A3-543D-A882-59435EA493A8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\hvm">
+      <UniqueIdentifier>{B6B9AD96-A82E-5266-B014-5175B2038773}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\hwid">
+      <UniqueIdentifier>{BC23D0BA-C2BE-5AE7-879C-33EABF597613}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\i8042_audit">
+      <UniqueIdentifier>{1F15B4EC-4C00-5114-BD93-DA2E9E230C92}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\injection">
+      <UniqueIdentifier>{2E2CE95D-6CAF-5CA8-A594-1F048226DE30}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\kernel">
+      <UniqueIdentifier>{412444E3-153B-5681-8A37-E35196E81BAF}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\keyboard">
+      <UniqueIdentifier>{274CDAAB-60C6-5EF1-BA31-BA8080CA6779}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\log">
+      <UniqueIdentifier>{CFE5C23B-D1EC-5C7F-BDC9-582A6D47A3A6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\memory">
+      <UniqueIdentifier>{07CAA9DF-8A69-5E79-B7C4-ED935212E7E7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\mutation">
+      <UniqueIdentifier>{2F544923-2856-57FB-BDFC-50B3ACBC7AD6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\network">
+      <UniqueIdentifier>{DF8AE0B8-CEA7-59DC-8EFB-407D04A9A135}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\platform_audit">
+      <UniqueIdentifier>{DA5A3B14-7701-5581-AF70-B3BA3164FE50}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\preflight">
+      <UniqueIdentifier>{A181DE54-1030-533B-81C0-0E46AC9730EF}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\process">
+      <UniqueIdentifier>{C3BBF797-6229-53F2-BC8E-1FF235AE5025}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\process_protect">
+      <UniqueIdentifier>{F236AFC2-100D-568F-BAD8-EE9420D79802}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\redirect">
+      <UniqueIdentifier>{8ABF829E-1C2D-5773-B42F-17F7F93EAAE1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\registry">
+      <UniqueIdentifier>{CD95EA19-62FC-5D79-BDD0-CD5F3D6EFD2D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\research">
+      <UniqueIdentifier>{264213E3-0491-553D-88E8-618516CC5529}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\rxpf">
+      <UniqueIdentifier>{05C287FF-0DFC-5DDE-BD09-E29948B3400E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\safety">
+      <UniqueIdentifier>{E8FD6419-EF6C-5D24-92A8-7A735A8C5055}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\section">
+      <UniqueIdentifier>{01EB214B-AAED-5D91-A6EE-DC9DDDC0D3F2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\security_audit">
+      <UniqueIdentifier>{F37FE1D5-E34A-5E1B-946C-0F22E2B51753}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\storage">
+      <UniqueIdentifier>{D36AE119-DB3C-5B9F-96A3-FB92DD2EF9F7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\system_time">
+      <UniqueIdentifier>{5D871903-A16C-53D8-8F44-64EB8F3DDC24}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\thread">
+      <UniqueIdentifier>{6BDB5E3E-3ED6-51E3-8A35-A1ECC08E2228}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\trust">
+      <UniqueIdentifier>{68781CFB-6F68-5233-B6F4-BD1EE1BCD8A4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\win32k">
+      <UniqueIdentifier>{E03606E0-1AE7-5167-B6CD-6F2F32B9B343}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\features\wsl">
+      <UniqueIdentifier>{997F89AD-4125-564F-8E20-57150EE57752}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\framework">
+      <UniqueIdentifier>{71269CEF-5E11-5851-89D1-026809515437}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\platform">
+      <UniqueIdentifier>{C416F75B-8154-5B56-AB5D-77F33613A1D8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party">
+      <UniqueIdentifier>{30210A0A-0DD1-5C77-95C4-BE28B7299CD5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\systeminformer_dyn">
+      <UniqueIdentifier>{29D1D06D-6F8C-54E8-8A51-EED078B5D29A}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ReadMe.txt" />
+    <ClInclude Include="device.h" />
+    <ClInclude Include="driver.h" />
+    <ClInclude Include="public.h" />
+    <ClInclude Include="queue.h" />
+    <ClInclude Include="trace.h" />
+    <ClInclude Include="include\ark\ark_alpc.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_bugcheck.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_callback.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_capability.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_ddma.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_debug_output.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_device.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_driver.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_dyndata.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_dyndata_fields.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_file.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_file_irp.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_file_monitor.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_handle.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_injection_scan.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_ioctl.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_kernel.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_keyboard.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_log.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_memory.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_memory_evidence.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_mutation.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_network.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_preflight.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_process.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_process_protect.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_push_lock.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_queue.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_redirect.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_registry.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_safety.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_section.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_startup.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_storage.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_system_time.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_thread.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_thread_crossview.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_trust.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ark\ark_wsl_silo.h">
+      <Filter>include\ark</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\KswordArkStartupProtocol.h">
+      <Filter>shared</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkBugcheckIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkCpuPowerIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkDebugOutputIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkDeviceAuditIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkDriverBlindIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkDriverDispatchIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkDriverImageEditorIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkFileIrpIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkFilterIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkHvmIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkHvmMetricsIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkHwidIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkI8042AuditIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkKernelBaselineIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkKernelObjectIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkPiDdbIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkPlatformAuditIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkResearchIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkRxPfIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkSecurityAuditIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkSlatIommuAuditIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkSystemTimeIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkUnloadedDriverIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkWin32kIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkWindowBandIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkWorkQueueIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClCompile Include="src\dispatch\ioctl_dispatch.c">
+      <Filter>src\dispatch</Filter>
+    </ClCompile>
+    <ClCompile Include="src\dispatch\ioctl_registry.c">
+      <Filter>src\dispatch</Filter>
+    </ClCompile>
+    <ClInclude Include="src\dispatch\ioctl_registry.h">
+      <Filter>src\dispatch</Filter>
+    </ClInclude>
+    <ClCompile Include="src\dispatch\ioctl_validation.c">
+      <Filter>src\dispatch</Filter>
+    </ClCompile>
+    <ClInclude Include="src\dispatch\ioctl_validation.h">
+      <Filter>src\dispatch</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\alpc\alpc_ioctl.c">
+      <Filter>src\features\alpc</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\alpc\alpc_query.c">
+      <Filter>src\features\alpc</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\alpc\alpc_runtime_fallback.c">
+      <Filter>src\features\alpc</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\alpc\alpc_runtime_fallback.h">
+      <Filter>src\features\alpc</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\alpc\alpc_support.c">
+      <Filter>src\features\alpc</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\alpc\alpc_support.h">
+      <Filter>src\features\alpc</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\bugcheck\bugcheck_bgp.c">
+      <Filter>src\features\bugcheck</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\bugcheck\bugcheck_bgp.h">
+      <Filter>src\features\bugcheck</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\bugcheck\bugcheck_bgp_internal.h">
+      <Filter>src\features\bugcheck</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\bugcheck\bugcheck_bgp_lifecycle.c">
+      <Filter>src\features\bugcheck</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\bugcheck\bugcheck_control.c">
+      <Filter>src\features\bugcheck</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\bugcheck\bugcheck_decode.c">
+      <Filter>src\features\bugcheck</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\bugcheck\bugcheck_decode.h">
+      <Filter>src\features\bugcheck</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\bugcheck\bugcheck_font.h">
+      <Filter>src\features\bugcheck</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\bugcheck\bugcheck_guard.c">
+      <Filter>src\features\bugcheck</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\bugcheck\bugcheck_internal.h">
+      <Filter>src\features\bugcheck</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\bugcheck\bugcheck_ioctl.c">
+      <Filter>src\features\bugcheck</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\bugcheck\bugcheck_layout.c">
+      <Filter>src\features\bugcheck</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\bugcheck\bugcheck_layout.h">
+      <Filter>src\features\bugcheck</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\bugcheck\bugcheck_layout_detailed.c">
+      <Filter>src\features\bugcheck</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\bugcheck\bugcheck_layout_detailed.h">
+      <Filter>src\features\bugcheck</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\bugcheck\bugcheck_panel.c">
+      <Filter>src\features\bugcheck</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\bugcheck\bugcheck_panel.h">
+      <Filter>src\features\bugcheck</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\bugcheck\bugcheck_preparation_log.c">
+      <Filter>src\features\bugcheck</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\bugcheck\bugcheck_preparation_log.h">
+      <Filter>src\features\bugcheck</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\bugcheck\bugcheck_runtime.c">
+      <Filter>src\features\bugcheck</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\bugcheck\bugcheck_shield.c">
+      <Filter>src\features\bugcheck</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\bugcheck\bugcheck_svga.c">
+      <Filter>src\features\bugcheck</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\bugcheck\generated\ascii_font_8x12.h">
+      <Filter>src\features\bugcheck\generated</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\bugcheck\generated\bgp_signatures.h">
+      <Filter>src\features\bugcheck\generated</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\bugcheck\generated\main_logo_bitmap.h">
+      <Filter>src\features\bugcheck\generated</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\callback\callback_enum.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\callback_extended_bugcheck.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\callback\callback_extended_internal.h">
+      <Filter>src\features\callback</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\callback\callback_extended_kernel.h">
+      <Filter>src\features\callback</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\callback\callback_extended_nmi.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\callback_extended_object.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\callback_extended_special.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\callback_extended_support.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\callback_extended_system.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\callback\callback_external_core.h">
+      <Filter>src\features\callback</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\callback\callback_external_minifilter.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\callback\callback_external_minifilter.h">
+      <Filter>src\features\callback</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\callback\callback_external_safe.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\callback\callback_external_safe.h">
+      <Filter>src\features\callback</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\callback\callback_external_wfp.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\callback\callback_external_wfp.h">
+      <Filter>src\features\callback</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\callback\callback_internal.h">
+      <Filter>src\features\callback</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\callback\callback_ioctl.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\callback_minifilter_enum.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\callback_monitor.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\callback_monitor_ioctl.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\callback_remove_external.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\callback_rules.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\callback_runtime.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\callback_snapshot.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\callback_waiter.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\image_callback.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\minifilter_callback.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\minifilter_inventory.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\minifilter_runtime_link.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\object_callback.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\process_callback.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\registry_callback.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\callback\thread_callback.c">
+      <Filter>src\features\callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\capability\capability_ioctl.c">
+      <Filter>src\features\capability</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\capability\capability_query.c">
+      <Filter>src\features\capability</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\cpu_power\cpu_power_ioctl.c">
+      <Filter>src\features\cpu_power</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\cpu_power\cpu_power_runtime.c">
+      <Filter>src\features\cpu_power</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\cpu_power\cpu_power_runtime.h">
+      <Filter>src\features\cpu_power</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\debug_output\debug_output_capture.c">
+      <Filter>src\features\debug_output</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\debug_output\debug_output_ioctl.c">
+      <Filter>src\features\debug_output</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\device_audit\device_audit_internal.h">
+      <Filter>src\features\device_audit</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\device_audit\device_audit_ioctl.c">
+      <Filter>src\features\device_audit</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\device_audit\device_audit_query.c">
+      <Filter>src\features\device_audit</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\device_audit\device_audit_support.c">
+      <Filter>src\features\device_audit</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\device_audit\device_audit_targets.c">
+      <Filter>src\features\device_audit</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\dyndata\dyndata_loader.c">
+      <Filter>src\features\dyndata</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\dyndata\dyndata_query.c">
+      <Filter>src\features\dyndata</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\dyndata\dyndata_v4.c">
+      <Filter>src\features\dyndata</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\dyndata\dyndata_v4_internal.h">
+      <Filter>src\features\dyndata</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\dyndata\dyndata_v4_query.c">
+      <Filter>src\features\dyndata</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\dyndata\dyndata_validate.c">
+      <Filter>src\features\dyndata</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\file\file_actions.c">
+      <Filter>src\features\file</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\file\file_delete_recursive.c">
+      <Filter>src\features\file</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\file\file_directory_query.c">
+      <Filter>src\features\file</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\file\file_ioctl.c">
+      <Filter>src\features\file</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\file\file_irp_ioctl.c">
+      <Filter>src\features\file</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\file\file_irp_request.c">
+      <Filter>src\features\file</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\file_monitor\file_monitor_internal.h">
+      <Filter>src\features\file_monitor</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\file_monitor\file_monitor_ioctl.c">
+      <Filter>src\features\file_monitor</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\file_monitor\file_monitor_operation_map.c">
+      <Filter>src\features\file_monitor</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\file_monitor\file_monitor_runtime.c">
+      <Filter>src\features\file_monitor</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\handle\handle_ioctl.c">
+      <Filter>src\features\handle</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\handle\handle_object_query.c">
+      <Filter>src\features\handle</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\handle\handle_query.c">
+      <Filter>src\features\handle</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\handle\handle_support.c">
+      <Filter>src\features\handle</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\handle\handle_support.h">
+      <Filter>src\features\handle</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_backend.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_backend.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_cr_policy.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_cr_policy.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_descriptor.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_descriptor.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <MASM Include="src\features\hvm\hvm_entry.asm">
+      <Filter>src\features\hvm</Filter>
+    </MASM>
+    <ClCompile Include="src\features\hvm\hvm_ept.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_ept.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_ept_builder.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\hvm\hvm_ept_domain.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_ept_domain.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_ept_local.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_ept_local.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_ept_switch.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_ept_switch.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_ept_view.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_ept_view.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_event.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_event.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_evmcs.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_evmcs.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_exit.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_exit.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_exit_emulate.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_exit_emulate.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_guest.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_guest.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_inject.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_inject.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\hvm\hvm_internal.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_ioctl.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\hvm\hvm_memory.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_memory.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_metrics.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_metrics.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_msr_policy.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_msr_policy.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_mtrr.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_mtrr.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_nested.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_nested.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_nested_ad.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_nested_ad_compare.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_nested_bitmap.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_nested_bitmap.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_nested_decode.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_nested_decode.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_nested_ept.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_nested_ept.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_nested_l2.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_nested_l2.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\hvm\hvm_nested_lease_walk.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_nested_page.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\hvm\hvm_nested_probe.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_nested_probe.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_nested_vmcs.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_nested_vmcs.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_npt.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\hvm\hvm_phys_window.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_phys_window.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_process.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_process.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_resident.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_resident.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_runtime.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_runtime.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\hvm\hvm_svm.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\hvm\hvm_svm_arch.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <MASM Include="src\features\hvm\hvm_svm_entry.asm">
+      <Filter>src\features\hvm</Filter>
+    </MASM>
+    <ClCompile Include="src\features\hvm\hvm_svm_exit.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\hvm\hvm_svm_lifecycle.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\hvm\hvm_svm_metrics.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\hvm\hvm_svm_nested_mmu.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_svm_nested_mmu.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\hvm\hvm_svm_nested_msr.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\hvm\hvm_svm_nested_npt.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_svm_nested_permissions.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_svm_nested_permissions.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_svm_nested_probe.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\hvm\hvm_svm_nested_resources.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_svm_nested_runtime.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_svm_nested_shadow.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_svm_nested_shadow.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_svm_nested_state.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_svm_nested_state.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\hvm_svm_resources.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\hvm\hvm_svm_vmcb.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\hvm\hvm_vmcs.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hvm\hvm_vmcs.h">
+      <Filter>src\features\hvm</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hvm\slat_iommu_audit.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\hvm\slat_iommu_audit_ioctl.c">
+      <Filter>src\features\hvm</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\hwid\hwid_dispatch_hooks.c">
+      <Filter>src\features\hwid</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\hwid\hwid_dispatch_hooks.h">
+      <Filter>src\features\hwid</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\hwid\hwid_dispatch_ioctl.c">
+      <Filter>src\features\hwid</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\i8042_audit\i8042_audit.c">
+      <Filter>src\features\i8042_audit</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\injection\injection_ioctl.c">
+      <Filter>src\features\injection</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\injection\injection_pte_scan.c">
+      <Filter>src\features\injection</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\injection\injection_section.c">
+      <Filter>src\features\injection</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\injection\injection_vad.c">
+      <Filter>src\features\injection</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\ci_hash_fallback.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\kernel\ci_hash_fallback.h">
+      <Filter>src\features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\kernel\cpu_hardware_query.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\driver_blind.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\driver_blind_actions.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\driver_blind_gate.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\kernel\driver_blind_internal.h">
+      <Filter>src\features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\kernel\driver_blind_ioctl.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\driver_dispatch_editor.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\driver_dispatch_editor_ioctl.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\driver_image_editor.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\driver_image_editor_fields.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\kernel\driver_image_editor_internal.h">
+      <Filter>src\features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\kernel\driver_image_editor_ioctl.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\driver_image_editor_list.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\driver_image_editor_state.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\driver_integrity.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\kernel\driver_integrity.h">
+      <Filter>src\features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\kernel\driver_object_query.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\driver_unload.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\hook_scan.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\hook_scan_support.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\kernel\hook_scan_support.h">
+      <Filter>src\features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\kernel\io_timer_ioctl.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\ioctl_registry_query.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\kernel_cpu_integrity.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\kernel\kernel_cpu_integrity.h">
+      <Filter>src\features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\kernel\kernel_idt_baseline.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\kernel\kernel_idt_baseline.h">
+      <Filter>src\features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\kernel\kernel_idt_baseline_ioctl.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\kernel_idt_consistency.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\kernel\kernel_idt_consistency.h">
+      <Filter>src\features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\kernel\kernel_image_section_map.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\kernel\kernel_image_section_map.h">
+      <Filter>src\features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\kernel\kernel_ioctl.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\kernel_ipc_summary.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\kernel\kernel_ipc_summary.h">
+      <Filter>src\features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\kernel\kernel_object_audit.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\kernel\kernel_object_audit.h">
+      <Filter>src\features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\kernel\kernel_object_type_table.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\kernel\kernel_object_type_table.h">
+      <Filter>src\features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\kernel\kernel_piddb.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\kernel\kernel_piddb.h">
+      <Filter>src\features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\kernel\kernel_piddb_ioctl.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\kernel_unloaded_drivers.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\kernel\kernel_unloaded_drivers.h">
+      <Filter>src\features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\kernel\kernel_unloaded_drivers_ioctl.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\object_header_fallback.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\kernel\object_header_fallback.h">
+      <Filter>src\features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\kernel\ssdt_fallback.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\kernel\ssdt_fallback.h">
+      <Filter>src\features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\kernel\ssdt_query.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\kernel\timer_dpc_query.c">
+      <Filter>src\features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\keyboard\keyboard_internal.h">
+      <Filter>src\features\keyboard</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\keyboard\keyboard_ioctl.c">
+      <Filter>src\features\keyboard</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\keyboard\keyboard_mutation.c">
+      <Filter>src\features\keyboard</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\keyboard\keyboard_query.c">
+      <Filter>src\features\keyboard</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\log\log_channel.c">
+      <Filter>src\features\log</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\memory\memory_ddma.c">
+      <Filter>src\features\memory</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\memory\memory_ddma_ioctl.c">
+      <Filter>src\features\memory</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\memory\memory_evidence_enrichment.c">
+      <Filter>src\features\memory</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\memory\memory_evidence_enrichment.h">
+      <Filter>src\features\memory</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\memory\memory_ioctl.c">
+      <Filter>src\features\memory</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\memory\memory_kernel_evidence.c">
+      <Filter>src\features\memory</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\memory\memory_kernel_exec_scan.c">
+      <Filter>src\features\memory</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\memory\memory_kernel_exec_scan_helpers.c">
+      <Filter>src\features\memory</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\memory\memory_kernel_exec_scan_internal.h">
+      <Filter>src\features\memory</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\memory\memory_pagetable.c">
+      <Filter>src\features\memory</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\memory\memory_physical.c">
+      <Filter>src\features\memory</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\memory\memory_physical_layout.c">
+      <Filter>src\features\memory</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\mutation\mutation_ioctl.c">
+      <Filter>src\features\mutation</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\mutation\mutation_transaction.c">
+      <Filter>src\features\mutation</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\mutation\mutation_transaction.h">
+      <Filter>src\features\mutation</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\network\network_audit.c">
+      <Filter>src\features\network</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\network\network_internal.h">
+      <Filter>src\features\network</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\network\network_inventory.c">
+      <Filter>src\features\network</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\network\network_inventory.h">
+      <Filter>src\features\network</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\network\network_inventory_internal.h">
+      <Filter>src\features\network</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\network\network_inventory_ndis.c">
+      <Filter>src\features\network</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\network\network_inventory_nsi.c">
+      <Filter>src\features\network</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\network\network_inventory_wfp.c">
+      <Filter>src\features\network</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\network\network_ioctl.c">
+      <Filter>src\features\network</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\network\network_runtime.c">
+      <Filter>src\features\network</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\network\network_traffic.c">
+      <Filter>src\features\network</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\network\network_wfp.c">
+      <Filter>src\features\network</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\platform_audit\platform_audit.c">
+      <Filter>src\features\platform_audit</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\preflight\preflight_ioctl.c">
+      <Filter>src\features\preflight</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\preflight\preflight_query.c">
+      <Filter>src\features\preflight</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\process\process_actions.c">
+      <Filter>src\features\process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\process\process_crossview.c">
+      <Filter>src\features\process</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\process\process_crossview.h">
+      <Filter>src\features\process</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\process\process_detail.c">
+      <Filter>src\features\process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\process\process_dkom.c">
+      <Filter>src\features\process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\process\process_extended.c">
+      <Filter>src\features\process</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\process\process_extended.h">
+      <Filter>src\features\process</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\process\process_flags.c">
+      <Filter>src\features\process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\process\process_inject.c">
+      <Filter>src\features\process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\process\process_ioctl.c">
+      <Filter>src\features\process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\process\process_memory.c">
+      <Filter>src\features\process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\process\process_memory_ioctl.c">
+      <Filter>src\features\process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\process\process_privilege.c">
+      <Filter>src\features\process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\process\process_privilege_ioctl.c">
+      <Filter>src\features\process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\process\process_terminate.c">
+      <Filter>src\features\process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\process\process_terminate_memory.c">
+      <Filter>src\features\process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\process\process_token_privilege.c">
+      <Filter>src\features\process</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\process_protect\process_protect_internal.h">
+      <Filter>src\features\process_protect</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\process_protect\process_protect_ioctl.c">
+      <Filter>src\features\process_protect</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\process_protect\process_protect_kernel.c">
+      <Filter>src\features\process_protect</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\process_protect\process_protect_runtime.c">
+      <Filter>src\features\process_protect</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\redirect\redirect_file.c">
+      <Filter>src\features\redirect</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\redirect\redirect_internal.h">
+      <Filter>src\features\redirect</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\redirect\redirect_ioctl.c">
+      <Filter>src\features\redirect</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\redirect\redirect_registry.c">
+      <Filter>src\features\redirect</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\redirect\redirect_runtime.c">
+      <Filter>src\features\redirect</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\registry\registry_ioctl.c">
+      <Filter>src\features\registry</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\registry\registry_query.c">
+      <Filter>src\features\registry</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\research\research_topic_ioctl.c">
+      <Filter>src\features\research</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\rxpf\image_protection_manager.c">
+      <Filter>src\features\rxpf</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\rxpf\image_protection_manager.h">
+      <Filter>src\features\rxpf</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\rxpf\page_fault_manager.c">
+      <Filter>src\features\rxpf</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\rxpf\page_fault_manager.h">
+      <Filter>src\features\rxpf</Filter>
+    </ClInclude>
+    <MASM Include="src\features\rxpf\page_fault_stub.asm">
+      <Filter>src\features\rxpf</Filter>
+    </MASM>
+    <ClCompile Include="src\features\rxpf\page_state_table.c">
+      <Filter>src\features\rxpf</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\rxpf\page_state_table.h">
+      <Filter>src\features\rxpf</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\rxpf\rxpf_diagnostics.c">
+      <Filter>src\features\rxpf</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\rxpf\rxpf_diagnostics.h">
+      <Filter>src\features\rxpf</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\rxpf\rxpf_ioctl.c">
+      <Filter>src\features\rxpf</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\rxpf\rxpf_runtime.c">
+      <Filter>src\features\rxpf</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\rxpf\rxpf_runtime.h">
+      <Filter>src\features\rxpf</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\rxpf\rxpf_self_test.c">
+      <Filter>src\features\rxpf</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\rxpf\rxpf_self_test.h">
+      <Filter>src\features\rxpf</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\rxpf\x64_instruction_emulator.c">
+      <Filter>src\features\rxpf</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\rxpf\x64_instruction_emulator.h">
+      <Filter>src\features\rxpf</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\rxpf\x64_instruction_emulator_tests.c">
+      <Filter>src\features\rxpf</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\safety\safety_ioctl.c">
+      <Filter>src\features\safety</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\safety\safety_policy.c">
+      <Filter>src\features\safety</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\section\section_ioctl.c">
+      <Filter>src\features\section</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\section\section_query.c">
+      <Filter>src\features\section</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\section\section_support.c">
+      <Filter>src\features\section</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\section\section_support.h">
+      <Filter>src\features\section</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\security_audit\security_audit_internal.h">
+      <Filter>src\features\security_audit</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\security_audit\security_audit_ioctl.c">
+      <Filter>src\features\security_audit</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\security_audit\security_audit_query.c">
+      <Filter>src\features\security_audit</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\storage\storage_audit.c">
+      <Filter>src\features\storage</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\storage\storage_forensics.c">
+      <Filter>src\features\storage</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\storage\storage_forensics_ioctl.c">
+      <Filter>src\features\storage</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\storage\storage_ioctl.c">
+      <Filter>src\features\storage</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\system_time\system_time_counter.c">
+      <Filter>src\features\system_time</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\system_time\system_time_counter.h">
+      <Filter>src\features\system_time</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\system_time\system_time_hyperv.c">
+      <Filter>src\features\system_time</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\system_time\system_time_hyperv.h">
+      <Filter>src\features\system_time</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\system_time\system_time_internal.h">
+      <Filter>src\features\system_time</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\system_time\system_time_ioctl.c">
+      <Filter>src\features\system_time</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\system_time\system_time_resolver.c">
+      <Filter>src\features\system_time</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\system_time\system_time_runtime.c">
+      <Filter>src\features\system_time</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\thread\thread_apc.c">
+      <Filter>src\features\thread</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\thread\thread_crossview.c">
+      <Filter>src\features\thread</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\thread\thread_crossview.h">
+      <Filter>src\features\thread</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\thread\thread_detail.c">
+      <Filter>src\features\thread</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\thread\thread_ioctl.c">
+      <Filter>src\features\thread</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\thread\thread_query.c">
+      <Filter>src\features\thread</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\thread\thread_worker_state.c">
+      <Filter>src\features\thread</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\thread\thread_worker_state.h">
+      <Filter>src\features\thread</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\thread\work_queue_fallback.c">
+      <Filter>src\features\thread</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\thread\work_queue_fallback.h">
+      <Filter>src\features\thread</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\thread\work_queue_query.c">
+      <Filter>src\features\thread</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\trust\trust_ioctl.c">
+      <Filter>src\features\trust</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\trust\trust_query.c">
+      <Filter>src\features\trust</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\win32k\win32k_detail.c">
+      <Filter>src\features\win32k</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\win32k\win32k_event_hook.c">
+      <Filter>src\features\win32k</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\win32k\win32k_fallback.c">
+      <Filter>src\features\win32k</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\win32k\win32k_fallback.h">
+      <Filter>src\features\win32k</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\win32k\win32k_ioctl.c">
+      <Filter>src\features\win32k</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\win32k\win32k_message_hook.c">
+      <Filter>src\features\win32k</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\win32k\win32k_query.c">
+      <Filter>src\features\win32k</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\win32k\win32k_query.h">
+      <Filter>src\features\win32k</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\win32k\win32k_queue_layout.c">
+      <Filter>src\features\win32k</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\win32k\win32k_runtime_query.c">
+      <Filter>src\features\win32k</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\win32k\win32k_support.c">
+      <Filter>src\features\win32k</Filter>
+    </ClCompile>
+    <ClInclude Include="src\features\win32k\win32k_support.h">
+      <Filter>src\features\win32k</Filter>
+    </ClInclude>
+    <ClCompile Include="src\features\win32k\win32k_timer.c">
+      <Filter>src\features\win32k</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\win32k\window_band.c">
+      <Filter>src\features\win32k</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\wsl\wsl_silo_ioctl.c">
+      <Filter>src\features\wsl</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\wsl\wsl_silo_query.c">
+      <Filter>src\features\wsl</Filter>
+    </ClCompile>
+    <ClCompile Include="src\framework\device_control.c">
+      <Filter>src\framework</Filter>
+    </ClCompile>
+    <ClCompile Include="src\framework\driver_entry.c">
+      <Filter>src\framework</Filter>
+    </ClCompile>
+    <ClCompile Include="src\framework\io_queue.c">
+      <Filter>src\framework</Filter>
+    </ClCompile>
+    <ClCompile Include="src\framework\startup_breadcrumb.c">
+      <Filter>src\framework</Filter>
+    </ClCompile>
+    <ClCompile Include="src\platform\dyndata_fallback_resolver.c">
+      <Filter>src\platform</Filter>
+    </ClCompile>
+    <ClInclude Include="src\platform\dyndata_fallback_resolver.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
+    <ClCompile Include="src\platform\kernel_cache_fallback.c">
+      <Filter>src\platform</Filter>
+    </ClCompile>
+    <ClInclude Include="src\platform\kernel_cache_fallback.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
+    <ClCompile Include="src\platform\kernel_module_identity.c">
+      <Filter>src\platform</Filter>
+    </ClCompile>
+    <ClInclude Include="src\platform\kernel_module_identity.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
+    <ClCompile Include="src\platform\kernel_object_probe.c">
+      <Filter>src\platform</Filter>
+    </ClCompile>
+    <ClInclude Include="src\platform\kernel_object_probe.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
+    <ClCompile Include="src\platform\pool_compat.c">
+      <Filter>src\platform</Filter>
+    </ClCompile>
+    <ClInclude Include="src\platform\pool_compat.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
+    <ClCompile Include="src\platform\process_resolver.c">
+      <Filter>src\platform</Filter>
+    </ClCompile>
+    <ClInclude Include="src\platform\process_resolver.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
+    <ClCompile Include="src\platform\runtime_signature_scan.c">
+      <Filter>src\platform</Filter>
+    </ClCompile>
+    <ClInclude Include="src\platform\runtime_signature_scan.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
+    <ClCompile Include="src\platform\token_layout_resolver.c">
+      <Filter>src\platform</Filter>
+    </ClCompile>
+    <ClInclude Include="src\platform\token_layout_resolver.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\third_party\systeminformer_dyn\kphdyn.c">
+      <Filter>third_party\systeminformer_dyn</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\third_party\systeminformer_dyn\kphdyn.h">
+      <Filter>third_party\systeminformer_dyn</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\systeminformer_dyn\ksw_si_dynconfig.h">
+      <Filter>third_party\systeminformer_dyn</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

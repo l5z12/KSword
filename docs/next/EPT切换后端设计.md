@@ -69,7 +69,7 @@ Monitor Trap Flag**。
 `EPT_VIOLATION_VE` / `VE_INFO_READY` 没有，与仓库既有的「#VE 这条路走不通」论证一致；
 `SHADOW_EPT` / `NESTED_VMX_DISPATCH` / `NESTED_VMX_ACTIVE` / `VMX_INSTRUCTION_EMULATION`
 没有（那些是 KSword 自己再嵌套一层 guest 用的，本任务不需要）；`HYPERV_EVMCS_ACTIVE`
-没有而 `_CAPABLE`/`_V1` 有 —— 与 `KswordARKHvmEvmcsValidate` 刻意只报 PARTIAL 完全一致。
+没有而 `_CAPABLE`/`_V1` 有 —— 与 `kswordArkHvmEvmcsValidate` 刻意只报 PARTIAL 完全一致。
 
 ## 2. 三条被实测修正的认知
 
@@ -200,7 +200,7 @@ KSWORD_ARK_HVM_EPTP_PATH_PAGES = 4
 
 - `shared/driver/KswordArkHvmEptSwitch.h` —— 位布局构造/校验、层次索引编码、切换决策状态机、
   INVEPT descriptor、页预算
-- `KswordARKLightTests/HvmEptSwitchTests.cpp` —— 宿主机单测
+- `tests/native/KswordARKLightTests/HvmEptSwitchTests.cpp` —— 宿主机单测
 
 真正的层次构建/复核/释放、`VMWRITE 0x201A`、INVEPT 指令发射、每 VCPU `ActiveEptpIndex` 与
 VMCS 字段的一致性复位 —— 全是带副作用的驱动侧代码，**一行没写**。

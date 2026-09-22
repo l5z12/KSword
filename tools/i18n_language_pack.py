@@ -25,7 +25,7 @@ SKIPPED_SOURCE_LINE_MARKERS = {
     "RELEASE_META_BUILD_TIME_MARKER",
     "RELEASE_META_VERSION_MARKER",
 }
-# QSS 选择器和 palette 角色不是用户可见文本；样式模板拆行后仍必须从审计源中排除。
+# QSS selectors and palette roles are not user-visible text; style templates must still be excluded from audit sources even after line wrapping.
 QSS_SELECTOR_RE = re.compile(
     r"^(?:Q[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]\r\n]+\])?(?:::[A-Za-z_-][A-Za-z0-9_-]*)?)"
     r"(?:\s+Q[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]\r\n]+\])?(?:::[A-Za-z_-][A-Za-z0-9_-]*)?)*,?$"
@@ -151,6 +151,21 @@ def scan_cpp_string_tokens(source_text: str) -> Iterable[CppStringToken]:
             line += 1
             index += 1
             continue
+        # Header names are preprocessing tokens, not application strings. Keep
+        # scanning macro definitions: they may contain actual translated text.
+        if character == "#" and not source_text[source_text.rfind("\n", 0, index) + 1:index].strip():
+            directive = re.match(r"#\s*include\b", source_text[index:])
+            if directive:
+                while True:
+                    newline_index = source_text.find("\n", index)
+                    if newline_index < 0:
+                        return
+                    continued = source_text[index:newline_index].rstrip("\r").endswith("\\")
+                    index = newline_index + 1
+                    line += 1
+                    if not continued:
+                        break
+                continue
         if source_text.startswith("//", index):
             newline_index = source_text.find("\n", index + 2)
             if newline_index < 0:
@@ -465,7 +480,7 @@ def allows_han_in_english_source(source_text: str) -> bool:
     return (
         source_text
         == "Mapleleaf,存钱买油条（云舟API）,Extrella_Explorer,NtKrnl64,一花一树叶,hzh"
-        # 开发者自述是展示身份的一部分，英文界面也按本人要求保留中文原文。
+        # The developer's self-description is part of the identity display; the English interface retains the original Chinese text as requested.
         or source_text == "一个臭写C++的"
         or "$verdict = if($lower -match 'audit|审计|" in source_text
     )

@@ -9,10 +9,10 @@
 - 总控与专题设计：`docs/pdb_r0_audit_prep/01..10_*.md`。
 - 阶段 manifest：`docs/next_phase_manifests/*.md`。
 - shared 协议头：`shared/driver/*Ioctl.h`。
-- R0 注册表：`KswordARKDriver/src/dispatch/ioctl_registry.c`。
-- R3 统一入口：`Ksword5.1/Ksword5.1/ArkDriverClient/ArkDriverClient.h`。
-- 主 GUI 与 ARKLight 页面落点：`Ksword5.1/Ksword5.1/*Dock/`、`KswordARKLight/Features/`。
-- CLI 分发：`KswordCLI/KswordCLI.cpp`。
+- R0 注册表：`drivers/ark/src/dispatch/ioctl_registry.c`。
+- R3 统一入口：`shared/ark_client/ArkDriverClient.h`。
+- 主 GUI 与 ARKLight 页面落点：`apps/desktop/*_dock/`、`apps/ark_light/features/`。
+- CLI 分发：`apps/cli/KswordCLI.cpp`。
 
 约束沿用根目录 `AGENTS.md`：R0/R3 协议只在 `shared/driver/`，R0 IOCTL 只经 `ioctl_registry.c` 注册，Dock/UI 不直接 `DeviceIoControl`，用户态统一走 `ArkDriverClient`。
 
@@ -23,7 +23,7 @@
 | 已注册 | shared IOCTL、R0 handler 和 `ioctl_registry.c` 注册项均在当前静态树中可见。 |
 | 已有 wrapper | `ArkDriverClient` 暴露 typed wrapper，UI 可通过 wrapper 调用。 |
 | 已有 GUI | 主 Qt GUI 已有明确 Dock/Page 落点。 |
-| 已有 Light | `KswordARKLight/Features` 已有明确落点。 |
+| 已有 Light | `apps/ark_light/Features` 已有明确落点。 |
 | 已有 CLI | `KswordCLI` 已有对应 family/subcommand。 |
 | 部分接入 | 协议/后端/UI 中有缺口，或只覆盖 P0 子集。 |
 | 设计/待接入 | 目前主要是文档设计或 manifest，最终验收前仍需实现/集成。 |
@@ -35,16 +35,16 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | PDB Profile / DynData V4 | `IOCTL_KSWORD_ARK_APPLY_DYN_PROFILE_V4`; `IOCTL_KSWORD_ARK_QUERY_DYN_V4_MODULES`; `IOCTL_KSWORD_ARK_QUERY_DYN_V4_CAPABILITY_GROUPS`; `IOCTL_KSWORD_ARK_QUERY_DYN_V4_MISSING_ITEMS`; 兼容 v1/v2/v3 status/fields/capabilities/apply/ex | `applyDynDataProfileV4`; `queryDynDataV4Modules`; `queryDynDataV4CapabilityGroups`; `queryDynDataV4MissingItems`; v1/v2/v3 wrappers | `KernelDock` DynData / DriverStatus；R3 loader 仍负责 profile pack 解析 | `DriverFeature` 的“DynData能力”“动态偏移 / DynData”；`KernelPage` DynData/DynDataCapabilities | `dyn status`; `dyn fields`; `dyn capabilities`; `dyn profile`/`v4-modules`; `dyn v4-capabilities`; `dyn v4-missing`; `dyn apply-profile-v4`; 兼容旧 `dyn apply-profile`, `dyn apply-profile-ex` | V4 查询面与 CLI blob 下发入口已接入；文档仍要求最终验收 profile identity、per-module capability、缺字段降级与运行态响应。 |
 | 进程/线程/CID | `IOCTL_KSWORD_ARK_ENUM_PROCESS`; `IOCTL_KSWORD_ARK_QUERY_PROCESS_CROSSVIEW`; `IOCTL_KSWORD_ARK_ENUM_THREAD`; `IOCTL_KSWORD_ARK_QUERY_THREAD_CROSSVIEW`; `IOCTL_KSWORD_ARK_ENUM_CID_TABLE`; `IOCTL_KSWORD_ARK_QUERY_KERNEL_OBJECT_SUMMARY` | `enumerateProcesses`; `queryProcessCrossView`; `enumerateThreads`; `queryThreadCrossView`; `enumCidTable`; `queryKernelObjectSummary` | `ProcessDock` Cross-View；`KernelDock` CID/Object summary | `KernelPage` ProcessCrossView / ThreadCrossView / CID；ProcessDetail 仍为 R3/R0 混合详情 | `process enum`; `process crossview`; `thread enum`; `thread crossview`; `kernel cid` | 已注册、已有 wrapper、已有 GUI/Light/CLI。验收重点是 DynData 缺失降级、budget/partial、CID-only/active-only/thread orphan 分类。 |
-| 句柄/对象 | `IOCTL_KSWORD_ARK_ENUM_PROCESS_HANDLES`; `IOCTL_KSWORD_ARK_QUERY_HANDLE_OBJECT`; `IOCTL_KSWORD_ARK_QUERY_ALPC_PORT`; `IOCTL_KSWORD_ARK_QUERY_KERNEL_OBJECT_SUMMARY`; `IOCTL_KSWORD_ARK_QUERY_IPC_SUMMARY` | `enumerateProcessHandles`; `queryHandleObject`; `queryAlpcPort`; `queryKernelObjectSummary`; `queryIpcSummary` | 主 GUI `HandleDock`；`KernelDock` Object Namespace / Object Type / ALPC/IP 桥接页 | `Features/Handle`; `KernelPage` ObjectTypeMatrix / ObjectNamespace / CommunicationEndpoint / NamedPipe | `handle enum`; `handle query-object`; `handle object-header`; `handle type-matrix`; `alpc ...`; `kernel ipc` | P0 句柄枚举和对象摘要已接入；通用 `_OBJECT_HEADER` 深字段仍按 `07_ntos_core_ark_audit.md` 标为 P1 增强验收。 |
+| handle_dock/对象 | `IOCTL_KSWORD_ARK_ENUM_PROCESS_HANDLES`; `IOCTL_KSWORD_ARK_QUERY_HANDLE_OBJECT`; `IOCTL_KSWORD_ARK_QUERY_ALPC_PORT`; `IOCTL_KSWORD_ARK_QUERY_KERNEL_OBJECT_SUMMARY`; `IOCTL_KSWORD_ARK_QUERY_IPC_SUMMARY` | `enumerateProcessHandles`; `queryHandleObject`; `queryAlpcPort`; `queryKernelObjectSummary`; `queryIpcSummary` | 主 GUI `HandleDock`；`KernelDock` Object Namespace / Object Type / ALPC/IP 桥接页 | `Features/Handle`; `KernelPage` ObjectTypeMatrix / ObjectNamespace / CommunicationEndpoint / NamedPipe | `handle enum`; `handle query-object`; `handle object-header`; `handle type-matrix`; `alpc ...`; `kernel ipc` | P0 句柄枚举和对象摘要已接入；通用 `_OBJECT_HEADER` 深字段仍按 `07_ntos_core_ark_audit.md` 标为 P1 增强验收。 |
 | 驱动与模块完整性 | `IOCTL_KSWORD_ARK_QUERY_DRIVER_OBJECT`; `IOCTL_KSWORD_ARK_QUERY_DRIVER_INTEGRITY`; `IOCTL_KSWORD_ARK_QUERY_CPU_HARDWARE`; `IOCTL_KSWORD_ARK_QUERY_PHYSICAL_MEMORY_LAYOUT`; `IOCTL_KSWORD_ARK_QUERY_DRIVER_TRUST_VIEW` | `queryDriverObject`; `queryDriverIntegrity`; `queryKernelCpuIntegrity`; `queryCpuHardwareSnapshot`; `queryPhysicalMemoryLayout`; `queryDriverTrustView` | `DriverDock` Integrity/Evidence；`KernelDock` DriverObject、CPU integrity、module/driver evidence | `Features/Driver`; `KernelPage` DriverIntegrity / KernelCpuIntegrity / DeviceDriverObjects | `driver integrity`; `driver detail`; `driver unloaded`; `driver piddb`; `kernel query-driver-integrity`; `kernel query-driver-object`; `misc driver-trust` | 已注册且已多端接入。`driver unloaded`/`driver piddb` 已复用 Driver Integrity optional-globals 投影 `MmUnloadedDrivers`/`PiDDBCacheTable` 地址证据；entry-level 枚举仍是 P1/P2 待 schema。 |
 | 回调与 Hook | `IOCTL_KSWORD_ARK_ENUM_CALLBACKS`; `IOCTL_KSWORD_ARK_GET_CALLBACK_RUNTIME_STATE`; `IOCTL_KSWORD_ARK_WAIT_CALLBACK_EVENT`; `IOCTL_KSWORD_ARK_SCAN_INLINE_HOOKS`; `IOCTL_KSWORD_ARK_ENUM_IAT_EAT_HOOKS`; `IOCTL_KSWORD_ARK_ENUM_SSDT`; `IOCTL_KSWORD_ARK_ENUM_SHADOW_SSDT`; win32k hotkey/hook 见 GUI 行 | `enumerateCallbacks`; `queryCallbackRuntimeState`; `waitCallbackEventAsync`; `scanInlineHooks`; `enumerateIatEatHooks`; `enumerateSsdt`; `enumerateShadowSsdt`; keyboard/win32k wrappers | `KernelDock` Callback/SSDT/ShadowSSDT/Inline/IAT/EAT；Risk Center 聚合 | `KernelPage` CallbackEnumeration、KeyboardHotkeys、KeyboardHooks、Ssdt/ShadowSsdt/InlineHook/IatEatHook | `callback enum`; `callback runtime-state`; `kernel callbacks`; `kernel hooks`; `kernel ssdt`; `kernel shadow-ssdt`; `kernel scan-inline-hooks`; `kernel enum-iat-eat-hooks`; `keyboard enum-hotkeys`; `keyboard enum-hooks` | 只读枚举面已接入；callback 修改、remove、bypass、patch/unload 类命令存在于仓库但不属于本轮只读审计验收，应按 mutation/safety 单独门禁。 |
 | Win32K GUI | `IOCTL_KSWORD_ARK_QUERY_WIN32K_PROFILE_STATUS`; `IOCTL_KSWORD_ARK_QUERY_WIN32K_WINDOWS`; `IOCTL_KSWORD_ARK_QUERY_WIN32K_GUI_THREADS`; `IOCTL_KSWORD_ARK_QUERY_WIN32K_HOTKEYS_PDB`; `IOCTL_KSWORD_ARK_QUERY_WIN32K_HOOKS_PDB` | `queryWin32kProfileStatus`; `queryWin32kWindows`; `queryWin32kGuiThreads`; `queryWin32kHotkeysPdb`; `queryWin32kHooksPdb` | 主 GUI 现有 `WindowDock`/`OtherDock` 窗口管理；Win32k R0 证据可由 Window/Kernel 方向承接 | `Features/Window` 中 Win32kGuiAudit 模式调用 ArkDriverClient；R3 `EnumWindows` baseline 保留 | `window win32k`; `window gui`; `window gui-threads` | 已注册、Light 已接入 GUI 审计入口。最终验收要覆盖 session/desktop 上下文、R3 `EnumWindows` cross-view、profile 缺失 unsupported。 |
 | Network Stack | `IOCTL_KSWORD_ARK_NETWORK_QUERY_TCP_ENDPOINTS`; `IOCTL_KSWORD_ARK_NETWORK_QUERY_UDP_ENDPOINTS`; `IOCTL_KSWORD_ARK_NETWORK_QUERY_WFP_INVENTORY`; `IOCTL_KSWORD_ARK_NETWORK_QUERY_NDIS_CHAIN`; 旧策略 `NETWORK_SET_RULES/QUERY_STATUS` 非本轮只读验收重点 | `queryNetworkTcpEndpoints`; `queryNetworkUdpEndpoints`; `queryNetworkWfpInventory`; `queryNetworkNdisChain` | `NetworkDock` TCP/UDP 与 `NetworkAuditPage`；Firewall/WFP R3 页面可作 cross-view | `Features/Network` R0 TCP/UDP/WFP/NDIS 只读页 | `network tcp`; `network udp`; `network audit`; `network wfp`; `network ndis`; `network afd`; `network nsi` | TCP/UDP/WFP/NDIS 已接入；`network afd`/`network nsi` 已有明确 degraded R3 fallback 输出，不再是硬 unsupported；AFD/NSI/HTTP 的独立 shared/R0 IOCTL 仍按 `04_network_stack_audit.md` 为 P1/P2 待接入。 |
 | Minifilter/FileObject/Section/Storage/BitLocker | `IOCTL_KSWORD_ARK_QUERY_MINIFILTER_INVENTORY`; `IOCTL_KSWORD_ARK_QUERY_FILE_INFO`; `IOCTL_KSWORD_ARK_QUERY_PROCESS_SECTION`; `IOCTL_KSWORD_ARK_QUERY_FILE_SECTION_MAPPINGS`; `IOCTL_KSWORD_ARK_QUERY_VOLUME_STACK_AUDIT`; `IOCTL_KSWORD_ARK_QUERY_BITLOCKER_FVE_AUDIT`; `IOCTL_KSWORD_ARK_QUERY_MOUNTMGR_MAPPING_AUDIT`; `IOCTL_KSWORD_ARK_QUERY_FILESYSTEM_INTEGRITY_AUDIT` | `queryMinifilterInventory`; `queryFileInfo`; `queryProcessSection`; `queryFileSectionMappings`; `queryVolumeStackAudit`; `queryBitlockerFveAudit`; `queryMountMgrMappingAudit`; `queryFilesystemIntegrityAudit` | `FileDock` file info/section/minifilter/storage audit；`HardwareDock` 可 cross-link storage device | `Features/File` Minifilter / Section / Storage / BitLocker / FS Integrity tabs | `file minifilter`; `file query-info`; `file fileobject`; `file section`; `section query-process`; `section query-file-mappings`; `file bitlocker`; `file storage`; `file mountmgr`; `file filesystem` | P0 多数已接入。BitLocker 验收必须确认不返回 key material；ControlArea/deleted-file 深证据仍是 P1/P2。 |
-| Security/CI/VBS/Hyper-V/AppControl | `IOCTL_KSWORD_ARK_QUERY_SECURITY_STATUS`; `IOCTL_KSWORD_ARK_QUERY_DRIVER_TRUST_VIEW`; `IOCTL_KSWORD_ARK_QUERY_HYPERV_SUMMARY`; `IOCTL_KSWORD_ARK_QUERY_APP_CONTROL_STATUS`; 另有 `IOCTL_KSWORD_ARK_QUERY_IMAGE_TRUST`、`IOCTL_KSWORD_ARK_QUERY_PREFLIGHT` | `querySecurityStatus`; `queryDriverTrustView`; `queryHyperVSummary`; `queryAppControlStatus`; `queryImageTrust`; `queryPreflight` | `MiscDock/ApplicationControlPage`; `DriverDock` trust cross-view；Preflight/Trust 相关页面 | `Features/Misc` Security / CI / VBS / Hyper-V / AppControl read-only facade | `misc security`; `misc ci`; `misc vbs`; `misc hyperv`; `misc applocker`; `misc bam`; `misc driver-trust`; `trust ...`; `preflight ...` | P0 posture 已接入；AppLocker policy details、mssecflt 深实例、VMBus/vSwitch/vPCI/HvSocket、ahcache/BAM 明细仍按设计延后，默认 summary/privacy。 |
+| Security/CI/VBS/Hyper-V/AppControl | `IOCTL_KSWORD_ARK_QUERY_SECURITY_STATUS`; `IOCTL_KSWORD_ARK_QUERY_DRIVER_TRUST_VIEW`; `IOCTL_KSWORD_ARK_QUERY_HYPERV_SUMMARY`; `IOCTL_KSWORD_ARK_QUERY_APP_CONTROL_STATUS`; 另有 `IOCTL_KSWORD_ARK_QUERY_IMAGE_TRUST`、`IOCTL_KSWORD_ARK_QUERY_PREFLIGHT` | `querySecurityStatus`; `queryDriverTrustView`; `queryHyperVSummary`; `queryAppControlStatus`; `queryImageTrust`; `queryPreflight` | `misc_dock/ApplicationControlPage`; `DriverDock` trust cross-view；Preflight/Trust 相关页面 | `Features/Misc` Security / CI / VBS / Hyper-V / AppControl read-only facade | `misc security`; `misc ci`; `misc vbs`; `misc hyperv`; `misc applocker`; `misc bam`; `misc driver-trust`; `trust ...`; `preflight ...` | P0 posture 已接入；AppLocker policy details、mssecflt 深实例、VMBus/vSwitch/vPCI/HvSocket、ahcache/BAM 明细仍按设计延后，默认 summary/privacy。 |
 | 设备与输入链 | `IOCTL_KSWORD_ARK_QUERY_DEVICE_STACK_AUDIT`; `IOCTL_KSWORD_ARK_QUERY_INPUT_STACK_AUDIT`; `IOCTL_KSWORD_ARK_QUERY_USB_TOPOLOGY_AUDIT`; `IOCTL_KSWORD_ARK_ENUM_KEYBOARD_HOTKEYS`; `IOCTL_KSWORD_ARK_ENUM_KEYBOARD_HOOKS` | `queryDeviceStackAudit`; `queryInputStackAudit`; `queryUsbTopologyAudit`; `enumerateKeyboardHotkeys`; `enumerateKeyboardHooks` | `HardwareDock` DeviceManager/R0Evidence；`KernelDock` keyboard hotkey/hook | `Features/Hardware` SetupAPI/CM tree with R0 protocol summaries；`KernelPage` KeyboardHotkeys/KeyboardHooks | `hardware audit`; `hardware pnp`; `hardware input`; `hardware usb`; `keyboard enum-hotkeys`; `keyboard enum-hooks` | P0 device/input/USB stack audit已接入。验收必须确认无键盘/鼠标内容采集，只有设备栈、filter、hook/hotkey 元数据。 |
 | GPU/Display/Watchdog | `IOCTL_KSWORD_ARK_QUERY_GPU_DISPLAY_WATCHDOG_AUDIT` | `queryGpuDisplayWatchdogAudit` | 主 GUI 可落 `WindowDock`/`HardwareDock`/Driver integrity；当前 R0 evidence 也可聚合到 Risk Center | `Features/Window` GpuDisplayAudit；`Features/Hardware` 可显示 R0 device stack protocol | `window gpu`; `window display`; `window watchdog` | P1/P2 方向已有协议和 Light 入口；深度 dxgkrnl/dxgmms2 进程 GPU 对象仍为 P2 research，TDR/watchdog 私有状态只做有限只读。 |
-| IPC/SMB/Pipe | `IOCTL_KSWORD_ARK_QUERY_IPC_SUMMARY`; `IOCTL_KSWORD_ARK_QUERY_ALPC_PORT`; `IOCTL_KSWORD_ARK_QUERY_KERNEL_OBJECT_SUMMARY`; named pipe 目前主要走对象命名空间/句柄/KernelDock worker | `queryIpcSummary`; `queryAlpcPort`; `queryKernelObjectSummary` | `KernelDock` NamedPipe / CommunicationEndpoint / ALPC / Object namespace | `KernelPage` NamedPipe / CommunicationEndpoint / ObjectNamespace；`Features/Handle` 可查句柄对象 | `kernel ipc`; `alpc ...`; `handle query-object` | IPC summary/ALPC/Pipe 对象侧已接入。SMB 栈专用 R0/PDB IOCTL 未见独立协议，当前应标为通过文件/网络/IPC 交叉证据覆盖，SMB 专项待设计。 |
+| IPC/SMB/Pipe | `IOCTL_KSWORD_ARK_QUERY_IPC_SUMMARY`; `IOCTL_KSWORD_ARK_QUERY_ALPC_PORT`; `IOCTL_KSWORD_ARK_QUERY_KERNEL_OBJECT_SUMMARY`; named pipe 目前主要走对象命名空间/handle_dock/KernelDock worker | `queryIpcSummary`; `queryAlpcPort`; `queryKernelObjectSummary` | `KernelDock` NamedPipe / CommunicationEndpoint / ALPC / Object namespace | `KernelPage` NamedPipe / CommunicationEndpoint / ObjectNamespace；`Features/Handle` 可查句柄对象 | `kernel ipc`; `alpc ...`; `handle query-object` | IPC summary/ALPC/Pipe 对象侧已接入。SMB 栈专用 R0/PDB IOCTL 未见独立协议，当前应标为通过文件/网络/IPC 交叉证据覆盖，SMB 专项待设计。 |
 | Memory Evidence / Kernel Memory | `IOCTL_KSWORD_ARK_SCAN_KERNEL_EXECUTABLE_MEMORY`; `IOCTL_KSWORD_ARK_SCAN_KERNEL_MEMORY_EVIDENCE`; `IOCTL_KSWORD_ARK_TRANSLATE_VIRTUAL_ADDRESS`; `IOCTL_KSWORD_ARK_QUERY_PAGE_TABLE_ENTRY`; 另有 VA/physical read/write 但本轮验收只看只读证据 | `scanKernelExecutableMemory`; `queryKernelMemoryEvidence`; PTE/translate 通过 memory wrappers/types；主 GUI 内存页调用 ArkDriverClient | `MemoryDock` Kernel Executable Memory / Kernel Memory Evidence / Process PTE Translate；Risk Center 聚合 | `Features/Memory` 嵌入 `KernelPage` KernelExecutableMemory / KernelMemoryEvidence，另有 R3 Process VA Evidence fallback | `memory scan-kexec`; `memory scan-evidence`; `memory translate-va`; `memory query-pte` | 本轮重点已接入：kernel executable scan v2 有 address range、protection、module/section owner、unknown executable、first bytes hash/status、budget/partial；memory evidence 有 RWX/RX private、non-module executable、image-like、Section/ControlArea/deleted-file hint；PTE/VA 输出 flags、large/NX/write/user/global、confidence。未编译、未运行。 |
 
 ## 4. 分功能验收要点
@@ -67,7 +67,7 @@
 - KswordCLI 命令：`process crossview`、`thread crossview`、`kernel cid`。
 - 验收状态：已接入。需要用摘链/CID 缺失/退出态/孤儿线程样本验证 anomaly bits、confidence、partial/budget。
 
-### 4.3 句柄/对象
+### 4.3 handle_dock/对象
 
 - shared IOCTL：handle enum、handle object、ALPC port、object summary、IPC summary。
 - ArkDriverClient wrapper：`enumerateProcessHandles`、`queryHandleObject`、`queryAlpcPort`、`queryKernelObjectSummary`、`queryIpcSummary`。
@@ -197,18 +197,18 @@
 ### 7.1 已核对通过的集成项
 
 - 新增源码工程注册：
-  - 主 GUI 新增/未跟踪源码均已出现在 `Ksword5.1/Ksword5.1/Ksword5.1.vcxproj` 与 `.vcxproj.filters`：
+  - 主 GUI 新增/未跟踪源码均已出现在 `apps/desktop/KswordDesktop.vcxproj` 与 `.vcxproj.filters`：
     - `ArkDriverClient/ArkDriverAudit.cpp`
-    - `KernelDock/KernelDockCidTab.cpp/.h`
-    - `KernelDock/KernelDockIpcTab.cpp/.h`
-    - `MemoryDock/MemoryDock.ProcessMemoryEvidence.cpp`
-    - `MemoryDock/MemoryDock.ProcessPteTranslate.cpp`
-    - `NetworkDock/NetworkAuditPage.cpp/.h`
-  - `KswordARKLight/Features/AuditCommon`、`Handle`、`Misc`、`Network` 下新增 `.cpp/.h` 均已出现在 `KswordARKLight/KswordARKLight.vcxproj` 与 `.filters`。
-- `KswordARKLight/Features/FeatureRegistry.cpp` 已注册新增轻量模块：
-  - `40011 网络` -> `Network::CreateNetworkFeaturePage`
-  - `40012 句柄` -> `Handle::CreateHandleFeaturePage`
-  - `40013 杂项安全` -> `Misc::CreateMiscFeaturePage`
+    - `kernel_dock/KernelDockCidTab.cpp/.h`
+    - `kernel_dock/KernelDockIpcTab.cpp/.h`
+    - `memory_dock/MemoryDock.ProcessMemoryEvidence.cpp`
+    - `memory_dock/MemoryDock.ProcessPteTranslate.cpp`
+    - `network_dock/NetworkAuditPage.cpp/.h`
+  - `apps/ark_light/features/audit_common`、`Handle`、`Misc`、`Network` 下新增 `.cpp/.h` 均已出现在 `apps/ark_light/KswordARKLight.vcxproj` 与 `.filters`。
+- `apps/ark_light/features/FeatureRegistry.cpp` 已注册新增轻量模块：
+  - `40011 网络` -> `Network::createNetworkFeaturePage`
+  - `40012 句柄` -> `Handle::createHandleFeaturePage`
+  - `40013 杂项安全` -> `Misc::createMiscFeaturePage`
 - 主 GUI 网络审计页已接入 ArkDriverClient 网络 wrapper，不直接访问 KswordARK 设备：
   - `queryNetworkTcpEndpoints`
   - `queryNetworkUdpEndpoints`
@@ -216,8 +216,8 @@
   - `queryNetworkNdisChain`
   - UI 摘要显示 `ok / unsupported / unavailable`、`returned / total / parsed`、`truncated`、`io.message`。
 - Kernel 视觉标识资源路径已统一到 qrc 真实路径 `:/Image/kernel_badge.png`：
-  - 已修正 `NetworkDock/NetworkAuditPage.cpp`
-  - 已修正 `WindowDock/WindowDock.cpp`
+  - 已修正 `network_dock/NetworkAuditPage.cpp`
+  - 已修正 `window_dock/WindowDock.cpp`
 
 ## 8. 连续验收补记（2026-06-27）
 
@@ -256,7 +256,7 @@
 - `KswordARKLight` Debug x64：通过。
 - `KswordARKDriver` Debug x64：通过；构建和签名写入成功，`signtool verify /pa` 因当前非管理员/LocalMachine 信任区未导入仍报告信任链警告，不是编译错误。
 - 未跟踪构建产物清理：
-  - 已删除 `Ksword5.1/Ksword5.1/release/Ksword5.tlog/`。
+  - 已删除 `apps/desktop/release/Ksword5.tlog/`。
   - `release/moc_predefs.h.cbt` 是 git 已跟踪文件，未删除。
 - 冲突标记检查：
   - 使用行首精确模式检查 `<<<<<<<`、`=======`、`>>>>>>>`，当前目标源码/文档范围未发现合并冲突标记。
@@ -268,7 +268,7 @@
 ### 7.2.1 Manifest 覆盖与危险命令隔离
 
 - `D:\Temp\ksword_r3_integration_manifests` 当前存在 `01_cli`、`02_arklight_kernel`、线程13重建的 `03_win32k_gui_reconstructed`、`04_arklight_file` 到 `12_arklight_audit_common` 以及 `13_acceptance`；原始 `03_*.json` 未找到。
-- Window/Win32k 方向当前证据来自线程13重建 manifest、`10_arklight_window.json`、`docs/pdb_r0_audit_prep/03_win32k_gui_audit.md`、`KswordARKLight/Features/Window`、主 GUI `WindowDock`、CLI、shared 协议头和驱动 IOCTL registry 静态检查；该 manifest 仅证明静态接入链路，session/desktop 运行态与 unsupported/degraded 路径仍需实机验证。
+- Window/Win32k 方向当前证据来自线程13重建 manifest、`10_arklight_window.json`、`docs/pdb_r0_audit_prep/03_win32k_gui_audit.md`、`apps/ark_light/features/Window`、主 GUI `WindowDock`、CLI、shared 协议头和驱动 IOCTL registry 静态检查；该 manifest 仅证明静态接入链路，session/desktop 运行态与 unsupported/degraded 路径仍需实机验证。
 - `KswordCLI` 历史上仍暴露 `callback set-rules/remove/remove-ex`、`kernel patch-inline-hook/force-unload-driver`、`redirect set-rules`、`network set-rules`、`safety set-policy`、`mutation prepare/commit/rollback` 等 mutation 命令。
 - 这些命令不计入本轮 PDB/R0 只读审计通过项；验收矩阵只把 query/audit/cross-view/status 类命令算作只读审计能力，mutation 类命令必须由 safety/mutation gate 单独验收。
 
@@ -276,13 +276,13 @@
   - `NetworkAuditPage.cpp/.h` 未发现裸 `DeviceIoControl`、`CreateFileW(\\.\KswordARK*)` 或 `\\.\KswordARKLog` 访问。
   - `MainWindow.cpp` 中出现 `\\.\KswordARKLog` 仅为注释/日志文本；实际日志设备打开路径已通过 `ArkDriverClient::open(GENERIC_READ)` 和 `DriverHandle` 承载。
   - 主 GUI 中仍存在若干 `DeviceIoControl` 调用用于本地磁盘、卷、文件系统等 Win32/FSCTL 场景；这些不是 KswordARK R0 控制设备直连，不属于本轮 R0 wrapper 违规项。
-- `KswordARKLight/Features/Handle/HandleClient.cpp` 中出现 `DeviceIoControl(...)` 的位置为错误消息字符串；实际调用路径是 `ksword::ark::DriverClient::deviceIoControl` 并显式传入 `DriverHandle`。
+- `apps/ark_light/features/handle/HandleClient.cpp` 中出现 `DeviceIoControl(...)` 的位置为错误消息字符串；实际调用路径是 `ksword::ark::DriverClient::deviceIoControl` 并显式传入 `DriverHandle`。
 - 线程13最新静态 sweep 结果：
   - `D:\Temp\ksword_r3_integration_manifests` 下 `01` 到 `13` 数字前缀已连续存在，所有 manifest 均可通过 `python -m json.tool` 解析。
   - `git status` 当前显示的主 GUI 未跟踪 `.cpp/.h`：`ArkDriverAudit.cpp`、`KernelDockCidTab.*`、`KernelDockIpcTab.*`、`MemoryDock.ProcessMemoryEvidence.cpp`、`MemoryDock.ProcessPteTranslate.cpp`、`NetworkAuditPage.*` 均已登记到 `Ksword5.1.vcxproj` 和 `.filters`。
   - `KswordARKLight` 工程登记 sweep 未发现未登记 `.cpp/.h`（排除 `x64/debug/release/.vs` 构建目录）。
   - 聚焦主 GUI R0 访问边界后，未发现 Dock/UI 在 `ArkDriverClient` 之外直接打开或 `DeviceIoControl` 调用 KswordARK 控制设备；剩余 `DeviceIoControl/CreateFileW` 命中属于注释、ArkDriverClient 内部、或非 KswordARK 的磁盘/卷/文件/管道 Win32/FSCTL 路径。
-- `KswordARKLight/Features/FeatureRegistry.cpp` 已包含 `40011 网络`、`40012 句柄`、`40013 杂项安全` 三个本轮新增入口。
+- `apps/ark_light/features/FeatureRegistry.cpp` 已包含 `40011 网络`、`40012 句柄`、`40013 杂项安全` 三个本轮新增入口。
   - `KswordCLI` 对用户要求的 PDB/R0 审计命令族已有静态 dispatch 证据：
     - `dyn`：`status/fields/capabilities/profile/v4-modules/v4-capabilities/v4-missing/apply-profile-v4`。
     - `process/thread`：`process crossview`、`thread crossview`。
@@ -293,17 +293,17 @@
     - `network`：`audit/tcp/udp/wfp/ndis`；`afd/nsi` 当前返回 degraded R3 fallback，并明确提示缺少专用 R0 IOCTL。
     - `hardware/window/memory/misc`：`audit/input/usb/pnp`、`win32k/gui/gui-threads/gpu/display/watchdog`、`scan-evidence/query-pte/scan-kexec`、`security/ci/vbs/hyperv/applocker/bam`。
   - R0/IOCTL 静态链路 sweep 结果：
-    - `KswordARKDriver/src/dispatch/ioctl_registry.c` 当前解析出 107 个 registry entry，所有已注册 handler 均有声明/定义文本证据。
+    - `drivers/ark/src/dispatch/ioctl_registry.c` 当前解析出 107 个 registry entry，所有已注册 handler 均有声明/定义文本证据。
     - `shared/driver` 下 `KSWORD_ARK_IOCTL_FUNCTION_*` 数值 sweep 未发现重复；重点 id 包括 `0x860-0x863` DynData v4、`0x878` CID、`0x87A` IPC、`0x890-0x894` Win32k、`0x8E3` GPU/Display Watchdog。
     - R0 PDB/audit 重点链路已存在 registry entry：DynData v4、Network TCP/UDP/WFP/NDIS、CID/IPC、Win32k、Device audit、Handle、Driver integrity、Memory evidence/kernel-exec。
     - 驱动 `src/features` 下 `.c/.h` 工程登记 sweep 已清零；线程13补充了 `KswordARKDriver.vcxproj.filters` 中 `src\features\memory\memory_kernel_exec_scan_internal.h` 的 filter 条目，该头文件原本已存在于 `.vcxproj`。
   - 工程 XML / R3 wrapper 链路 sweep 结果：
     - 主 GUI、KswordARKLight、KswordARKDriver、KswordCLI 的 `.vcxproj` 与 `.vcxproj.filters` 均可被 XML parser 正常解析。
-    - 按当前项目归属范围做登记检查后，主 GUI、KswordARKLight、KswordARKDriver 均未发现新增 `.cpp/.c/.h` 缺 `.vcxproj/.filters` 登记；主 GUI 检查排除了历史 `backup`、第三方 `include/ads`、旧 UI/helper 和临时句柄工具目录。
+    - 按当前项目归属范围做登记检查后，主 GUI、KswordARKLight、KswordARKDriver 均未发现新增 `.cpp/.c/.h` 缺 `.vcxproj/.filters` 登记；主 GUI 检查排除了历史 `backup`、第三方 `include/ads`、旧 ui/helper 和临时句柄工具目录。
     - ArkDriverClient wrapper 链路有声明/定义/引用证据：DynData v4、Network TCP/UDP/WFP/NDIS、Win32k/GPU、CID、IPC 均在 `ArkDriverClient.h` 声明、`ArkDriverAudit.cpp` 定义，并由 CLI 或对应 Dock/UI 页面引用。
   - Manifest 内容一致性 sweep 结果：
     - `01` 到 `13` manifest 中 `modifiedFiles/createdFiles/addedFiles/sourceEvidence/modifiedFilesInferredFromCurrentState` 声明路径均存在。
-    - 线程13修正了重建 `03_win32k_gui_reconstructed.json` 中一处证据路径：`KswordARKDriver/src/features/device` 改为当前真实存在的 `KswordARKDriver/src/features/device_audit`。
+    - 线程13修正了重建 `03_win32k_gui_reconstructed.json` 中一处证据路径：`drivers/ark/src/features/device` 改为当前真实存在的 `drivers/ark/src/features/device_audit`。
     - manifest 声明的 `.cpp/.c/.h` 文件均已登记到对应 `.vcxproj/.filters`，缺失数为 0。
 
 ### 7.3 当前不能标为完成的项目
@@ -322,12 +322,12 @@
 
 ### 7.4 本轮修正清单
 
-- `Ksword5.1/Ksword5.1/NetworkDock/NetworkAuditPage.cpp`
+- `apps/desktop/network_dock/NetworkAuditPage.cpp`
   - R0 网络摘要补充 `parsed` 计数。
   - Kernel 标识资源路径修正为 `:/Image/kernel_badge.png`。
-- `Ksword5.1/Ksword5.1/WindowDock/WindowDock.cpp`
+- `apps/desktop/window_dock/WindowDock.cpp`
   - Kernel 标识资源路径修正为 `:/Image/kernel_badge.png`。
-- `Ksword5.1/Ksword5.1/release/Ksword5.tlog/`
+- `apps/desktop/release/Ksword5.tlog/`
   - 删除未跟踪构建中间产物目录。
 
 ### 7.5 后续建议
@@ -348,7 +348,7 @@ PDB 结构字段支持的项误判为已完成。
 
 ### 9.1 静态占位清理
 
-- `Ksword5.1/Ksword5.1/KernelDock/KernelDeviceDriverObjectsTab.h`
+- `apps/desktop/kernel_dock/KernelDeviceDriverObjectsTab.h`
   中原注释仍写着“TODO(集成)”。
 - 当前静态证据显示该页已经实际挂载：
   - `KernelDock.cpp` include `KernelDeviceDriverObjectsTab.h`。
@@ -359,13 +359,13 @@ PDB 结构字段支持的项误判为已完成。
 
 在当前 worktree 下执行以下 Debug x64 构建，均通过：
 
-- `Ksword5.1/Ksword5.1/Ksword5.1.vcxproj`
+- `apps/desktop/KswordDesktop.vcxproj`
   - 输出：`Ksword5.1.exe`。
-- `KswordCLI/KswordCLI.vcxproj`
+- `apps/cli/KswordCLI.vcxproj`
   - 输出：`KswordCLI.exe`。
-- `KswordARKLight/KswordARKLight.vcxproj`
+- `apps/ark_light/KswordARKLight.vcxproj`
   - 输出：`KswordARKLight.exe`。
-- `KswordARKDriver/KswordARKDriver.vcxproj`
+- `drivers/ark/KswordARKDriver.vcxproj`
   - 输出：`KswordARK.sys`。
   - Signability test：Errors=None，Warnings=None。
   - 测试签名写入成功。

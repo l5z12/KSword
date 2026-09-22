@@ -1,0 +1,1095 @@
+# Ksword5.1 功能技术文档
+
+> 适用范围：Ksword5.1 主程序、KswordARKDriver 内核驱动、apps/taskbar/KswordHUD 辅助组件、共享 R3/R0 协议与内置 ui/工具库。  
+> 文档目标：说明每个核心功能的意义、实现方法、关键技术细节和使用/开发注意事项。  
+> 安全声明：本项目包含系统级调试、内核、驱动、进程、文件、注册表、网络与监控能力，必须仅在合法授权与合规场景下使用。
+
+---
+
+## 1. 总体架构
+
+### 1.1 功能意义
+
+Ksword5.1 是一个面向 Windows 的综合调试与分析工具集，目标是把常见 ARK、系统管理、内核辅助、进程分析、文件分析、网络诊断、监控采集等能力集中在一个可停靠的工作台中。它既提供 R3 侧的 Win32/Qt UI 能力，也通过 KswordARKDriver 提供部分 R0 辅助能力。
+
+### 1.2 实现方法
+
+- 主程序位于 `apps/desktop/`，基于 Qt Widgets 和 ADS Docking System 构建多 Dock 工作区。
+- 内核驱动位于 `drivers/ark/`，以 WDF 控制设备暴露日志读取和若干 IOCTL 能力。
+- R3/R0 共享协议位于 `shared/driver/`，包括进程、文件、内核、回调拦截等 IOCTL 常量和结构体。
+- 辅助组件包括 `apps/taskbar/`、`apps/hud/`、`integrations/api_monitor/`；项目官网独立维护于 [KSwordDEV/Website](https://github.com/KSwordDEV/Website)。
+- 主窗口通过 `mainWindow` 统一创建 Dock，使用懒加载机制降低首屏启动成本。
+
+### 1.3 技术细节
+
+- UI 框架：Qt 6.9.3、Qt Widgets、QTabWidget、QTableWidget、QTreeView、QSortFilterProxyModel、QDialog。
+- Dock 框架：Advanced Docking System，主工作区和辅助面板均以 `ads::CDockWidget` 组织。
+- 日志框架：`Framework.h` 提供 `KLogEvent`、`info/warn/err/fatal`、`eol`，支持 GUID 级调用链追踪。
+- 进度框架：`KProgress` / `kPro` 提供后台任务进度卡片和阻塞式选择 UI。
+- R0 通信：统一使用 `CreateFileW(\\.\KswordARKLog)` 打开控制设备，再通过 `DeviceIoControl` 调用共享 IOCTL。
+- 构建方式：Visual Studio 2022 + MSBuild + Qt MSBuild，推荐通过 `KSWORD_QT_DIR` 指定 Qt 安装路径。
+
+### 1.4 注意事项
+
+- 新增 R3/R0 通信协议必须放在 `shared/driver/`，禁止在 UI 或驱动私有头里重复定义协议结构。
+- R0 能力必须有明确 UI 提示和风险提示，尤其是结束进程、删除文件、修改内核状态等操作。
+- UI 线程不得执行长耗时扫描；应使用后台线程或异步任务，并用 `QMetaObject::invokeMethod` 回到 UI 线程更新界面。
+- 右键菜单和详情弹窗必须设置明确背景/文字/选中态样式，避免深浅色主题下出现黑底黑字。
+- 驱动接口要区分只读日志读取与高危写操作，IOCTL access 和设备 SDDL 都应做权限隔离。
+
+---
+
+## 2. 主窗口与 Dock 工作台
+
+### 2.1 功能意义
+
+主窗口是所有分析能力的入口。它将进程、网络、内存、文件、驱动、内核、监控、硬件、权限、窗口、注册表、句柄、启动项、服务、杂项等页面组织成可停靠、可切换、可懒加载的工作区，同时保留当前操作、日志输出、即时窗口和监视面板等辅助面板。
+
+### 2.2 实现方法
+
+- `MainWindow.cpp` 创建主 Dock 管理器和所有 Dock 壳。
+- 欢迎页和辅助面板通常直接创建；重页面通过 `createLazyDockWidget` 先挂占位页。
+- 用户首次打开某个 Dock 时调用 `ensureDockContentInitialized` 创建真实页面控件。
+- `raiseStartupDockByKey` 根据设置中的默认启动页切换到指定 Dock。
+- `openFileDetailDockByPath`、`openFileUnlockerDockByPath` 提供跨模块联动入口。
+
+### 2.3 技术细节
+
+- 懒加载键包括 `process/network/memory/file/driver/kernel/monitor/hardware/privilege/window/registry/handle/startup/service/misc/settings`。
+- 懒加载时通过 `kPro.add` 和 `kPro.set` 显示页面加载进度。
+- 全局外观设置由 `applyAppearanceSettings` 应用到 QApplication 样式表，包括主题、背景、Tooltip、QMenu、滚动条、Tab 高亮。
+- 全局 QMenu 主题过滤器在启动阶段安装，用于兜底所有后续创建的右键菜单。
+- 主窗口根据 `AppearanceSettings` 控制启动最大化、自动提权、窗口缩放等行为。
+- KswordARK 服务启动或确认运行后，`mainWindow::refreshR0DynDataAfterServiceStart` 会确保 KernelDock 内容初始化，并立即触发 DynData profile pack 匹配与下发。
+
+### 2.4 注意事项
+
+- 懒加载页面创建后必须设置 `ks_lazy_initialized`，避免重复创建控件。
+- 从外部路径触发 FileDock 时，必须先确保 FileDock 已初始化，再调用具体接口。
+- `processEvents` 只能用于短暂刷新 UI，不应掩盖长耗时同步初始化。
+- 全局事件过滤器会影响整个应用，新增过滤器时必须验证事件传播链，不要误吞父控件滚动或输入事件。
+
+---
+
+## 3. 欢迎页
+
+### 3.1 功能意义
+
+欢迎页用于展示产品标识、版本、构建信息、当前用户信息以及官网/GitHub/QQ群等入口，是用户进入工具后的默认落点。
+
+### 3.2 实现方法
+
+- `WelcomeDock` 构建欢迎 UI。
+- 主窗口启动时直接创建欢迎页，不走懒加载。
+- 通过 Qt 标签、图片资源和按钮组织内容。
+
+### 3.3 技术细节
+
+- 主程序 Logo 和图片资源位于 `Resource/`；官网图片资源位于独立的 [KSwordDEV/Website](https://github.com/KSwordDEV/Website) 仓库。
+- 构建时间、版本信息可由编译宏或 UI 文案展示。
+- 外部链接通过 `QDesktopServices` 打开。
+
+### 3.4 注意事项
+
+- 外部链接应避免阻塞 UI。
+- 图片路径要兼容开发环境和发布目录。
+- 欢迎页不应依赖驱动或管理员权限，避免影响首屏启动。
+
+---
+
+## 4. 进程模块
+
+### 4.1 功能意义
+
+进程模块用于查看、分析和控制 Windows 进程，是排查异常行为、隐藏进程、权限问题、模块注入、线程状态和进程树关系的基础入口。
+
+### 4.2 实现方法
+
+- `ProcessDock` 负责进程列表、树状/列表显示、刷新和右键动作。
+- `ProcessDetailWindow` 负责进程详情窗口，包含基础信息、线程、模块、令牌、操作和按当前 PID 过滤的声音来源页。
+- 进程枚举优先使用 R3 API；需要内核辅助时通过 `IOCTL_KSWORD_ARK_ENUM_PROCESS` 获取驱动枚举结果。
+- 结束/挂起/PPL 设置等高危能力可通过 R0 IOCTL 辅助完成。
+- R0 可恢复隐藏通过 `ArkDriverClient::setProcessVisibility` 调用驱动，入口在进程列表右键菜单中提供隐藏、取消隐藏和清空隐藏标记。
+
+### 4.3 技术细节
+
+- R3 进程工具封装在 `ksword/process/process.*`。
+- R0 协议位于 `shared/driver/KswordArkProcessIoctl.h`。
+- 常用 IOCTL：
+  - `IOCTL_KSWORD_ARK_TERMINATE_PROCESS`
+  - `IOCTL_KSWORD_ARK_SUSPEND_PROCESS`
+  - `IOCTL_KSWORD_ARK_SET_PPL_LEVEL`
+  - `IOCTL_KSWORD_ARK_ENUM_PROCESS`
+  - `IOCTL_KSWORD_ARK_SET_PROCESS_VISIBILITY`
+- 进程 identity 使用 `PID + creationTime100ns`，避免 PID 复用导致缓存错配。
+- 新增进程/退出进程可以在 UI 上用不同颜色高亮。
+- R0 隐藏进程采用双方法：先把目标 `_EPROCESS.UniqueProcessId` 写成 Ksword 管理的高位标记假 PID，再摘除 `_EPROCESS.ActiveProcessLinks`；驱动保留原 PID、假 PID、链表前后节点和 EPROCESS 引用，用于取消隐藏或清空隐藏标记。
+- `UniqueProcessId` 和 `ActiveProcessLinks` 偏移优先来自 DynData/PDB profile；偏移缺失时驱动会在目标 EPROCESS 前 0x2000 字节内做保守运行时扫描，避免未打开动态偏移页时直接失败。
+
+### 4.4 注意事项
+
+- PID 0、PID 4、当前进程和关键系统进程必须保护，禁止误操作。
+- 结束进程和 PPL 调整属于高风险操作，应有明确确认和日志。
+- R0 隐藏进程会修改内核对象字段和活动进程链表，仅用于授权调试场景；恢复只能依赖 Ksword 驱动保存的记录，不接受用户态传入内核地址。
+- 进程刷新必须异步，不能阻塞 UI 线程。
+- R0 枚举和 R3 枚举结果可能不一致，应在 UI 上标记来源和异常状态。
+
+---
+
+### 4.5 进程注入痕迹检查
+
+#### 4.5.1 功能意义
+
+事后现场（没有事前监控记录）下做的**内存植入与完整性检查**，不是"还原注入日志"。
+它能确认"这里存在异常代码"、"这个模块的代码被修改"、"线程正在执行某段未知代码"，
+但**不能**确认"哪个进程在什么时候用哪种 API 注入"——事后线程信息里没有任何字段能
+证明线程是被远程创建的。对应 issue #196。
+
+两个入口：
+
+| 入口 | 位置 | 量级 | 产出 |
+| --- | --- | --- | --- |
+| 注入面筛选 | 进程列表右键「筛选注入面」，结果填入「注入面」列 | explorer 实测 23.6 ms | 动态代码区域数 / 其中可写可执行 |
+| 注入痕迹检查 | 进程详情 →「模块」页 →「快速注入检查」/「深度注入检查」两个按钮 | 快速模式自身约 100 ms、explorer 冷启 4.6 s；深度模式 pwsh 2.3 s / 165 MB | 四态结论 + 发现了什么 / 查了什么 / 结果怎么读 三页 |
+
+#### 4.5.2 实现方法
+
+三层分工，判据只有一处：
+
+- `shared/evidence/InjectionSurvey.{h,cpp}`：唯一判据层，C++20、Qt-free、Win32-free。
+  地址空间索引、模块交叉视图（加载器 L / 映像映射 I / 非映像载荷候选 P）、工作集页筛选、
+  线程起点落点、比较范围计划、例外规则、观测语义表、四态结论。
+  离线测试在 `tests/native/ark_light/InjectionSurveyTests.cpp`（套件名 `J injection survey`）。
+- `shared/platform/process/injection_trace_collector.{h,cpp}`：Win32 现场采集。
+  只读、不挂起目标、不改页保护；全程一个句柄，扫描前后各核一次 PID + 创建时间。
+- `apps/desktop/process_dock/ProcessDetailWindow.InjectionTrace.cpp`：结果对话框；
+  `ProcessDock` 提供「注入面」列与右键筛选动作。
+
+归一化映像比较复用 `PeImageMap` + `ImageDiff`，不引入第二套 PE 解析器。
+新增规则必须加在判据层——那里有离线测试；采集器只负责把现场读出来，不产生结论。
+
+#### 4.5.3 技术细节
+
+- **保护值分类**：低字节是互斥的基本保护值，不是可相与的位。`protect & PAGE_EXECUTE`
+  会漏掉 `PAGE_EXECUTE_READ`(0x20) 与 `PAGE_EXECUTE_READWRITE`(0x40)。统一走
+  `classifyWin32Protection()`，四个可执行基本值全覆盖，`PAGE_GUARD` 等修饰位单独记录。
+- **两类候选**：第一轮同时标记可执行的 `MEM_PRIVATE` 与可执行的 `MEM_MAPPED`。
+  只扫私有内存会漏掉映射型的非映像代码。
+- **工作集筛选**：`Shared` 表示"页面是否可共享"，`ShareCount == 1` 不能代替它；
+  内存合并会让已修改页重新呈现可共享状态，因此共享页在深度模式下**不被排除**。
+- **线程起点**：`ThreadQuerySetWin32StartAddress` 要 `THREAD_QUERY_INFORMATION`，
+  用 `THREAD_QUERY_LIMITED_INFORMATION` 打开的句柄查它每个线程都会失败。
+  起点页当前不可执行**不能**用来忽略线索，它只是并列的事实位。
+- **归一化比较**：快速模式与深度模式共用同一套归一化 profile，只改比较范围。
+  参考文件身份没核对时只能报"参考映像不确定"，不能把差异归为恶意修改。
+- **栈回溯**（只在深度模式做，见 4.5.6）：判"载荷内存是不是正在被执行"。
+  这是本版本里唯一能把纯内存型 shellcode 抬到 `DifferenceObserved` 的一维。
+- **结论语义**：只有 `AnalysisConclusion` 四态，没有 `isInjected`/score/权重。
+  能撑起 `DifferenceObserved` 的只有三类：归一化后仍与可靠参考不同、交叉视图**矛盾**
+  （不是"一边有一边没有"）、载荷结构且有可靠展开的帧进入其中。私有 RX 只到"待解释"。
+- **缺口与限制分家**：`coverageGapKeys`（打算查但没查成）压制"未发现差异"；
+  `capabilityLimitKeys`（本版本不做）只缩小适用范围。闸门用 `scopeIntact`，
+  `coverageComplete` 只用于展示。混成一张表会让四态在生产里退化成三态。
+- **例外规则**：必须绑定目标程序版本 + 被修改模块身份 + 具体 RVA 范围（≤ 64 KiB），
+  缺一即拒；没有"整进程"或"整目录"豁免。规则要求字节检查而现场读不到字节时不命中。
+  `modifiedModuleIdentity` 必须用 `moduleIdentityKeyFor()` 生成。
+- **注入面列**：值跨刷新轮沿用（每轮清空等于列永远是空的），缓存按进程身份做键，
+  PID 复用走新条目，退出保留行清空计数。状态非 `Screened` 时显示
+  「未筛选 / 访问受限 / 身份不符 / 筛选失败」，**绝不显示 0**。
+
+#### 4.5.4 注意事项
+
+- 时间字段是**首次观测时间**，不是注入时间；注入源进程没有事前记录一律为"未知"，
+  判据层不提供把它升格的入口。
+- 受保护进程拒绝访问时输出"访问受限"，绝不能输出"未发现注入"。
+- 权限从最小开始：查询用 `PROCESS_QUERY_LIMITED_INFORMATION`，读内存才加
+  `PROCESS_VM_READ`，绝不请求 `PROCESS_ALL_ACCESS`。`QueryWorkingSetEx` 需要
+  `PROCESS_QUERY_INFORMATION`，按能力单独申请更宽的句柄，申请不到就留缺口。
+- 不承诺"快扫必定几百毫秒"。命中时间/字节/条目预算即截断，截断必须在报告里显示，
+  不能返回"干净"。
+- 实测参考：本机 496 个进程里 310 个可打开，其中 **284 个（92%）都有动态代码区域**。
+  所以"有没有动态代码"没有区分度，能看的是数量的离群程度。
+
+#### 4.5.5 结果对话框的呈现约束
+
+判据层的语义一个字都不能松，能动的只有"怎么把它说清楚"。这一节记的是呈现侧
+必须守住的几条，改 UI 前先看：
+
+- **结论与限定条件分两行**。第一行是大白话结论（"查过的地方没发现问题"），
+  第二行单独一句说明它不能被读成什么。原来把限定条件塞在结论的括号里
+  （`已覆盖范围内未发现相应异常（不是"从未被注入"）`），实际效果是没人读括号。
+- **条目必须按规则分组**，不能平铺。同一进程的"动态/非映像可执行内存"实测能到
+  874 条（Ksword5.1.exe 自身），平铺成 874 行谁也读不完。分组标题给
+  `规则名 — N 处`，标题下面用 `ruleMeaningText()` 给一句"这一类是什么、
+  常见的正常成因是什么"；超过 12 条的分组默认折叠。
+- **分组顺序沿用判据层的产出顺序**，不按任何维度重排。一重排就会被读成
+  "按严重程度排"，而本层不产生严重程度。
+- **数字给人读的单位**。大小走 `humanSizeText()`（`4.0 KB` 而不是 `0x1000`），
+  权限走 `humanProtectionText()`（`可写＋可执行` 而不是 `RWX`），
+  内存类型走 `humanRegionTypeText()`（`私有内存` 而不是 `PRIVATE`）。
+  这几个只用于显示，判据层仍然只认原始值。
+- **机器味的原始记录压到详情面板最后一段**（`【技术细节】`），
+  规则 ID、检测器版本、`key=value` 事实都放在那里，不出现在表格列里。
+- **「查了什么」页的每一块前面都要有一句解释**。"缺口"和"能力限制"的差别是这个
+  功能最容易被误读的地方，只给两张裸清单等于没说。
+
+#### 4.5.6 栈回溯：判"载荷在不在被执行"
+
+`ksword/process/injection_stack_walk.{h,cpp}`，只在深度模式跑。它回答的是
+`PayloadStructureWithReliableFrame` 那条观测的后半句——内存里有载荷结构是一回事，
+**有线程正停在里面**是另一回事，后者才撑得起 `DifferenceObserved`。
+
+- **不自己写 x64 展开器**。应用 `.pdata`/`.xdata` 的展开码要正确处理非易失寄存器、
+  `UWOP_SET_FPREG`、链式 unwind info 与尾声；写错的展开器会把**错的帧标成可靠**，
+  而这一位是抬结论的三道闸门之一。展开交给系统的 `StackWalk64`，我们只提供
+  内存读取、模块基址、`RUNTIME_FUNCTION` 三个回调。
+- **可靠性判据自己做，不用 DbgHelp 的**。`StackWalk64` 在查不到展开数据时会退回扫栈
+  猜测，而且**不告诉你哪一帧是猜的**。判据是：某帧的 PC 落在一个带非空异常目录的
+  `MEM_IMAGE` 映射里 ⇒ 下一帧是算出来的（函数要么有表项，要么是叶函数，两种情况下
+  ABI 都保证得出返回地址）；落在别处 ⇒ 下一帧是猜的。**可靠前缀一断不再接上**，
+  判定在 `admitStackFrames()`（判据层，有离线测试）。
+- 这条规则**恰好**把 shellcode 帧本身收进可靠前缀：它由有展开数据的调用者
+  （KernelBase 之类）算出来，所以它算数；它下面的不算。这正是要的语义。
+- **上下文可信度不靠挂起**。硬约束是不挂起目标，所以 `SuspendedOrSnapshot` 永远拿不到。
+  用的是第四态 `WaitingThreadStable`：先用 `SystemProcessInformation` 的 `ThreadState`
+  选出停着的线程，再连取两次 `GetThreadContext` 并要求 RIP/RSP/RBP 一字不差。
+  微软那句"运行中的线程取不到有效上下文"针对的是正在别的核上跑的线程；停在等待里的
+  线程上下文本来就是稳定的，而最值得查的 shellcode 形态（打盹再醒的信标）正停在那里。
+- **只做原生 x64**。用 x64 展开器走 WOW64 的 32 位栈会产出一堆看着像帧的垃圾，
+  垃圾帧进了可靠前缀就会凭空抬高结论。宁可整节不做。
+- **DbgHelp 是进程级单线程**。本进程里 DynData 的 PDB 解析也用它，两边各持一把文件内的
+  互斥量等于没锁。锁统一在 `ksword/dbghelp_serialization.h`，两边共用。
+- **手写的内核结构布局必须有"写错会被发现"的判据**。`SYSTEM_THREAD_INFORMATION` 的
+  偏移写错的表现是解析出一堆垃圾 tid，然后安静地退化成"没有等待中的线程"——和
+  "这个进程确实都在跑"长得一模一样。所以 Toolhelp 数出的线程必须有一半以上能在状态表里
+  找到，否则明确报 `thread state layout mismatch`，不冒充"查过了没发现"。
+
+**实机验证**（2026-09-12，本机 Win11 26300）：
+
+- explorer.exe 8 个等待线程全部展开成功，帧全部落在真实映像内，栈底两帧在所有线程上
+  完全一致（`kernel32!BaseThreadInitThunk` → `ntdll!RtlUserThreadStart`），RSP 全程递增。
+- 线程状态偏移用**对照实验**验过：同一个 tid 忙等时读 2(Running)、睡眠时读 5(Waiting)，
+  全系统 4 种取值。不是在读常量。
+- 良性靶子（自己进程里把一段只调 `Sleep` 的桩放进私有 RWX 内存并在那儿起线程）：
+  信标线程的第 4 帧 PC = 载荷基址 + 0x1A，正是桩里 `call rax` 之后的返回地址，
+  `derived=1`（进可靠前缀）且 `unwind=0`（其后截断）。对照组 4 个普通线程全程 `unwind=1`。
+
+**仍然查不到的**（这一维只解决"正在执行"，不解决下面这些）：休眠载荷（存成 RW、
+执行前才翻成 RX，`inject.limit.non-executable`）、抹了 PE 头的反射式 DLL
+（`inject.limit.payload-erased-header`）、以及内核级隐藏（`inject.limit.kernel-trust`）。
+线程劫持/APC 注入在**线程起点**那一维仍然看不见，但载荷内存这一维和栈回溯这一维都还在。
+
+#### 4.5.7 休眠载荷：扫不可执行内存
+
+载荷可以先存成 RW、要执行前才翻成 RX（睡眠掩码就这么干），所以"只看当前带执行权限的页"
+是一个真缺口。深度模式补这一档，但**形态完全由实测决定**（2026-09-13，本机 26100.9022）：
+
+| 读数 | 值 |
+| --- | --- |
+| 可打开进程 | 330 / 543 |
+| 非可执行已提交私有/映射区域 | **129937 块，40.9 GB** |
+| 每进程均值 | 394 块 / **124 MB** |
+| 每块只读首页的全机耗时 | 9.3 s（单进程约 28 ms） |
+| 首页 MZ+PE 命中 | 805；通过合理性检查后 **99**（每进程约 0.3） |
+
+据此定下三条：
+
+- **只读每块首页，不读整块。** 40.9 GB 整读不可行；只读首页单进程 28 ms。
+- **不可执行的候选只列不升结论**（`PayloadCandidateEntry::executableAtScanTime=false`，
+  闸门 `payloadCandidateCanRaiseConclusion`）。每进程 0.3 个的底噪放进升结论路径，
+  干净机器就会常态给出"观测到差异"——那等于又一盏永远亮着的告警灯。
+- **这一档只留 PE 形状的**。`classifyPayloadStructure` 对任何没有 MZ 的可读内存都返回
+  `BareCode`：对可执行内存那是"未知可执行代码"，对数据区则是"这是数据"，
+  每进程几百块全会命中。只保留 `MappedPeImage` / `HeaderErasedPe` / `DataOnlyPeFile`。
+
+扫成了才置 `nonExecutableMemoryScanned`，一块都没扫成时那条能力限制仍然记着。
+
+#### 4.5.8 VAD 断链检查
+
+把一块内存从 VAD 树上摘下去，是隐藏内存最直接的做法：摘掉之后 `NtQueryVirtualMemory`
+（它就是走这棵树）再也查不到它，但内存还在、还能跑。这一维查的是**树自己站不站得住**，
+和"用户态看不到但页表看得到"（`kRuleIdKernelExecutableBeyondView`）是互补的两条路 ——
+交叉视图全对得上时，树照样可能被摘过链。
+
+三条判据，全在 `evaluateVadLinkIntegrity()`（判据层，有离线测试）：
+
+- **`visited` vs `EPROCESS.VadCount`**：内核自己维护的计数，摘链的人通常不会同步减它。
+  **只判单向**：`visited < vadCount` 才算。反向（走出来比计数多）在采集与内核并发改树时
+  会自然出现（新 VAD 已挂上、计数还没加），算进去会在忙碌进程上稳定误报。
+- **`EPROCESS.VadHint` 可达性**：内核的"最近用过的 VAD"缓存指向一个树上找不到的节点。
+  **hint 为空是合法的**（刚建的进程还没用过），偏移不可用时也不参与判定。
+- **父指针回指一致性**：`ParentValue & ~3` 指向的节点，其左右孩子里没有一个是本节点。
+  低位是平衡位（`Red:1` / `Balance:2`），**掩码写错会让每个正常节点都被算成不一致**。
+
+**三态不是布尔**：`VadLinkIntegrity::{NotChecked, Consistent, Inconsistent}`。
+遍历不完整（截断 / 续扫 / 有节点读不到）一律 `NotChecked` 并记**覆盖缺口**。
+把 `NotChecked` 折进 `Consistent` 是这一维唯一致命的错法 —— "没查成"会被读成"树是好的"。
+驱动侧由 `KSWORD_ARK_INJECTION_FIELD_INTEGRITY_VALID` 把门，采集侧再排掉续扫的情况。
+
+**结论只到 `Indeterminate`。** 摘链没有已知的良性成因，但这一维的误报率刚量完一次，
+样本还只有一台机器；升档要等更多实机数据，和 `kLimitKernelBenignBaseline` 同一个理由。
+
+**实机读数**（2026-09-13，KSword-HVM-Target，Win11 22621.4317）：
+**90 个进程 / 10199 个 VAD 节点，零不一致、零 integrityNotValid、零 IO 失败**。
+每个进程都一次走完整棵树，`visited == vadCount` 精确相等，`parentMismatch` 全为 0，
+`VadHint` 在非空处全部可达。假阳性底噪为零。
+
+前置条件是 `EPROCESS.VadRoot/VadHint/VadCount` 三个偏移都拿到 —— 见 4.6.1
+"profile 在包里 ≠ 驱动拿到了"。
+
+#### 4.5.9 映像节对象参考页（issue #196 §五 第三层）
+
+拿"这个映像本来该是什么样"的**第二个来源**：不是磁盘上的文件，而是内存管理器自己持有的
+节对象。它比"和磁盘文件比"多买到两件事——磁盘文件被锁住/读不到时仍有参考；
+**攻击者把磁盘文件也一并改掉时仍能发现**（节对象里的那份是映射建立时的内容）。
+
+链路 `VAD → Subsection → ControlArea → Segment → PrototypePte[]`。
+版本风险靠三条压到最小：
+
+- **不走 Subsection 链。** 按 `StartingSector`/`PtesInSubsection` 定位要依赖四个偏移。
+  而 `MMVAD.FirstPrototypePte` 到 `LastContiguousPte` 之间原型 PTE 是**连续**的，
+  索引就是 `(va - vadStart) / PAGE_SIZE`。超出这段的页报"解析不到"，不猜第二段在哪儿。
+  这两个字段驱动早就在读，**不需要新的 DynData 偏移**。
+- **不解码软件 PTE。** 原型 PTE 有 valid / transition / 页面文件 / demand-zero 四态，
+  只有 valid 的位布局是**架构定义**的（bit 0 = Present，bits 12..51 = PFN）；
+  其余是 Windows 自定义且随版本变，正是 `kLimitKernelVadFlagsUnverified` 那条线。
+  非 valid 一律报 `NOT_RESIDENT`，由上层记成覆盖缺口。
+- **绝不把页面调进来。** 那会改变目标状态，且在这个调用路径上会死锁。
+
+**判据侧**：`ImageComparisonOutcome` 加了 `referenceSource`（DiskFile / SectionObject）
+与覆盖账。`sectionReferenceCoverageComplete()` 是硬闸门——拿不到参考的页是**没比到**，
+不是"比过了没差异"，没覆盖全时记 `kGapSectionReferenceIncomplete` 并压制干净结论。
+**零请求也不算覆盖完整。**
+
+**实机验证**（2026-09-13，靶机 22621.4317）：
+
+- **PFN 交叉核对零分歧**：5 个进程 9 个模块映射，**82 个采样页的原型 PTE 物理地址
+  与进程页表解析出的物理地址完全相同，零不符、零缺原型**。两条毫无共享代码的路径
+  （原型 PTE 数组 vs CR3 页表遍历）落在同一批物理页上。
+- **字节内容正确**：ntdll 基址页 `4d5a900003000000` = `MZ\x90\x00\x03\x00\x00\x00`
+  标准 DOS 头；`base+0x2000`（.text 内）`48895c2408574883` = 标准 x64 函数序言。
+- 非 valid 的原型 PTE 正确报成 `notResident` 且不解码（实测 16 页里 1 页如此，
+  该页在进程页表里同样没有映射，两侧一致）。
+
+**两个坑**：
+
+- **字节区偏移必须由响应给出**（`byteAreaOffset`），不能让调用方自己算。它取决于驱动侧的
+  条目容量，而那个值同时受缓冲大小与请求里 `maxPages` 约束，调用方只知道前者。
+  第一版让两边各自推导，结果字节区一个都读不到——两边各推一份布局迟早走散。
+- **VAD 条目里原先叫 `controlArea` 的字段装的是 Subsection 指针**，已改名 `subsection`。
+  实测 ntdll 的 VAD 报 `0xFFFF…090`，解引用一次得到的真 ControlArea 是 `0xFFFF…010`，
+  差 `0x80 = sizeof(_CONTROL_AREA)`。拿旧名字去和别处的 ControlArea 地址对账会被误导。
+
+### 4.6 注入痕迹检查的 R0 扫描后端
+
+#### 4.6.1 功能意义
+
+给注入痕迹检查提供**独立于用户态的第二、第三个视图**：内存管理器记的 VAD 树，
+以及处理器实际据以执行的页表叶子。三个视图互相印证才谈得上交叉核对。
+
+#### 4.6.2 实现方法
+
+- 协议 `shared/driver/KswordArkInjectionScanIoctl.h`；实现在
+  `drivers/ark/src/features/injection/`（`injection_vad.c` / `injection_pte_scan.c` /
+  `injection_ioctl.c`）；R3 封装 `ArkDriverClient/ArkDriverInjectionScan.cpp`。
+- 两条 IOCTL 都是只读、`METHOD_BUFFERED`、`FILE_WRITE_ACCESS`、支持游标续扫：
+  - `IOCTL_KSWORD_ARK_ENUMERATE_PROCESS_VAD`
+  - `IOCTL_KSWORD_ARK_SCAN_PROCESS_EXECUTABLE_PTE`
+- 采集器能力门控：驱动没加载、没权限、或 DynData 没为当前 build 验证过偏移时自动降级，
+  R3 那一侧的结果照常产出。
+
+#### 4.6.3 技术细节
+
+- **不能转调 `ZwQueryVirtualMemory` 冒充第二视图**：它和 R3 的 `VirtualQueryEx` 是同一个
+  来源，交叉核对它等于自己和自己比。VAD 直接读 `EPROCESS.VadRoot` 的平衡树。
+- VAD 遍历是迭代中序 + 显式栈（深度上限 64），不用递归：内核栈只有 12–24 KiB，
+  一棵被改写的"树"能让递归踩穿栈。
+- **私有 VAD 就是 `MmvadShort`**，它后面的 `Subsection`/`ViewLinks` 根本不存在。
+  按 `sizeof(MMVAD)` 整读会跨出这次分配，短 VAD 落在页尾时常驻探测还会失败。
+- `VadRoot` 偏移来自 DynData，未针对当前 build 验证时返回 `DYNDATA_MISSING` 且
+  `profileVerified=0`，**不允许**用相近版本的偏移继续读。
+- MMVAD_FLAGS 的位布局没有经过 build 验证，所以 VAD 的 protection **不参与**与 R3 保护
+  属性的矛盾判定，只比地址范围；原始 `LongFlags` 一并返回备查。
+- 页表扫描自顶向下、只下降到 present 子树、整页读表（一次 `MmCopyMemory` 读 4 KiB 而不是
+  512 次读 8 字节）；五级分页（CR4.LA57）下直接拒绝，不按四级硬走。
+- 生效权限逐级合并：写权限和用户权限逐级相与，NX 逐级相或。只看叶子项会把一段其实
+  不可写的页报成可写。
+- **不看 Dirty 位下结论**：Dirty 是"自上次清除以来被写过"，不是历史日志。原始项值一并返回。
+
+#### 4.6.4 注意事项
+
+- **内核采集依赖内核可信**。有内核能力的对手可以改写这里读到的元数据或参考页；
+  只要用了内核视图就恒挂 `inject.limit.kernel-trust`，绝不宣传"有驱动便无法隐藏"。
+- 内核交叉差异的**合法成因目录**尚未在实机数据上建立，因此这类差异一律只到"待解释"，
+  不升 `DifferenceObserved`。有实机基线后再考虑升档。
+- 第三层（进程映像页与 Image Section Object 参考页比较）本版本未做，已写成能力限制。
+- 两条 IOCTL 是查询语义但用 `FILE_WRITE_ACCESS`：与同为内存类的
+  `IOCTL_KSWORD_ARK_QUERY_PAGE_TABLE_ENTRY` 保持一致。`tools/ioctl_audit` 会把它们标成
+  `query_write_access`（MEDIUM），这是本仓既有的 19 条同类之一，属有意选择——
+  改成 `FILE_ANY_ACCESS` 反而会撞上控制设备的提权隐患。
+- 实测（Win11 22621.4317）：explorer.exe 整个用户地址空间 7502 段 / 443 次表读 /
+  22779 个可执行 4 KiB 页，一次调用跑完；用独立的 `VirtualQueryEx` 实现交叉核对零分歧。
+
+---
+
+## 5. 网络模块
+
+### 5.1 功能意义
+
+网络模块用于抓取、过滤、分析网络流量，管理 TCP/UDP 连接，构造请求，解析 HTTPS，诊断 ARP/DNS/主机存活和下载行为。
+
+### 5.2 实现方法
+
+- `NetworkDock` 按多个 cpp 文件拆分 UI 构建、连接管理、过滤、请求构造、HTTPS 解析、多线程下载、网络诊断等逻辑。
+- 流量监控通过后台采集管线进入表格模型。
+- 连接管理使用系统网络 API 枚举 TCP/UDP 表，并支持终止连接等动作。
+- HTTPS 解析通过本地代理服务 `HttpsProxyService` 实现证书/代理联动。
+
+### 5.3 技术细节
+
+- 关键文件包括：
+  - `NetworkDock.MonitorPipeline.cpp`
+  - `NetworkDock.ConnectionManage.cpp`
+  - `NetworkDock.ManualRequest.cpp`
+  - `NetworkDock.HttpsAnalyze.cpp`
+  - `NetworkDock.MultiThreadDownload.cpp`
+  - `HttpsProxyService.cpp`
+- 手工请求支持 URL、Header、Body 等输入，并展示响应。
+- 多线程下载按分片任务管理，每段维护状态和进度。
+- 网络诊断包含 ARP 缓存、DNS 缓存、存活主机扫描等功能。
+
+### 5.4 注意事项
+
+- HTTPS 代理会修改系统代理/证书状态，必须提供清晰提示和恢复路径。
+- 抓包、限速、连接终止可能影响业务网络，应只在授权环境使用。
+- 大量网络事件会造成 UI 表格压力，应限制刷新频率和缓存大小。
+- 下载写文件必须校验路径、剩余空间和异常中断恢复。
+
+---
+
+## 6. 内存模块
+
+### 6.1 功能意义
+
+内存模块用于附加进程、查看内存区域、搜索内存值、查看十六进制内容、管理断点和书签，适合调试、逆向分析和问题定位。
+
+### 6.2 实现方法
+
+- `MemoryDock` 使用多个 `.cpp` 编译单元拆分 UI、搜索流程、解析过滤、进程区域和查看器工具。
+- 通过 Win32 API 打开目标进程并读取内存区域。
+- 搜索功能维护首次扫描结果，并根据新条件进行再次扫描和比较过滤。
+- Hex 预览复用 `HexEditorWidget`。
+
+### 6.3 技术细节
+
+- 核心拆分文件包括：
+  - `MemoryDock.ProcessRegion.cpp`
+  - `MemoryDock.SearchFlow.cpp`
+  - `MemoryDock.SearchParseAndFilter.cpp`
+  - `MemoryDock.ViewBreakpointUtil.cpp`
+- 内存区域信息通常来自 `VirtualQueryEx`。
+- 读取内存使用 `ReadProcessMemory`，写入或断点操作需要更高权限。
+- 搜索类型需要处理整数、浮点、字符串、字节序和对齐问题。
+
+### 6.4 注意事项
+
+- 打开其他进程内存需要权限，失败时应展示 Win32 错误码。
+- 读取不可访问页、守护页、映射页时要做异常和状态处理。
+- 大范围扫描必须异步并支持取消，避免长时间占用 UI。
+- 修改内存和断点功能风险高，应有明确提示。
+
+---
+
+## 7. 文件模块
+
+### 7.1 功能意义
+
+文件模块提供双栏文件管理、权限处理、文件属性分析、PE 分析、哈希、签名、字符串、十六进制预览、删除项恢复、占用句柄扫描和文件解锁能力。
+
+### 7.2 实现方法
+
+- `FileDock` 构建双栏文件管理 UI。
+- `QFileSystemModel` 负责常规文件系统浏览；R3 原始卷手动解析由 `ManualFileSystemParser` 支持，R0 驱动解析由 `DriverFileSystemParser` 经统一 `ArkDriverClient` 调用分页目录枚举 IOCTL。
+- R0 目录枚举只使用公开 `ZwCreateFile`/`ZwQueryDirectoryFile` 文件接口，并对原生行、名称、页数与总行数做边界校验，不在内核解释 NTFS/FAT/exFAT 私有结构。
+- 文件详情窗口聚合常规信息、安全权限、哈希、签名、PE、字符串、Hex 等 Tab。
+- 文件恢复通过 NTFS 解析扫描删除项。
+- 文件占用扫描由 `FileHandleUsageScanner` 与 `FileHandleUsageWindow` 实现。
+- 文件解锁器扫描占用进程后，由用户选择 R3/R0 结束方式并执行。
+
+### 7.3 技术细节
+
+- 重要文件：
+  - `FileDock.cpp`
+  - `FileDock.HandleUsage.cpp`
+  - `FileHandleUsageScanner.cpp`
+  - `ManualFileSystemParser.cpp`
+  - `DriverFileSystemParser.cpp`
+  - `FilePropertyPeAnalyzer.*`
+- R0 删除协议位于 `shared/driver/KswordArkFileIoctl.h`。
+- R0 删除通过 `IOCTL_KSWORD_ARK_DELETE_PATH` 把 NT 路径传给驱动执行。
+- 右键「删除方式（递归/多权限）」提供四档递归删除：永久删除（R3 当前权限）、强制删除（R3 接管所有权）、重启后删除（PendingFileRenameOperations）、驱动递归删除（R0 内核展开）。
+- `KSWORD_ARK_DELETE_PATH_FLAG_RECURSIVE` 让目录树在 R0 内部后序展开（`file_delete_recursive.c`），统计通过可选的 `KSWORD_ARK_DELETE_PATH_RESPONSE` 回传；不带输出缓冲的旧调用方仍然只拿聚合 NTSTATUS。
+- 递归删除的深度上限为 `KSWORD_ARK_DELETE_PATH_MAX_DEPTH`，单次条目上限为 `KSWORD_ARK_DELETE_PATH_MAX_ENTRIES`，触顶时响应置位 DEPTH_LIMITED / ENTRY_LIMITED，R3 必须按“未完成”处理。
+- 文件解锁器通过句柄扫描获得 PID、进程名、镜像路径、匹配规则和目标路径。
+- 文件详情中的 PE 分析读取 DOS Header、NT Header、节表、数据目录、CLR 头等结构。
+- Hex 预览使用 `HexEditorWidget`，避免重复实现滚动、查找和跳转。
+
+### 7.4 注意事项
+
+- 删除、驱动删除、结束占用进程都属于高风险操作，必须保留确认和日志。
+- 文件解锁器应保护 PID 0/4、当前进程和关键系统进程。
+- 手动 NTFS 解析需要处理权限、卷锁定、重解析点、resident/non-resident 数据和路径恢复失败。
+- 大文件预览必须限制读取大小，避免一次性加载导致卡顿。
+- 文件路径要在 Win32 路径、NT 路径、短路径、长路径之间谨慎转换。
+
+---
+
+## 8. 驱动模块
+
+### 8.1 功能意义
+
+驱动模块用于管理驱动服务和已加载内核模块，提供驱动注册、更新、加载、卸载、删除、状态查询以及 DBWIN 调试输出捕获。
+
+### 8.2 实现方法
+
+- `DriverDock` 构建驱动概览、驱动操作、调试输出页面。
+- 服务操作通过 SCM API 完成，包括 `OpenSCManager`、`CreateService`、`OpenService`、`StartService`、`ControlService`、`DeleteService`。
+- 已加载驱动/模块信息可通过系统 API 或 NtQuery 类接口枚举。
+- DBWIN 捕获使用全局事件和共享内存读取 OutputDebugString 输出。
+
+### 8.3 技术细节
+
+- DBWIN 使用 `Global\DBWIN_BUFFER_READY`、`Global\DBWIN_DATA_READY`、`Global\DBWIN_BUFFER`。
+- 服务句柄使用 RAII guard 自动关闭，避免句柄泄露。
+- 驱动路径、服务名、启动类型、签名状态等信息在 UI 中展示。
+- KswordARKDriver 的日志通过控制设备读取，主窗口轮询线程解析 `[Level]...END_OF_LOG` 格式。
+
+### 8.4 注意事项
+
+- 加载/卸载驱动通常需要管理员权限和签名策略支持。
+- 调试输出捕获线程退出时必须正确唤醒，避免析构阻塞。
+- 删除驱动服务不等于删除 sys 文件，应区分服务对象和文件实体。
+- 对内核模块做操作前要确认系统版本和权限。
+
+---
+
+## 9. 内核模块
+
+### 9.1 功能意义
+
+内核模块面向 NtQuery 信息、SSDT、对象命名空间、Atom、内核回调拦截、外部回调移除等低层分析场景，用于观察内核状态和辅助安全分析。
+
+### 9.2 实现方法
+
+- `KernelDock` 聚合多个子页：NtQuery、SSDT、对象命名空间、Atom、回调清单、回调拦截、回调移除。
+- NtQuery 相关查询通过 Worker 异步执行。
+- SSDT 枚举通过 R0 IOCTL 获取内核侧表项。
+- 回调清单通过 `IOCTL_KSWORD_ARK_ENUM_CALLBACKS` 分页读取；R0 每次完整逻辑枚举后生成有序快照哈希和逐行身份哈希，R3 使用首个页面的哈希/总数约束后续页面。
+- 回调拦截通过规则序列化后下发到驱动，驱动捕获事件后由 R3 prompt manager 等待并回答。
+- 外部回调移除页面允许按类型和地址请求驱动调用内核 API 移除 notify callback。
+
+### 9.3 技术细节
+
+- 关键文件：
+  - `KernelDock.cpp`
+  - `KernelDock.Runtime.cpp`
+  - `KernelDock.Ssdt.cpp`
+  - `KernelDock.CallbackEnum.cpp`
+  - `KernelDock.CallbackIntercept.cpp`
+  - `KernelDock.CallbackPromptManager.cpp`
+  - `KernelDock.CallbackRemove.cpp`
+- R3 回调清单客户端位于 `ArkDriverClient/ArkDriverCallback.cpp`；CLI 使用同一共享协议并输出快照代次、快照哈希和逐行身份哈希。
+- 回调规则协议位于 `shared/driver/KswordArkCallbackIoctl.h`。
+- 驱动侧回调运行时位于 `drivers/ark/src/features/callback/`。
+- 回调枚举协议 v3 在 v2 的 24 字节请求和 32 字节响应头基础上增加 `expectedSnapshotHash`、`expectedTotalCount`、快照策略、枚举代次与快照哈希。R3 仅在初始请求不兼容时按 v3 → v2 → v1 降级；v3 跨页变化会自动整轮重试，完整收页后还会执行一次仅响应头的最终复核。
+- 当前清单覆盖进程、线程、镜像、注册表、Ob、Minifilter、WFP、ETW 诊断、BugCheck、Shutdown、文件系统、登录会话、命名 CallbackObject、镜像验证和 NMI；进程/线程/镜像 Notify 会进一步识别 Legacy/Ex/Ex2 等注册变体。
+- NMI 枚举以导出的 `KeRegisterNmiCallback` 为锚点，仅扫描固定代码窗口，并要求成对的 RIP-relative 链头读取/回写证据；遍历时校验自句柄、next 指针对齐、回调模块归属并限制最大节点数。无法安全确认布局时返回诊断行，不继续猜测。
+- 外部回调移除的公开安全路径仍以进程、线程、镜像 Notify 为主；其他类型只在其来源、身份、模块归属和移除策略均通过门禁时开放对应路径，否则保持只读或返回不支持。
+- UI 使用 `CodeEditorWidget` 展示详情文本，便于复制、查找和保存。
+
+### 9.4 注意事项
+
+- 内核回调移除会影响安全软件、EDR、监控组件和系统稳定性，必须限制权限并记录日志。
+- 用户输入的内核地址必须校验非零、格式正确、类型匹配。
+- R0 回调等待/回答机制要处理取消、超时和 UI 关闭。
+- 私有回调结构随 Windows 版本变化；模式扫描必须有固定边界、结构重验证和失败诊断，不能把未解析地址直接认定为恶意。
+- v3 快照校验保证跨页结果来自相同的有序逻辑集合，但不把未公开私有链宣称为 Windows 提供的原子快照；高并发变化超过重试上限时应明确报告 `ERROR_RETRY`。
+
+---
+
+## 10. 监控模块
+
+### 10.1 功能意义
+
+监控模块用于追踪进程行为、WinAPI 调用、WMI 事件和 ETW Provider，会在调试、行为分析、问题复现和安全调查中发挥作用。
+
+### 10.2 实现方法
+
+- `MonitorDock` 作为总入口，包含进程定向、直接内核调用、WinAPI、WMI、ETW 监控等页面。
+- `ProcessTraceMonitorWidget` 负责进程定向 ETW 跟踪。
+- `DirectKernelCallMonitorWidget` 基于 System Syscall ETW Provider 采集 syscall 事件，并解析 ntdll/win32u 调用号映射。
+- `WinAPIDock` 通过外部 Agent/管道收集 API 调用。
+- WMI 和 ETW 页面通过系统接口枚举 Provider、事件类、会话状态并执行订阅。
+
+### 10.3 技术细节
+
+- WinAPI 监控协议定义在 `WinApiMonitorProtocol.h`。
+- 管道通信逻辑在 `WinAPIDock.Pipe.cpp`。
+- 进程定向追踪使用独立 capture thread，并以 UI 表格展示事件。
+- 直接内核调用监控使用 SystemTraceProvider 私有实时会话与 `EVENT_TRACE_FLAG_SYSTEMCALL`，支持 PID 限定、暂停、筛选、TSV 导出和详情查看。
+- ETW 监控需要处理 Provider GUID、关键字、级别、会话名和事件字段解析。
+
+### 10.4 注意事项
+
+- ETW/WMI/系统调用订阅可能产生大量事件，必须限流和支持停止。
+- 直接内核调用监控属于行为分析能力，应优先限定目标 PID，避免长时间全局采集。
+- WinAPI Hook/Agent 监控可能改变目标进程行为，应在授权调试场景使用。
+- 监控线程退出时必须 join/stop 顺序清晰，避免关闭窗口卡死。
+- 导出日志时要考虑敏感信息脱敏。
+
+---
+
+## 11. 硬件模块
+
+### 11.1 功能意义
+
+硬件模块用于展示 CPU、GPU、内存、磁盘、网络等系统硬件与实时利用率，帮助用户理解系统负载和硬件状态。
+
+### 11.2 实现方法
+
+- `HardwareDock` 构建概览、利用率、CPU、显卡、内存等页面。
+- 系统静态信息通过 Win32/WMI/PDH 等接口获取。
+- 实时曲线和卡片通过定时器刷新。
+
+### 11.3 技术细节
+
+- CPU 可按逻辑核心展示利用率。
+- 内存展示总量、可用量、使用率等指标。
+- GPU 信息可能依赖 DXGI、WMI 或厂商接口，兼容性需按系统回退。
+- UI 使用卡片和曲线展示实时状态。
+
+### 11.4 注意事项
+
+- 采样频率不宜过高，否则会增加系统负载。
+- 硬件接口在不同 Windows 版本和驱动版本上表现不一致，需保留失败提示。
+- GPU 多卡场景要清晰标识设备名称和序号。
+
+---
+
+## 12. 权限模块
+
+### 12.1 功能意义
+
+权限模块用于查看本地账号、用户组和当前进程权限快照，辅助排查权限不足、提权需求和账号配置问题。
+
+### 12.2 实现方法
+
+- `PrivilegeDock` 构建账号和权限页面。
+- 本地账号/用户组通过 NetAPI 或系统管理接口枚举。
+- 进程权限通过 Token 查询展示。
+- 支持创建用户、重置密码等管理动作。
+
+### 12.3 技术细节
+
+- Token 查询可涉及 `OpenProcessToken`、`GetTokenInformation`、特权枚举等。
+- 用户和组管理需要管理员权限。
+- UI 将账号属性、组成员、权限状态和错误码集中展示。
+
+### 12.4 注意事项
+
+- 创建用户、改密码属于高风险管理操作，必须明确确认。
+- 不应在日志中输出明文密码。
+- 权限枚举失败时要展示错误码和可能原因。
+
+---
+
+## 13. 设置模块
+
+### 13.1 功能意义
+
+设置模块提供深浅主题、主题强调色、独立主背景色、背景图与透明度、默认启动页、启动最大化、自动请求管理员权限、窗口缩放、系统右键菜单、滚动条和滑块交互等配置。
+
+### 13.2 实现方法
+
+- `SettingsDock` 构建设置页面和控件。
+- `AppearanceSettings` 定义配置结构体和 JSON 读写。
+- 设置变更后发出 `appearanceSettingsChanged` 信号，由 `mainWindow` 应用全局外观。
+- 启动阶段读取设置并控制 DPI、缩放、提权、默认页和右键菜单同步。
+
+### 13.3 技术细节
+
+- 配置文件路径由 `resolveSettingsJsonPathForRead/Write` 计算。
+- JSON 字段包括：
+  - `theme_mode`
+  - `custom_theme_color`
+  - `custom_main_background_color`
+  - `background_image_path`
+  - `background_opacity_percent`
+  - `startup_default_tab_key`
+  - `startup_maximized`
+  - `startup_auto_request_admin`
+  - `startup_window_scale_factor`
+  - `unlocker_shell_context_menu_enabled`
+  - `use_wide_scroll_bars`
+  - `scroll_bar_auto_hide_enabled`
+  - `slider_wheel_adjust_enabled`
+- `custom_theme_color` 只改变强调色种子；`custom_main_background_color` 作为整套中性调色板的独立种子，统一派生主窗口、标题栏、Dock、表格、树、编辑器、对话框、边框及背景图合成底色，空值时跟随深浅主题默认色。
+- 外观应用通过 QApplication 调色板、样式表和自定义主题辅助函数完成；次级文字使用独立调色板角色，不能复用边框色。
+- 复选框、单选框、可勾选视图项、滑块和滚动条使用独立控件状态色；活动边界相对表面至少保持 3:1 对比度，勾号和状态圆点按填充色自动选择黑色或白色。
+
+### 13.4 注意事项
+
+- 启动缩放通常需要重启生效，UI 应说明。
+- 系统右键菜单写入 HKCU，失败时要提示权限和路径。
+- 滚轮过滤器不能误吞父滚动区域事件。
+- 设置保存失败必须保留错误文本，便于用户排查目录权限问题。
+
+---
+
+## 14. 窗口模块
+
+### 14.1 功能意义
+
+窗口模块用于枚举窗口、查看窗口属性、拾取窗口、控制窗口状态、关联进程线程、分析窗口类和高级属性。
+
+### 14.2 实现方法
+
+- `WindowDock` 负责窗口列表和桌面管理。
+- 窗口详情页展示基础属性、进程线程、类信息、消息钩子和高级属性。
+- 桌面管理功能在 `OtherDock.Desktop*` 或相关窗口模块中实现。
+
+### 14.3 技术细节
+
+- 窗口枚举常用 `EnumWindows`、`GetWindowText`、`GetClassName`、`GetWindowThreadProcessId`。
+- 窗口控制可调用 `ShowWindow`、`SetWindowPos`、`SendMessage`。
+- 桌面枚举/切换涉及 Win32 Desktop API。
+
+### 14.4 注意事项
+
+- 操作其他进程窗口可能失败或被 UIPI 阻止。
+- 发送窗口消息可能影响目标程序状态，应谨慎。
+- 桌面切换和窗口隐藏/显示要避免让用户失去操作入口。
+
+---
+
+## 15. 注册表模块
+
+### 15.1 功能意义
+
+注册表模块用于浏览、编辑、导入导出和搜索 Windows 注册表，适合系统配置排查、启动项分析和权限诊断。
+
+### 15.2 实现方法
+
+- `RegistryDock` 构建注册表树、值列表和搜索结果页。
+- 支持键值增删改查、导入/导出 `.reg`、异步搜索和跳转命中项。
+- 旧主题版本存在 `RegistryDock_Themed.cpp`。
+
+### 15.3 技术细节
+
+- 注册表操作基于 Win32 Registry API。
+- 搜索线程使用后台任务遍历键和值，UI 通过信号/队列更新。
+- 导入导出可调用系统命令或自行序列化 `.reg` 文本。
+
+### 15.4 注意事项
+
+- 修改注册表可能导致系统或应用异常，必须有确认和错误提示。
+- 搜索需要支持取消，避免深层递归长时间占用。
+- 32/64 位注册表视图要明确处理。
+- 导出时注意编码和路径权限。
+
+---
+
+## 16. 句柄模块
+
+### 16.1 功能意义
+
+句柄模块用于枚举系统句柄、解析对象名称、查看对象类型统计和定位文件/进程/注册表等资源占用。
+
+### 16.2 实现方法
+
+- 句柄模块位于 `apps/desktop/handle_dock/`。
+- 通过 NtQuerySystemInformation 获取系统句柄表。
+- 通过复制句柄、查询对象名和对象类型实现详情展示。
+- 文件占用扫描也复用部分句柄解析能力。
+
+### 16.3 技术细节
+
+- 关键接口包括 `NtQuerySystemInformation`、`NtDuplicateObject`、`NtQueryObject`。
+- 名称解析要使用预算/超时控制，避免卡在不可响应对象上。
+- 对象类型统计可以按类型名聚合数量和权限。
+
+### 16.4 注意事项
+
+- 查询句柄可能需要管理员或 SeDebugPrivilege。
+- 对某些对象查询名称可能阻塞，必须用 worker 和超时隔离。
+- 关闭其他进程句柄是高风险动作，必须谨慎确认。
+
+---
+
+## 17. 启动项模块
+
+### 17.1 功能意义
+
+启动项模块用于集中查看登录项、服务、驱动、计划任务、高级注册表、WMI 等自启动入口，辅助排查持久化、性能和安全问题。
+
+### 17.2 实现方法
+
+- `StartupDock` 构建总览和分类页。
+- 每类启动项使用对应系统接口枚举。
+- 支持过滤、导出、定位文件/注册表、警告后启用/禁用、永久删除和跳转服务管理。
+- 真实启动来源不再使用通用只读保护；后端为每种可修改来源提供结构化定位器，界面展示风险等级、影响和恢复能力后再让用户确认。
+
+### 17.3 技术细节
+
+- 登录项来自 Run/RunOnce、启动文件夹等位置。
+- 服务/驱动来自 SCM。
+- 计划任务通过 Windows Task Scheduler PowerShell cmdlet 枚举；当前只纳入包含 Boot 或 Logon 触发器的任务。
+- WMI 持久化来自相关命名空间和事件消费者/过滤器绑定。
+- Run/RunOnce、RunOnceEx 和高级注册表值在禁用前保存原始类型与字节，删除源值后再提交备份状态；恢复时拒绝覆盖同名新值。HKLM 和策略位置同样允许修改，但使用严重风险提示并可能需要管理员权限。
+- 启动文件夹条目移动到应用暂存目录并保留恢复元数据；当前用户和公共启动文件夹均允许操作，公共目录操作会触发管理员权限恢复提示。
+- 计划任务动作前优先重新导出任务 XML，并用忽略 `Enabled` 状态差异的 SHA-256 身份摘要核对枚举快照；无法取得摘要时仍允许在严重警告后按精确任务路径/名称修改并复核最终状态。
+- 计划任务禁用只改变任务启用状态，保留任务定义、触发器和操作；操作完成后独立重新查询状态和身份，失败或超时时再启动一次独立恢复流程，尽量恢复动作前状态。
+- 服务和驱动页枚举全部 SCM 启动类型；禁用写入 `SERVICE_DISABLED`，重新启用普通服务使用 `SERVICE_AUTO_START`、驱动使用 `SERVICE_SYSTEM_START`，并在写入后复核、失败时尝试回滚。
+- WMI 消费者、过滤器和绑定使用精确类名及键字段定位；“禁用”会永久删除唯一匹配对象，不生成自动恢复备份。
+- 仅由整个注册表子键表示的持久化项和 Winsock 目录项通过永久删除入口修改，确认框明确说明不可恢复及网络/系统风险。
+
+### 17.4 注意事项
+
+- 每次修改必须展示来源、目标状态、风险等级、风险说明以及是否可恢复；默认按钮为取消，同一时间只允许一个启动项修改操作。
+- 服务/驱动重新启用采用默认自动/系统启动类型，不保证恢复修改前的精确类型；关键驱动和核心服务可能导致蓝屏、无法启动或系统功能异常。
+- WMI 删除不可恢复，删除过滤器、消费者或绑定可能留下孤儿对象；Winsock 和整子键删除也不提供 KSword 自动恢复。
+- 合成错误行、无法解析的损坏恢复记录没有真实来源定位器，因此仅显示诊断，不伪造修改动作。
+
+---
+
+## 18. 服务模块
+
+### 18.1 功能意义
+
+服务模块用于查看、筛选、控制和审计 Windows 服务，支持服务属性编辑、依赖关系查看、恢复策略和导出。
+
+### 18.2 实现方法
+
+- `ServiceDock` 按 UI、枚举、动作、属性、高级功能拆分多个 cpp 文件。
+- 服务枚举通过 SCM API 获取主表。
+- 详情页展示常规、登录、恢复、依存关系、审计信息。
+- 动作包括启动、停止、暂停、继续、启动类型调整、属性应用。
+
+### 18.3 技术细节
+
+- 关键文件：
+  - `ServiceDock.Enumerate.cpp`
+  - `ServiceDock.Actions.cpp`
+  - `ServiceDock.Properties.cpp`
+  - `ServiceDock.Properties.Apply.cpp`
+  - `ServiceDock.Advanced.cpp`
+- SCM 句柄和服务句柄需要 RAII 管理。
+- 依赖关系需要解析服务名、显示名和反向依赖。
+- 导出支持 TSV/JSON。
+
+### 18.4 注意事项
+
+- 停止系统服务可能影响系统稳定性，应有保护和确认。
+- 修改登录账户、恢复策略等需要管理员权限。
+- 服务状态变化异步，操作后应刷新并处理 pending 状态。
+
+---
+
+## 19. 当前操作、日志输出、即时窗口、监视面板
+
+### 19.1 功能意义
+
+这些辅助面板为所有模块提供统一的任务状态、日志追踪、临时文本编辑和性能观察能力。
+
+### 19.2 实现方法
+
+- 当前操作：由 `KProgress` 维护任务卡片、步骤和进度。
+- 日志输出：由 `KEventEntry` 保存日志快照，UI 定时或按 revision 增量刷新。
+- 即时窗口：使用项目内置 `CodeEditorWidget`。
+- 监视面板：主窗口底部四宫格展示 CPU/内存/磁盘/网络趋势。
+
+### 19.3 技术细节
+
+- 每条日志必须携带 `KLogEvent`，用 `eol` 提交。
+- 日志支持级别过滤、复制可见内容、导出、清空和 GUID 调用链追踪。
+- 进度任务完成后会从当前操作列表隐藏。
+- `CodeEditorWidget` 支持查找、替换、行号、括号匹配等能力。
+
+### 19.4 注意事项
+
+- 不要在业务代码中绕过日志框架直接写控制台。
+- 后台线程写日志和进度时要保证对象生命周期安全。
+- 清空日志应二次确认。
+
+---
+
+## 20. KswordARKDriver 内核驱动
+
+### 20.1 功能意义
+
+KswordARKDriver 为主程序提供 R0 辅助能力，包括驱动日志通道、进程操作、文件删除、SSDT 枚举、回调拦截和外部回调移除等。
+
+### 20.2 实现方法
+
+- 驱动创建 WDF control device `\\Device\\KswordARKLog` 和 DOS 符号链接 `\\.\KswordARKLog`。
+- 默认队列处理 read 和 device control。
+- 日志读取通过 `EvtIoRead` 返回驱动日志帧。
+- IOCTL 分发在 `src/dispatch/ioctl_dispatch.c`。
+- 回调运行时在 `src/features/callback/`。
+- 注入痕迹检查的 R0 扫描后端在 `src/features/injection/`：VAD 树枚举与用户态可执行页表叶子扫描，两者都是只读、支持游标续扫，详见 4.6。
+- 进程可见性变更在 `src/features/process/process_actions.c` 中实现，R3 侧只通过共享协议传入 PID 和动作，不传入内核地址。
+
+### 20.3 技术细节
+
+- 共享协议：
+  - `KswordArkProcessIoctl.h`
+  - `KswordArkFileIoctl.h`
+  - `KswordArkKernelIoctl.h`
+  - `KswordArkCallbackIoctl.h`
+  - `KswordArkInjectionScanIoctl.h`
+- R0 结束进程使用 `ZwTerminateProcess`。
+- R0 可恢复隐藏进程同时修改 `_EPROCESS.UniqueProcessId` 和摘除 `_EPROCESS.ActiveProcessLinks`，并保留 PspCidTable 路径用于按原 PID 枚举和恢复。
+- 文件删除通过驱动侧打开目标路径并执行删除语义。
+- 回调拦截注册进程、线程、镜像等内核 notify callback。
+- 回调清单协议 v3 提供有序全量快照哈希、逐行身份哈希、跨页匹配和旧 v2 线缆兼容；驱动卸载前的内部回调检查复用同一构建器和哈希最终化流程。
+- 外部回调移除通过 `PsSetCreateProcessNotifyRoutineEx(..., TRUE)`、`PsRemoveCreateThreadNotifyRoutine`、`PsRemoveLoadImageNotifyRoutine`。
+
+### 20.4 注意事项
+
+- 控制设备 SDDL 必须最小授权，普通用户不应能调用高危写 IOCTL。
+- IOCTL access 应使用 `FILE_READ_ACCESS` / `FILE_WRITE_ACCESS` 表达访问需求。
+- 所有输入缓冲都必须校验 size、version、flags、长度、NUL 终止和输出缓冲大小。
+- 内核地址来自用户输入时必须谨慎，不能信任类型和合法性。
+- 驱动中每句新增代码应按项目规范添加中文注释，并保持 warning-as-error 零警告。
+
+---
+
+## 21. APIMonitor、Taskbar、KswordHUD 辅助组件
+
+### 21.1 功能意义
+
+这些组件扩展主程序能力：APIMonitor 用于 WinAPI 监控，Taskbar 用于任务栏/覆盖类能力和 SOS 快速拉起主程序，KswordHUD 用于 HUD 展示或辅助交互。
+
+### 21.2 实现方法
+
+- `integrations/api_monitor/` 构建注入或监控侧 DLL/组件，通过配置文件或 IPC 接收监控参数。
+- `apps/taskbar/` 是独立 Qt 工程，随主解决方案构建；启动时会创建 `SosHotkeyLauncher`，在专用线程里监听 `S O S Enter` 固定键盘序列。
+- `apps/hud/` 是独立 Qt 工程，提供辅助窗口或状态显示。
+
+### 21.3 技术细节
+
+- APIMonitor 配置可位于 Temp 下的 `KswordApiMon` 目录。
+- apps/taskbar/KswordHUD 使用 Qt MSBuild，依赖 `KSWORD_QT_DIR` 和 Qt 模块。
+- Taskbar 的 SOS 功能位于 `apps/taskbar/SosHotkeyLauncher.cpp` 和 `apps/taskbar/SosHotkeyLauncher.h`；它通过 `WH_KEYBOARD_LL` 全局低级键盘钩子检测按键按下事件，不注入其它进程。
+- SOS 状态机只匹配 `S`、`O`、`S`、`Enter` 四个按键，忽略 Shift/Ctrl/Alt/Win/CapsLock 等修饰键，并丢弃注入键事件；命中后通过 `CreateProcessW` 启动 `Ksword5.1.exe`。
+- 主程序路径优先按发行包同目录解析，同时兼容源码树下 `apps/taskbar/x64/Release` 到 `apps/desktop/x64/Release/Ksword5.1.exe` 的构建输出布局。
+- 发布包需要带齐 Qt DLL、平台插件、样式插件、翻译文件和项目 DLL/SYS/EXE。
+
+### 21.4 注意事项
+
+- 辅助进程/DLL 的位数必须与目标进程匹配。
+- 发布目录中的 Qt 插件路径必须保持相对结构。
+- 监控 DLL 进入目标进程后要尽量避免崩溃和死锁。
+- SOS 键盘钩子只用于本地快速拉起主程序，不应扩展为任意按键记录；新增行为必须保持“固定序列匹配、无文本落盘、不中断其它键盘处理”的边界。
+
+---
+
+## 22. 构建、发布与部署
+
+### 22.1 功能意义
+
+统一构建和发布流程可以减少不同开发者机器上的 Qt/MSVC/WDK 差异，确保主程序、驱动和辅助组件能一致产出。
+
+### 22.2 实现方法
+
+- 主解决方案：`KSword.sln`。
+- 主程序：`apps/desktop/KswordDesktop.vcxproj`。
+- 驱动：`drivers/ark/KswordARKDriver.vcxproj`。
+- 辅助组件：`apps/taskbar/Taskbar.vcxproj`、`apps/hud/KswordHUD.vcxproj`。
+- 推荐通过 PowerShell 设置 `KSWORD_QT_DIR` 后使用 MSBuild。
+
+### 22.3 技术细节
+
+```powershell
+$env:KSWORD_QT_DIR='C:\Qt\6.9.3\msvc2022_64'
+msbuild .\artifacts/bin\Ksword5.1.vcxproj /t:Build "/p:Configuration=Debug;Platform=x64" /m
+msbuild .\Ksword5.1.sln /t:Build "/p:Configuration=Debug;Platform=x64" /m
+```
+
+发布包需要包含：
+
+- 主程序 `Ksword5.1.exe`
+- 辅助程序 `Taskbar.exe`、`KswordHUD.exe`
+- 驱动 `KswordARK.sys`、INF、证书、PDB（按发布策略决定是否带 PDB）
+- Qt 运行库和插件目录
+- APIMonitor DLL
+- 脚本和必要资源
+
+### 22.4 注意事项
+
+- WDK ApiValidator 和签名环境会影响 Release 驱动构建。
+- qmake 可能需要正确识别 MSVC 版本。
+- 构建日志、临时 qmake 目录、package_stage 产物一般不应提交到源码仓库。
+- 驱动发布必须遵守 Windows 驱动签名和加载策略。
+
+---
+
+## 23. 安全与合规注意事项
+
+### 23.1 高风险能力清单
+
+- R0 结束进程、删除文件、枚举/修改内核状态。
+- 外部回调移除。
+- 进程注入、WinAPI Hook、ETW/WMI 监控。
+- 服务、驱动、注册表和启动项修改。
+- HTTPS 代理、证书安装、系统代理修改。
+
+### 23.2 开发要求
+
+- 所有高风险入口必须有 UI 提示、日志、错误码和尽可能明确的确认流程。
+- R0 IOCTL 必须最小权限化，并在驱动侧再次校验。
+- 用户输入不能直接进入内核高风险 API，必须校验格式、大小、版本、flags 和范围。
+- 线程关闭必须支持取消，避免 UI 析构与后台线程互等。
+- 构建产物、日志、IDE 配置和本地临时文件应加入忽略，不应混入业务提交。
+
+### 23.3 使用要求
+
+- 仅在拥有授权的机器和场景使用。
+- 不得用于绕过安全软件、破坏系统、未授权监控或未授权控制。
+- 对生产系统执行 R0/删除/结束/注册表/服务操作前应备份并确认影响。
+
+---
+
+## 24. 二次开发指南
+
+### 24.1 新增 UI 页面
+
+1. 在对应 Dock 目录新增 `.h/.cpp`，避免继续扩大超长文件。
+2. 在主 Dock 中增加 Tab 或懒加载分支。
+3. 对右键菜单和弹窗设置明确样式。
+4. 对耗时任务使用后台线程/worker。
+5. 接入 `KLogEvent` 和 `kPro`。
+
+### 24.2 新增 R3/R0 协议
+
+1. 在 `shared/driver/` 新建或扩展协议头。
+2. 定义 IOCTL、request、response、version、flags。
+3. R3 和 R0 都 include 同一个共享头。
+4. 驱动分发层做权限和缓冲校验。
+5. UI 层做确认、日志和错误展示。
+
+### 24.3 新增后台任务
+
+1. 明确任务生命周期和取消标志。
+2. 禁止后台线程直接操作 UI。
+3. UI 更新通过 queued connection 回主线程。
+4. 析构时先请求停止，再等待线程退出。
+5. 所有异常路径都要更新进度到完成或失败。
+
+### 24.4 新增设置项
+
+1. 在 `AppearanceSettings` 增加字段和默认值。
+2. 在 JSON load/save 中读写字段。
+3. 在 `SettingsDock` 增加控件和 collect/apply 逻辑。
+4. 在 `mainWindow::applyAppearanceSettings` 或启动逻辑中应用。
+5. 说明是否需要重启生效。

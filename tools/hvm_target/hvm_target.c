@@ -1,64 +1,64 @@
 /*
- * hvm_target.exe —— R-1 处置与注入的可观察靶子。
+ * hvm_target.exe: Observable target for R-1 handling and injection.
  *
- * 存在的理由是"从外面看，成功和什么都没发生长得一样"。处置与注入都作用在一个
- * **客户物理页**上，而选错页——选到一页永远不会被执行的地址——的表现是驱动
- * 一切正常、表里有记录、计数恒为零。用记事本之类的现成进程做靶子时，"没反应"
- * 到底是机制没生效还是页选错了，分不开。
+ * The rationale is that "from the outside, success looks identical to nothing happening." Both handling and injection operate on a
+ * On the guest physical page, selecting the wrong page (an address that will never be executed) results in the driver appearing
+ * normal, entries in the table, and a count that remains zero. When using a ready-made process like Notepad as a target, it is
+ * impossible to distinguish between 'no reaction' caused by the mechanism failing versus one caused by selecting the wrong page.
  *
- * 所以这个程序自己把答案交出来：
- *   1. 打印自己主循环所在的**客户线性地址**，处置就钉在那一页上；
- *   2. 打印一页专门给注入用的靶页地址：它可执行、每次心跳都会被执行到、
- *      而且除了开头几个字节以外全是零——注入需要一段"空隙"来放外壳与载荷，
- *      而真实模块里那段空隙是节尾填充，位置与长度都不可控。拿一页确定的空白
- *      来做首次验证，是为了把"外壳编码对不对"和"这一页有没有空隙"这两件事
- *      分开；
- *   3. 打印一个标记变量的地址，并在每次心跳里回显它的值。载荷只要往这个地址
- *      写一个数，外面立刻就能看见——这是"载荷真的跑了"唯一可靠的证据，比
- *      "进程没崩"强得多；
- *   4. 每 200 毫秒打一行带序号的心跳，并立刻刷盘。
+ * So this program reveals the answer itself:
+ *   1. Print the **guest linear address** where the main loop resides; the handler is pinned to that page;
+ *   2. Print a dedicated target page address for injection: it is executable, gets executed on every
+ *      heartbeat, and is all zeros except for the first few bytes. Injection requires a 'gap' to hold
+ *      the shellcode and payload, whereas in real modules, that gap is section padding with
+ *      uncontrolled position and length. Using a page of known blank space for the initial verification
+ *      separates the concerns of 'is the shellcode encoding correct' and 'does this page have a gap'.
+ *   3. Print the address of a marker variable and echo its value in every heartbeat. As long as the payload
+ *      writes a number to this address, it becomes visible immediately outside—this is the only reliable
+ *      evidence that "the payload is actually running," far stronger than "the process hasn't crashed";
+ *   4. Emit a numbered heartbeat line every 200ms and flush to disk immediately.
  *
- * 于是几种结局在外面是可区分的：
- *   冻结   心跳停在某个序号上，进程还在，拦截数持续增长；撤销后**从下一个
- *          序号继续**（不是重启），那就是"指令没退休、状态没变"的直接证据。
- *   结束   进程消失。
- *   注入   标记值从 0 变成载荷写进去的那个数，而心跳**继续正常推进**——
- *          后半句同样重要：它证明被借用的那个线程被完好地还了回来。
- *   没生效 心跳照常，标记仍是 0，计数为零。
+ * Thus, the various outcomes are distinguishable externally:
+ *   Frozen: heartbeat stops at a specific sequence number while the process remains active and interception count continues to grow; after undoing, execution
+ *          resumes from the next sequence number (not a restart), providing direct evidence that instructions have not retired and state remains unchanged.
+ *   End: process disappeared.
+ *   The injection marker value changes from 0 to the payload written, while the heartbeat continues to
+ *          advance normally—the latter is equally critical: it proves the borrowed thread was returned intact.
+ *   Not effective: heartbeat continues normally, marker remains 0, count is zero.
  *
- * /MT 静态链接，与同目录其它工具一致：全新安装的 Windows 没有 VC++ 可再发行
- * 组件，动态链接的 exe 在 guest 里根本起不来，而症状是"没有输出"，看着像别的
- * 毛病。
+ * Use static linking (/MT) to match other tools in the same directory: A fresh
+ * Windows install lacks VC++ redistributables, causing dynamically linked EXEs to
+ * fail silently in the guest with no output, which looks like a different bug.
  */
 
 #include <windows.h>
 #include <stdio.h>
 
 /*
- * 注入的效果观测点。
+ * Observation point for injection effects.
  *
- * volatile：载荷是由 hypervisor 在另一条执行流上写进来的，编译器无从知道这件
- * 事，不加的话它完全有权把每次读都优化成同一个缓存值——那样即使载荷跑了，
- * 心跳里也永远显示 0，看起来和没生效一模一样。
+ * volatile: the payload is written by the hypervisor on a different execution stream. Without volatile, the
+ * compiler has no way of knowing this and is free to optimize every read into the same cached value. In that
+ * case, even if the payload executes, the heartbeat will always show 0, appearing exactly as if nothing happened.
  */
-static volatile unsigned int g_injectionMarker = 0U;
+static volatile unsigned int gInjectionMarker = 0U;
 
 /*
- * 心跳循环单独一个函数，且禁止内联。
+ * Heartbeat loop in a separate function with inlining disabled.
  *
- * 取它的函数地址当作"要拒绝执行的那一页"。写在 main 里也能取地址，但优化器可以
- * 把循环搬到别处，于是打印出来的地址与真正在执行的页不是同一页——又是一次
- * 静默失效。
+ * Use its function address as the "page to be rejected for execution." While the address
+ * can be obtained in main, the optimizer might move the loop elsewhere, causing the
+ * printed address to differ from the actual executing page — another silent failure.
  */
 #pragma optimize("", off)
-static void __declspec(noinline) HeartbeatLoop(void (*probe)(void))
+static void __declspec(noinline) heartbeatLoop(void (*probe)(void))
 {
     unsigned long long tick = 0ULL;
 
     for (;;) {
-        /* 每一拍都执行一次靶页，保证注入装上之后很快就会被触发到。 */
+        /* Execute the target page on every tick to ensure the injection is triggered quickly after being installed. */
         probe();
-        printf("tick %llu marker %08X\n", tick, g_injectionMarker);
+        printf("tick %llu marker %08X\n", tick, gInjectionMarker);
         fflush(stdout);
         tick += 1ULL;
         Sleep(200);
@@ -69,10 +69,10 @@ static void __declspec(noinline) HeartbeatLoop(void (*probe)(void))
 int main(void)
 {
     /*
-     * 靶页：一整页可执行内存，开头一条 ret，其余全零。
+     * Target page: a full executable page with a 'ret' instruction at the start and zeros elsewhere.
      *
-     * 全零的部分就是注入要用的空隙。真实模块里也有这样的空隙（节尾填充），
-     * 但位置和长度取决于链接结果，首次验证不该同时押上这一条。
+     * The all-zero portion is the gap reserved for injection. Real modules also have such gaps (section tail padding), but their
+     * position and length depend on the linking result; the initial verification should not bet on this condition simultaneously.
      */
     unsigned char* probePage = (unsigned char*)VirtualAlloc(
         NULL,
@@ -85,17 +85,17 @@ int main(void)
         fflush(stdout);
         return 1;
     }
-    /* VirtualAlloc 保证清零，这里只写那条 ret。 */
+    /* VirtualAlloc guarantees zeroing; here we only write the ret instruction. */
     probePage[0] = 0xC3U;
 
-    /* 让 guest 里的 PowerShell 一次就能抓到这四个数。 */
+    /* Allow PowerShell inside the guest to capture these four values in a single run. */
     printf("pid %lu\n", GetCurrentProcessId());
-    printf("loop 0x%016llX\n", (unsigned long long)(ULONG_PTR)&HeartbeatLoop);
+    printf("loop 0x%016llX\n", (unsigned long long)(ULONG_PTR)&heartbeatLoop);
     printf("probe 0x%016llX\n", (unsigned long long)(ULONG_PTR)probePage);
     printf("marker 0x%016llX\n",
-           (unsigned long long)(ULONG_PTR)&g_injectionMarker);
+           (unsigned long long)(ULONG_PTR)&gInjectionMarker);
     fflush(stdout);
-    HeartbeatLoop((void (*)(void))probePage);
-    /* 循环不返回；这一行只是让编译器看到一条完整的返回路径。 */
+    heartbeatLoop((void (*)(void))probePage);
+    /* The loop does not return; this line merely ensures the compiler sees a complete return path. */
     return 0;
 }

@@ -4,70 +4,70 @@
 #include <unordered_map>
 #include <utility>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 namespace {
 
-// 主键分隔符不会出现在路径、GUID 或数字里，避免 "a|b" 与 "a" + "|b" 撞键。
+// The primary key separator does not appear in paths, GUIDs, or numbers to avoid key collisions between "a|b" and "a" + "|b".
 constexpr char kSep = '\x1F';
 
-const std::string& GroupOf(const SourceRef& source) {
+const std::string& groupOf(const SourceRef& source) {
     return source.sourceGroup.empty() ? source.collectorId : source.sourceGroup;
 }
 
-std::uint32_t CategoryBit(ViewEntityCategory category) noexcept {
+std::uint32_t categoryBit(ViewEntityCategory category) noexcept {
     return static_cast<std::uint32_t>(1U) << static_cast<unsigned>(category);
 }
 
-// X-04：只有"该对象曾被这一类别的视图列出过"，这一类别的视图才有资格对它做缺项推断。
-// 一个 boot-start 驱动出现在加载模块列表、合法地不出现在设备对象树里 —— 那是结构，
-// 不是差异。反过来，进程列表之间（同类别）的缺项才是 cross-view 要解释的东西。
-bool CategoryComparable(std::uint32_t homeMask, ViewEntityCategory category) noexcept {
-    return (homeMask & CategoryBit(category)) != 0U;
+// X-04: A view category is qualified to perform missing-item inference on an object only if that object has previously been listed by a view of this category.
+// A boot-start driver appearing in the loaded module list but legitimately absent from the device object tree is a structural difference,
+// not a discrepancy. Conversely, missing entries between process lists (of the same category) are what cross-view analysis must explain.
+bool categoryComparable(std::uint32_t homeMask, ViewEntityCategory category) noexcept {
+    return (homeMask & categoryBit(category)) != 0U;
 }
 
-// X-06：账目的**正面证据**。字段全默认的 CoverageAccount 只说明"没记录到失败"，
-// 并不说明"确实枚举完了"；把它当成完整覆盖，等于白送"确认缺失"资格。
-bool CoverageProvesCompleteness(const CoverageAccount& coverage) noexcept {
+// X-06: Positive evidence for the account. A CoverageAccount with all fields defaulting only indicates 'no failure recorded,'
+// not 'enumeration completed.' Treating it as full coverage effectively grants 'confirmation of missing data' for free.
+bool coverageProvesCompleteness(const CoverageAccount& coverage) noexcept {
     if (coverage.limitHit || coverage.cancelled) {
-        return false;  // 提前停止：剩下的没看过
+        return false;  // Early termination: remaining items have not been examined.
     }
-    // (a) 数量口径：声明了总数，且已经全部拿到。
+    // (a) Counting criteria: the total is declared, and all have been obtained.
     if (coverage.totalKnown.present && coverage.succeeded >= coverage.totalKnown.value) {
         return true;
     }
-    // (b) 范围口径：四个端点同时在场，且处理范围完全盖住请求范围。少一个端点就无从
-    //     校验边界，不算数。
+    // (b) Scope alignment: All four endpoints must be present, and the processed range must fully cover the
+    //     requested range. If any endpoint is missing, boundary validation is impossible, and the result is invalid.
     if (coverage.requestedBegin.present && coverage.requestedEnd.present &&
         coverage.processedBegin.present && coverage.processedEnd.present) {
         return coverage.processedBegin.value <= coverage.requestedBegin.value &&
                coverage.processedEnd.value >= coverage.requestedEnd.value;
     }
-    return false;  // 账目一字未填 = 未知覆盖 ≠ 完整覆盖
+    return false;  // No account entries filled = unknown override ≠ complete override.
 }
 
-// X-06：账目与实际返回的记录条数对不上，说明这个 collector 静默损坏了
-// （典型症状：status=Success、succeeded=500、records 一条没有）。这种视图的"没列出"
-// 不是"不存在"，必须降级成未知，否则它会连续几轮把正常对象顶成持续差异。
-bool ViewAccountMatchesRecords(const ViewSnapshot& view) noexcept {
+// X-06: The account record count does not match the actual returned records, indicating this collector has silently corrupted
+// (typical symptoms: status=Success, succeeded=500, records=0). For this view, "not listed" does not mean "does not exist"; it must
+// be downgraded to unknown, otherwise it will continuously displace normal objects into persistent differences over several rounds.
+bool viewAccountMatchesRecords(const ViewSnapshot& view) noexcept {
     const CoverageAccount& coverage = view.envelope.coverage;
-    const std::uint64_t records = static_cast<std::uint64_t>(view.records.size());
-    if (coverage.succeeded > records) {
+    const std::uint64_t kRecords = static_cast<std::uint64_t>(view.records.size());
+    if (coverage.succeeded > kRecords) {
         return false;
     }
-    if (coverage.totalKnown.present && coverage.totalKnown.value > records) {
+    if (coverage.totalKnown.present && coverage.totalKnown.value > kRecords) {
         return false;
     }
     return true;
 }
 
-// 一个视图本轮是否有资格对"没列出"作出"确认不存在"的推断。
-bool ViewUsableForAbsenceInRound(const ViewSnapshot& view) noexcept {
-    return ViewUsableForAbsence(view.envelope, view.coversTargetScope) &&
-           ViewAccountMatchesRecords(view);
+// Whether a view is qualified this round to infer 'non-existence' based on 'not listed'.
+bool viewUsableForAbsenceInRound(const ViewSnapshot& view) noexcept {
+    return viewUsableForAbsence(view.envelope, view.coversTargetScope) &&
+           viewAccountMatchesRecords(view);
 }
 
-// 每个对象在一轮里的聚合状态。
-// 不变式：presentViews + usableAbsentViews + unusableViews + crossCategoryViews == hits.size()
+// Aggregated state of each object in a round.
+// Invariant: presentViews + usableAbsentViews + unusableViews + crossCategoryViews == hits.size()
 struct RoundState final {
     std::size_t presentViews = 0;
     std::size_t usableAbsentViews = 0;
@@ -78,65 +78,65 @@ struct RoundState final {
 
 struct ObjectEntry final {
     bool initialized = false;
-    bool weak = false;                 // X-02：身份不足，只能作候选关系
-    // 第一条落到这个对象上的源记录。保留它才能在建候选边时调用 ObjectIdentity 的
-    // Match*（那些函数吃的是带类型的身份，不是字符串键）。记录活在调用方的 rounds
-    // 里，生命周期覆盖整个 AnalyzeCrossView。
+    bool weak = false;                 // X-02: Insufficient identity; retain only a candidate relationship.
+    // The first source record mapped to this object. Keep it to call ObjectIdentity Match*
+    // functions when building candidate edges: those functions take typed identities, not string
+    // keys. The record lives in the caller's rounds for the entire analyzeCrossView call.
     const ViewRecord* representative = nullptr;
-    ObjectKind kind = ObjectKind::Unknown;
-    IdentityStrength strength = IdentityStrength::Unusable;
+    ObjectKind kind = ObjectKind::kUnknown;
+    IdentityStrength strength = IdentityStrength::kUnusable;
     std::string identityKey;
     std::string candidateKey;
     std::string displayText;
-    std::uint32_t homeMask = 0;        // X-04：曾列出该对象的视图类别集合
+    std::uint32_t homeMask = 0;        // X-04: Set of view categories that previously listed this object.
     std::string firstSeenViewId;
     std::string firstSeenRawRecordId;
     std::size_t firstSeenRoundIndex = 0;
-    // X-06 / BLOCKER：曾经 Present 报告过该对象的视图。判"对象已结束"必须由这些
-    // 见证视图本轮全部可用且都不再列出它来支撑，超时的见证视图不算数。
+    // X-06 / BLOCKER: Views that previously reported this object. The 'object ended' judgment must be supported by all
+    // these witness views being available in this round and no longer listing it; timed-out witness views do not count.
     std::vector<std::string> everPresentViews;
     std::vector<RoundState> perRound;
 };
 
-// 一个 (round, view) 的记录索引：identityKey/candidateKey 每条记录只算一次。
-// X-09：没有这张表，第 3 步就是 O(rounds × objects × views × records) 且每次比较都要
-// 重新构造一个 std::string，4000 个对象要 13 秒，10 分钟采样窗口根本跑不完。
+// An index for (round, view) records: each record is counted only once per identityKey/candidateKey.
+// X-09: Without this table, Step 3 becomes O(rounds × objects × views × records), and each comparison requires reconstructing
+// a std::string. With 4000 objects, this takes 13 seconds, making a 10-minute sampling window impossible to complete.
 struct ViewIndex final {
     const ViewSnapshot* view = nullptr;
     std::unordered_map<std::string, const ViewRecord*> byKey;
 };
 
-void AppendKeyField(std::string& key, const std::string& value) {
+void appendKeyField(std::string& key, const std::string& value) {
     key.push_back(kSep);
     key.append(value);
 }
 
-void AppendKeyField(std::string& key, const OptionalU64& value) {
+void appendKeyField(std::string& key, const OptionalU64& value) {
     key.push_back(kSep);
     if (value.present) {
-        key.append(FormatU64(value.value, U64Format::Decimal));
+        key.append(formatU64(value.value, U64Format::kDecimal));
     }
 }
 
-// 分析键：强身份走 "S"+跨会话主键，弱身份走 "W"+候选键。两个键空间必须分开，
-// 否则弱候选会和强对象撞在一起，正好是 X-02 禁止的误合并。
-std::string MakeAnalysisKey(const std::string& identity, const std::string& candidate) {
+// Analysis key: Strong identities use "S" + cross-session primary key; weak identities use "W" + candidate key. The two key
+// spaces must be separated; otherwise, weak candidates would collide with strong objects, causing the forbidden mis-merge X-02.
+std::string makeAnalysisKey(const std::string& identity, const std::string& candidate) {
     std::string key;
-    const bool weak = identity.empty();
-    const std::string& body = weak ? candidate : identity;
+    const bool kWeak = identity.empty();
+    const std::string& body = kWeak ? candidate : identity;
     key.reserve(body.size() + 2U);
-    key.push_back(weak ? 'W' : 'S');
+    key.push_back(kWeak ? 'W' : 'S');
     key.push_back(kSep);
     key.append(body);
     return key;
 }
 
-bool ContainsView(const std::vector<std::string>& list, const std::string& value) {
+bool containsView(const std::vector<std::string>& list, const std::string& value) {
     return std::find(list.begin(), list.end(), value) != list.end();
 }
 
-// X-04：把一轮的逐视图命中折叠成"每个类别里有几个视图列出/没列出"的基数事实。
-std::vector<CategoryObservation> BuildCategoryObservations(const RoundState& state,
+// X-04: folds per-view hits of a round into cardinality facts of 'how many views are listed/unlisted per category'.
+std::vector<CategoryObservation> buildCategoryObservations(const RoundState& state,
                                                            std::uint32_t homeMask) {
     std::vector<CategoryObservation> result;
     for (const ViewHit& hit : state.hits) {
@@ -147,62 +147,62 @@ std::vector<CategoryObservation> BuildCategoryObservations(const RoundState& sta
         if (found == result.end()) {
             CategoryObservation observation;
             observation.category = hit.category;
-            observation.comparable = CategoryComparable(homeMask, hit.category);
+            observation.comparable = categoryComparable(homeMask, hit.category);
             result.push_back(observation);
             found = result.end() - 1;
         }
         ++found->viewsInCategory;
-        if (hit.presence == ObjectPresence::Present) {
+        if (hit.presence == ObjectPresence::kPresent) {
             ++found->viewsListing;
-        } else if (hit.presence == ObjectPresence::AbsentInUsableView) {
+        } else if (hit.presence == ObjectPresence::kAbsentInUsableView) {
             ++found->usableViewsNotListing;
         }
     }
     return result;
 }
 
-// X-02：候选边的分桶键。弱记录与强对象只有落在同一个桶里才值得两两比对 ——
-// 否则就是 O(weak × strong)。桶键只用"两侧都必然拥有、且不同对象几乎不会相同"
-// 的字段：进程/句柄用 PID、线程用 TID、驱动用镜像路径。桶键相同**不代表**是同
-// 一个对象，真正的判定仍然交给 ObjectIdentity 的 Match*。
-std::string LinkBucketKey(const ViewRecord& record) {
+// X-02: Bucket key for candidate edges. Weak records and strong objects are only worth pairwise comparison if they fall into the
+// same bucket—otherwise it becomes O(weak × strong). The bucket key uses only fields that are 'necessarily present on both sides
+// and almost never identical across different objects': PID for processes/handles, TID for threads, and image path for drivers.
+// Identical bucket keys do not imply the same object; the actual determination is delegated to ObjectIdentity's Match*.
+std::string linkBucketKey(const ViewRecord& record) {
     std::string key(1, static_cast<char>(record.kind));
     switch (record.kind) {
-    case ObjectKind::Process:
-        AppendKeyField(key, record.process.pid);
+    case ObjectKind::kProcess:
+        appendKeyField(key, record.process.pid);
         return key;
-    case ObjectKind::Thread:
-        AppendKeyField(key, record.thread.tid);
+    case ObjectKind::kThread:
+        appendKeyField(key, record.thread.tid);
         return key;
-    case ObjectKind::Driver:
-        AppendKeyField(key, record.driver.imagePath);
+    case ObjectKind::kDriver:
+        appendKeyField(key, record.driver.imagePath);
         return key;
     default:
-        return std::string();  // 其它类别本层还没有身份模型，不建候选边
+        return std::string();  // No identity model at this level for other categories; do not create candidate edges.
     }
 }
 
-// X-02：按类型分派到对应的 Match*。这是 AnalyzeCrossView 里**唯一**真正调用
-// ObjectIdentity 匹配器的地方 —— 强对象之间仍然按 crossSessionKey 精确相等合并
-// （那是主键语义，本来就该严格），Match* 只用来给弱记录找候选。
-MatchResult MatchRecords(const ViewRecord& a, const ViewRecord& b) noexcept {
+// X-02: Dispatch to the corresponding Match* based on type. This is the **only** place in analyzeCrossView that
+// actually invokes the ObjectIdentity matcher. Strong objects are still merged via exact crossSessionKey equality
+// (that is primary key semantics and must be strict); Match* is only used to find candidates for weak records.
+MatchResult matchRecords(const ViewRecord& a, const ViewRecord& b) noexcept {
     if (a.kind != b.kind) {
-        return MatchResult::NoMatch;
+        return MatchResult::kNoMatch;
     }
     switch (a.kind) {
-    case ObjectKind::Process: return MatchProcessInstance(a.process, b.process);
-    case ObjectKind::Thread:  return MatchThreadInstance(a.thread, b.thread);
-    case ObjectKind::Driver:  return MatchDriverInstance(a.driver, b.driver);
-    default:                  return MatchResult::NoMatch;
+    case ObjectKind::kProcess: return matchProcessInstance(a.process, b.process);
+    case ObjectKind::kThread:  return matchThreadInstance(a.thread, b.thread);
+    case ObjectKind::kDriver:  return matchDriverInstance(a.driver, b.driver);
+    default:                  return MatchResult::kNoMatch;
     }
 }
 
-// 候选边的依据说明：说清"凭什么认为可能是同一个"和"缺了什么所以不能确认"。
-std::string DescribeLinkBasis(const ViewRecord& weak, const ViewRecord& strong) {
+// Explain the basis of a candidate edge: why the identities may match and what missing evidence prevents confirmation.
+std::string describeLinkBasis(const ViewRecord& weak, const ViewRecord& strong) {
     std::string basis;
     switch (weak.kind) {
-    case ObjectKind::Process:
-        basis = "pid=" + FormatOptionalU64(weak.process.pid, U64Format::Decimal);
+    case ObjectKind::kProcess:
+        basis = "pid=" + formatOptionalU64(weak.process.pid, U64Format::kDecimal);
         if (!weak.process.createTime100ns.present) {
             basis += "；弱侧缺创建时间";
         }
@@ -210,16 +210,16 @@ std::string DescribeLinkBasis(const ViewRecord& weak, const ViewRecord& strong) 
             basis += "；缺启动标识";
         }
         break;
-    case ObjectKind::Thread:
-        basis = "tid=" + FormatOptionalU64(weak.thread.tid, U64Format::Decimal);
+    case ObjectKind::kThread:
+        basis = "tid=" + formatOptionalU64(weak.thread.tid, U64Format::kDecimal);
         if (!weak.thread.createTime100ns.present) {
             basis += "；弱侧缺线程创建时间";
         }
-        if (weak.thread.process.strength() != IdentityStrength::Strong) {
+        if (weak.thread.process.strength() != IdentityStrength::kStrong) {
             basis += "；所属进程实例不完整";
         }
         break;
-    case ObjectKind::Driver:
+    case ObjectKind::kDriver:
         basis = "path=" + weak.driver.imagePath;
         if (weak.driver.pdbSignature.empty()) {
             basis += "；弱侧缺 PDB 身份";
@@ -234,12 +234,12 @@ std::string DescribeLinkBasis(const ViewRecord& weak, const ViewRecord& strong) 
     return basis;
 }
 
-// X-06：见证视图（曾报告过该对象的视图）本轮是否全部可用且都不再列出它。
-bool WitnessesAllUsablyAbsent(const RoundState& state, const std::vector<std::string>& witnesses) {
+// X-06: Whether all witness views (views that previously reported this object) are currently available and no longer list it.
+bool witnessesAllUsablyAbsent(const RoundState& state, const std::vector<std::string>& witnesses) {
     for (const std::string& viewId : witnesses) {
-        const auto found = std::find_if(state.hits.begin(), state.hits.end(),
+        const auto kFound = std::find_if(state.hits.begin(), state.hits.end(),
                                         [&viewId](const ViewHit& hit) { return hit.viewId == viewId; });
-        if (found == state.hits.end() || found->presence != ObjectPresence::AbsentInUsableView) {
+        if (kFound == state.hits.end() || kFound->presence != ObjectPresence::kAbsentInUsableView) {
             return false;
         }
     }
@@ -248,120 +248,120 @@ bool WitnessesAllUsablyAbsent(const RoundState& state, const std::vector<std::st
 
 } // namespace
 
-const char* ObjectPresenceName(ObjectPresence presence) noexcept {
+const char* objectPresenceName(ObjectPresence presence) noexcept {
     switch (presence) {
-    case ObjectPresence::Present:               return "Present";
-    case ObjectPresence::AbsentInUsableView:    return "AbsentInUsableView";
-    case ObjectPresence::UnknownViewFailed:     return "UnknownViewFailed";
-    case ObjectPresence::UnknownOutOfCoverage:  return "UnknownOutOfCoverage";
-    case ObjectPresence::NotComparableCategory: return "NotComparableCategory";
+    case ObjectPresence::kPresent:               return "Present";
+    case ObjectPresence::kAbsentInUsableView:    return "AbsentInUsableView";
+    case ObjectPresence::kUnknownViewFailed:     return "UnknownViewFailed";
+    case ObjectPresence::kUnknownOutOfCoverage:  return "UnknownOutOfCoverage";
+    case ObjectPresence::kNotComparableCategory: return "NotComparableCategory";
     }
     return "UnknownViewFailed";
 }
 
-const char* ViewEntityCategoryName(ViewEntityCategory category) noexcept {
+const char* viewEntityCategoryName(ViewEntityCategory category) noexcept {
     switch (category) {
-    case ViewEntityCategory::Unspecified:       return "Unspecified";
-    case ViewEntityCategory::ProcessList:       return "ProcessList";
-    case ViewEntityCategory::ThreadList:        return "ThreadList";
-    case ViewEntityCategory::LoadedModuleList:  return "LoadedModuleList";
-    case ViewEntityCategory::DriverObjectTable: return "DriverObjectTable";
-    case ViewEntityCategory::DeviceObjectTree:  return "DeviceObjectTree";
-    case ViewEntityCategory::ServiceConfig:     return "ServiceConfig";
+    case ViewEntityCategory::kUnspecified:       return "Unspecified";
+    case ViewEntityCategory::kProcessList:       return "ProcessList";
+    case ViewEntityCategory::kThreadList:        return "ThreadList";
+    case ViewEntityCategory::kLoadedModuleList:  return "LoadedModuleList";
+    case ViewEntityCategory::kDriverObjectTable: return "DriverObjectTable";
+    case ViewEntityCategory::kDeviceObjectTree:  return "DeviceObjectTree";
+    case ViewEntityCategory::kServiceConfig:     return "ServiceConfig";
     }
     return "Unspecified";
 }
 
-bool ViewUsableForAbsence(const EvidenceEnvelope& envelope, bool coversTargetScope) noexcept {
-    // 超时、拒绝访问、不支持、未采集：一律不能当成"该视图确认不存在"。
-    if (envelope.outcome.status != CollectionStatus::Success) {
+bool viewUsableForAbsence(const EvidenceEnvelope& envelope, bool coversTargetScope) noexcept {
+    // Timeout, access denied, unsupported, or not collected: none of these should be treated as 'the view is confirmed absent'.
+    if (envelope.outcome.status != CollectionStatus::kSuccess) {
         return false;
     }
     if (!coversTargetScope) {
         return false;
     }
-    // 截断、命中上限、单项失败都会让"没列出"变成"可能没扫到"。
+    // Truncation, hitting the limit, or a single failure will change 'not listed' to 'possibly not scanned'.
     if (!envelope.coverage.fullyCovered()) {
         return false;
     }
-    // X-06：再要求账目给出正面证据。fullyCovered() 的否定项能挡住"记录到的失败"，
-    // 挡不住"什么都没记录"——后者同样不能当成确认缺失。
-    return CoverageProvesCompleteness(envelope.coverage);
+    // X-06: Require positive evidence from the ledger again. The negation of fullyCovered() blocks "recorded
+    // failures" but not "no records"—the latter also cannot be treated as confirmation of absence.
+    return coverageProvesCompleteness(envelope.coverage);
 }
 
-const char* DiscrepancyStateName(DiscrepancyState state) noexcept {
+const char* discrepancyStateName(DiscrepancyState state) noexcept {
     switch (state) {
-    case DiscrepancyState::NoDiscrepancy:  return "NoDiscrepancy";
-    case DiscrepancyState::PendingRecheck: return "PendingRecheck";
-    case DiscrepancyState::Transient:      return "Transient";
-    case DiscrepancyState::Persistent:     return "Persistent";
-    case DiscrepancyState::ObjectEnded:    return "ObjectEnded";
-    case DiscrepancyState::Unverifiable:   return "Unverifiable";
-    case DiscrepancyState::CandidateOnly:  return "CandidateOnly";
+    case DiscrepancyState::kNoDiscrepancy:  return "NoDiscrepancy";
+    case DiscrepancyState::kPendingRecheck: return "PendingRecheck";
+    case DiscrepancyState::kTransient:      return "Transient";
+    case DiscrepancyState::kPersistent:     return "Persistent";
+    case DiscrepancyState::kObjectEnded:    return "ObjectEnded";
+    case DiscrepancyState::kUnverifiable:   return "Unverifiable";
+    case DiscrepancyState::kCandidateOnly:  return "CandidateOnly";
     }
     return "Unverifiable";
 }
 
-bool StateConclusionConsistent(DiscrepancyState state, AnalysisConclusion conclusion) noexcept {
+bool stateConclusionConsistent(DiscrepancyState state, AnalysisConclusion conclusion) noexcept {
     switch (state) {
-    case DiscrepancyState::Persistent:
-        // 既然"达到复查轮数且始终缺失"，就不可能同时"没有可用观测"。
-        return conclusion == AnalysisConclusion::DifferenceObserved;
-    case DiscrepancyState::NoDiscrepancy:
-        return conclusion != AnalysisConclusion::DifferenceObserved;
-    case DiscrepancyState::Transient:
-        return conclusion == AnalysisConclusion::NoDifferenceObserved ||
-               conclusion == AnalysisConclusion::Indeterminate;
-    case DiscrepancyState::ObjectEnded:
-        // "对象已结束"解释了缺项，但它不是"覆盖足够且未发现矛盾"。
-        return conclusion == AnalysisConclusion::Indeterminate ||
-               conclusion == AnalysisConclusion::NoEvidence;
-    case DiscrepancyState::PendingRecheck:
-    case DiscrepancyState::Unverifiable:
-    case DiscrepancyState::CandidateOnly:
-        return conclusion == AnalysisConclusion::Indeterminate ||
-               conclusion == AnalysisConclusion::NoEvidence;
+    case DiscrepancyState::kPersistent:
+        // Since 'reached review count and always missing' is true, it is impossible to simultaneously have 'no available observations'.
+        return conclusion == AnalysisConclusion::kDifferenceObserved;
+    case DiscrepancyState::kNoDiscrepancy:
+        return conclusion != AnalysisConclusion::kDifferenceObserved;
+    case DiscrepancyState::kTransient:
+        return conclusion == AnalysisConclusion::kNoDifferenceObserved ||
+               conclusion == AnalysisConclusion::kIndeterminate;
+    case DiscrepancyState::kObjectEnded:
+        // "Object ended" explains the missing item, but it is not "sufficiently covered with no contradictions found".
+        return conclusion == AnalysisConclusion::kIndeterminate ||
+               conclusion == AnalysisConclusion::kNoEvidence;
+    case DiscrepancyState::kPendingRecheck:
+    case DiscrepancyState::kUnverifiable:
+    case DiscrepancyState::kCandidateOnly:
+        return conclusion == AnalysisConclusion::kIndeterminate ||
+               conclusion == AnalysisConclusion::kNoEvidence;
     }
     return false;
 }
 
 std::string ViewRecord::identityKey() const {
     switch (kind) {
-    case ObjectKind::Process: return process.crossSessionKey();
-    case ObjectKind::Thread:  return thread.crossSessionKey();
-    case ObjectKind::Driver:  return driver.crossSessionKey();
+    case ObjectKind::kProcess: return process.crossSessionKey();
+    case ObjectKind::kThread:  return thread.crossSessionKey();
+    case ObjectKind::kDriver:  return driver.crossSessionKey();
     default:                  return std::string();
     }
 }
 
 std::string ViewRecord::candidateKey() const {
-    // X-02：这里用的全是"可复用"的标识，所以它只能用来在**本次分析内**把同一条弱记录
-    // 的多个副本收成一个候选对象，绝不能拿去跨会话认定同一个对象。
+    // X-02: All identifiers used here are "reusable," so they can only be used within this analysis session to consolidate multiple
+    // copies of the same weak record into a single candidate object. They must never be used to assert object identity across sessions.
     std::string key;
     switch (kind) {
-    case ObjectKind::Process:
+    case ObjectKind::kProcess:
         key = "cand-proc";
-        AppendKeyField(key, process.bootId);
-        AppendKeyField(key, process.pid);
-        AppendKeyField(key, process.imageName);
+        appendKeyField(key, process.bootId);
+        appendKeyField(key, process.pid);
+        appendKeyField(key, process.imageName);
         break;
-    case ObjectKind::Thread:
+    case ObjectKind::kThread:
         key = "cand-thread";
-        AppendKeyField(key, thread.process.bootId);
-        AppendKeyField(key, thread.process.pid);
-        AppendKeyField(key, thread.tid);
-        AppendKeyField(key, thread.process.imageName);
+        appendKeyField(key, thread.process.bootId);
+        appendKeyField(key, thread.process.pid);
+        appendKeyField(key, thread.tid);
+        appendKeyField(key, thread.process.imageName);
         break;
-    case ObjectKind::Driver:
+    case ObjectKind::kDriver:
         key = "cand-driver";
-        AppendKeyField(key, driver.bootId);
-        AppendKeyField(key, driver.imagePath);
-        AppendKeyField(key, driver.pdbSignature);
+        appendKeyField(key, driver.bootId);
+        appendKeyField(key, driver.imagePath);
+        appendKeyField(key, driver.pdbSignature);
         break;
     default:
-        // 连 kind 都没有：只能按原始记录 id 保留，至少让报告能回到那一行（X-07）。
+        // No kind field: must retain by raw record ID at least to allow the report to return to that line (X-07).
         key = "cand-raw";
-        AppendKeyField(key, rawRecordId);
+        appendKeyField(key, rawRecordId);
         break;
     }
     return key;
@@ -369,29 +369,29 @@ std::string ViewRecord::candidateKey() const {
 
 IdentityStrength ViewRecord::strength() const noexcept {
     switch (kind) {
-    case ObjectKind::Process: return process.strength();
-    case ObjectKind::Thread:  return thread.strength();
-    case ObjectKind::Driver:  return driver.strength();
-    default:                  return IdentityStrength::Unusable;
+    case ObjectKind::kProcess: return process.strength();
+    case ObjectKind::kThread:  return thread.strength();
+    case ObjectKind::kDriver:  return driver.strength();
+    default:                  return IdentityStrength::kUnusable;
     }
 }
 
 std::string ViewRecord::displayText() const {
     switch (kind) {
-    case ObjectKind::Process:
-        return process.imageName + " (" + FormatOptionalU64(process.pid, U64Format::Decimal) + ")";
-    case ObjectKind::Thread:
-        return "TID " + FormatOptionalU64(thread.tid, U64Format::Decimal) + " @ " +
+    case ObjectKind::kProcess:
+        return process.imageName + " (" + formatOptionalU64(process.pid, U64Format::kDecimal) + ")";
+    case ObjectKind::kThread:
+        return "TID " + formatOptionalU64(thread.tid, U64Format::kDecimal) + " @ " +
                thread.process.imageName;
-    case ObjectKind::Driver:
+    case ObjectKind::kDriver:
         return driver.imagePath;
     default:
-        // X-07：没有身份也要说得出跳过了什么，不能只留一个整数。
+        // X-07: Even without an identity, we must be able to state what was skipped; we cannot leave just an integer.
         return rawRecordId.empty() ? std::string() : ("raw:" + rawRecordId);
     }
 }
 
-CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
+CrossViewReport analyzeCrossView(const std::vector<SampleRound>& rounds,
                                  const CrossViewOptions& options) {
     CrossViewReport report;
     report.roundCount = rounds.size();
@@ -400,14 +400,14 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
     }
 
     // -----------------------------------------------------------------------
-    // 1) 跨**全部轮次**普查：视图并集、每轮实际视图数、每轮独立来源组数。
-    //    X-01：只在第 1 轮到场、后面就崩掉的来源不能撑可信度，所以来源组数取
-    //    每轮独立组数的最小值，视图集合取并集（缺席的轮次会在第 3 步显式产出
-    //    NotCollected，而不是当作"这轮干干净净"）。
+    // 1) Cross-**all rounds** census: view union, actual view count per round, and independent source group count per round.
+    //    X-01: Sources that appear only in round 1 and then crash cannot contribute to trustworthiness. Thus, the
+    //    source group count is the minimum of the independent group counts per round, and the view set is the union
+    //    (absent rounds explicitly produce NotCollected in step 3, rather than being treated as 'clean this round').
     // -----------------------------------------------------------------------
     std::vector<EvidenceEnvelope> allEnvelopes;
     std::vector<std::string> unionViewIds;
-    std::vector<ViewEntityCategory> unionViewCategories;  // 与 unionViewIds 同序
+    std::vector<ViewEntityCategory> unionViewCategories;  // Same order as unionViewIds.
     std::size_t minGroupCount = 0;
     std::size_t minRoundViewCount = 0;
     bool firstRound = true;
@@ -416,21 +416,21 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
         std::vector<std::string> roundViewIds;
         std::vector<std::string> roundGroups;
         for (const ViewSnapshot& view : round.views) {
-            if (ContainsView(roundViewIds, view.viewId)) {
-                continue;  // 同一轮里重复的 viewId 只认第一份，不算两个视图
+            if (containsView(roundViewIds, view.viewId)) {
+                continue;  // Within a round, accept only the first occurrence of a viewId; duplicates do not count as separate views.
             }
             roundViewIds.push_back(view.viewId);
             allEnvelopes.push_back(view.envelope);
-            const std::string& group = GroupOf(view.envelope.source);
-            if (!ContainsView(roundGroups, group)) {
+            const std::string& group = groupOf(view.envelope.source);
+            if (!containsView(roundGroups, group)) {
                 roundGroups.push_back(group);
             }
-            const auto found = std::find(unionViewIds.begin(), unionViewIds.end(), view.viewId);
-            if (found == unionViewIds.end()) {
+            const auto kFound = std::find(unionViewIds.begin(), unionViewIds.end(), view.viewId);
+            if (kFound == unionViewIds.end()) {
                 unionViewIds.push_back(view.viewId);
                 unionViewCategories.push_back(view.category);
             } else {
-                unionViewCategories[static_cast<std::size_t>(found - unionViewIds.begin())] =
+                unionViewCategories[static_cast<std::size_t>(kFound - unionViewIds.begin())] =
                     view.category;
             }
         }
@@ -442,18 +442,18 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
             minGroupCount = (std::min)(minGroupCount, roundGroups.size());
             minRoundViewCount = (std::min)(minRoundViewCount, roundViewIds.size());
         }
-        report.latestRoundViewCount = roundViewIds.size();  // 循环结束后即最后一轮
+        report.latestRoundViewCount = roundViewIds.size();  // After the loop ends, this is the last round.
     }
 
     report.viewCount = unionViewIds.size();
     report.minRoundViewCount = minRoundViewCount;
     report.independentSourceGroupCount = minGroupCount;
 
-    // 信任说明取**全部轮次**的 envelope：最后一轮的 AccessDenied 与命中上限不能因为
-    // "第 1 轮很干净"就从限制说明里消失（X-01/F-11）。
-    report.trust = BuildTrustStatement(allEnvelopes);
-    // BuildTrustStatement 按 envelope 条数计数（这里是 轮数 × 视图数），对 X 模块而言
-    // 正确口径是"不同视图"与"每轮都在的独立来源"，所以覆盖掉这两项并重算对应限制项。
+    // Trust statement takes envelopes from **all rounds**: AccessDenied and hit-limit conditions from the final
+    // round must not disappear from the restriction statement just because "Round 1 was clean" (X-01/F-11).
+    report.trust = buildTrustStatement(allEnvelopes);
+    // - buildTrustStatement counts by envelope entries (here, rounds × view count). For the X module, the correct metric is "distinct views" and
+    // "independent sources present in every round"; therefore, these two fields are overwritten and the corresponding limitation items are recalculated.
     report.trust.viewCount = report.viewCount;
     report.trust.independentSourceGroupCount = report.independentSourceGroupCount;
     report.trust.limitationKeys.erase(
@@ -466,9 +466,9 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
     }
 
     // -----------------------------------------------------------------------
-    // 2) 建对象集合 + 逐 (round, view) 的记录索引（X-09：identityKey 每条只算一次）。
-    //    身份不足的记录不再被丢弃：它进入独立的候选键空间，报告里保留 kind /
-    //    displayText / rawRecordId / 逐视图命中（X-02/X-07）。
+    // 2) Build object set + per (round, view) record index (X-09: identityKey counted only once per entry).
+    //    Records with insufficient identity are no longer discarded: they enter an independent candidate
+    //    key space, and the report retains kind, displayText, rawRecordId, and per-view hits (X-02/X-07).
     // -----------------------------------------------------------------------
     std::unordered_map<std::string, ObjectEntry> objects;
     std::vector<std::unordered_map<std::string, ViewIndex>> roundIndex(rounds.size());
@@ -477,50 +477,50 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
         const SampleRound& round = rounds[roundIndexNo];
         std::unordered_map<std::string, ViewIndex>& index = roundIndex[roundIndexNo];
         for (const ViewSnapshot& view : round.views) {
-            const auto inserted = index.try_emplace(view.viewId);
-            if (!inserted.second) {
-                continue;  // 与第 1 步一致：同轮重复 viewId 只认第一份
+            const auto kInserted = index.try_emplace(view.viewId);
+            if (!kInserted.second) {
+                continue;  // As in step 1, accept only the first occurrence of each viewId in the same round.
             }
-            ViewIndex& viewIndex = inserted.first->second;
+            ViewIndex& viewIndex = kInserted.first->second;
             viewIndex.view = &view;
             viewIndex.byKey.reserve(view.records.size());
             for (const ViewRecord& record : view.records) {
-                const std::string identity = record.identityKey();
-                const bool weak = identity.empty();
+                const std::string kIdentity = record.identityKey();
+                const bool kWeak = kIdentity.empty();
                 std::string analysisKey =
-                    MakeAnalysisKey(identity, weak ? record.candidateKey() : std::string());
+                    makeAnalysisKey(kIdentity, kWeak ? record.candidateKey() : std::string());
                 viewIndex.byKey.emplace(analysisKey, &record);
-                if (weak) {
+                if (kWeak) {
                     ++report.weakIdentityRecords;
                 }
                 ObjectEntry& entry = objects[analysisKey];
                 if (!entry.initialized) {
                     entry.initialized = true;
-                    entry.weak = weak;
+                    entry.weak = kWeak;
                     entry.representative = &record;
                     entry.kind = record.kind;
                     entry.strength = record.strength();
-                    entry.identityKey = identity;
-                    entry.candidateKey = weak ? record.candidateKey() : std::string();
+                    entry.identityKey = kIdentity;
+                    entry.candidateKey = kWeak ? record.candidateKey() : std::string();
                     entry.displayText = record.displayText();
                     entry.firstSeenViewId = view.viewId;
                     entry.firstSeenRawRecordId = record.rawRecordId;
                     entry.firstSeenRoundIndex = roundIndexNo;
                     entry.perRound.resize(rounds.size());
-                    if (weak) {
+                    if (kWeak) {
                         ++report.weakIdentityObjects;
                     }
                 }
-                entry.homeMask |= CategoryBit(view.category);
+                entry.homeMask |= categoryBit(view.category);
             }
         }
     }
 
     // -----------------------------------------------------------------------
-    // 3) 逐轮逐视图求存在性 —— 按**视图并集**遍历。
-    //    X-06 / F-05：并集里存在但本轮整个缺席的视图（collector 崩了、驱动卸载了，
-    //    连一个 NotCollected 的 envelope 都没送上来）必须产出 NotCollected 的命中并
-    //    计入 unusableViews。一个从未被采集的视图不能推出"未发现差异"。
+    // 3) Determine existence per round and per view by iterating over the **view union**.
+    //    X-06 / F-05: Views that exist in the union but are entirely absent in this round (collector crashed,
+    //    driver unloaded, or no NotCollected envelope was sent) must produce a NotCollected hit and be counted
+    //    in unusableViews. A view that was never collected cannot be used to infer 'no differences found'.
     // -----------------------------------------------------------------------
     for (std::size_t roundNo = 0; roundNo < rounds.size(); ++roundNo) {
         const std::unordered_map<std::string, ViewIndex>& index = roundIndex[roundNo];
@@ -532,42 +532,42 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
             for (std::size_t viewNo = 0; viewNo < unionViewIds.size(); ++viewNo) {
                 ViewHit hit;
                 hit.viewId = unionViewIds[viewNo];
-                const auto viewIt = index.find(unionViewIds[viewNo]);
-                if (viewIt == index.end()) {
-                    // 整轮缺席：sourceGroup 本轮未知，留空；状态是"根本没采集"。
-                    hit.presence = ObjectPresence::UnknownViewFailed;
-                    hit.viewStatus = CollectionStatus::NotCollected;
+                const auto kViewIt = index.find(unionViewIds[viewNo]);
+                if (kViewIt == index.end()) {
+                    // Full-round absence: sourceGroup is unknown in this round, leave empty; status is 'never collected'.
+                    hit.presence = ObjectPresence::kUnknownViewFailed;
+                    hit.viewStatus = CollectionStatus::kNotCollected;
                     hit.category = unionViewCategories[viewNo];
                     ++state.unusableViews;
                     state.hits.push_back(std::move(hit));
                     continue;
                 }
-                const ViewSnapshot& view = *viewIt->second.view;
-                hit.sourceGroup = GroupOf(view.envelope.source);
+                const ViewSnapshot& view = *kViewIt->second.view;
+                hit.sourceGroup = groupOf(view.envelope.source);
                 hit.viewStatus = view.envelope.outcome.status;
                 hit.category = view.category;
 
-                const auto recordIt = viewIt->second.byKey.find(analysisKey);
-                if (recordIt != viewIt->second.byKey.end()) {
-                    hit.presence = ObjectPresence::Present;
-                    hit.rawRecordId = recordIt->second->rawRecordId;
+                const auto kRecordIt = kViewIt->second.byKey.find(analysisKey);
+                if (kRecordIt != kViewIt->second.byKey.end()) {
+                    hit.presence = ObjectPresence::kPresent;
+                    hit.rawRecordId = kRecordIt->second->rawRecordId;
                     ++state.presentViews;
-                    if (!ContainsView(entry.everPresentViews, hit.viewId)) {
+                    if (!containsView(entry.everPresentViews, hit.viewId)) {
                         entry.everPresentViews.push_back(hit.viewId);
                     }
-                } else if (!CategoryComparable(entry.homeMask, view.category)) {
-                    // X-04：另一类实体的视图没列出它，是结构现象，不是缺项。
-                    hit.presence = ObjectPresence::NotComparableCategory;
+                } else if (!categoryComparable(entry.homeMask, view.category)) {
+                    // X-04: The view of another entity class did not list it; this is a structural phenomenon, not a missing item.
+                    hit.presence = ObjectPresence::kNotComparableCategory;
                     ++state.crossCategoryViews;
-                } else if (ViewUsableForAbsenceInRound(view)) {
-                    hit.presence = ObjectPresence::AbsentInUsableView;
+                } else if (viewUsableForAbsenceInRound(view)) {
+                    hit.presence = ObjectPresence::kAbsentInUsableView;
                     ++state.usableAbsentViews;
-                } else if (view.envelope.outcome.status == CollectionStatus::Success ||
-                           view.envelope.outcome.status == CollectionStatus::Partial) {
-                    hit.presence = ObjectPresence::UnknownOutOfCoverage;
+                } else if (view.envelope.outcome.status == CollectionStatus::kSuccess ||
+                           view.envelope.outcome.status == CollectionStatus::kPartial) {
+                    hit.presence = ObjectPresence::kUnknownOutOfCoverage;
                     ++state.unusableViews;
                 } else {
-                    hit.presence = ObjectPresence::UnknownViewFailed;
+                    hit.presence = ObjectPresence::kUnknownViewFailed;
                     ++state.unusableViews;
                 }
                 state.hits.push_back(std::move(hit));
@@ -576,15 +576,15 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
     }
 
     // -----------------------------------------------------------------------
-    // 3.5) X-02：给弱身份记录建"候选对应哪个强对象"的边。
+    // 3.5) X-02: Create edges for weak identity records pointing to "candidate strong objects".
     //
-    // 规范要求身份不足时"保留候选关系"。此前弱记录只落成一条孤立的 CandidateOnly
-    // finding，报告里看不出它可能就是哪个已确认对象；但反向合并进去又正是 X-02
-    // 禁止的误合并。所以这里建**显式的候选边**：判定走 ObjectIdentity 的 Match*，
-    // 由统一身份门槛保证结果最强只到 Candidate，NoMatch 的对不记录。
+    // The specification requires retaining candidate relationships when identity is insufficient. Previously, weak records resulted in a single
+    // isolated CandidateOnly finding, making it unclear in the report which confirmed object it might correspond to; however, merging them backward
+    // constitutes the prohibited false merge X-02. Therefore, we create **explicit candidate edges**: the judgment follows ObjectIdentity's Match*
+    // logic, and the unified identity threshold ensures results are at most Candidate, while NoMatch pairs are not recorded.
     //
-    // 复杂度：先按 PID/TID/镜像路径分桶，只在同桶内两两比对。桶通常只有一两个成员，
-    // 所以是 O(strong + weak) 而不是 O(weak × strong)。
+    // Complexity: First bucket by PID/TID/image path, then perform pairwise comparison only within the same bucket. Buckets
+    // typically contain only one or two members, resulting in O(strong + weak) complexity rather than O(weak × strong).
     // -----------------------------------------------------------------------
     std::unordered_map<std::string, std::vector<CandidateLink>> linksByAnalysisKey;
     {
@@ -594,11 +594,11 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
             if (entry.weak || entry.representative == nullptr) {
                 continue;
             }
-            const std::string bucket = LinkBucketKey(*entry.representative);
-            if (bucket.empty()) {
+            const std::string kBucket = linkBucketKey(*entry.representative);
+            if (kBucket.empty()) {
                 continue;
             }
-            strongBuckets[bucket].push_back(&item);
+            strongBuckets[kBucket].push_back(&item);
         }
 
         for (const auto& item : objects) {
@@ -606,35 +606,35 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
             if (!weakEntry.weak || weakEntry.representative == nullptr) {
                 continue;
             }
-            const std::string bucket = LinkBucketKey(*weakEntry.representative);
-            if (bucket.empty()) {
+            const std::string kBucket = linkBucketKey(*weakEntry.representative);
+            if (kBucket.empty()) {
                 continue;
             }
-            const auto found = strongBuckets.find(bucket);
-            if (found == strongBuckets.end()) {
+            const auto kFound = strongBuckets.find(kBucket);
+            if (kFound == strongBuckets.end()) {
                 continue;
             }
-            for (const auto* strongItem : found->second) {
+            for (const auto* strongItem : kFound->second) {
                 const ObjectEntry& strongEntry = strongItem->second;
                 if (strongEntry.representative == nullptr) {
                     continue;
                 }
-                const MatchResult verdict =
-                    MatchRecords(*weakEntry.representative, *strongEntry.representative);
-                if (verdict == MatchResult::NoMatch) {
+                const MatchResult kVerdict =
+                    matchRecords(*weakEntry.representative, *strongEntry.representative);
+                if (kVerdict == MatchResult::kNoMatch) {
                     continue;
                 }
                 CandidateLink link;
                 link.strongIdentityKey = strongEntry.identityKey;
-                // 统一身份门槛保证弱侧参与的匹配不可能是 Confirmed；这里再钉一道，
-                // 免得将来有人放宽了门槛而这里悄悄升级成确定关系。
-                link.match = MatchResult::Candidate;
-                link.basis = DescribeLinkBasis(*weakEntry.representative, *strongEntry.representative);
+                // The unified identity threshold ensures that matches involving the weak side cannot be Confirmed; this additional
+                // check prevents future threshold relaxations from quietly upgrading the relationship to Confirmed here.
+                link.match = MatchResult::kCandidate;
+                link.basis = describeLinkBasis(*weakEntry.representative, *strongEntry.representative);
                 linksByAnalysisKey[item.first].push_back(link);
 
                 CandidateLink back;
                 back.strongIdentityKey = weakEntry.candidateKey;
-                back.match = MatchResult::Candidate;
+                back.match = MatchResult::kCandidate;
                 back.basis = link.basis;
                 linksByAnalysisKey[strongItem->first].push_back(back);
                 ++report.candidateLinkCount;
@@ -643,9 +643,9 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
     }
 
     // -----------------------------------------------------------------------
-    // 4) 状态机：首次缺项 -> 复采样 -> 分类 -> 结论（与状态同一证据窗口）。
+    // 4) State machine: initial miss -> resampling -> classification -> conclusion (within the same evidence window as the state).
     // -----------------------------------------------------------------------
-    const std::size_t lastRound = rounds.size() - 1U;
+    const std::size_t kLastRound = rounds.size() - 1U;
     for (auto& item : objects) {
         ObjectEntry& entry = item.second;
         CrossViewFinding finding;
@@ -657,19 +657,19 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
         finding.viewCount = unionViewIds.size();
         finding.independentSourceGroupCount = report.independentSourceGroupCount;
         finding.latestRoundViewCount = report.latestRoundViewCount;
-        finding.latestHits = entry.perRound[lastRound].hits;
-        finding.latestCategories = BuildCategoryObservations(entry.perRound[lastRound], entry.homeMask);
+        finding.latestHits = entry.perRound[kLastRound].hits;
+        finding.latestCategories = buildCategoryObservations(entry.perRound[kLastRound], entry.homeMask);
         finding.firstSeenViewId = entry.firstSeenViewId;
         finding.firstSeenRawRecordId = entry.firstSeenRawRecordId;
         finding.firstSeenRoundIndex = entry.firstSeenRoundIndex;
         {
-            const auto links = linksByAnalysisKey.find(item.first);
-            if (links != linksByAnalysisKey.end()) {
-                finding.candidateLinks = links->second;
+            const auto kLinks = linksByAnalysisKey.find(item.first);
+            if (kLinks != linksByAnalysisKey.end()) {
+                finding.candidateLinks = kLinks->second;
             }
         }
 
-        // 首次出现差异的轮次：有视图看到、同时有可用视图没看到。
+        // Round of first discrepancy: some views see it while other available views do not.
         std::size_t firstDiscrepancy = rounds.size();
         for (std::size_t i = 0; i < rounds.size(); ++i) {
             const RoundState& state = entry.perRound[i];
@@ -688,8 +688,8 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
                 recheck.sampleId = rounds[i].sampleId;
                 recheck.sampleUtc100ns = rounds[i].sampleUtc100ns;
                 if (firstUtc.present && rounds[i].sampleUtc100ns.present) {
-                    // X-05：无符号裸相减遇到 NTP 回拨会回绕成天文数字（≈5.8e13 年），
-                    // 且看上去是个有效间隔。先比大小，回拨就明确标出来并保持 unset。
+                    // X-05: Unsigned naked subtraction encountering an NTP step-back will wrap around to an astronomical number (≈5.8e13 years) and
+                    // appear as a valid interval. First compare values; if a step-back is detected, explicitly mark it and keep the value unset.
                     if (rounds[i].sampleUtc100ns.value >= firstUtc.value) {
                         recheck.intervalFromFirst100ns =
                             OptionalU64::of(rounds[i].sampleUtc100ns.value - firstUtc.value);
@@ -701,20 +701,20 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
                 recheck.usableAbsentViews = state.usableAbsentViews;
                 recheck.unusableViews = state.unusableViews;
                 recheck.crossCategoryViews = state.crossCategoryViews;
-                recheck.hits = state.hits;  // X-07：每轮都能展开逐视图命中与源记录 id
+                recheck.hits = state.hits;  // X-07: Unwind per-view hits and source record IDs in each round.
                 finding.recheckHistory.push_back(std::move(recheck));
             }
         }
 
-        std::size_t classificationRound = lastRound;
+        std::size_t classificationRound = kLastRound;
         if (entry.weak) {
-            // X-02：身份不足的对象只保留候选关系，禁止参与任何差异升级。
-            finding.state = DiscrepancyState::CandidateOnly;
-            classificationRound = lastRound;
+            // X-02: Objects with insufficient identity retain only candidate relationships and are prohibited from participating in any discrepancy upgrades.
+            finding.state = DiscrepancyState::kCandidateOnly;
+            classificationRound = kLastRound;
         } else if (firstDiscrepancy == rounds.size()) {
-            finding.state = DiscrepancyState::NoDiscrepancy;
+            finding.state = DiscrepancyState::kNoDiscrepancy;
         } else {
-            const std::size_t availableRecheckRounds = rounds.size() - firstDiscrepancy - 1U;
+            const std::size_t kAvailableRecheckRounds = rounds.size() - firstDiscrepancy - 1U;
             bool reappeared = false;
             bool objectEnded = false;
             std::size_t usableRecheckRounds = 0;
@@ -723,9 +723,9 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
             for (std::size_t i = firstDiscrepancy + 1U; i < rounds.size(); ++i) {
                 const RoundState& state = entry.perRound[i];
                 if (state.presentViews == 0U && state.usableAbsentViews == 0U) {
-                    // 该轮没有一个视图有资格判断（含"这一轮一个视图都没有"）。
-                    // 这里不能要求 unusableViews > 0：视图数为 0 的空轮次三个计数全 0，
-                    // 那样它会被算成一次有效复查，让阈值检查退化成冗余分支（X-05）。
+                    // No view is qualified to judge in this round (including the case where no view exists in this round).
+                    // We cannot require unusableViews > 0 here: an empty round with zero views results in all three counters being
+                    // 0, which would count as a valid recheck and degrade the threshold check into a redundant branch (X-05).
                     continue;
                 }
                 ++usableRecheckRounds;
@@ -735,47 +735,47 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
                     break;
                 }
                 if (objectEnded) {
-                    continue;  // 已判定结束，后面只继续看会不会重新出现
+                    continue;  // Already determined as ended; subsequent checks only look for reappearances.
                 }
                 if (state.presentViews == 0U && state.usableAbsentViews > 0U) {
-                    // X-06 / BLOCKER：原本看到它的视图"这轮超时了"不等于"它不在了"。
-                    // 只有本轮没有任何无法判断的视图、且所有见证视图都可用并且都不再
-                    // 列出它，才允许判"对象已结束"；否则本轮按"无法复查"处理。
+                    // X-06 / BLOCKER: The fact that a view previously seen has timed out this round does not mean it is gone.
+                    // Only mark 'object ended' if no views are unjudgable in this round AND all witness views are
+                    // usable and no longer list it; otherwise, treat as 'unable to re-verify' for this round.
                     if (state.unusableViews == 0U &&
-                        WitnessesAllUsablyAbsent(state, entry.everPresentViews)) {
+                        witnessesAllUsablyAbsent(state, entry.everPresentViews)) {
                         objectEnded = true;
                         classificationRound = i;
                     }
                     continue;
                 }
-                ++persistentRounds;  // presentViews > 0 且 usableAbsentViews > 0
+                ++persistentRounds;  // Condition: presentViews > 0 and usableAbsentViews > 0
             }
 
             if (reappeared) {
-                finding.state = DiscrepancyState::Transient;
+                finding.state = DiscrepancyState::kTransient;
             } else if (objectEnded) {
-                finding.state = DiscrepancyState::ObjectEnded;
-            } else if (availableRecheckRounds < options.requiredRecheckRounds) {
-                finding.state = DiscrepancyState::PendingRecheck;
+                finding.state = DiscrepancyState::kObjectEnded;
+            } else if (kAvailableRecheckRounds < options.requiredRecheckRounds) {
+                finding.state = DiscrepancyState::kPendingRecheck;
             } else if (usableRecheckRounds < options.requiredRecheckRounds) {
-                // X-05/X-06：复查轮里没有足够的可用视图，不能升级为持续差异。
-                finding.state = DiscrepancyState::Unverifiable;
+                // X-05/X-06: Not enough available views in the recheck rounds to upgrade to a persistent discrepancy.
+                finding.state = DiscrepancyState::kUnverifiable;
             } else if (persistentRounds >= options.requiredRecheckRounds) {
-                finding.state = DiscrepancyState::Persistent;
+                finding.state = DiscrepancyState::kPersistent;
             } else {
-                finding.state = DiscrepancyState::Unverifiable;
+                finding.state = DiscrepancyState::kUnverifiable;
             }
         }
 
-        // F-05：结论必须取与状态**同一个证据窗口**，不能拿最后一轮伪造的 envelope
-        // 另算一遍 —— 那正是"state=Persistent 而 conclusion=NoEvidence"的来源。
-        const std::size_t windowBegin =
+        // F-05: The conclusion must be derived from the **same evidence window** as the state; do not recalculate using
+        // the last round's forged envelope—that is precisely the source of 'state=Persistent but conclusion=NoEvidence'.
+        const std::size_t kWindowBegin =
             (firstDiscrepancy < rounds.size()) ? firstDiscrepancy : 0U;
-        const std::size_t windowEnd =
-            (firstDiscrepancy < rounds.size()) ? classificationRound : lastRound;
+        const std::size_t kWindowEnd =
+            (firstDiscrepancy < rounds.size()) ? classificationRound : kLastRound;
         bool windowHasUsable = false;
         bool windowFullyUsable = true;
-        for (std::size_t i = windowBegin; i <= windowEnd; ++i) {
+        for (std::size_t i = kWindowBegin; i <= kWindowEnd; ++i) {
             const RoundState& state = entry.perRound[i];
             if (state.presentViews > 0U || state.usableAbsentViews > 0U) {
                 windowHasUsable = true;
@@ -786,36 +786,36 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
         }
 
         switch (finding.state) {
-        case DiscrepancyState::Persistent:
-            finding.conclusion = AnalysisConclusion::DifferenceObserved;
+        case DiscrepancyState::kPersistent:
+            finding.conclusion = AnalysisConclusion::kDifferenceObserved;
             break;
-        case DiscrepancyState::Transient:
-            // 缺项被复采样解释掉了；只有整个窗口都可用才谈得上"未发现差异"。
+        case DiscrepancyState::kTransient:
+            // Missing items are explained by resampling; only when the entire window is usable can we claim 'no difference observed'.
             finding.conclusion = (windowHasUsable && windowFullyUsable)
-                                     ? AnalysisConclusion::NoDifferenceObserved
-                                     : AnalysisConclusion::Indeterminate;
+                                     ? AnalysisConclusion::kNoDifferenceObserved
+                                     : AnalysisConclusion::kIndeterminate;
             break;
-        case DiscrepancyState::NoDiscrepancy:
-            finding.conclusion = !windowHasUsable ? AnalysisConclusion::NoEvidence
-                                 : (windowFullyUsable ? AnalysisConclusion::NoDifferenceObserved
-                                                      : AnalysisConclusion::Indeterminate);
+        case DiscrepancyState::kNoDiscrepancy:
+            finding.conclusion = !windowHasUsable ? AnalysisConclusion::kNoEvidence
+                                 : (windowFullyUsable ? AnalysisConclusion::kNoDifferenceObserved
+                                                      : AnalysisConclusion::kIndeterminate);
             break;
-        case DiscrepancyState::ObjectEnded:
-            // X-05/F-05：对象已结束解释了缺项，但它不是"覆盖足够且未发现矛盾"。
-            finding.conclusion = AnalysisConclusion::Indeterminate;
+        case DiscrepancyState::kObjectEnded:
+            // X-05/F-05: Object termination explains the missing item, but it does not constitute 'sufficient coverage with no contradictions found'.
+            finding.conclusion = AnalysisConclusion::kIndeterminate;
             break;
-        case DiscrepancyState::PendingRecheck:
-        case DiscrepancyState::Unverifiable:
-        case DiscrepancyState::CandidateOnly:
-            finding.conclusion = windowHasUsable ? AnalysisConclusion::Indeterminate
-                                                 : AnalysisConclusion::NoEvidence;
+        case DiscrepancyState::kPendingRecheck:
+        case DiscrepancyState::kUnverifiable:
+        case DiscrepancyState::kCandidateOnly:
+            finding.conclusion = windowHasUsable ? AnalysisConclusion::kIndeterminate
+                                                 : AnalysisConclusion::kNoEvidence;
             break;
         }
 
-        // 不变式兜底：禁止 Persistent+NoEvidence、ObjectEnded+NoDifferenceObserved
-        // 这类自相矛盾的组合流出去。命中说明上面的映射漏了分支，整份报告降级。
-        if (!StateConclusionConsistent(finding.state, finding.conclusion)) {
-            finding.conclusion = AnalysisConclusion::Indeterminate;
+        // Invariant fallback: Prevent contradictory combinations like Persistent+NoEvidence or ObjectEnded+NoDifferenceObserved
+        // from leaking. A hit indicates a missing branch in the mapping above; downgrade the entire report.
+        if (!stateConclusionConsistent(finding.state, finding.conclusion)) {
+            finding.conclusion = AnalysisConclusion::kIndeterminate;
             report.selfCheckPassed = false;
         }
 
@@ -824,25 +824,25 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
 
     std::sort(report.findings.begin(), report.findings.end(),
               [](const CrossViewFinding& a, const CrossViewFinding& b) {
-                  // 强身份在前、候选态在后；组内按键排序，保证输出稳定可比对。
-                  const bool aWeak = a.identityKey.empty();
-                  const bool bWeak = b.identityKey.empty();
-                  if (aWeak != bWeak) {
-                      return !aWeak;
+                  // Strong identities first, candidates last; sort by key within groups to ensure stable, comparable output.
+                  const bool kAWeak = a.identityKey.empty();
+                  const bool kBWeak = b.identityKey.empty();
+                  if (kAWeak != kBWeak) {
+                      return !kAWeak;
                   }
-                  const std::string& ka = aWeak ? a.candidateKey : a.identityKey;
-                  const std::string& kb = bWeak ? b.candidateKey : b.identityKey;
+                  const std::string& ka = kAWeak ? a.candidateKey : a.identityKey;
+                  const std::string& kb = kBWeak ? b.candidateKey : b.identityKey;
                   if (ka != kb) {
                       return ka < kb;
                   }
                   return a.displayText < b.displayText;
               });
 
-    // 内部一致性自检（X-01/X-07）：
-    //   * 每条 finding 的 latestHits 必须逐视图铺满整个视图并集 —— 缺一条就说明
-    //     有视图被静默跳过了；
-    //   * 声称的独立来源组数不得超过最后一轮实际出现的来源组数 —— 否则就是拿一个
-    //     已经不在场的来源、或者拿同一组的重复视图在撑可信度。
+    // Internal consistency self-check (X-01/X-07):
+    //   * Each finding's latestHits must fully cover the union of all views
+    //     per view; a missing entry indicates a view was silently skipped.
+    //   * The number of claimed independent source groups must not exceed the number of source groups actually present in the final
+    //     round; otherwise, it relies on a source that is no longer present or duplicates within the same group to inflate credibility.
     for (const CrossViewFinding& finding : report.findings) {
         if (finding.latestHits.size() != report.viewCount ||
             finding.viewCount != report.viewCount) {
@@ -851,7 +851,7 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
         }
         std::vector<std::string> latestGroups;
         for (const ViewHit& hit : finding.latestHits) {
-            if (!hit.sourceGroup.empty() && !ContainsView(latestGroups, hit.sourceGroup)) {
+            if (!hit.sourceGroup.empty() && !containsView(latestGroups, hit.sourceGroup)) {
                 latestGroups.push_back(hit.sourceGroup);
             }
         }
@@ -864,4 +864,4 @@ CrossViewReport AnalyzeCrossView(const std::vector<SampleRound>& rounds,
     return report;
 }
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

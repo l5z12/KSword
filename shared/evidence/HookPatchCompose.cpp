@@ -1,122 +1,122 @@
 #include "HookPatchCompose.h"
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 
-const char* CrossPageClassificationName(CrossPageClassification classification) noexcept {
+const char* crossPageClassificationName(CrossPageClassification classification) noexcept {
     switch (classification) {
-    case CrossPageClassification::InPage:      return "InPage";
-    case CrossPageClassification::CrossesPage: return "CrossesPage";
+    case CrossPageClassification::kInPage:      return "InPage";
+    case CrossPageClassification::kCrossesPage: return "CrossesPage";
     }
-    // 保守方向：认不出来的取值一律当成越界，宁可多拒绝一条补丁。
+    // Conservative approach: treat any unrecognized value as out-of-bounds; better to reject an extra patch.
     return "CrossesPage";
 }
 
-CrossPageClassification ClassifyCrossPage(std::uint32_t pageOffset,
+CrossPageClassification classifyCrossPage(std::uint32_t pageOffset,
                                           std::uint32_t patchLen) noexcept {
-    // 先各自升到 64 位再加。0xFFFFFFFF + 2 在 32 位里回绕成 1，那会把一个越界了
-    // 四十亿字节的请求判成 InPage。
-    const std::uint64_t end =
+    // Promote both operands to 64-bit before adding. In 32-bit arithmetic, 0xFFFFFFFF + 2
+    // wraps to 1, which would falsely classify a request exceeding 4 billion bytes as InPage.
+    const std::uint64_t kEnd =
         static_cast<std::uint64_t>(pageOffset) + static_cast<std::uint64_t>(patchLen);
-    if (end > static_cast<std::uint64_t>(kPatchPageBytes)) {
-        return CrossPageClassification::CrossesPage;
+    if (kEnd > static_cast<std::uint64_t>(kPatchPageBytes)) {
+        return CrossPageClassification::kCrossesPage;
     }
-    return CrossPageClassification::InPage;
+    return CrossPageClassification::kInPage;
 }
 
-const char* PatchComposeStatusName(PatchComposeStatus status) noexcept {
+const char* patchComposeStatusName(PatchComposeStatus status) noexcept {
     switch (status) {
-    case PatchComposeStatus::Ok:                  return "Ok";
-    case PatchComposeStatus::OriginalMissing:     return "OriginalMissing";
-    case PatchComposeStatus::PatchMissing:        return "PatchMissing";
-    case PatchComposeStatus::CrossesPageBoundary: return "CrossesPageBoundary";
-    case PatchComposeStatus::EmptyPatch:          return "EmptyPatch";
+    case PatchComposeStatus::kOk:                  return "Ok";
+    case PatchComposeStatus::kOriginalMissing:     return "OriginalMissing";
+    case PatchComposeStatus::kPatchMissing:        return "PatchMissing";
+    case PatchComposeStatus::kCrossesPageBoundary: return "CrossesPageBoundary";
+    case PatchComposeStatus::kEmptyPatch:          return "EmptyPatch";
     }
     return "OriginalMissing";
 }
 
-ComposedPage ComposePage(const std::uint8_t* original,
+ComposedPage composePage(const std::uint8_t* original,
                          std::uint32_t pageOffset,
                          const std::uint8_t* patch,
                          std::uint32_t patchLen) noexcept {
     ComposedPage result;
-    // 回显放在最前面：下面每一条拒绝路径都要带着请求参数出去。
+    // Echo parameters at the front: every rejection path below must carry the request parameters.
     result.patchOffset = pageOffset;
     result.patchLength = patchLen;
 
     if (original == nullptr) {
-        result.status = PatchComposeStatus::OriginalMissing;
+        result.status = PatchComposeStatus::kOriginalMissing;
         return result;
     }
-    // patchLen == 0 时空指针不算错 —— 那是"没有补丁"，由下面的 EmptyPatch 说明。
+    // When patchLen == 0, a null pointer is not an error; it indicates 'no patch', as explained by EmptyPatch below.
     if (patch == nullptr && patchLen != 0U) {
-        result.status = PatchComposeStatus::PatchMissing;
+        result.status = PatchComposeStatus::kPatchMissing;
         return result;
     }
-    if (ClassifyCrossPage(pageOffset, patchLen) == CrossPageClassification::CrossesPage) {
-        result.status = PatchComposeStatus::CrossesPageBoundary;
+    if (classifyCrossPage(pageOffset, patchLen) == CrossPageClassification::kCrossesPage) {
+        result.status = PatchComposeStatus::kCrossesPageBoundary;
         return result;
     }
     if (patchLen == 0U) {
-        result.status = PatchComposeStatus::EmptyPatch;
+        result.status = PatchComposeStatus::kEmptyPatch;
         return result;
     }
 
-    // 先整页照抄原字节，再覆盖补丁区间。顺序反过来（先写补丁再抄原页）会把补丁盖掉，
-    // 而那种错误产出的仍是一页"看起来像原页"的合法数据，装上去只会表现为补丁没生效。
+    // Note: First copy the entire page from the original bytes, then overwrite the patch interval. Reversing the order (writing the patch first, then copying the original page)
+    // would overwrite the patch. Such an error produces a page of data that still looks like the original and is valid, but installing it results in the patch appearing ineffective.
     for (std::uint32_t i = 0U; i < kPatchPageBytes; ++i) {
         result.bytes[i] = original[i];
     }
     for (std::uint32_t i = 0U; i < patchLen; ++i) {
         result.bytes[pageOffset + i] = patch[i];
     }
-    result.status = PatchComposeStatus::Ok;
+    result.status = PatchComposeStatus::kOk;
     return result;
 }
 
-const char* JumpEncodeStatusName(JumpEncodeStatus status) noexcept {
+const char* jumpEncodeStatusName(JumpEncodeStatus status) noexcept {
     switch (status) {
-    case JumpEncodeStatus::Ok:                     return "Ok";
-    case JumpEncodeStatus::DisplacementOutOfRange: return "DisplacementOutOfRange";
+    case JumpEncodeStatus::kOk:                     return "Ok";
+    case JumpEncodeStatus::kDisplacementOutOfRange: return "DisplacementOutOfRange";
     }
     return "DisplacementOutOfRange";
 }
 
-Rel32Jump EncodeRel32Jump(std::uint64_t srcVa, std::uint64_t targetVa) noexcept {
+Rel32Jump encodeRel32Jump(std::uint64_t srcVa, std::uint64_t targetVa) noexcept {
     Rel32Jump result;
 
-    // 与硬件一致地按模 2^64 做：srcVa + 5 允许回绕，两个地址相减也允许回绕。
-    const std::uint64_t nextVa = srcVa + static_cast<std::uint64_t>(kRel32JumpLength);
-    const std::uint64_t delta = targetVa - nextVa;
-    // C++20 起无符号到有符号的转换就是二进制补码的位模式重解释，没有实现定义行为。
-    result.displacement = static_cast<std::int64_t>(delta);
+    // Perform modulo 2^64 arithmetic consistent with hardware: srcVa + 5 allows wraparound, and subtracting two addresses also allows wraparound.
+    const std::uint64_t kNextVa = srcVa + static_cast<std::uint64_t>(kRel32JumpLength);
+    const std::uint64_t kDelta = targetVa - kNextVa;
+    // Starting with C++20, converting unsigned to signed is a reinterpretation of the two's complement bit pattern with no implementation-defined behavior.
+    result.displacement = static_cast<std::int64_t>(kDelta);
 
-    // 可编码的充要条件：delta 的低 32 位符号扩展回去等于 delta 本身。写成两段区间是
-    // 因为这样两侧边界都摆在明处：+0x7FFFFFFF 与 -0x80000000 都是**合法**的。
+    // Necessary and sufficient condition for encodability: sign-extending the lower 32 bits of delta back to 64 bits must yield delta
+    // itself. Expressing this as two intervals places both boundaries explicitly: +0x7FFFFFFF and -0x80000000 are both **valid**.
     constexpr std::uint64_t kPositiveLimit = 0x000000007FFFFFFFULL;
     constexpr std::uint64_t kNegativeLimit = 0xFFFFFFFF80000000ULL;
-    if (delta > kPositiveLimit && delta < kNegativeLimit) {
-        result.status = JumpEncodeStatus::DisplacementOutOfRange;
-        return result;  // bytes 保持全零，不产出一条位移被截断的跳转
+    if (kDelta > kPositiveLimit && kDelta < kNegativeLimit) {
+        result.status = JumpEncodeStatus::kDisplacementOutOfRange;
+        return result;  // Keep bytes all zeros to avoid generating a truncated-jump instruction.
     }
 
-    const std::uint32_t encoded = static_cast<std::uint32_t>(delta & 0xFFFFFFFFULL);
+    const std::uint32_t kEncoded = static_cast<std::uint32_t>(kDelta & 0xFFFFFFFFULL);
     result.bytes[0] = 0xE9U;  // JMP rel32
-    result.bytes[1] = static_cast<std::uint8_t>(encoded & 0xFFU);
-    result.bytes[2] = static_cast<std::uint8_t>((encoded >> 8U) & 0xFFU);
-    result.bytes[3] = static_cast<std::uint8_t>((encoded >> 16U) & 0xFFU);
-    result.bytes[4] = static_cast<std::uint8_t>((encoded >> 24U) & 0xFFU);
-    result.status = JumpEncodeStatus::Ok;
+    result.bytes[1] = static_cast<std::uint8_t>(kEncoded & 0xFFU);
+    result.bytes[2] = static_cast<std::uint8_t>((kEncoded >> 8U) & 0xFFU);
+    result.bytes[3] = static_cast<std::uint8_t>((kEncoded >> 16U) & 0xFFU);
+    result.bytes[4] = static_cast<std::uint8_t>((kEncoded >> 24U) & 0xFFU);
+    result.status = JumpEncodeStatus::kOk;
     return result;
 }
 
-std::array<std::uint8_t, kAbsoluteJumpLength> EncodeAbsoluteJump(std::uint64_t targetVa) noexcept {
+std::array<std::uint8_t, kAbsoluteJumpLength> encodeAbsoluteJump(std::uint64_t targetVa) noexcept {
     std::array<std::uint8_t, kAbsoluteJumpLength> bytes{};
     bytes[0] = 0xFFU;  // JMP r/m64（/4）
-    // ModRM = 0x25：mod=00、reg=100（/4 选中 JMP）、rm=101。在 64 位模式下 mod=00
-    // 且 rm=101 的含义是 RIP 相对寻址，而不是"绝对地址 disp32"——这一条写错的话
-    // 指令仍然合法，只是会去一个 32 位地址取跳转目标，跳到哪里全凭运气。
+    // ModRM = 0x25: mod=00, reg=100 (selects /4 for JMP), rm=101. In 64-bit mode, mod=00 with rm=101 means
+    // RIP-relative addressing, not 'absolute address disp32'. Writing this incorrectly results in a valid
+    // instruction that fetches the jump target from a 32-bit address, making the destination entirely unpredictable.
     bytes[1] = 0x25U;
-    // disp32 = 0：操作数就是紧跟在这 6 字节后面的 8 字节，地址常量因此与跳转同页。
+    // disp32 = 0: The operand is the 8 bytes immediately following these 6 bytes; thus, the address constant is on the same page as the jump.
     bytes[2] = 0x00U;
     bytes[3] = 0x00U;
     bytes[4] = 0x00U;
@@ -127,4 +127,4 @@ std::array<std::uint8_t, kAbsoluteJumpLength> EncodeAbsoluteJump(std::uint64_t t
     return bytes;
 }
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

@@ -3,14 +3,14 @@
 // ============================================================
 // ThreadAffinityR3.h
 //
-// 作用：
-// - 为 Ksword5.1 与 KswordARKLight 提供同一套纯 R3 的线程亲和性查询/设置；
-// - 优先使用 Windows CPU Sets API，以稳定的 processor group / logical-index
-//   坐标展示和设置线程选择；
-// - CPU Sets 不可用时回退 Get/SetThreadGroupAffinity，且始终在同一线程句柄上
-//   校验 TID、所属 PID 与创建时间，避免线程 ID 复用后错误写入。
+// Purpose:
+// - Provides a unified pure R3 thread affinity query/set interface for both Ksword5.1 and KswordARKLight.
+// - Prefer the Windows CPU Sets API to display and set thread affinity
+//   using stable processor group and logical-index coordinates.
+// - Fallback to Get/SetThreadGroupAffinity when CPU Sets are unavailable, and always validate TID, owning
+//   PID, and creation time on the same thread handle to prevent erroneous writes after thread ID reuse.
 //
-// 本文件不包含 R0 协议、ArkDriverClient 或 DeviceIoControl。
+// This file does not include R0 protocol, ArkDriverClient, or DeviceIoControl.
 // ============================================================
 
 #ifndef NOMINMAX
@@ -75,7 +75,7 @@ namespace ksword::thread_affinity_r3
     {
         std::vector<LogicalProcessorState> processors;
         bool usesCpuSets = false;
-        // true 表示线程没有单独的 CPU Set 选择，调度继续跟随所属进程的 CPU Set 规则。
+        // true indicates the thread has no dedicated CPU Set selection, so scheduling continues to follow the CPU Set rules of its parent process.
         bool followsProcessCpuSets = false;
     };
 
@@ -137,29 +137,29 @@ namespace ksword::thread_affinity_r3
 
         inline const CpuSetApiFunctions& cpuSetApiFunctions()
         {
-            static const CpuSetApiFunctions functions = []()
+            static const CpuSetApiFunctions kFunctions = []()
             {
                 CpuSetApiFunctions resolved;
-                const HMODULE kernel32 = ::GetModuleHandleW(L"kernel32.dll");
-                if (kernel32 == nullptr)
+                const HMODULE kKernel32 = ::GetModuleHandleW(L"kernel32.dll");
+                if (kKernel32 == nullptr)
                 {
                     return resolved;
                 }
                 resolved.getSystemCpuSetInformation =
                     reinterpret_cast<GetSystemCpuSetInformationFunction>(
-                        ::GetProcAddress(kernel32, "GetSystemCpuSetInformation"));
+                        ::GetProcAddress(kKernel32, "GetSystemCpuSetInformation"));
                 resolved.getProcessDefaultCpuSets =
                     reinterpret_cast<GetProcessDefaultCpuSetsFunction>(
-                        ::GetProcAddress(kernel32, "GetProcessDefaultCpuSets"));
+                        ::GetProcAddress(kKernel32, "GetProcessDefaultCpuSets"));
                 resolved.getThreadSelectedCpuSets =
                     reinterpret_cast<GetThreadSelectedCpuSetsFunction>(
-                        ::GetProcAddress(kernel32, "GetThreadSelectedCpuSets"));
+                        ::GetProcAddress(kKernel32, "GetThreadSelectedCpuSets"));
                 resolved.setThreadSelectedCpuSets =
                     reinterpret_cast<SetThreadSelectedCpuSetsFunction>(
-                        ::GetProcAddress(kernel32, "SetThreadSelectedCpuSets"));
+                        ::GetProcAddress(kKernel32, "SetThreadSelectedCpuSets"));
                 return resolved;
             }();
-            return functions;
+            return kFunctions;
         }
 
         class ScopedHandle
@@ -204,20 +204,20 @@ namespace ksword::thread_affinity_r3
                 static_cast<std::uint64_t>(fileTime.dwLowDateTime);
         }
 
-        // activeProcessorMask 将 Windows 返回的 group 内活动处理器数量转为 KAFFINITY。
-        // processor group 的逻辑索引连续，从 0 开始；计数达到 KAFFINITY 位宽时避免左移 64 位。
+        // activeProcessorMask converts the number of active processors in the group returned by Windows to a KAFFINITY.
+        // Processor group logical indices are contiguous starting from 0; avoid shifting 64 bits when the count reaches the KAFFINITY bit width.
         inline KAFFINITY activeProcessorMask(const USHORT processorGroup)
         {
-            const DWORD activeProcessorCount = ::GetActiveProcessorCount(processorGroup);
-            if (activeProcessorCount == 0U)
+            const DWORD kActiveProcessorCount = ::GetActiveProcessorCount(processorGroup);
+            if (kActiveProcessorCount == 0U)
             {
                 return 0U;
             }
-            if (activeProcessorCount >= sizeof(KAFFINITY) * 8U)
+            if (kActiveProcessorCount >= sizeof(KAFFINITY) * 8U)
             {
                 return ~static_cast<KAFFINITY>(0U);
             }
-            return (static_cast<KAFFINITY>(1) << activeProcessorCount) - 1U;
+            return (static_cast<KAFFINITY>(1) << kActiveProcessorCount) - 1U;
         }
 
         inline bool openVerifiedThread(
@@ -252,8 +252,8 @@ namespace ksword::thread_affinity_r3
                 return false;
             }
 
-            const DWORD actualOwnerProcessId = ::GetProcessIdOfThread(threadOut->get());
-            if (actualOwnerProcessId == 0U)
+            const DWORD kActualOwnerProcessId = ::GetProcessIdOfThread(threadOut->get());
+            if (kActualOwnerProcessId == 0U)
             {
                 if (detailTextOut != nullptr)
                 {
@@ -262,7 +262,7 @@ namespace ksword::thread_affinity_r3
                 }
                 return false;
             }
-            if (actualOwnerProcessId != expectedOwnerProcessId)
+            if (kActualOwnerProcessId != expectedOwnerProcessId)
             {
                 if (detailTextOut != nullptr)
                 {
@@ -313,14 +313,14 @@ namespace ksword::thread_affinity_r3
                 return false;
             }
             ULONG requiredCount = 0U;
-            const BOOL sizeQueryOk = queryFunction(targetHandle, nullptr, 0U, &requiredCount);
-            const DWORD sizeQueryError = sizeQueryOk != FALSE ? ERROR_SUCCESS : ::GetLastError();
-            if (sizeQueryOk == FALSE && sizeQueryError != ERROR_INSUFFICIENT_BUFFER)
+            const BOOL kSizeQueryOk = queryFunction(targetHandle, nullptr, 0U, &requiredCount);
+            const DWORD kSizeQueryError = kSizeQueryOk != FALSE ? ERROR_SUCCESS : ::GetLastError();
+            if (kSizeQueryOk == FALSE && kSizeQueryError != ERROR_INSUFFICIENT_BUFFER)
             {
                 if (detailTextOut != nullptr)
                 {
                     *detailTextOut = std::string(operationName) + " size query failed(" +
-                        std::to_string(sizeQueryError) + ")";
+                        std::to_string(kSizeQueryError) + ")";
                 }
                 return false;
             }
@@ -379,20 +379,20 @@ namespace ksword::thread_affinity_r3
                 return false;
             }
             ULONG requiredBytes = 0U;
-            const BOOL sizeQueryOk = queryFunction(
+            const BOOL kSizeQueryOk = queryFunction(
                 nullptr,
                 0U,
                 &requiredBytes,
                 processHandle,
                 0U);
-            const DWORD sizeQueryError = sizeQueryOk != FALSE ? ERROR_SUCCESS : ::GetLastError();
+            const DWORD kSizeQueryError = kSizeQueryOk != FALSE ? ERROR_SUCCESS : ::GetLastError();
             if (requiredBytes == 0U ||
-                (sizeQueryOk == FALSE && sizeQueryError != ERROR_INSUFFICIENT_BUFFER))
+                (kSizeQueryOk == FALSE && kSizeQueryError != ERROR_INSUFFICIENT_BUFFER))
             {
                 if (detailTextOut != nullptr)
                 {
                     *detailTextOut = "GetSystemCpuSetInformation size query failed(" +
-                        std::to_string(sizeQueryError) + ")";
+                        std::to_string(kSizeQueryError) + ")";
                 }
                 return false;
             }
@@ -416,11 +416,11 @@ namespace ksword::thread_affinity_r3
 
             processorsOut->clear();
             const BYTE* cursor = buffer.data();
-            const BYTE* const end = buffer.data() +
+            const BYTE* const kEnd = buffer.data() +
                 std::min<std::size_t>(returnedBytes, buffer.size());
-            while (cursor < end)
+            while (cursor < kEnd)
             {
-                if (static_cast<std::size_t>(end - cursor) < sizeof(SYSTEM_CPU_SET_INFORMATION))
+                if (static_cast<std::size_t>(kEnd - cursor) < sizeof(SYSTEM_CPU_SET_INFORMATION))
                 {
                     if (detailTextOut != nullptr)
                     {
@@ -428,10 +428,10 @@ namespace ksword::thread_affinity_r3
                     }
                     return false;
                 }
-                const auto* const record =
+                const auto* const kRecord =
                     reinterpret_cast<const SYSTEM_CPU_SET_INFORMATION*>(cursor);
-                if (record->Size < sizeof(SYSTEM_CPU_SET_INFORMATION) ||
-                    record->Size > static_cast<DWORD>(end - cursor))
+                if (kRecord->Size < sizeof(SYSTEM_CPU_SET_INFORMATION) ||
+                    kRecord->Size > static_cast<DWORD>(kEnd - cursor))
                 {
                     if (detailTextOut != nullptr)
                     {
@@ -439,23 +439,23 @@ namespace ksword::thread_affinity_r3
                     }
                     return false;
                 }
-                if (record->Type == CpuSetInformation)
+                if (kRecord->Type == CpuSetInformation)
                 {
-                    const BYTE flags = record->CpuSet.AllFlags;
+                    const BYTE kFlags = kRecord->CpuSet.AllFlags;
                     LogicalProcessorState processor;
-                    processor.coordinate.group = record->CpuSet.Group;
-                    processor.coordinate.logicalIndex = record->CpuSet.LogicalProcessorIndex;
-                    processor.cpuSetId = record->CpuSet.Id;
-                    processor.coreIndex = record->CpuSet.CoreIndex;
-                    processor.efficiencyClass = record->CpuSet.EfficiencyClass;
+                    processor.coordinate.group = kRecord->CpuSet.Group;
+                    processor.coordinate.logicalIndex = kRecord->CpuSet.LogicalProcessorIndex;
+                    processor.cpuSetId = kRecord->CpuSet.Id;
+                    processor.coreIndex = kRecord->CpuSet.CoreIndex;
+                    processor.efficiencyClass = kRecord->CpuSet.EfficiencyClass;
                     processor.parked =
-                        (flags & SYSTEM_CPU_SET_INFORMATION_PARKED) != 0U;
+                        (kFlags & SYSTEM_CPU_SET_INFORMATION_PARKED) != 0U;
                     processor.available =
-                        (flags & SYSTEM_CPU_SET_INFORMATION_ALLOCATED) == 0U ||
-                        (flags & SYSTEM_CPU_SET_INFORMATION_ALLOCATED_TO_TARGET_PROCESS) != 0U;
+                        (kFlags & SYSTEM_CPU_SET_INFORMATION_ALLOCATED) == 0U ||
+                        (kFlags & SYSTEM_CPU_SET_INFORMATION_ALLOCATED_TO_TARGET_PROCESS) != 0U;
                     processorsOut->push_back(std::move(processor));
                 }
-                cursor += record->Size;
+                cursor += kRecord->Size;
             }
             std::sort(
                 processorsOut->begin(),
@@ -549,24 +549,24 @@ namespace ksword::thread_affinity_r3
                 return false;
             }
 
-            const std::set<std::uint32_t> processCpuSetIdSet(
+            const std::set<std::uint32_t> kProcessCpuSetIdSet(
                 processCpuSetIds.begin(), processCpuSetIds.end());
-            const std::set<std::uint32_t> threadCpuSetIdSet(
+            const std::set<std::uint32_t> kThreadCpuSetIdSet(
                 threadCpuSetIds.begin(), threadCpuSetIds.end());
             for (LogicalProcessorState& processor : processors)
             {
-                const bool inThreadGroup = processor.coordinate.group == threadGroupAffinity.Group &&
+                const bool kInThreadGroup = processor.coordinate.group == threadGroupAffinity.Group &&
                     processor.coordinate.logicalIndex < sizeof(KAFFINITY) * 8U &&
                     (threadGroupAffinity.Mask &
                         (static_cast<KAFFINITY>(1) << processor.coordinate.logicalIndex)) != 0U;
-                const bool inProcessCpuSets = processCpuSetIds.empty() ||
-                    processCpuSetIdSet.find(processor.cpuSetId) != processCpuSetIdSet.end();
+                const bool kInProcessCpuSets = processCpuSetIds.empty() ||
+                    kProcessCpuSetIdSet.find(processor.cpuSetId) != kProcessCpuSetIdSet.end();
                 processor.constrainedByThreadOrProcessAffinity =
-                    !inThreadGroup || !inProcessCpuSets;
-                processor.available = processor.available && inThreadGroup && inProcessCpuSets;
+                    !kInThreadGroup || !kInProcessCpuSets;
+                processor.available = processor.available && kInThreadGroup && kInProcessCpuSets;
                 processor.selected = processor.available &&
                     (threadCpuSetIds.empty() ||
-                        threadCpuSetIdSet.find(processor.cpuSetId) != threadCpuSetIdSet.end());
+                        kThreadCpuSetIdSet.find(processor.cpuSetId) != kThreadCpuSetIdSet.end());
             }
             populateTopologyLabels(&processors);
             snapshotOut->processors = std::move(processors);
@@ -591,8 +591,8 @@ namespace ksword::thread_affinity_r3
                 }
                 return false;
             }
-            const KAFFINITY activeMask = activeProcessorMask(threadGroupAffinity.Group);
-            if (activeMask == 0U)
+            const KAFFINITY kActiveMask = activeProcessorMask(threadGroupAffinity.Group);
+            if (kActiveMask == 0U)
             {
                 if (detailTextOut != nullptr)
                 {
@@ -603,13 +603,13 @@ namespace ksword::thread_affinity_r3
 
             Snapshot snapshot;
             snapshot.usesCpuSets = false;
-            snapshot.followsProcessCpuSets = threadGroupAffinity.Mask == activeMask;
+            snapshot.followsProcessCpuSets = threadGroupAffinity.Mask == kActiveMask;
             for (std::uint16_t logicalIndex = 0U;
                  logicalIndex < static_cast<std::uint16_t>(sizeof(KAFFINITY) * 8U);
                  ++logicalIndex)
             {
-                const KAFFINITY processorBit = static_cast<KAFFINITY>(1) << logicalIndex;
-                if ((activeMask & processorBit) == 0U)
+                const KAFFINITY kProcessorBit = static_cast<KAFFINITY>(1) << logicalIndex;
+                if ((kActiveMask & kProcessorBit) == 0U)
                 {
                     continue;
                 }
@@ -621,7 +621,7 @@ namespace ksword::thread_affinity_r3
                 processor.cpuSetId = logicalIndex;
                 processor.coreIndex = logicalIndex;
                 processor.available = true;
-                processor.selected = (threadGroupAffinity.Mask & processorBit) != 0U;
+                processor.selected = (threadGroupAffinity.Mask & kProcessorBit) != 0U;
                 processor.topologyLabel = "C" + std::to_string(logicalIndex);
                 snapshot.processors.push_back(std::move(processor));
             }
@@ -645,8 +645,8 @@ namespace ksword::thread_affinity_r3
                 }
                 return false;
             }
-            const KAFFINITY activeMask = activeProcessorMask(currentAffinity.Group);
-            KAFFINITY requestedMask = requestedRule.followProcessCpuSets ? activeMask : 0U;
+            const KAFFINITY kActiveMask = activeProcessorMask(currentAffinity.Group);
+            KAFFINITY requestedMask = requestedRule.followProcessCpuSets ? kActiveMask : 0U;
             if (!requestedRule.followProcessCpuSets)
             {
                 for (const LogicalProcessorCoordinate& coordinate : requestedRule.processors)
@@ -662,7 +662,7 @@ namespace ksword::thread_affinity_r3
                     }
                     requestedMask |= static_cast<KAFFINITY>(1) << coordinate.logicalIndex;
                 }
-                requestedMask &= activeMask;
+                requestedMask &= kActiveMask;
             }
             if (requestedMask == 0U)
             {
@@ -693,7 +693,7 @@ namespace ksword::thread_affinity_r3
         }
     }
 
-    inline bool QueryThreadAffinityState(
+    inline bool queryThreadAffinityState(
         const DWORD threadId,
         const DWORD expectedOwnerProcessId,
         const std::uint64_t expectedCreationTime100ns,
@@ -723,10 +723,10 @@ namespace ksword::thread_affinity_r3
         }
 
         const detail::CpuSetApiFunctions& functions = detail::cpuSetApiFunctions();
-        const bool cpuSetsAvailable = functions.getSystemCpuSetInformation != nullptr &&
+        const bool kCpuSetsAvailable = functions.getSystemCpuSetInformation != nullptr &&
             functions.getProcessDefaultCpuSets != nullptr &&
             functions.getThreadSelectedCpuSets != nullptr;
-        const bool queryOk = cpuSetsAvailable
+        const bool kQueryOk = kCpuSetsAvailable
             ? detail::queryCpuSetSnapshot(
                 expectedOwnerProcessId,
                 threadHandle.get(),
@@ -734,14 +734,14 @@ namespace ksword::thread_affinity_r3
                 snapshotOut,
                 detailTextOut)
             : detail::queryLegacySnapshot(threadHandle.get(), snapshotOut, detailTextOut);
-        if (queryOk && detailTextOut != nullptr)
+        if (kQueryOk && detailTextOut != nullptr)
         {
             detailTextOut->clear();
         }
-        return queryOk;
+        return kQueryOk;
     }
 
-    inline bool SetThreadAffinityRule(
+    inline bool setThreadAffinityRule(
         const DWORD threadId,
         const DWORD expectedOwnerProcessId,
         const std::uint64_t expectedCreationTime100ns,
@@ -772,11 +772,11 @@ namespace ksword::thread_affinity_r3
         }
 
         const detail::CpuSetApiFunctions& functions = detail::cpuSetApiFunctions();
-        const bool cpuSetsAvailable = functions.getSystemCpuSetInformation != nullptr &&
+        const bool kCpuSetsAvailable = functions.getSystemCpuSetInformation != nullptr &&
             functions.getProcessDefaultCpuSets != nullptr &&
             functions.getThreadSelectedCpuSets != nullptr &&
             functions.setThreadSelectedCpuSets != nullptr;
-        if (!cpuSetsAvailable)
+        if (!kCpuSetsAvailable)
         {
             return detail::setLegacyAffinity(threadHandle.get(), rule, detailTextOut);
         }
@@ -797,14 +797,14 @@ namespace ksword::thread_affinity_r3
         {
             for (const LogicalProcessorCoordinate& coordinate : rule.processors)
             {
-                const auto processorIt = std::find_if(
+                const auto kProcessorIt = std::find_if(
                     currentSnapshot.processors.begin(),
                     currentSnapshot.processors.end(),
                     [&coordinate](const LogicalProcessorState& processor)
                     {
                         return processor.coordinate == coordinate && processor.available;
                     });
-                if (processorIt == currentSnapshot.processors.end())
+                if (kProcessorIt == currentSnapshot.processors.end())
                 {
                     if (detailTextOut != nullptr)
                     {
@@ -813,7 +813,7 @@ namespace ksword::thread_affinity_r3
                     }
                     return false;
                 }
-                requestedCpuSetIds.push_back(static_cast<ULONG>(processorIt->cpuSetId));
+                requestedCpuSetIds.push_back(static_cast<ULONG>(kProcessorIt->cpuSetId));
             }
             std::sort(requestedCpuSetIds.begin(), requestedCpuSetIds.end());
             requestedCpuSetIds.erase(
@@ -832,11 +832,11 @@ namespace ksword::thread_affinity_r3
             return false;
         }
 
-        const BOOL setOk = functions.setThreadSelectedCpuSets(
+        const BOOL kSetOk = functions.setThreadSelectedCpuSets(
             threadHandle.get(),
             rule.followProcessCpuSets ? nullptr : requestedCpuSetIds.data(),
             rule.followProcessCpuSets ? 0U : static_cast<ULONG>(requestedCpuSetIds.size()));
-        if (setOk == FALSE)
+        if (kSetOk == FALSE)
         {
             if (detailTextOut != nullptr)
             {
@@ -848,7 +848,7 @@ namespace ksword::thread_affinity_r3
 
         std::vector<std::uint32_t> verifiedCpuSetIds;
         std::string verificationDetail;
-        const bool verifyOk = detail::queryCpuSetIds(
+        const bool kVerifyOk = detail::queryCpuSetIds(
             threadHandle.get(),
             functions.getThreadSelectedCpuSets,
             &verifiedCpuSetIds,
@@ -856,22 +856,22 @@ namespace ksword::thread_affinity_r3
             "GetThreadSelectedCpuSets");
         std::vector<std::uint32_t> expectedCpuSetIds(
             requestedCpuSetIds.begin(), requestedCpuSetIds.end());
-        const bool verifyMatches = verifyOk && verifiedCpuSetIds == expectedCpuSetIds;
-        if (!verifyMatches)
+        const bool kVerifyMatches = kVerifyOk && verifiedCpuSetIds == expectedCpuSetIds;
+        if (!kVerifyMatches)
         {
-            const std::vector<ULONG> rollbackCpuSetIds(
+            const std::vector<ULONG> kRollbackCpuSetIds(
                 previousCpuSetIds.begin(), previousCpuSetIds.end());
-            const BOOL rollbackOk = functions.setThreadSelectedCpuSets(
+            const BOOL kRollbackOk = functions.setThreadSelectedCpuSets(
                 threadHandle.get(),
-                rollbackCpuSetIds.empty() ? nullptr : rollbackCpuSetIds.data(),
-                static_cast<ULONG>(rollbackCpuSetIds.size()));
+                kRollbackCpuSetIds.empty() ? nullptr : kRollbackCpuSetIds.data(),
+                static_cast<ULONG>(kRollbackCpuSetIds.size()));
             if (detailTextOut != nullptr)
             {
-                *detailTextOut = verifyOk
+                *detailTextOut = kVerifyOk
                     ? "thread CPU Set verification did not match the requested selection; rollback " +
-                        std::string(rollbackOk != FALSE ? "succeeded" : "failed")
+                        std::string(kRollbackOk != FALSE ? "succeeded" : "failed")
                     : "thread CPU Set verification failed(" + verificationDetail + "); rollback " +
-                        std::string(rollbackOk != FALSE ? "succeeded" : "failed");
+                        std::string(kRollbackOk != FALSE ? "succeeded" : "failed");
             }
             return false;
         }

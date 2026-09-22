@@ -4,10 +4,10 @@
 
 // ============================================================
 // KswordArkKernelObjectIoctl.h
-// 作用：
-// - 定义 CID table、Kernel Object 摘要、IPC 摘要的只读 R3/R0 协议；
-// - 当前协议只返回审计证据和降级状态，不提供 patch/delete/unlink/remove；
-// - 所有 IOCTL 均使用 METHOD_BUFFERED + FILE_ANY_ACCESS。
+// Purpose:
+// - Define the read-only R3/R0 protocol for CID tables, Kernel Object summaries, and IPC summaries.
+// - The current protocol only returns audit evidence and downgrade status; it does not provide patch/delete/unlink/remove;
+// - All IOCTLs use METHOD_BUFFERED + FILE_ANY_ACCESS.
 // ============================================================
 
 #define KSWORD_ARK_KERNEL_OBJECT_PROTOCOL_VERSION 1UL

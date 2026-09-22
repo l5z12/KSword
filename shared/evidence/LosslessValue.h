@@ -1,18 +1,18 @@
 #pragma once
 
-// F-08: 64 位数据不丢失。
+// F-08: 64-bit data is lossless.
 //
-// 地址、64 位 ID、计数和高精度时间戳在本层永远不经过 double。持久化时 64 位
-// 值写成带格式说明的字符串（十进制 "12345" 或地址 "0x00007FFE12340000"），
-// 读回时逐位还原。空值是独立状态，绝不退化成 0。
+// Address, 64-bit ID, count, and high-precision timestamp never pass through double at this layer. During
+// persistence, 64-bit values are written as formatted strings (decimal "12345" or address "0x00007FFE12340000")
+// and restored bit-by-bit on read. Null is an independent state and never degenerates to 0.
 
 #include <cstdint>
 #include <string>
 #include <string_view>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 
-// OptionalU64 把"未知"和"零"分成两个状态。默认构造是未知。
+// OptionalU64 separates 'unknown' and 'zero' into two states. Default construction is unknown.
 struct OptionalU64 final {
     bool present = false;
     std::uint64_t value = 0;
@@ -28,7 +28,7 @@ struct OptionalU64 final {
         return result;
     }
 
-    // valueOr 只用于展示回退；它不改变底层状态，调用点必须自己先看 present。
+    // valueOr is used solely for displaying the fallback; it does not modify the underlying state, and call sites must check present first.
     constexpr std::uint64_t valueOr(std::uint64_t fallback) const noexcept {
         return present ? value : fallback;
     }
@@ -42,25 +42,25 @@ struct OptionalU64 final {
     }
 };
 
-// U64 的持久化格式标记。读写两侧共用，导出里必须显式带上，读取方不猜。
+// Persistent format marker for U64. Shared by read/write sides; must be explicitly included in exports; the reader must not guess.
 enum class U64Format {
-    Decimal,     // "18446744073709551615"
-    HexAddress,  // "0x00007FFE12340000" —— 固定 16 位十六进制，便于按地址排序与复制
+    kDecimal,     // "18446744073709551615"
+    kHexAddress,  // "0x00007FFE12340000" — fixed 16-digit hexadecimal, facilitating sorting and copying by address.
 };
 
-std::string FormatU64(std::uint64_t value, U64Format format);
+std::string formatU64(std::uint64_t value, U64Format format);
 
-// FormatOptionalU64 对未知值返回空串，调用点据此写 JSON null，而不是 "0"。
-std::string FormatOptionalU64(const OptionalU64& value, U64Format format);
+// formatOptionalU64 returns an empty string for unknown values; call sites use this to write JSON null instead of "0".
+std::string formatOptionalU64(const OptionalU64& value, U64Format format);
 
-// ParseU64 接受十进制与 0x 前缀十六进制两种写法，溢出、空串、尾随垃圾一律失败。
-bool ParseU64(std::string_view text, std::uint64_t& out) noexcept;
+// ParseU64 accepts both decimal and 0x-prefixed hexadecimal formats; overflow, empty string, or trailing garbage all cause failure.
+bool parseU64(std::string_view text, std::uint64_t& out) noexcept;
 
-// ParseOptionalU64：空串解析为"未知"并返回 true；非法文本返回 false 且不改 out。
-bool ParseOptionalU64(std::string_view text, OptionalU64& out) noexcept;
+// parseOptionalU64: Parses empty string as "unknown" and returns true; returns false for invalid text without modifying out.
+bool parseOptionalU64(std::string_view text, OptionalU64& out) noexcept;
 
-// 有符号 64 位（例如时钟校准偏移）同样避免浮点。
-std::string FormatI64(std::int64_t value);
-bool ParseI64(std::string_view text, std::int64_t& out) noexcept;
+// Signed 64-bit values (e.g., clock calibration offsets) also avoid floating-point.
+std::string formatI64(std::int64_t value);
+bool parseI64(std::string_view text, std::int64_t& out) noexcept;
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

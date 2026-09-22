@@ -39,8 +39,8 @@
 
 ## Existing Ksword shape to preserve
 
-- R3 `KswordARKLight\Features\File` currently uses Win32 APIs (`GetLogicalDriveStringsW`, `FindFirstFileW`) and a simple `FileEntry` model. New audit UI should not replace this browser; it should add an audit/cross-view page that can correlate R3-visible paths with R0 device-stack data.
-- R3 `KswordARKLight\Features\Hardware` currently uses SetupAPI/Configuration Manager (`SetupDi*`, `CM_*`) and stores `instanceId`, `parentInstanceId`, `serviceName`, `driverKey`, `statusFlags`, `problemCode`. Storage audit should reuse these R3 fields for PnP cross-view instead of inventing a separate hardware tree.
+- R3 `apps\ark_light\features\File` currently uses Win32 APIs (`GetLogicalDriveStringsW`, `FindFirstFileW`) and a simple `FileEntry` model. New audit UI should not replace this browser; it should add an audit/cross-view page that can correlate R3-visible paths with R0 device-stack data.
+- R3 `apps\ark_light\features\Hardware` currently uses SetupAPI/Configuration Manager (`SetupDi*`, `CM_*`) and stores `instanceId`, `parentInstanceId`, `serviceName`, `driverKey`, `statusFlags`, `problemCode`. Storage audit should reuse these R3 fields for PnP cross-view instead of inventing a separate hardware tree.
 - Shared file protocols already use bounded fixed buffers and explicit status/field flags (`KswordArkFileIoctl.h`, `KswordArkFileMonitorIoctl.h`). New protocols should follow that pattern.
 - R0 file/section/memory evidence implementations are thin IOCTL handlers plus backend functions. They validate METHOD_BUFFERED buffers, use bounded row counts, and return diagnostic addresses only. Storage/FVE audit should follow the same model.
 - `ioctl_registry.c` is exact-match, fail-closed. Future wiring should add one or more explicit rows, not switch-based dispatch.

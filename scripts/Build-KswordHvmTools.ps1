@@ -1,14 +1,14 @@
 <#
 .SYNOPSIS
-    编译测试机上要用的两个无依赖小工具：hvm_probe.exe 与 hvm_ctl.exe。
+    Compile two dependency-free small tools for the test machine: hvm_probe.exe and hvm_ctl.exe.
 
 .DESCRIPTION
-    两个都用 /MT 静态链接 CRT。这一条不是风格问题：全新安装的 Windows 没有
-    VC++ 可再发行组件，动态链接的 exe 在 guest 里根本起不来，表现是退出码
-    0xC0000135 (STATUS_DLL_NOT_FOUND)、stdout/stderr 全空 —— 看上去像"命令没有
-    输出"，其实是进程没跑起来。静态链接省掉整套 DLL 投送。
+    Both use /MT for static CRT linking. This is not a style issue: a fresh Windows installation
+    lacks VC++ redistributables, so dynamically linked EXEs fail to start in the guest with exit code
+    0xC0000135 (STATUS_DLL_NOT_FOUND) and empty stdout/stderr—appearing as 'no command output' when
+    the process never actually ran. Static linking eliminates the need to deploy the entire DLL set.
 
-    /W4 /WX：这两个工具直接对内核发 IOCTL，警告在这里没有"以后再说"的余地。
+    /W4 /WX: These two tools send IOCTLs directly to the kernel; warnings here leave no room for 'later'.
 
 .EXAMPLE
     .\Build-KswordHvmTools.ps1
@@ -22,38 +22,38 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 
 if (-not (Test-Path $VcVars)) {
-    # 换个装法就换个路径，用 vswhere 定位而不是猜。
+    # Change the installation method to change the path; use vswhere to locate it instead of guessing.
     $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
     if (Test-Path $vswhere) {
         $root = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
         if ($root) { $VcVars = Join-Path $root 'VC\Auxiliary\Build\vcvars64.bat' }
     }
 }
-if (-not (Test-Path $VcVars)) { throw "找不到 vcvars64.bat（试过 $VcVars）" }
+if (-not (Test-Path $VcVars)) { throw "vcvars64.bat not found (tried $VcVars)" }
 
 $targets = @(
     [pscustomobject]@{ Name = 'hvm_probe';    Dir = (Join-Path $repo 'tools\hvm_probe')    ; Libs = '' },
     [pscustomobject]@{ Name = 'hvm_ctl';      Dir = (Join-Path $repo 'tools\hvm_ctl')      ; Libs = '' },
-    # hvm_target 是 R-1 进程处置的靶子：自报主循环地址 + 打心跳，让"冻结生效"、
-    # "结束生效"与"页选错了什么都没发生"这三种结局在外面可区分。它不碰驱动，
-    # 只是个被处置的普通进程。
+    # hvm_target is the target for R-1 process handling: reports its main loop address and sends heartbeats to enable 'freeze effect'.
+    # The three outcomes 'End of Effect', 'Wrong Page Selected with No Effect', and 'No Effect' are distinguishable externally. It does not touch the driver.
+    # Just a regular process being handled.
     [pscustomobject]@{ Name = 'hvm_target';   Dir = (Join-Path $repo 'tools\hvm_target')   ; Libs = '' },
-    # attest_probe 跑在**宿主**上，不投进 guest —— 它读的是安全内核签名的运行时
-    # 驱动报告，那是 VBS 开着的机器才有的东西，而靶机恰恰要求 VBS 关闭。
-    # 一起用 /MT 只是为了和其余两个保持一致，换机器拷过去就能跑。
-    # wintrust.lib：算 Authenticode PE image hash（CryptCATAdminCalcHashFromFileHandle2）。
-    # 报告里的 ImageHash 就是这个哈希，**不是**文件 flat hash —— 已对 afd.sys 逐字节标定过。
+    # attest_probe runs on the **host**, not injected into the guest — it reads the runtime signed by the secure kernel.
+    # Driver reports exist only on machines with VBS enabled, but the target machine requires VBS to be disabled.
+    # Using /MT together is solely to maintain consistency with the other two, allowing the binary to run immediately after copying to another machine.
+    # wintrust.lib: Computes Authenticode PE image hash (CryptCATAdminCalcHashFromFileHandle2).
+    # The ImageHash in the report is this hash, **not** the file flat hash — it has been byte-mapped for afd.sys.
     [pscustomobject]@{ Name = 'attest_probe'; Dir = (Join-Path $repo 'tools\attest_probe') ; Libs = 'psapi.lib wintrust.lib' },
-    # hvm_probe_dll 是 R-1 **DLL** 注入的证据：被加载时写一个带 PID 的文件。
-    # 只有它是 DLL，所以走 /LD 而不是产出 exe。
+    # hvm_probe_dll is evidence of R-1 **DLL** injection: writes a file containing the PID when loaded.
+    # It is a DLL, so use /LD instead of producing an EXE.
     [pscustomobject]@{ Name = 'hvm_probe_dll'; Dir = (Join-Path $repo 'tools\hvm_probe_dll'); Libs = ''; Dll = $true }
 )
 
 $failed = 0
 foreach ($t in $targets) {
     $src = Join-Path $t.Dir ($t.Name + '.c')
-    if (-not (Test-Path $src)) { Write-Host "  [跳过] 没有 $src" -ForegroundColor Yellow; continue }
-    # DLL 目标产出 .dll，其余产出 .exe；/LD 同时换掉入口点与链接方式。
+    if (-not (Test-Path $src)) { Write-Host "  [Skipped] No $src" -ForegroundColor Yellow; continue }
+    # DLL targets produce .dll; others produce .exe; /LD also changes the entry point and linking method.
     $isDll = [bool]$t.Dll
     $ext = if ($isDll) { '.dll' } else { '.exe' }
     $exe = Join-Path $t.Dir ($t.Name + $ext)
@@ -70,8 +70,8 @@ foreach ($t in $targets) {
     }
     Remove-Item $obj -ErrorAction SilentlyContinue
     $size = (Get-Item $exe).Length
-    Write-Host ("  [OK]   {0,-10} {1,8:N0} 字节  {2}" -f $t.Name, $size, $exe) -ForegroundColor Green
+    Write-Host ("  [OK]   {0,-10} {1,8:N0}  bytes  {2}" -f $t.Name, $size, $exe) -ForegroundColor Green
 }
 
-if ($failed -gt 0) { throw "$failed 个工具没编译成功" }
-Write-Host "`n两个工具都是 /MT 静态链接，投进 guest 不需要额外的 VC++ 运行库。" -ForegroundColor Cyan
+if ($failed -gt 0) { throw "$failed tools failed to compile" }
+Write-Host "`nBoth tools are statically linked with /MT, so no additional VC++ runtime libraries are needed when deployed to the guest." -ForegroundColor Cyan

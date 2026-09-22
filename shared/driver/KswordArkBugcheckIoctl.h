@@ -105,9 +105,9 @@ typedef struct _KSWORD_ARK_BUGCHECK_VERDICT_RESOURCE_ENTRY
     unsigned long dataLength;
 } KSWORD_ARK_BUGCHECK_VERDICT_RESOURCE_ENTRY;
 
-// 蓝屏诊断的 BGP 解析、页面预生成与转储回调默认不在 DriverEntry 执行。
-// INSTALL 只排队 R0 工作项并返回 BUSY；R3 通过 QUERY 轮询 OK 或失败终态。
-// 工作项有 30 秒内核预算，驱动卸载会请求取消并排空工作项后再释放回调与资源。
+// BGP resolution, page pre-generation, and dump callbacks for BSOD diagnostics are not executed by default in DriverEntry.
+// INSTALL only queues R0 work items and returns BUSY; R3 polls via QUERY until OK or failure state is reached.
+// Work items have a 30-second kernel budget; driver unloading requests cancellation and draining of work items before releasing callbacks and resources.
 // v2 changes INSTALL from a synchronous operation to an enqueue-and-query contract.
 // The version bump makes a new R3 client fail fast against a loaded v1 driver instead of
 // entering that driver's unbounded synchronous installation path.
@@ -136,7 +136,7 @@ typedef struct _KSWORD_ARK_BUGCHECK_VERDICT_RESOURCE_ENTRY
 #define KSWORD_ARK_BUGCHECK_DIAGNOSTICS_STATE_BGP_BACKEND_READY  0x00000004UL
 #define KSWORD_ARK_BUGCHECK_DIAGNOSTICS_STATE_PANEL_READY        0x00000008UL
 
-// 固定长度请求仅区分查询和本次驱动生命周期内的安装，不提供常驻卸载动作。
+// Fixed-length requests distinguish only between queries and installation within the current driver lifecycle, providing no persistent unload action.
 typedef struct _KSWORD_ARK_BUGCHECK_DIAGNOSTICS_REQUEST
 {
     unsigned long size;
@@ -147,7 +147,7 @@ typedef struct _KSWORD_ARK_BUGCHECK_DIAGNOSTICS_REQUEST
     unsigned long reserved1;
 } KSWORD_ARK_BUGCHECK_DIAGNOSTICS_REQUEST;
 
-// 响应保留回调与 BGP 准备摘要，R3 可展示失败阶段但不重新解释私有内核地址。
+// Response retains callbacks and BGP preparation summary; R3 can display the failure stage but must not reinterpret private kernel addresses.
 typedef struct _KSWORD_ARK_BUGCHECK_DIAGNOSTICS_RESPONSE
 {
     unsigned long size;
@@ -212,7 +212,7 @@ typedef struct _KSWORD_ARK_BUGCHECK_DIAGNOSTICS_RESPONSE
 #define KSWORD_ARK_BUGCHECK_GUARD_STATE_HVCI_ENABLED      0x00000100UL
 #define KSWORD_ARK_BUGCHECK_GUARD_STATE_CALLBACK_REGISTERED 0x00000200UL
 
-// 补丁快照属于固定线协议，Win32 R3 也必须与 x64 R0 保持相同的响应布局。
+// Patch snapshots belong to a fixed-line protocol; Win32 R3 must maintain the same response layout as x64 R0.
 #define KSWORD_ARK_BUGCHECK_GUARD_HOOK_BYTES 12UL
 
 typedef struct _KSWORD_ARK_BUGCHECK_GUARD_REQUEST

@@ -3,11 +3,11 @@ name: Driver Safe Read Audit
 on:
   push:
     paths:
-      - 'KswordARKDriver/**'
+      - 'drivers/ark/**'
       - '.github/workflows/driver-safe-read.yml'
   pull_request:
     paths:
-      - 'KswordARKDriver/**'
+      - 'drivers/ark/**'
       - '.github/workflows/driver-safe-read.yml'
   workflow_dispatch:
 
@@ -24,4 +24,4 @@ jobs:
 
       - name: Verify fault-contained readers
         shell: pwsh
-        run: ./KswordARKDriver/tests/SafeReadRegression.ps1
+        run: ./drivers/ark/tests/SafeReadRegression.ps1

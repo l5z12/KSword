@@ -90,7 +90,7 @@ function Assert-HostSvmResidentEvidence($Baseline,$Snapshot,[bool]$Active,[int]$
 $principal=[Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run from an elevated host PowerShell.' }
 $repository=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-$driver=Join-Path $repository 'Ksword5.1\x64\Release\KswordARK.sys'
+$driver=Join-Path $repository 'artifacts/bin\x64\Release\KswordARK.sys'
 $ctl=Join-Path $repository 'tools\hvm_ctl\hvm_ctl.exe'
 $accepted=Get-Content -LiteralPath (Join-Path $repository 'docs\next\evidence\amd-host-admission-pass.json') -Raw | ConvertFrom-Json
 if ((Get-FileHash -LiteralPath $driver).Hash -ne $accepted.driverSha256 -or

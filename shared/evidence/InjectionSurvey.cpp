@@ -4,17 +4,17 @@
 #include <unordered_map>
 #include <utility>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 namespace {
 
-// 路径比较统一走这一个归一化：小写 + 反斜杠。两个来源给的路径大小写经常不同
-// （加载器给 PEB 里的原串，映射查询给设备路径转换后的串），逐字符比会产生
-// 大量假"名称不一致"。
-std::string NormalizePath(const std::string& path) {
+// Path comparison uses this single normalization: lowercase + backslash. Paths from the two sources often
+// differ in case (loader provides the original string from PEB, mapping query provides the device path
+// after conversion); character-by-character comparison would generate many false "name mismatch" errors.
+std::string normalizePath(const std::string& path) {
     std::string out;
     out.reserve(path.size());
-    for (const char ch : path) {
-        char c = ch;
+    for (const char kCh : path) {
+        char c = kCh;
         if (c == '/') {
             c = '\\';
         }
@@ -26,28 +26,28 @@ std::string NormalizePath(const std::string& path) {
     return out;
 }
 
-std::string FileNameOf(const std::string& path) {
-    const std::size_t slash = path.find_last_of("\\/");
-    return slash == std::string::npos ? path : path.substr(slash + 1U);
+std::string fileNameOf(const std::string& path) {
+    const std::size_t kSlash = path.find_last_of("\\/");
+    return kSlash == std::string::npos ? path : path.substr(kSlash + 1U);
 }
 
-// 两个路径是不是指向同一个文件。设备路径（\Device\HarddiskVolume3\...）与
-// DOS 路径（C:\...）无法互相换算，所以前缀不同但文件名与尾部一致时判"相容"，
-// 不判"不一致" —— 否则每一个模块都会报一次假不一致。
-bool PathsCompatible(const std::string& a, const std::string& b) {
+// Determines if two paths point to the same file. Device paths (\Device\HarddiskVolume3\...) and DOS paths
+// (C:\...) cannot be converted to each other. Therefore, paths with different prefixes but matching filenames and
+// suffixes are considered 'compatible' rather than 'inconsistent' to avoid false inconsistencies for every module.
+bool pathsCompatible(const std::string& a, const std::string& b) {
     if (a.empty() || b.empty()) {
-        return true;  // 有一侧没取到就没有矛盾可言，缺失由别的判据表达
+        return true;  // If one side is missing, there is no contradiction; the absence is expressed by other criteria.
     }
-    const std::string na = NormalizePath(a);
-    const std::string nb = NormalizePath(b);
-    if (na == nb) {
+    const std::string kNa = normalizePath(a);
+    const std::string kNb = normalizePath(b);
+    if (kNa == kNb) {
         return true;
     }
-    // 尾部包含：C:\windows\system32\ntdll.dll 与
+    // Tail contains: C:\windows\system32\ntdll.dll and
     // \device\harddiskvolume3\windows\system32\ntdll.dll
-    const std::string* longer = na.size() >= nb.size() ? &na : &nb;
-    const std::string* shorter = na.size() >= nb.size() ? &nb : &na;
-    // 去掉短串的盘符（"c:"），再看长串是否以剩余部分结尾。
+    const std::string* longer = kNa.size() >= kNb.size() ? &kNa : &kNb;
+    const std::string* shorter = kNa.size() >= kNb.size() ? &kNb : &kNa;
+    // Remove the drive letter ("c:") from the short string, then check if the long string ends with the remaining part.
     std::string tail = *shorter;
     if (tail.size() >= 2U && tail[1U] == ':') {
         tail = tail.substr(2U);
@@ -59,10 +59,10 @@ bool PathsCompatible(const std::string& a, const std::string& b) {
         longer->compare(longer->size() - tail.size(), tail.size(), tail) == 0) {
         return true;
     }
-    return FileNameOf(na) == FileNameOf(nb) && !FileNameOf(na).empty();
+    return fileNameOf(kNa) == fileNameOf(kNb) && !fileNameOf(kNa).empty();
 }
 
-void AddUnique(std::vector<std::string>& list, const std::string& value) {
+void addUnique(std::vector<std::string>& list, const std::string& value) {
     if (value.empty()) {
         return;
     }
@@ -71,21 +71,21 @@ void AddUnique(std::vector<std::string>& list, const std::string& value) {
     }
 }
 
-std::string HexText(std::uint64_t value) {
+std::string hexText(std::uint64_t value) {
     static const char* const kDigits = "0123456789ABCDEF";
     std::string out = "0x";
     bool started = false;
     for (int shift = 60; shift >= 0; shift -= 4) {
-        const auto nibble = static_cast<std::size_t>((value >> shift) & 0xFULL);
-        if (nibble != 0U || started || shift == 0) {
-            out.push_back(kDigits[nibble]);
+        const auto kNibble = static_cast<std::size_t>((value >> shift) & 0xFULL);
+        if (kNibble != 0U || started || shift == 0) {
+            out.push_back(kDigits[kNibble]);
             started = true;
         }
     }
     return out;
 }
 
-std::string DecText(std::uint64_t value) {
+std::string decText(std::uint64_t value) {
     if (value == 0U) {
         return "0";
     }
@@ -98,22 +98,22 @@ std::string DecText(std::uint64_t value) {
     return out;
 }
 
-void AddFact(std::vector<std::string>& facts, const char* key, const std::string& value) {
+void addFact(std::vector<std::string>& facts, const char* key, const std::string& value) {
     facts.push_back(std::string(key) + "=" + value);
 }
 
-bool OutcomeIsSuccess(const CollectionOutcome& outcome) noexcept {
-    return outcome.status == CollectionStatus::Success;
+bool outcomeIsSuccess(const CollectionOutcome& outcome) noexcept {
+    return outcome.status == CollectionStatus::kSuccess;
 }
 
-// ImageDiff 的 limitationKeys 里混着两类完全不同的东西，不能一股脑当缺口：
-//   * "这些字节根本不存在可用的磁盘参考" —— 零填充、节间隙、DVRT 位点、重定位
-//     无法归一化。谁来比都比不了；它**定义**了"已覆盖范围"的边界，不是一次失败。
-//     现代系统 DLL 基本都有 DVRT 位点，把它当缺口会让每一次扫描都"范围已破"，
-//     四态在生产里又退化成三态。
-//   * "我打算比、但没比成" —— 读不到、没采集、命中条目上限、模块已过期、参考
-//     解析失败。这类是真的把声明的范围弄破了，必须压制"未发现差异"。
-bool ImageLimitationIsScopeDefining(const std::string& key) noexcept {
+// The limitationKeys for ImageDiff contain two completely different types of items; they cannot be treated as gaps indiscriminately.
+//   * "These bytes have no available disk reference" — zero-padding, section gaps, DVRT points, and relocations cannot be
+//     normalized. No comparison is possible; it **defines** the boundary of "covered scope" rather than representing a single failure.
+//     Modern system DLLs almost always have DVRT sites; treating them as gaps causes every scan
+//     to report 'scope broken', degrading the four-state logic in production to three-state.
+//   * "Intended to compare but failed" — due to read failure, no collection, hitting entry limits, module expiration,
+//     or reference parsing failure. These genuinely break the declared scope and must suppress "No differences found."
+bool imageLimitationIsScopeDefining(const std::string& key) noexcept {
     return key == "integrity.limitation.excludedNotComparable" ||
            key == "integrity.limitation.emptyCompareSet" ||
            key == "integrity.limitation.relocationUnsupportedTypes" ||
@@ -126,151 +126,151 @@ bool ImageLimitationIsScopeDefining(const std::string& key) noexcept {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// 名称表
+// Name table
 // ---------------------------------------------------------------------------
 
-const char* SurveyModeName(const SurveyMode mode) noexcept {
+const char* surveyModeName(const SurveyMode mode) noexcept {
     switch (mode) {
-    case SurveyMode::Fast: return "Fast";
-    case SurveyMode::Deep: return "Deep";
+    case SurveyMode::kFast: return "Fast";
+    case SurveyMode::kDeep: return "Deep";
     }
     return "Fast";
 }
 
-const char* ProcessArchitectureName(const ProcessArchitecture architecture) noexcept {
+const char* processArchitectureName(const ProcessArchitecture architecture) noexcept {
     switch (architecture) {
-    case ProcessArchitecture::Unknown: return "Unknown";
-    case ProcessArchitecture::X64: return "X64";
-    case ProcessArchitecture::Wow64: return "Wow64";
-    case ProcessArchitecture::X86Native: return "X86Native";
-    case ProcessArchitecture::Arm64: return "Arm64";
-    case ProcessArchitecture::Arm64Ec: return "Arm64Ec";
+    case ProcessArchitecture::kUnknown: return "Unknown";
+    case ProcessArchitecture::kX64: return "X64";
+    case ProcessArchitecture::kWow64: return "Wow64";
+    case ProcessArchitecture::kX86Native: return "X86Native";
+    case ProcessArchitecture::kArm64: return "Arm64";
+    case ProcessArchitecture::kArm64Ec: return "Arm64Ec";
     }
     return "Unknown";
 }
 
-const char* CollectorArchitectureName(const CollectorArchitecture architecture) noexcept {
+const char* collectorArchitectureName(const CollectorArchitecture architecture) noexcept {
     switch (architecture) {
-    case CollectorArchitecture::Unknown: return "Unknown";
-    case CollectorArchitecture::Native64: return "Native64";
-    case CollectorArchitecture::Wow64: return "Wow64";
+    case CollectorArchitecture::kUnknown: return "Unknown";
+    case CollectorArchitecture::kNative64: return "Native64";
+    case CollectorArchitecture::kWow64: return "Wow64";
     }
     return "Unknown";
 }
 
-const char* ModuleEnumerationTrustName(const ModuleEnumerationTrust trust) noexcept {
+const char* moduleEnumerationTrustName(const ModuleEnumerationTrust trust) noexcept {
     switch (trust) {
-    case ModuleEnumerationTrust::Unknown: return "Unknown";
-    case ModuleEnumerationTrust::Trusted: return "Trusted";
-    case ModuleEnumerationTrust::FilterIgnoredUnderWow64: return "FilterIgnoredUnderWow64";
+    case ModuleEnumerationTrust::kUnknown: return "Unknown";
+    case ModuleEnumerationTrust::kTrusted: return "Trusted";
+    case ModuleEnumerationTrust::kFilterIgnoredUnderWow64: return "FilterIgnoredUnderWow64";
     }
     return "Unknown";
 }
 
-ModuleEnumerationTrust EvaluateModuleEnumerationTrust(
+ModuleEnumerationTrust evaluateModuleEnumerationTrust(
     const CollectorArchitecture collector,
     const ProcessArchitecture target) noexcept {
-    if (collector == CollectorArchitecture::Wow64) {
-        // 过滤参数被忽略，拿到的永远只是 32 位视图 —— 与目标是什么架构无关。
-        return ModuleEnumerationTrust::FilterIgnoredUnderWow64;
+    if (collector == CollectorArchitecture::kWow64) {
+        // Filter parameters are ignored; the result is always the 32-bit view, regardless of the target architecture.
+        return ModuleEnumerationTrust::kFilterIgnoredUnderWow64;
     }
-    if (collector == CollectorArchitecture::Native64 &&
-        target != ProcessArchitecture::Unknown) {
-        return ModuleEnumerationTrust::Trusted;
+    if (collector == CollectorArchitecture::kNative64 &&
+        target != ProcessArchitecture::kUnknown) {
+        return ModuleEnumerationTrust::kTrusted;
     }
-    return ModuleEnumerationTrust::Unknown;
+    return ModuleEnumerationTrust::kUnknown;
 }
 
-const char* ExecuteProtectionName(const ExecuteProtection protection) noexcept {
+const char* executeProtectionName(const ExecuteProtection protection) noexcept {
     switch (protection) {
-    case ExecuteProtection::Unknown: return "Unknown";
-    case ExecuteProtection::NotExecutable: return "NotExecutable";
-    case ExecuteProtection::Execute: return "Execute";
-    case ExecuteProtection::ExecuteRead: return "ExecuteRead";
-    case ExecuteProtection::ExecuteReadWrite: return "ExecuteReadWrite";
-    case ExecuteProtection::ExecuteWriteCopy: return "ExecuteWriteCopy";
+    case ExecuteProtection::kUnknown: return "Unknown";
+    case ExecuteProtection::kNotExecutable: return "NotExecutable";
+    case ExecuteProtection::kExecute: return "Execute";
+    case ExecuteProtection::kExecuteRead: return "ExecuteRead";
+    case ExecuteProtection::kExecuteReadWrite: return "ExecuteReadWrite";
+    case ExecuteProtection::kExecuteWriteCopy: return "ExecuteWriteCopy";
     }
     return "Unknown";
 }
 
-bool ExecuteProtectionIsExecutable(const ExecuteProtection protection) noexcept {
+bool executeProtectionIsExecutable(const ExecuteProtection protection) noexcept {
     switch (protection) {
-    case ExecuteProtection::Execute:
-    case ExecuteProtection::ExecuteRead:
-    case ExecuteProtection::ExecuteReadWrite:
-    case ExecuteProtection::ExecuteWriteCopy:
+    case ExecuteProtection::kExecute:
+    case ExecuteProtection::kExecuteRead:
+    case ExecuteProtection::kExecuteReadWrite:
+    case ExecuteProtection::kExecuteWriteCopy:
         return true;
-    case ExecuteProtection::Unknown:
-    case ExecuteProtection::NotExecutable:
+    case ExecuteProtection::kUnknown:
+    case ExecuteProtection::kNotExecutable:
         return false;
     }
     return false;
 }
 
-ProtectionFacts ClassifyWin32Protection(const OptionalU64& rawProtect) noexcept {
+ProtectionFacts classifyWin32Protection(const OptionalU64& rawProtect) noexcept {
     ProtectionFacts facts;
     facts.rawValue = rawProtect;
     if (!rawProtect.present) {
-        // 没给原始值就是未知。这里绝不能默认成 NotExecutable —— 那会把
-        // "没查到权限"伪装成"这块内存不可执行"。
+        // No raw value means unknown. It must never default to NotExecutable here, as
+        // that would disguise 'permission not found' as 'this memory is non-executable'.
         return facts;
     }
 
-    const auto raw = static_cast<std::uint32_t>(rawProtect.value & 0xFFFFFFFFULL);
-    facts.guard = (raw & kWin32PageGuard) != 0U;
+    const auto kRaw = static_cast<std::uint32_t>(rawProtect.value & 0xFFFFFFFFULL);
+    facts.guard = (kRaw & kWin32PageGuard) != 0U;
 
-    switch (raw & kWin32ProtectBaseMask) {
+    switch (kRaw & kWin32ProtectBaseMask) {
     case kWin32PageNoAccess:
-        facts.execute = ExecuteProtection::NotExecutable;
+        facts.execute = ExecuteProtection::kNotExecutable;
         facts.noAccess = true;
         break;
     case kWin32PageReadOnly:
-        facts.execute = ExecuteProtection::NotExecutable;
+        facts.execute = ExecuteProtection::kNotExecutable;
         facts.readable = true;
         break;
     case kWin32PageReadWrite:
-        facts.execute = ExecuteProtection::NotExecutable;
+        facts.execute = ExecuteProtection::kNotExecutable;
         facts.readable = true;
         facts.writable = true;
         break;
     case kWin32PageWriteCopy:
-        facts.execute = ExecuteProtection::NotExecutable;
+        facts.execute = ExecuteProtection::kNotExecutable;
         facts.readable = true;
         facts.writable = true;
         facts.copyOnWrite = true;
         break;
     case kWin32PageExecute:
-        facts.execute = ExecuteProtection::Execute;
+        facts.execute = ExecuteProtection::kExecute;
         break;
     case kWin32PageExecuteRead:
-        facts.execute = ExecuteProtection::ExecuteRead;
+        facts.execute = ExecuteProtection::kExecuteRead;
         facts.readable = true;
         break;
     case kWin32PageExecuteReadWrite:
-        facts.execute = ExecuteProtection::ExecuteReadWrite;
+        facts.execute = ExecuteProtection::kExecuteReadWrite;
         facts.readable = true;
         facts.writable = true;
         break;
     case kWin32PageExecuteWriteCopy:
-        facts.execute = ExecuteProtection::ExecuteWriteCopy;
+        facts.execute = ExecuteProtection::kExecuteWriteCopy;
         facts.readable = true;
         facts.writable = true;
         facts.copyOnWrite = true;
         break;
     default:
-        // 低字节不是任何已知基本值：看不懂。既不能当可执行也不能当不可执行。
+        // Low byte is not any known base value: unintelligible. Cannot be treated as executable or non-executable.
         facts.unrecognizedBase = true;
-        facts.execute = ExecuteProtection::Unknown;
+        facts.execute = ExecuteProtection::kUnknown;
         break;
     }
     return facts;
 }
 
-RegionProtection ToRegionProtection(const ProtectionFacts& facts) noexcept {
+RegionProtection toRegionProtection(const ProtectionFacts& facts) noexcept {
     RegionProtection protection;
     protection.readable = facts.readable;
     protection.writable = facts.writable;
-    protection.executable = ExecuteProtectionIsExecutable(facts.execute);
+    protection.executable = executeProtectionIsExecutable(facts.execute);
     protection.copyOnWrite = facts.copyOnWrite;
     protection.guard = facts.guard;
     protection.noAccess = facts.noAccess;
@@ -278,33 +278,33 @@ RegionProtection ToRegionProtection(const ProtectionFacts& facts) noexcept {
     return protection;
 }
 
-const char* RegionCodeClassName(const RegionCodeClass codeClass) noexcept {
+const char* regionCodeClassName(const RegionCodeClass codeClass) noexcept {
     switch (codeClass) {
-    case RegionCodeClass::Unknown: return "Unknown";
-    case RegionCodeClass::NotCommitted: return "NotCommitted";
-    case RegionCodeClass::NonExecutable: return "NonExecutable";
-    case RegionCodeClass::ImageExecutable: return "ImageExecutable";
-    case RegionCodeClass::PrivateExecutable: return "PrivateExecutable";
-    case RegionCodeClass::MappedExecutable: return "MappedExecutable";
+    case RegionCodeClass::kUnknown: return "Unknown";
+    case RegionCodeClass::kNotCommitted: return "NotCommitted";
+    case RegionCodeClass::kNonExecutable: return "NonExecutable";
+    case RegionCodeClass::kImageExecutable: return "ImageExecutable";
+    case RegionCodeClass::kPrivateExecutable: return "PrivateExecutable";
+    case RegionCodeClass::kMappedExecutable: return "MappedExecutable";
     }
     return "Unknown";
 }
 
-bool IsDynamicCodeCandidate(const RegionCodeClass codeClass) noexcept {
-    return codeClass == RegionCodeClass::PrivateExecutable ||
-           codeClass == RegionCodeClass::MappedExecutable;
+bool isDynamicCodeCandidate(const RegionCodeClass codeClass) noexcept {
+    return codeClass == RegionCodeClass::kPrivateExecutable ||
+           codeClass == RegionCodeClass::kMappedExecutable;
 }
 
-ProtectionFacts EffectiveProtection(const RegionRecord& record) noexcept {
+ProtectionFacts effectiveProtection(const RegionRecord& record) noexcept {
     if (record.protection.rawValue.present) {
-        return ClassifyWin32Protection(record.protection.rawValue);
+        return classifyWin32Protection(record.protection.rawValue);
     }
     const RegionProtection& p = record.protection;
     ProtectionFacts facts;
-    const bool anyFlag = p.readable || p.writable || p.executable || p.copyOnWrite ||
+    const bool kAnyFlag = p.readable || p.writable || p.executable || p.copyOnWrite ||
                          p.guard || p.noAccess;
-    if (!anyFlag) {
-        // 全默认 = 来源一字未填。那是未知，不是"不可执行"。
+    if (!kAnyFlag) {
+        // All defaults = source field left blank. That means unknown, not 'non-executable'.
         return facts;
     }
     facts.readable = p.readable;
@@ -313,56 +313,56 @@ ProtectionFacts EffectiveProtection(const RegionRecord& record) noexcept {
     facts.guard = p.guard;
     facts.noAccess = p.noAccess;
     if (p.executable) {
-        facts.execute = p.writable ? ExecuteProtection::ExecuteReadWrite
-                                   : ExecuteProtection::ExecuteRead;
+        facts.execute = p.writable ? ExecuteProtection::kExecuteReadWrite
+                                   : ExecuteProtection::kExecuteRead;
     } else {
-        facts.execute = ExecuteProtection::NotExecutable;
+        facts.execute = ExecuteProtection::kNotExecutable;
     }
     return facts;
 }
 
-RegionCodeClass ClassifyRegionCode(const RegionRecord& record) noexcept {
-    if (record.state != RegionState::Commit) {
-        return record.state == RegionState::Unknown ? RegionCodeClass::Unknown
-                                                    : RegionCodeClass::NotCommitted;
+RegionCodeClass classifyRegionCode(const RegionRecord& record) noexcept {
+    if (record.state != RegionState::kCommit) {
+        return record.state == RegionState::kUnknown ? RegionCodeClass::kUnknown
+                                                    : RegionCodeClass::kNotCommitted;
     }
-    const ProtectionFacts facts = EffectiveProtection(record);
-    if (facts.execute == ExecuteProtection::Unknown) {
-        // 基本值看不懂，或者来源根本没填保护信息 —— 两种情况都不敢下判断。
-        return RegionCodeClass::Unknown;
+    const ProtectionFacts kFacts = effectiveProtection(record);
+    if (kFacts.execute == ExecuteProtection::kUnknown) {
+        // Cannot determine the base value or the source lacks protection information — neither case allows a definitive judgment.
+        return RegionCodeClass::kUnknown;
     }
-    if (!ExecuteProtectionIsExecutable(facts.execute)) {
-        return RegionCodeClass::NonExecutable;
+    if (!executeProtectionIsExecutable(kFacts.execute)) {
+        return RegionCodeClass::kNonExecutable;
     }
     switch (record.type) {
-    case RegionType::Image: return RegionCodeClass::ImageExecutable;
-    case RegionType::Private: return RegionCodeClass::PrivateExecutable;
-    case RegionType::Mapped: return RegionCodeClass::MappedExecutable;
-    case RegionType::Unknown: break;
+    case RegionType::kImage: return RegionCodeClass::kImageExecutable;
+    case RegionType::kPrivate: return RegionCodeClass::kPrivateExecutable;
+    case RegionType::kMapped: return RegionCodeClass::kMappedExecutable;
+    case RegionType::kUnknown: break;
     }
-    return RegionCodeClass::Unknown;
+    return RegionCodeClass::kUnknown;
 }
 
 // ---------------------------------------------------------------------------
-// 地址空间索引
+// Address space index
 // ---------------------------------------------------------------------------
 
 std::size_t AddressSpaceIndex::findEntry(const std::uint64_t va) const noexcept {
-    // 只在前 searchableCount 条里二分：它们按 base 升序、区间有效且互不重叠
-    // （同一次 VirtualQueryEx 遍历的性质）。尾部的残缺记录不参与查找。
+    // Binary search only within the first searchableCount entries: they are sorted by base in ascending order, have valid and
+    // non-overlapping intervals (a property of a single VirtualQueryEx traversal). Trailing incomplete records are excluded from the search.
     std::size_t low = 0;
     std::size_t high = std::min(searchableCount, entries.size());
     while (low < high) {
-        const std::size_t mid = low + (high - low) / 2U;
-        const RegionRecord& record = entries[mid];
-        const std::uint64_t begin = record.base.value;
-        const std::uint64_t end = begin + record.size.value;  // 溢出在 Build 阶段已剔除
-        if (va < begin) {
-            high = mid;
-        } else if (va >= end) {
-            low = mid + 1U;
+        const std::size_t kMid = low + (high - low) / 2U;
+        const RegionRecord& record = entries[kMid];
+        const std::uint64_t kBegin = record.base.value;
+        const std::uint64_t kEnd = kBegin + record.size.value;  // Overflow removed during the Build phase.
+        if (va < kBegin) {
+            high = kMid;
+        } else if (va >= kEnd) {
+            low = kMid + 1U;
         } else {
-            return mid;
+            return kMid;
         }
     }
     return kNoEntry;
@@ -373,32 +373,32 @@ const AllocationGroup* AddressSpaceIndex::groupForEntry(
     if (entryIndex >= entryGroup.size()) {
         return nullptr;
     }
-    const std::size_t groupIndex = entryGroup[entryIndex];
-    if (groupIndex >= groups.size()) {
+    const std::size_t kGroupIndex = entryGroup[entryIndex];
+    if (kGroupIndex >= groups.size()) {
         return nullptr;
     }
-    return &groups[groupIndex];
+    return &groups[kGroupIndex];
 }
 
 bool AddressSpaceIndex::usableForAbsenceInference() const noexcept {
-    return OutcomeIsSuccess(outcome) && coverage.fullyCovered();
+    return outcomeIsSuccess(outcome) && coverage.fullyCovered();
 }
 
-AddressSpaceIndex BuildAddressSpaceIndex(std::vector<RegionRecord> records,
+AddressSpaceIndex buildAddressSpaceIndex(std::vector<RegionRecord> records,
                                          const CollectionOutcome& outcome) {
     AddressSpaceIndex index;
     index.outcome = outcome;
 
-    // base/size 缺失或相加溢出的记录不能参与区间查找。它们仍然保留下来（证据不丢），
-    // 但计入 coverage.failed —— 否则"少了几条区域"会静默消失。
+    // Records with missing base/size or overflow on addition cannot participate in interval lookup. They are retained
+    // (evidence is not lost) but counted in coverage.failed—otherwise 'missing regions' would silently disappear.
     std::vector<RegionRecord> usable;
     std::vector<RegionRecord> broken;
     usable.reserve(records.size());
     for (RegionRecord& record : records) {
-        const bool hasRange = record.base.present && record.size.present &&
+        const bool kHasRange = record.base.present && record.size.present &&
                               record.size.value != 0U &&
                               record.base.value <= (UINT64_MAX - record.size.value);
-        if (hasRange) {
+        if (kHasRange) {
             usable.push_back(std::move(record));
         } else {
             broken.push_back(std::move(record));
@@ -411,8 +411,8 @@ AddressSpaceIndex BuildAddressSpaceIndex(std::vector<RegionRecord> records,
               });
 
     index.entries = std::move(usable);
-    const std::size_t usableCount = index.entries.size();
-    index.searchableCount = usableCount;
+    const std::size_t kUsableCount = index.entries.size();
+    index.searchableCount = kUsableCount;
     for (RegionRecord& record : broken) {
         index.entries.push_back(std::move(record));
     }
@@ -426,83 +426,83 @@ AddressSpaceIndex BuildAddressSpaceIndex(std::vector<RegionRecord> records,
 
     for (std::size_t i = 0; i < index.entries.size(); ++i) {
         const RegionRecord& record = index.entries[i];
-        const RegionCodeClass codeClass = ClassifyRegionCode(record);
-        index.codeClasses.push_back(codeClass);
+        const RegionCodeClass kCodeClass = classifyRegionCode(record);
+        index.codeClasses.push_back(kCodeClass);
 
-        const bool inRange = i < usableCount;
-        if (inRange) {
-            const std::uint64_t begin = record.base.value;
-            const std::uint64_t end = begin + record.size.value;
+        const bool kInRange = i < kUsableCount;
+        if (kInRange) {
+            const std::uint64_t kBegin = record.base.value;
+            const std::uint64_t kEnd = kBegin + record.size.value;
             if (!haveRange) {
-                requestedBegin = begin;
-                requestedEnd = end;
+                requestedBegin = kBegin;
+                requestedEnd = kEnd;
                 haveRange = true;
             } else {
-                requestedBegin = std::min(requestedBegin, begin);
-                requestedEnd = std::max(requestedEnd, end);
+                requestedBegin = std::min(requestedBegin, kBegin);
+                requestedEnd = std::max(requestedEnd, kEnd);
             }
         }
 
-        const ProtectionFacts facts = EffectiveProtection(record);
-        const bool executable = IsDynamicCodeCandidate(codeClass) ||
-                                codeClass == RegionCodeClass::ImageExecutable;
-        const std::uint64_t size = record.size.present ? record.size.value : 0U;
-        if (record.state == RegionState::Commit) {
-            index.committedBytes += size;
+        const ProtectionFacts kFacts = effectiveProtection(record);
+        const bool kExecutable = isDynamicCodeCandidate(kCodeClass) ||
+                                kCodeClass == RegionCodeClass::kImageExecutable;
+        const std::uint64_t kSize = record.size.present ? record.size.value : 0U;
+        if (record.state == RegionState::kCommit) {
+            index.committedBytes += kSize;
         }
-        if (executable) {
-            index.executableBytes += size;
+        if (kExecutable) {
+            index.executableBytes += kSize;
         }
-        if (IsDynamicCodeCandidate(codeClass)) {
+        if (isDynamicCodeCandidate(kCodeClass)) {
             ++index.dynamicCodeCandidateCount;
         }
 
-        // 聚合键：有 AllocationBase 就用它，没有就用自己的 base 单独成组。
-        // 不允许把"没有 AllocationBase"的区域并进别人的组 —— 那是编造归属。
-        const std::uint64_t key = record.allocationBase.present
+        // Aggregation key: use AllocationBase if present; otherwise, group by its own base.
+        // Do not merge regions with 'no AllocationBase' into others' groups—that fabricates ownership.
+        const std::uint64_t kKey = record.allocationBase.present
                                       ? record.allocationBase.value
                                       : (record.base.present ? record.base.value : i);
-        auto it = groupByKey.find(key);
+        auto it = groupByKey.find(kKey);
         if (it == groupByKey.end()) {
             AllocationGroup group;
             group.allocationBase = record.allocationBase;
             group.type = record.type;
             group.mappedPath = record.mappedPath;
-            groupByKey.emplace(key, index.groups.size());
+            groupByKey.emplace(kKey, index.groups.size());
             index.groups.push_back(std::move(group));
-            it = groupByKey.find(key);
+            it = groupByKey.find(kKey);
         }
         index.entryGroup.push_back(it->second);
         AllocationGroup& group = index.groups[it->second];
         group.entryIndices.push_back(i);
         if (group.type != record.type) {
             group.typeMixed = true;
-            group.type = RegionType::Unknown;
+            group.type = RegionType::kUnknown;
         }
         if (group.mappedPath != record.mappedPath) {
             group.mappedPathMixed = true;
             group.mappedPath.clear();
         }
-        if (record.state == RegionState::Commit) {
-            group.committedBytes += size;
+        if (record.state == RegionState::kCommit) {
+            group.committedBytes += kSize;
         }
-        if (executable) {
-            group.executableBytes += size;
+        if (kExecutable) {
+            group.executableBytes += kSize;
             group.anyExecutable = true;
-            if (facts.writable) {
+            if (kFacts.writable) {
                 group.anyWritableExecutable = true;
             }
         }
-        if (facts.guard) {
+        if (kFacts.guard) {
             group.anyGuard = true;
         }
-        if (codeClass == RegionCodeClass::Unknown && record.state == RegionState::Commit) {
+        if (kCodeClass == RegionCodeClass::kUnknown && record.state == RegionState::kCommit) {
             group.anyProtectionUnknown = true;
         }
     }
 
-    index.coverage.succeeded = usableCount;
-    index.coverage.failed = index.entries.size() - usableCount;
+    index.coverage.succeeded = kUsableCount;
+    index.coverage.failed = index.entries.size() - kUsableCount;
     index.coverage.totalKnown = OptionalU64::of(index.entries.size());
     if (haveRange) {
         index.coverage.requestedBegin = OptionalU64::of(requestedBegin);
@@ -514,56 +514,56 @@ AddressSpaceIndex BuildAddressSpaceIndex(std::vector<RegionRecord> records,
 }
 
 // ---------------------------------------------------------------------------
-// 进程列表用的廉价筛选汇总
+// Note: Cheap filtering summary used for the process list.
 // ---------------------------------------------------------------------------
 
-const char* SurfaceScreenStateName(const SurfaceScreenState state) noexcept {
+const char* surfaceScreenStateName(const SurfaceScreenState state) noexcept {
     switch (state) {
-    case SurfaceScreenState::NotScreened: return "NotScreened";
-    case SurfaceScreenState::AccessDenied: return "AccessDenied";
-    case SurfaceScreenState::IdentityMismatch: return "IdentityMismatch";
-    case SurfaceScreenState::Failed: return "Failed";
-    case SurfaceScreenState::Screened: return "Screened";
+    case SurfaceScreenState::kNotScreened: return "NotScreened";
+    case SurfaceScreenState::kAccessDenied: return "AccessDenied";
+    case SurfaceScreenState::kIdentityMismatch: return "IdentityMismatch";
+    case SurfaceScreenState::kFailed: return "Failed";
+    case SurfaceScreenState::kScreened: return "Screened";
     }
     return "NotScreened";
 }
 
-bool SurfaceScreenCountsAreMeaningful(const SurfaceScreenState state) noexcept {
-    return state == SurfaceScreenState::Screened;
+bool surfaceScreenCountsAreMeaningful(const SurfaceScreenState state) noexcept {
+    return state == SurfaceScreenState::kScreened;
 }
 
-ProcessSurfaceScreen SummarizeSurfaceScreen(const AddressSpaceIndex& index,
+ProcessSurfaceScreen summarizeSurfaceScreen(const AddressSpaceIndex& index,
                                             const OptionalU64& screenedUtc100ns) {
     ProcessSurfaceScreen screen;
     screen.screenedUtc100ns = screenedUtc100ns;
 
     switch (index.outcome.status) {
-    case CollectionStatus::AccessDenied:
-        screen.state = SurfaceScreenState::AccessDenied;
-        return screen;   // 计数保持 0，但状态说明这 0 是"不知道"
-    case CollectionStatus::NotCollected:
-        screen.state = SurfaceScreenState::NotScreened;
+    case CollectionStatus::kAccessDenied:
+        screen.state = SurfaceScreenState::kAccessDenied;
+        return screen;   // Count remains 0, but the status indicates this 0 means 'unknown'.
+    case CollectionStatus::kNotCollected:
+        screen.state = SurfaceScreenState::kNotScreened;
         return screen;
-    case CollectionStatus::Unsupported:
-    case CollectionStatus::Timeout:
-    case CollectionStatus::Error:
-        screen.state = SurfaceScreenState::Failed;
+    case CollectionStatus::kUnsupported:
+    case CollectionStatus::kTimeout:
+    case CollectionStatus::kError:
+        screen.state = SurfaceScreenState::kFailed;
         return screen;
-    case CollectionStatus::Success:
-    case CollectionStatus::Partial:
+    case CollectionStatus::kSuccess:
+    case CollectionStatus::kPartial:
         break;
     }
 
-    screen.state = SurfaceScreenState::Screened;
+    screen.state = SurfaceScreenState::kScreened;
     screen.regionCount = static_cast<std::uint32_t>(index.entries.size());
     for (std::size_t i = 0; i < index.entries.size() && i < index.codeClasses.size(); ++i) {
-        if (!IsDynamicCodeCandidate(index.codeClasses[i])) {
+        if (!isDynamicCodeCandidate(index.codeClasses[i])) {
             continue;
         }
         ++screen.dynamicCodeRegions;
         const RegionRecord& record = index.entries[i];
         screen.dynamicCodeBytes += record.size.valueOr(0U);
-        if (EffectiveProtection(record).writable) {
+        if (effectiveProtection(record).writable) {
             ++screen.writableExecutableRegions;
         }
     }
@@ -571,116 +571,116 @@ ProcessSurfaceScreen SummarizeSurfaceScreen(const AddressSpaceIndex& index,
 }
 
 // ---------------------------------------------------------------------------
-// 模块交叉视图
+// Module cross-view
 // ---------------------------------------------------------------------------
 
-const char* ModuleCrossIssueName(const ModuleCrossIssue issue) noexcept {
+const char* moduleCrossIssueName(const ModuleCrossIssue issue) noexcept {
     switch (issue) {
-    case ModuleCrossIssue::ImageMappingWithoutLoaderEntry: return "ImageMappingWithoutLoaderEntry";
-    case ModuleCrossIssue::LoaderEntryWithoutImageMapping: return "LoaderEntryWithoutImageMapping";
-    case ModuleCrossIssue::LoaderPathMismatch: return "LoaderPathMismatch";
-    case ModuleCrossIssue::LoaderSizeMismatch: return "LoaderSizeMismatch";
-    case ModuleCrossIssue::MainImageIdentityConflict: return "MainImageIdentityConflict";
-    case ModuleCrossIssue::MappedPathUnavailable: return "MappedPathUnavailable";
+    case ModuleCrossIssue::kImageMappingWithoutLoaderEntry: return "ImageMappingWithoutLoaderEntry";
+    case ModuleCrossIssue::kLoaderEntryWithoutImageMapping: return "LoaderEntryWithoutImageMapping";
+    case ModuleCrossIssue::kLoaderPathMismatch: return "LoaderPathMismatch";
+    case ModuleCrossIssue::kLoaderSizeMismatch: return "LoaderSizeMismatch";
+    case ModuleCrossIssue::kMainImageIdentityConflict: return "MainImageIdentityConflict";
+    case ModuleCrossIssue::kMappedPathUnavailable: return "MappedPathUnavailable";
     }
     return "MappedPathUnavailable";
 }
 
-bool ModuleCrossIssueIsContradiction(const ModuleCrossIssue issue) noexcept {
+bool moduleCrossIssueIsContradiction(const ModuleCrossIssue issue) noexcept {
     switch (issue) {
-    case ModuleCrossIssue::LoaderPathMismatch:
-    case ModuleCrossIssue::LoaderSizeMismatch:
-    case ModuleCrossIssue::MainImageIdentityConflict:
+    case ModuleCrossIssue::kLoaderPathMismatch:
+    case ModuleCrossIssue::kLoaderSizeMismatch:
+    case ModuleCrossIssue::kMainImageIdentityConflict:
         return true;
-    case ModuleCrossIssue::ImageMappingWithoutLoaderEntry:
-    case ModuleCrossIssue::LoaderEntryWithoutImageMapping:
-    case ModuleCrossIssue::MappedPathUnavailable:
+    case ModuleCrossIssue::kImageMappingWithoutLoaderEntry:
+    case ModuleCrossIssue::kLoaderEntryWithoutImageMapping:
+    case ModuleCrossIssue::kMappedPathUnavailable:
         return false;
     }
     return false;
 }
 
-const char* PayloadStructureName(const PayloadStructure structure) noexcept {
+const char* payloadStructureName(const PayloadStructure structure) noexcept {
     switch (structure) {
-    case PayloadStructure::NotExamined: return "NotExamined";
-    case PayloadStructure::Unreadable: return "Unreadable";
-    case PayloadStructure::NoStructure: return "NoStructure";
-    case PayloadStructure::DataOnlyPeFile: return "DataOnlyPeFile";
-    case PayloadStructure::MappedPeImage: return "MappedPeImage";
-    case PayloadStructure::HeaderErasedPe: return "HeaderErasedPe";
-    case PayloadStructure::BareCode: return "BareCode";
+    case PayloadStructure::kNotExamined: return "NotExamined";
+    case PayloadStructure::kUnreadable: return "Unreadable";
+    case PayloadStructure::kNoStructure: return "NoStructure";
+    case PayloadStructure::kDataOnlyPeFile: return "DataOnlyPeFile";
+    case PayloadStructure::kMappedPeImage: return "MappedPeImage";
+    case PayloadStructure::kHeaderErasedPe: return "HeaderErasedPe";
+    case PayloadStructure::kBareCode: return "BareCode";
     }
     return "NotExamined";
 }
 
-ModuleCrossViewReport EvaluateModuleCrossView(const ModuleCrossViewInput& input) {
+ModuleCrossViewReport evaluateModuleCrossView(const ModuleCrossViewInput& input) {
     ModuleCrossViewReport report;
     report.payloadCandidates = input.payloadView.size();
 
-    const bool loaderUsable = OutcomeIsSuccess(input.loaderOutcome);
-    const bool imageUsable = OutcomeIsSuccess(input.imageOutcome);
-    // X-06 同款规则：只有两侧都成功才允许说"这边有那边没有"。
-    // WOW64 采集器的列表天然不完整，所以它也不够资格做缺项推断。
+    const bool kLoaderUsable = outcomeIsSuccess(input.loaderOutcome);
+    const bool kImageUsable = outcomeIsSuccess(input.imageOutcome);
+    // X-06 same-rule: Only allow stating "this side has what the other side lacks" if both sides succeed.
+    // The list collected by the WOW64 collector is inherently incomplete, so it is not qualified for absence inference.
     report.absenceInferenceAllowed =
-        loaderUsable && imageUsable &&
-        input.loaderTrust != ModuleEnumerationTrust::FilterIgnoredUnderWow64;
+        kLoaderUsable && kImageUsable &&
+        input.loaderTrust != ModuleEnumerationTrust::kFilterIgnoredUnderWow64;
 
-    if (!loaderUsable) {
-        AddUnique(report.coverageGapKeys, kGapLoaderViewUnavailable);
+    if (!kLoaderUsable) {
+        addUnique(report.coverageGapKeys, kGapLoaderViewUnavailable);
     }
-    if (!imageUsable) {
-        AddUnique(report.coverageGapKeys, kGapImageViewUnavailable);
+    if (!kImageUsable) {
+        addUnique(report.coverageGapKeys, kGapImageViewUnavailable);
     }
-    if (!OutcomeIsSuccess(input.payloadOutcome)) {
-        AddUnique(report.coverageGapKeys, kGapPayloadViewUnavailable);
+    if (!outcomeIsSuccess(input.payloadOutcome)) {
+        addUnique(report.coverageGapKeys, kGapPayloadViewUnavailable);
     }
-    if (input.loaderTrust == ModuleEnumerationTrust::FilterIgnoredUnderWow64) {
-        AddUnique(report.coverageGapKeys, kGapModuleEnumerationWow64);
+    if (input.loaderTrust == ModuleEnumerationTrust::kFilterIgnoredUnderWow64) {
+        addUnique(report.coverageGapKeys, kGapModuleEnumerationWow64);
     }
 
-    // 映射视图按基址建索引。
+    // Index mapping views by base address.
     std::unordered_map<std::uint64_t, std::size_t> mappingByBase;
     for (std::size_t i = 0; i < input.imageView.size(); ++i) {
         const ImageMappingEntry& entry = input.imageView[i];
         if (entry.allocationBase.present) {
             mappingByBase.emplace(entry.allocationBase.value, i);
         }
-        if (!OutcomeIsSuccess(entry.pathOutcome) || entry.mappedPath.empty()) {
-            // 路径查询失败必须保留原因。它是缺口，不是"无文件植入"。
+        if (!outcomeIsSuccess(entry.pathOutcome) || entry.mappedPath.empty()) {
+            // Path query failure must preserve the cause. It is a gap, not 'no file implantation'.
             ModuleCrossFinding finding;
-            finding.issue = ModuleCrossIssue::MappedPathUnavailable;
+            finding.issue = ModuleCrossIssue::kMappedPathUnavailable;
             finding.base = entry.allocationBase;
             finding.mappedSize = entry.mappedSize;
             finding.inputOutcome = entry.pathOutcome;
-            AddFact(finding.facts, "mapped.path.status",
-                    CollectionStatusName(entry.pathOutcome.status));
+            addFact(finding.facts, "mapped.path.status",
+                    collectionStatusName(entry.pathOutcome.status));
             if (!entry.pathOutcome.message.empty()) {
-                AddFact(finding.facts, "mapped.path.message", entry.pathOutcome.message);
+                addFact(finding.facts, "mapped.path.message", entry.pathOutcome.message);
             }
             report.findings.push_back(std::move(finding));
-            AddUnique(report.coverageGapKeys, kGapMappedPathUnavailable);
+            addUnique(report.coverageGapKeys, kGapMappedPathUnavailable);
         }
     }
 
     std::vector<bool> mappingMatched(input.imageView.size(), false);
 
     for (const LoaderModuleEntry& loaded : input.loaderView) {
-        const bool haveBase = loaded.module.imageBase.present;
-        auto it = haveBase ? mappingByBase.find(loaded.module.imageBase.value)
+        const bool kHaveBase = loaded.module.imageBase.present;
+        auto it = kHaveBase ? mappingByBase.find(loaded.module.imageBase.value)
                            : mappingByBase.end();
         if (it == mappingByBase.end()) {
-            if (!report.absenceInferenceAllowed || !haveBase) {
-                continue;  // 没资格推断缺项就不产出，缺口键已经记过
+            if (!report.absenceInferenceAllowed || !kHaveBase) {
+                continue;  // Do not produce output if ineligible to infer missing items; the missing key has already been recorded.
             }
             ++report.loaderOnly;
             ModuleCrossFinding finding;
-            finding.issue = ModuleCrossIssue::LoaderEntryWithoutImageMapping;
+            finding.issue = ModuleCrossIssue::kLoaderEntryWithoutImageMapping;
             finding.base = loaded.module.imageBase;
             finding.loaderPath = loaded.module.imagePath;
             finding.loaderSize = loaded.module.imageSize;
             finding.inputOutcome = CollectionOutcome::success();
-            AddFact(finding.facts, "loader.name", loaded.listedName);
-            AddFact(finding.facts, "loader.base", HexText(loaded.module.imageBase.value));
+            addFact(finding.facts, "loader.name", loaded.listedName);
+            addFact(finding.facts, "loader.base", hexText(loaded.module.imageBase.value));
             report.findings.push_back(std::move(finding));
             continue;
         }
@@ -690,34 +690,34 @@ ModuleCrossViewReport EvaluateModuleCrossView(const ModuleCrossViewInput& input)
         const ImageMappingEntry& mapping = input.imageView[it->second];
 
         if (!mapping.mappedPath.empty() && !loaded.module.imagePath.empty() &&
-            !PathsCompatible(loaded.module.imagePath, mapping.mappedPath)) {
+            !pathsCompatible(loaded.module.imagePath, mapping.mappedPath)) {
             ModuleCrossFinding finding;
-            finding.issue = ModuleCrossIssue::LoaderPathMismatch;
+            finding.issue = ModuleCrossIssue::kLoaderPathMismatch;
             finding.base = loaded.module.imageBase;
             finding.loaderPath = loaded.module.imagePath;
             finding.mappedPath = mapping.mappedPath;
             finding.inputOutcome = CollectionOutcome::success();
-            AddFact(finding.facts, "loader.path", loaded.module.imagePath);
-            AddFact(finding.facts, "mapped.path", mapping.mappedPath);
+            addFact(finding.facts, "loader.path", loaded.module.imagePath);
+            addFact(finding.facts, "mapped.path", mapping.mappedPath);
             report.findings.push_back(std::move(finding));
         }
 
         if (loaded.module.imageSize.present && mapping.mappedSize.present) {
-            const std::uint64_t declared = loaded.module.imageSize.value;
-            const std::uint64_t mapped = mapping.mappedSize.value;
-            const std::uint64_t diff = declared > mapped ? declared - mapped : mapped - declared;
-            if (diff > input.sizeToleranceBytes) {
+            const std::uint64_t kDeclared = loaded.module.imageSize.value;
+            const std::uint64_t kMapped = mapping.mappedSize.value;
+            const std::uint64_t kDiff = kDeclared > kMapped ? kDeclared - kMapped : kMapped - kDeclared;
+            if (kDiff > input.sizeToleranceBytes) {
                 ModuleCrossFinding finding;
-                finding.issue = ModuleCrossIssue::LoaderSizeMismatch;
+                finding.issue = ModuleCrossIssue::kLoaderSizeMismatch;
                 finding.base = loaded.module.imageBase;
                 finding.loaderPath = loaded.module.imagePath;
                 finding.mappedPath = mapping.mappedPath;
                 finding.loaderSize = loaded.module.imageSize;
                 finding.mappedSize = mapping.mappedSize;
                 finding.inputOutcome = CollectionOutcome::success();
-                AddFact(finding.facts, "loader.size", HexText(declared));
-                AddFact(finding.facts, "mapped.size", HexText(mapped));
-                AddFact(finding.facts, "size.tolerance", HexText(input.sizeToleranceBytes));
+                addFact(finding.facts, "loader.size", hexText(kDeclared));
+                addFact(finding.facts, "mapped.size", hexText(kMapped));
+                addFact(finding.facts, "size.tolerance", hexText(input.sizeToleranceBytes));
                 report.findings.push_back(std::move(finding));
             }
         }
@@ -731,61 +731,61 @@ ModuleCrossViewReport EvaluateModuleCrossView(const ModuleCrossViewInput& input)
             const ImageMappingEntry& mapping = input.imageView[i];
             ++report.mappingOnly;
             ModuleCrossFinding finding;
-            finding.issue = ModuleCrossIssue::ImageMappingWithoutLoaderEntry;
+            finding.issue = ModuleCrossIssue::kImageMappingWithoutLoaderEntry;
             finding.base = mapping.allocationBase;
             finding.mappedPath = mapping.mappedPath;
             finding.mappedSize = mapping.mappedSize;
             finding.inputOutcome = CollectionOutcome::success();
-            AddFact(finding.facts, "mapped.path", mapping.mappedPath);
+            addFact(finding.facts, "mapped.path", mapping.mappedPath);
             if (mapping.allocationBase.present) {
-                AddFact(finding.facts, "mapped.base", HexText(mapping.allocationBase.value));
+                addFact(finding.facts, "mapped.base", hexText(mapping.allocationBase.value));
             }
             report.findings.push_back(std::move(finding));
         }
     }
 
-    // 主映像：三个来源两两核对。任何一对矛盾都记一条，缺来源只记缺口。
+    // Main image: cross-verify the three sources pairwise. Record a discrepancy for any conflicting pair; record a missing source if a source is absent.
     {
         int available = 0;
         if (!input.mainImagePathFromLoader.empty()) { ++available; }
         if (!input.mainImagePathFromKernel.empty()) { ++available; }
         if (!input.mainImagePathFromMapping.empty()) { ++available; }
         if (available < 2) {
-            AddUnique(report.coverageGapKeys, kGapMainImageSourceMissing);
+            addUnique(report.coverageGapKeys, kGapMainImageSourceMissing);
         }
 
         std::vector<std::string> conflictFacts;
-        const bool loaderVsKernel =
-            !PathsCompatible(input.mainImagePathFromLoader, input.mainImagePathFromKernel);
-        const bool loaderVsMapping =
-            !PathsCompatible(input.mainImagePathFromLoader, input.mainImagePathFromMapping);
-        const bool kernelVsMapping =
-            !PathsCompatible(input.mainImagePathFromKernel, input.mainImagePathFromMapping);
-        if (loaderVsKernel) {
-            AddFact(conflictFacts, "main.loader-vs-kernel",
+        const bool kLoaderVsKernel =
+            !pathsCompatible(input.mainImagePathFromLoader, input.mainImagePathFromKernel);
+        const bool kLoaderVsMapping =
+            !pathsCompatible(input.mainImagePathFromLoader, input.mainImagePathFromMapping);
+        const bool kKernelVsMapping =
+            !pathsCompatible(input.mainImagePathFromKernel, input.mainImagePathFromMapping);
+        if (kLoaderVsKernel) {
+            addFact(conflictFacts, "main.loader-vs-kernel",
                     input.mainImagePathFromLoader + " | " + input.mainImagePathFromKernel);
         }
-        if (loaderVsMapping) {
-            AddFact(conflictFacts, "main.loader-vs-mapping",
+        if (kLoaderVsMapping) {
+            addFact(conflictFacts, "main.loader-vs-mapping",
                     input.mainImagePathFromLoader + " | " + input.mainImagePathFromMapping);
         }
-        if (kernelVsMapping) {
-            AddFact(conflictFacts, "main.kernel-vs-mapping",
+        if (kKernelVsMapping) {
+            addFact(conflictFacts, "main.kernel-vs-mapping",
                     input.mainImagePathFromKernel + " | " + input.mainImagePathFromMapping);
         }
-        const bool baseConflict = input.mainImageBaseFromLoader.present &&
+        const bool kBaseConflict = input.mainImageBaseFromLoader.present &&
                                   input.mainImageBaseFromMapping.present &&
                                   input.mainImageBaseFromLoader.value !=
                                       input.mainImageBaseFromMapping.value;
-        if (baseConflict) {
-            AddFact(conflictFacts, "main.base.loader",
-                    HexText(input.mainImageBaseFromLoader.value));
-            AddFact(conflictFacts, "main.base.mapping",
-                    HexText(input.mainImageBaseFromMapping.value));
+        if (kBaseConflict) {
+            addFact(conflictFacts, "main.base.loader",
+                    hexText(input.mainImageBaseFromLoader.value));
+            addFact(conflictFacts, "main.base.mapping",
+                    hexText(input.mainImageBaseFromMapping.value));
         }
         if (!conflictFacts.empty()) {
             ModuleCrossFinding finding;
-            finding.issue = ModuleCrossIssue::MainImageIdentityConflict;
+            finding.issue = ModuleCrossIssue::kMainImageIdentityConflict;
             finding.base = input.mainImageBaseFromLoader;
             finding.loaderPath = input.mainImagePathFromLoader;
             finding.mappedPath = input.mainImagePathFromMapping;
@@ -795,73 +795,73 @@ ModuleCrossViewReport EvaluateModuleCrossView(const ModuleCrossViewInput& input)
         }
     }
 
-    // 结论：没有可用观测就是 NoEvidence，不是"未发现差异"。
-    // 注意 MappedPathUnavailable 不算"差异" —— 它是缺口。把它算进去会让
-    // 一次路径查询失败被表述成"观测到模块矛盾"。
-    const bool anyObservation = loaderUsable || imageUsable;
-    const bool anyRealDifference =
+    // Conclusion: No available observations means NoEvidence, not "no differences found".
+    // Note: MappedPathUnavailable is not a 'difference'—it's a gap. Including it would
+    // misrepresent a single path query failure as 'observed module contradiction'.
+    const bool kAnyObservation = kLoaderUsable || kImageUsable;
+    const bool kAnyRealDifference =
         std::any_of(report.findings.begin(), report.findings.end(),
                     [](const ModuleCrossFinding& finding) {
-                        return finding.issue != ModuleCrossIssue::MappedPathUnavailable;
+                        return finding.issue != ModuleCrossIssue::kMappedPathUnavailable;
                     });
-    if (!anyObservation) {
-        report.conclusion = AnalysisConclusion::NoEvidence;
-    } else if (anyRealDifference) {
-        report.conclusion = AnalysisConclusion::DifferenceObserved;
+    if (!kAnyObservation) {
+        report.conclusion = AnalysisConclusion::kNoEvidence;
+    } else if (kAnyRealDifference) {
+        report.conclusion = AnalysisConclusion::kDifferenceObserved;
     } else if (report.absenceInferenceAllowed && report.coverageGapKeys.empty()) {
-        report.conclusion = AnalysisConclusion::NoDifferenceObserved;
+        report.conclusion = AnalysisConclusion::kNoDifferenceObserved;
     } else {
-        report.conclusion = AnalysisConclusion::Indeterminate;
+        report.conclusion = AnalysisConclusion::kIndeterminate;
     }
     return report;
 }
 
 // ---------------------------------------------------------------------------
-// 工作集筛选
+// Working set filter
 // ---------------------------------------------------------------------------
 
-const char* PageScreenVerdictName(const PageScreenVerdict verdict) noexcept {
+const char* pageScreenVerdictName(const PageScreenVerdict verdict) noexcept {
     switch (verdict) {
-    case PageScreenVerdict::NotQueried: return "NotQueried";
-    case PageScreenVerdict::InvalidNeedsRecheck: return "InvalidNeedsRecheck";
-    case PageScreenVerdict::PrivatizedCandidate: return "PrivatizedCandidate";
-    case PageScreenVerdict::SharedNotCleared: return "SharedNotCleared";
+    case PageScreenVerdict::kNotQueried: return "NotQueried";
+    case PageScreenVerdict::kInvalidNeedsRecheck: return "InvalidNeedsRecheck";
+    case PageScreenVerdict::kPrivatizedCandidate: return "PrivatizedCandidate";
+    case PageScreenVerdict::kSharedNotCleared: return "SharedNotCleared";
     }
     return "NotQueried";
 }
 
-PageScreenVerdict ScreenWorkingSetPage(const WorkingSetPageFact& fact) noexcept {
+PageScreenVerdict screenWorkingSetPage(const WorkingSetPageFact& fact) noexcept {
     if (!fact.queried) {
-        return PageScreenVerdict::NotQueried;
+        return PageScreenVerdict::kNotQueried;
     }
     if (!fact.valid) {
-        // Valid 为零时不能继续按有效页结构解释其余字段 —— 包括 Shared。
-        return PageScreenVerdict::InvalidNeedsRecheck;
+        // When Valid is zero, other fields—including Shared—cannot be interpreted as valid page structures.
+        return PageScreenVerdict::kInvalidNeedsRecheck;
     }
-    // 这里刻意不看 shareCount：Shared 表示"是否可共享"，ShareCount == 1
-    // 不能代替它。
-    return fact.shared ? PageScreenVerdict::SharedNotCleared
-                       : PageScreenVerdict::PrivatizedCandidate;
+    // We deliberately ignore shareCount here: Shared indicates "whether
+    // it is shareable"; ShareCount == 1 cannot substitute for it.
+    return fact.shared ? PageScreenVerdict::kSharedNotCleared
+                       : PageScreenVerdict::kPrivatizedCandidate;
 }
 
-bool PageSelectedForComparison(const PageScreenVerdict verdict,
+bool pageSelectedForComparison(const PageScreenVerdict verdict,
                                const SurveyMode mode) noexcept {
     switch (verdict) {
-    case PageScreenVerdict::PrivatizedCandidate:
+    case PageScreenVerdict::kPrivatizedCandidate:
         return true;
-    case PageScreenVerdict::SharedNotCleared:
-    case PageScreenVerdict::InvalidNeedsRecheck:
-        // 深度模式不因为"共享"或"当前无效"排除任何映像页：内存合并可以让
-        // 已修改页重新呈现可共享状态。
-        return mode == SurveyMode::Deep;
-    case PageScreenVerdict::NotQueried:
+    case PageScreenVerdict::kSharedNotCleared:
+    case PageScreenVerdict::kInvalidNeedsRecheck:
+        // Deep mode does not exclude any image pages due to 'shared' or 'currently invalid'
+        // status: memory merging can restore a modified page to a shareable state.
+        return mode == SurveyMode::kDeep;
+    case PageScreenVerdict::kNotQueried:
         return false;
     }
     return false;
 }
 
 // ---------------------------------------------------------------------------
-// 线程起点
+// Thread start
 // ---------------------------------------------------------------------------
 
 bool ImageCodeExtent::containsAddress(const std::uint64_t address) const noexcept {
@@ -872,76 +872,76 @@ bool ImageCodeExtent::addressInCodeExtent(const std::uint64_t address) const noe
     if (!codeExtentKnown || !containsAddress(address)) {
         return false;
     }
-    const std::uint64_t rva = address - base;
-    return rva >= codeBeginRva && rva < codeEndRva;
+    const std::uint64_t kRva = address - base;
+    return kRva >= codeBeginRva && kRva < codeEndRva;
 }
 
-const char* ThreadStartLandingName(const ThreadStartLanding landing) noexcept {
+const char* threadStartLandingName(const ThreadStartLanding landing) noexcept {
     switch (landing) {
-    case ThreadStartLanding::NotCollected: return "NotCollected";
-    case ThreadStartLanding::OutsideIndex: return "OutsideIndex";
-    case ThreadStartLanding::FreeOrReserved: return "FreeOrReserved";
-    case ThreadStartLanding::NonImagePrivate: return "NonImagePrivate";
-    case ThreadStartLanding::NonImageMapped: return "NonImageMapped";
-    case ThreadStartLanding::ImageCodeRange: return "ImageCodeRange";
-    case ThreadStartLanding::ImageOutsideCode: return "ImageOutsideCode";
-    case ThreadStartLanding::ImageLayoutUnknown: return "ImageLayoutUnknown";
+    case ThreadStartLanding::kNotCollected: return "NotCollected";
+    case ThreadStartLanding::kOutsideIndex: return "OutsideIndex";
+    case ThreadStartLanding::kFreeOrReserved: return "FreeOrReserved";
+    case ThreadStartLanding::kNonImagePrivate: return "NonImagePrivate";
+    case ThreadStartLanding::kNonImageMapped: return "NonImageMapped";
+    case ThreadStartLanding::kImageCodeRange: return "ImageCodeRange";
+    case ThreadStartLanding::kImageOutsideCode: return "ImageOutsideCode";
+    case ThreadStartLanding::kImageLayoutUnknown: return "ImageLayoutUnknown";
     }
     return "NotCollected";
 }
 
-const char* ThreadContextTrustName(const ThreadContextTrust trust) noexcept {
+const char* threadContextTrustName(const ThreadContextTrust trust) noexcept {
     switch (trust) {
-    case ThreadContextTrust::NotCaptured: return "NotCaptured";
-    case ThreadContextTrust::RunningThreadUntrusted: return "RunningThreadUntrusted";
-    case ThreadContextTrust::WaitingThreadStable: return "WaitingThreadStable";
-    case ThreadContextTrust::SuspendedOrSnapshot: return "SuspendedOrSnapshot";
+    case ThreadContextTrust::kNotCaptured: return "NotCaptured";
+    case ThreadContextTrust::kRunningThreadUntrusted: return "RunningThreadUntrusted";
+    case ThreadContextTrust::kWaitingThreadStable: return "WaitingThreadStable";
+    case ThreadContextTrust::kSuspendedOrSnapshot: return "SuspendedOrSnapshot";
     }
     return "NotCaptured";
 }
 
-ThreadContextTrust ClassifyThreadContextTrust(const bool captured,
+ThreadContextTrust classifyThreadContextTrust(const bool captured,
                                               const bool suspendedOrSnapshot,
                                               const bool waitingBeforeAndAfter) noexcept {
     if (!captured) {
-        return ThreadContextTrust::NotCaptured;
+        return ThreadContextTrust::kNotCaptured;
     }
     if (suspendedOrSnapshot) {
-        return ThreadContextTrust::SuspendedOrSnapshot;
+        return ThreadContextTrust::kSuspendedOrSnapshot;
     }
-    // 顺序有讲究：挂起/快照优先于"两次都在等待"。两个条件同时成立时前者更强，
-    // 而且它不依赖"采集期间状态没变过"这个前提。
-    return waitingBeforeAndAfter ? ThreadContextTrust::WaitingThreadStable
-                                 : ThreadContextTrust::RunningThreadUntrusted;
+    // Order matters: Suspend/Snapshot takes precedence over 'waiting both before and after'. When both conditions hold,
+    // the former is stronger and does not depend on the assumption that the state remained unchanged during collection.
+    return waitingBeforeAndAfter ? ThreadContextTrust::kWaitingThreadStable
+                                 : ThreadContextTrust::kRunningThreadUntrusted;
 }
 
-bool ContextUsableAsExecutionEvidence(const ThreadContextTrust trust) noexcept {
-    return trust == ThreadContextTrust::SuspendedOrSnapshot ||
-           trust == ThreadContextTrust::WaitingThreadStable;
+bool contextUsableAsExecutionEvidence(const ThreadContextTrust trust) noexcept {
+    return trust == ThreadContextTrust::kSuspendedOrSnapshot ||
+           trust == ThreadContextTrust::kWaitingThreadStable;
 }
 
-const char* StackEvidenceKindName(const StackEvidenceKind kind) noexcept {
+const char* stackEvidenceKindName(const StackEvidenceKind kind) noexcept {
     switch (kind) {
-    case StackEvidenceKind::ReliableUnwoundFrame: return "ReliableUnwoundFrame";
-    case StackEvidenceKind::HeuristicReturnAddressCandidate:
+    case StackEvidenceKind::kReliableUnwoundFrame: return "ReliableUnwoundFrame";
+    case StackEvidenceKind::kHeuristicReturnAddressCandidate:
         return "HeuristicReturnAddressCandidate";
-    case StackEvidenceKind::PlainPointerReference: return "PlainPointerReference";
+    case StackEvidenceKind::kPlainPointerReference: return "PlainPointerReference";
     }
     return "PlainPointerReference";
 }
 
-bool StackEvidenceCountsAsExecution(const StackEvidenceKind kind) noexcept {
-    return kind == StackEvidenceKind::ReliableUnwoundFrame;
+bool stackEvidenceCountsAsExecution(const StackEvidenceKind kind) noexcept {
+    return kind == StackEvidenceKind::kReliableUnwoundFrame;
 }
 
-bool PayloadCandidateCanRaiseConclusion(const PayloadCandidateEntry& candidate) noexcept {
+bool payloadCandidateCanRaiseConclusion(const PayloadCandidateEntry& candidate) noexcept {
     return candidate.executableAtScanTime;
 }
 
-std::size_t AdmitStackFrames(const ThreadStackInput& stack) noexcept {
-    if (!ContextUsableAsExecutionEvidence(stack.trust)) {
-        // 上下文本身不可信，从它展开出来的一切都不算数。不是"降级成启发式"，
-        // 是整条链作废：起点错了，后面每一步都在错的栈上走。
+std::size_t admitStackFrames(const ThreadStackInput& stack) noexcept {
+    if (!contextUsableAsExecutionEvidence(stack.trust)) {
+        // The context itself is untrustworthy; everything derived from it is invalid. This is not a 'degradation to heuristic';
+        // the entire chain is void: if the starting point is wrong, every subsequent step proceeds on an incorrect stack.
         return 0U;
     }
     std::size_t admitted = 0U;
@@ -951,9 +951,9 @@ std::size_t AdmitStackFrames(const ThreadStackInput& stack) noexcept {
         }
         ++admitted;
         if (!frame.unwindDataAvailableAtPc) {
-            // 本帧的 PC 查不到展开数据 —— 它自己仍然是可靠的（由上一帧算出来的），
-            // 但**下一帧**只能靠扫栈猜。可靠前缀到此为止。
-            // shellcode 帧正是走这一支：它被收进来，它下面的被切掉。
+            // The PC for this frame cannot find unwind data—it remains reliable (computed from the previous frame),
+            // but the **next frame** can only be guessed via stack scanning. The reliable prefix ends here.
+            // A shellcode frame takes this branch: include the frame itself and discard the frames below it.
             break;
         }
     }
@@ -962,11 +962,11 @@ std::size_t AdmitStackFrames(const ThreadStackInput& stack) noexcept {
 
 namespace {
 
-// 把一个地址解释成"落在哪"。这一函数被起点和第一跳目标共用。
-// owningImage 只在落在某个已知映像里时被写入，其余情况保持 nullptr ——
-// "跨模块"必须靠它判定，不能靠路径字符串：私有/匿名区域根本没有路径，
-// 用路径比较会把"跳进一块匿名可执行内存"判成"没跨模块"。
-ThreadStartLanding ClassifyLanding(const std::uint64_t address,
+// Interpret an address as 'landing' location. This function is shared by the entry point and the first-hop target.
+// owningImage is written only when the address falls within a known image; otherwise, it remains nullptr.
+// "Cross-module" must be determined by this field, not by path strings: private/anonymous regions have no paths, and
+// comparing paths would incorrectly classify "jumping into anonymous executable memory" as "not crossing modules".
+ThreadStartLanding classifyLanding(const std::uint64_t address,
                                    const AddressSpaceIndex& index,
                                    const std::vector<ImageCodeExtent>& images,
                                    std::string& owningPath,
@@ -978,23 +978,23 @@ ThreadStartLanding ClassifyLanding(const std::uint64_t address,
     executableKnown = false;
     executable = false;
 
-    const std::size_t entryIndex = index.findEntry(address);
-    if (entryIndex == AddressSpaceIndex::kNoEntry) {
-        return ThreadStartLanding::OutsideIndex;
+    const std::size_t kEntryIndex = index.findEntry(address);
+    if (kEntryIndex == AddressSpaceIndex::kNoEntry) {
+        return ThreadStartLanding::kOutsideIndex;
     }
-    const RegionRecord& record = index.entries[entryIndex];
-    const ProtectionFacts facts = EffectiveProtection(record);
-    if (facts.execute != ExecuteProtection::Unknown) {
+    const RegionRecord& record = index.entries[kEntryIndex];
+    const ProtectionFacts kFacts = effectiveProtection(record);
+    if (kFacts.execute != ExecuteProtection::kUnknown) {
         executableKnown = true;
-        executable = ExecuteProtectionIsExecutable(facts.execute);
+        executable = executeProtectionIsExecutable(kFacts.execute);
     }
     owningPath = record.mappedPath;
 
-    if (record.state != RegionState::Commit) {
-        return ThreadStartLanding::FreeOrReserved;
+    if (record.state != RegionState::kCommit) {
+        return ThreadStartLanding::kFreeOrReserved;
     }
     switch (record.type) {
-    case RegionType::Image: {
+    case RegionType::kImage: {
         for (const ImageCodeExtent& image : images) {
             if (!image.containsAddress(address)) {
                 continue;
@@ -1004,27 +1004,27 @@ ThreadStartLanding ClassifyLanding(const std::uint64_t address,
                 owningPath = image.path;
             }
             if (!image.codeExtentKnown) {
-                return ThreadStartLanding::ImageLayoutUnknown;
+                return ThreadStartLanding::kImageLayoutUnknown;
             }
-            return image.addressInCodeExtent(address) ? ThreadStartLanding::ImageCodeRange
-                                                      : ThreadStartLanding::ImageOutsideCode;
+            return image.addressInCodeExtent(address) ? ThreadStartLanding::kImageCodeRange
+                                                      : ThreadStartLanding::kImageOutsideCode;
         }
-        // 是 MEM_IMAGE，但没有任何已知模块覆盖它 —— 代码布局未知。
-        return ThreadStartLanding::ImageLayoutUnknown;
+        // It is MEM_IMAGE, but no known module covers it — code layout is unknown.
+        return ThreadStartLanding::kImageLayoutUnknown;
     }
-    case RegionType::Private:
-        return ThreadStartLanding::NonImagePrivate;
-    case RegionType::Mapped:
-        return ThreadStartLanding::NonImageMapped;
-    case RegionType::Unknown:
+    case RegionType::kPrivate:
+        return ThreadStartLanding::kNonImagePrivate;
+    case RegionType::kMapped:
+        return ThreadStartLanding::kNonImageMapped;
+    case RegionType::kUnknown:
         break;
     }
-    return ThreadStartLanding::OutsideIndex;
+    return ThreadStartLanding::kOutsideIndex;
 }
 
 } // namespace
 
-std::vector<ThreadStartFinding> EvaluateThreadStarts(
+std::vector<ThreadStartFinding> evaluateThreadStarts(
     const std::vector<ThreadStartInput>& threads,
     const AddressSpaceIndex& index,
     const std::vector<ImageCodeExtent>& images) {
@@ -1039,10 +1039,10 @@ std::vector<ThreadStartFinding> EvaluateThreadStarts(
         finding.entryInspected = input.entryInspected;
 
         if (!input.startAddress.present) {
-            // 起始地址根本没采到 —— 没有观测，不是"归属不一致"。
-            finding.landing = ThreadStartLanding::NotCollected;
-            AddFact(finding.facts, "thread.start.status",
-                    CollectionStatusName(input.startAddressOutcome.status));
+            // The start address was never collected — no observation, not a 'mismatched ownership'.
+            finding.landing = ThreadStartLanding::kNotCollected;
+            addFact(finding.facts, "thread.start.status",
+                    collectionStatusName(input.startAddressOutcome.status));
             findings.push_back(std::move(finding));
             continue;
         }
@@ -1051,17 +1051,17 @@ std::vector<ThreadStartFinding> EvaluateThreadStarts(
         const ImageCodeExtent* owningImage = nullptr;
         bool executableKnown = false;
         bool executable = false;
-        finding.landing = ClassifyLanding(input.startAddress.value, index, images,
+        finding.landing = classifyLanding(input.startAddress.value, index, images,
                                           owningPath, owningImage, executableKnown, executable);
         finding.owningPath = owningPath;
         finding.startPageExecutableKnown = executableKnown;
         finding.startPageExecutable = executable;
 
-        AddFact(finding.facts, "thread.start.address", HexText(input.startAddress.value));
-        AddFact(finding.facts, "thread.start.landing", ThreadStartLandingName(finding.landing));
+        addFact(finding.facts, "thread.start.address", hexText(input.startAddress.value));
+        addFact(finding.facts, "thread.start.landing", threadStartLandingName(finding.landing));
         if (executableKnown) {
-            // 起点页现在不可执行是一个并列事实，**不**用来忽略这条线索。
-            AddFact(finding.facts, "thread.start.page-executable-now",
+            // The start page being non-executable now is a concurrent fact, **not** used to ignore this clue.
+            addFact(finding.facts, "thread.start.page-executable-now",
                     executable ? "true" : "false");
         }
 
@@ -1072,23 +1072,23 @@ std::vector<ThreadStartFinding> EvaluateThreadStarts(
             bool branchExec = false;
             finding.branchTarget = input.immediateBranchTarget;
             finding.branchTargetLanding =
-                ClassifyLanding(input.immediateBranchTarget.value, index, images,
+                classifyLanding(input.immediateBranchTarget.value, index, images,
                                 branchPath, branchImage, branchExecKnown, branchExec);
-            // "起点看起来在合法模块里，但随后转到其他区域"。只有起点确实归属某个
-            // 已知映像时这个判断才有意义；此时第一跳没落回同一个映像就是离开。
+            // Note: The starting point appears to be within a legitimate module, but the flow subsequently transitions to other regions. This judgment is only
+            // meaningful when the starting point is indeed owned by a known image; in that case, the first jump not returning to the same image indicates leaving it.
             finding.branchLeavesOwningModule =
                 owningImage != nullptr &&
                 !owningImage->containsAddress(input.immediateBranchTarget.value);
-            AddFact(finding.facts, "thread.start.branch-target",
-                    HexText(input.immediateBranchTarget.value));
-            AddFact(finding.facts, "thread.start.branch-landing",
-                    ThreadStartLandingName(finding.branchTargetLanding));
+            addFact(finding.facts, "thread.start.branch-target",
+                    hexText(input.immediateBranchTarget.value));
+            addFact(finding.facts, "thread.start.branch-landing",
+                    threadStartLandingName(finding.branchTargetLanding));
             if (!branchPath.empty()) {
-                AddFact(finding.facts, "thread.start.branch-owner", branchPath);
+                addFact(finding.facts, "thread.start.branch-owner", branchPath);
             }
         } else if (input.entryInspected) {
-            // 检查过但没解析出跳转：是失败证据，不是"没有跳转"。
-            AddFact(finding.facts, "thread.start.branch", "not-resolved");
+            // Checked but failed to resolve the jump: this is failure evidence, not 'no jump'.
+            addFact(finding.facts, "thread.start.branch", "not-resolved");
         }
 
         findings.push_back(std::move(finding));
@@ -1097,45 +1097,45 @@ std::vector<ThreadStartFinding> EvaluateThreadStarts(
 }
 
 // ---------------------------------------------------------------------------
-// 比较计划
+// Comparison plan
 // ---------------------------------------------------------------------------
 
-const char* NormalizationProfileId(const SurveyMode mode) noexcept {
-    // 两种模式共用同一套归一化逻辑。这个函数接收 mode 只是为了让调用点
-    // 无法"顺手"分叉 —— 返回值与 mode 无关。
+const char* normalizationProfileId(const SurveyMode mode) noexcept {
+    // Both modes share the same normalization logic. This function accepts 'mode' solely to
+    // prevent callers from 'accidentally' branching—the return value is independent of 'mode'.
     static_cast<void>(mode);
     return kNormalizationProfileId;
 }
 
-std::uint32_t NormalizationProfileVersion(const SurveyMode mode) noexcept {
+std::uint32_t normalizationProfileVersion(const SurveyMode mode) noexcept {
     static_cast<void>(mode);
     return kNormalizationProfileVersion;
 }
 
-const char* ComparisonReasonName(const ComparisonReason reason) noexcept {
+const char* comparisonReasonName(const ComparisonReason reason) noexcept {
     switch (reason) {
-    case ComparisonReason::MainImageEntry: return "MainImageEntry";
-    case ComparisonReason::SuspiciousThreadEntry: return "SuspiciousThreadEntry";
-    case ComparisonReason::WorkingSetScreenedPage: return "WorkingSetScreenedPage";
-    case ComparisonReason::ControlFlowReference: return "ControlFlowReference";
-    case ComparisonReason::FullExecutableCoverage: return "FullExecutableCoverage";
+    case ComparisonReason::kMainImageEntry: return "MainImageEntry";
+    case ComparisonReason::kSuspiciousThreadEntry: return "SuspiciousThreadEntry";
+    case ComparisonReason::kWorkingSetScreenedPage: return "WorkingSetScreenedPage";
+    case ComparisonReason::kControlFlowReference: return "ControlFlowReference";
+    case ComparisonReason::kFullExecutableCoverage: return "FullExecutableCoverage";
     }
     return "MainImageEntry";
 }
 
 namespace {
 
-const ImageCodeExtent* FindImage(const std::vector<ImageCodeExtent>& images,
+const ImageCodeExtent* findImage(const std::vector<ImageCodeExtent>& images,
                                  const std::string& path) {
     for (const ImageCodeExtent& image : images) {
-        if (PathsCompatible(image.path, path) && !image.path.empty() && !path.empty()) {
+        if (pathsCompatible(image.path, path) && !image.path.empty() && !path.empty()) {
             return &image;
         }
     }
     return nullptr;
 }
 
-DriverInstanceId ModuleIdOf(const ImageCodeExtent& image) {
+DriverInstanceId moduleIdOf(const ImageCodeExtent& image) {
     DriverInstanceId id;
     id.imagePath = image.path;
     id.imageBase = OptionalU64::of(image.base);
@@ -1143,7 +1143,7 @@ DriverInstanceId ModuleIdOf(const ImageCodeExtent& image) {
     return id;
 }
 
-void PushTarget(ComparisonPlan& plan,
+void pushTarget(ComparisonPlan& plan,
                 const ImageCodeExtent& image,
                 const RvaRange& range,
                 const ComparisonReason reason) {
@@ -1151,215 +1151,215 @@ void PushTarget(ComparisonPlan& plan,
         return;
     }
     ComparisonTarget target;
-    target.module = ModuleIdOf(image);
+    target.module = moduleIdOf(image);
     target.range = range;
     target.reason = reason;
     plan.targets.push_back(std::move(target));
 }
 
-RvaRange ClampToImage(const ImageCodeExtent& image, std::uint64_t rva, std::uint64_t length) {
+RvaRange clampToImage(const ImageCodeExtent& image, std::uint64_t rva, std::uint64_t length) {
     RvaRange range;
     if (image.size == 0U || rva >= image.size) {
         return range;
     }
-    const std::uint64_t available = image.size - rva;
-    const std::uint64_t clamped = std::min(length, available);
+    const std::uint64_t kAvailable = image.size - rva;
+    const std::uint64_t kClamped = std::min(length, kAvailable);
     range.rva = static_cast<std::uint32_t>(rva);
-    range.length = static_cast<std::uint32_t>(std::min<std::uint64_t>(clamped, 0xFFFFFFFFULL));
+    range.length = static_cast<std::uint32_t>(std::min<std::uint64_t>(kClamped, 0xFFFFFFFFULL));
     return range;
 }
 
 } // namespace
 
-ComparisonPlan BuildComparisonPlan(const ComparisonPlanInput& input) {
+ComparisonPlan buildComparisonPlan(const ComparisonPlanInput& input) {
     ComparisonPlan plan;
     plan.mode = input.mode;
-    plan.normalizationProfileId = NormalizationProfileId(input.mode);
-    plan.normalizationProfileVersion = NormalizationProfileVersion(input.mode);
+    plan.normalizationProfileId = normalizationProfileId(input.mode);
+    plan.normalizationProfileVersion = normalizationProfileVersion(input.mode);
 
-    const std::uint32_t window = input.entryWindowBytes == 0U ? 64U : input.entryWindowBytes;
-    const std::uint32_t pageSize = input.pageSize == 0U ? 4096U : input.pageSize;
+    const std::uint32_t kWindow = input.entryWindowBytes == 0U ? 64U : input.entryWindowBytes;
+    const std::uint32_t kPageSize = input.pageSize == 0U ? 4096U : input.pageSize;
 
-    if (input.mode == SurveyMode::Deep) {
-        // 深度模式：全部应当执行的映像范围，不因为"共享"跳过。
+    if (input.mode == SurveyMode::kDeep) {
+        // Deep mode: all image ranges that must be executed, without skipping due to 'shared' status.
         for (const ImageCodeExtent& image : input.images) {
             if (image.size == 0U) {
                 continue;
             }
             RvaRange range;
             if (image.codeExtentKnown && image.codeEndRva > image.codeBeginRva) {
-                range = ClampToImage(image, image.codeBeginRva,
+                range = clampToImage(image, image.codeBeginRva,
                                      image.codeEndRva - image.codeBeginRva);
             } else {
-                // 代码布局未知时覆盖整个映像范围，并记缺口：这是"不知道哪里是代码"，
-                // 不是"没有代码"。
-                range = ClampToImage(image, 0U, image.size);
-                AddUnique(plan.coverageGapKeys, kGapReferenceUncertain);
+                // When code layout is unknown, cover the entire image range and record the gap:
+                // this signifies "we don't know where the code is," not "there is no code."
+                range = clampToImage(image, 0U, image.size);
+                addUnique(plan.coverageGapKeys, kGapReferenceUncertain);
             }
-            PushTarget(plan, image, range, ComparisonReason::FullExecutableCoverage);
+            pushTarget(plan, image, range, ComparisonReason::kFullExecutableCoverage);
         }
     }
 
-    // 主映像入口。
+    // Main image entry.
     if (!input.mainImagePath.empty()) {
-        const ImageCodeExtent* image = FindImage(input.images, input.mainImagePath);
+        const ImageCodeExtent* image = findImage(input.images, input.mainImagePath);
         if (image == nullptr) {
-            AddUnique(plan.coverageGapKeys, kGapMainImageSourceMissing);
+            addUnique(plan.coverageGapKeys, kGapMainImageSourceMissing);
         } else if (!input.mainImageEntryRva.present) {
-            AddUnique(plan.coverageGapKeys, kGapMainImageSourceMissing);
+            addUnique(plan.coverageGapKeys, kGapMainImageSourceMissing);
         } else {
-            PushTarget(plan, *image,
-                       ClampToImage(*image, input.mainImageEntryRva.value, window),
-                       ComparisonReason::MainImageEntry);
+            pushTarget(plan, *image,
+                       clampToImage(*image, input.mainImageEntryRva.value, kWindow),
+                       ComparisonReason::kMainImageEntry);
         }
     } else {
-        AddUnique(plan.coverageGapKeys, kGapMainImageSourceMissing);
+        addUnique(plan.coverageGapKeys, kGapMainImageSourceMissing);
     }
 
     for (const ComparisonPlanInput::ThreadEntrySite& site : input.threadEntrySites) {
-        const ImageCodeExtent* image = FindImage(input.images, site.imagePath);
+        const ImageCodeExtent* image = findImage(input.images, site.imagePath);
         if (image == nullptr) {
-            AddUnique(plan.coverageGapKeys, kGapThreadStartUnavailable);
+            addUnique(plan.coverageGapKeys, kGapThreadStartUnavailable);
             continue;
         }
-        PushTarget(plan, *image, ClampToImage(*image, site.rva, window),
-                   ComparisonReason::SuspiciousThreadEntry);
+        pushTarget(plan, *image, clampToImage(*image, site.rva, kWindow),
+                   ComparisonReason::kSuspiciousThreadEntry);
     }
 
     for (const ComparisonPlanInput::ScreenedPage& page : input.screenedPages) {
-        const ImageCodeExtent* image = FindImage(input.images, page.imagePath);
+        const ImageCodeExtent* image = findImage(input.images, page.imagePath);
         if (image == nullptr) {
-            AddUnique(plan.coverageGapKeys, kGapWorkingSetUnavailable);
+            addUnique(plan.coverageGapKeys, kGapWorkingSetUnavailable);
             continue;
         }
-        PushTarget(plan, *image, ClampToImage(*image, page.pageRva, pageSize),
-                   ComparisonReason::WorkingSetScreenedPage);
+        pushTarget(plan, *image, clampToImage(*image, page.pageRva, kPageSize),
+                   ComparisonReason::kWorkingSetScreenedPage);
     }
 
     for (const ComparisonPlanInput::ThreadEntrySite& site : input.controlFlowSites) {
-        const ImageCodeExtent* image = FindImage(input.images, site.imagePath);
+        const ImageCodeExtent* image = findImage(input.images, site.imagePath);
         if (image == nullptr) {
             continue;
         }
-        PushTarget(plan, *image, ClampToImage(*image, site.rva, window),
-                   ComparisonReason::ControlFlowReference);
+        pushTarget(plan, *image, clampToImage(*image, site.rva, kWindow),
+                   ComparisonReason::kControlFlowReference);
     }
 
     return plan;
 }
 
-const char* ReferenceConfidenceName(const ReferenceConfidence confidence) noexcept {
+const char* referenceConfidenceName(const ReferenceConfidence confidence) noexcept {
     switch (confidence) {
-    case ReferenceConfidence::NoReference: return "NoReference";
-    case ReferenceConfidence::ReferenceUncertain: return "ReferenceUncertain";
-    case ReferenceConfidence::ReferenceVerified: return "ReferenceVerified";
+    case ReferenceConfidence::kNoReference: return "NoReference";
+    case ReferenceConfidence::kReferenceUncertain: return "ReferenceUncertain";
+    case ReferenceConfidence::kReferenceVerified: return "ReferenceVerified";
     }
     return "NoReference";
 }
 
-const char* ImageReferenceSourceName(const ImageReferenceSource source) noexcept {
+const char* imageReferenceSourceName(const ImageReferenceSource source) noexcept {
     switch (source) {
-    case ImageReferenceSource::None: return "None";
-    case ImageReferenceSource::DiskFile: return "DiskFile";
-    case ImageReferenceSource::SectionObject: return "SectionObject";
+    case ImageReferenceSource::kNone: return "None";
+    case ImageReferenceSource::kDiskFile: return "DiskFile";
+    case ImageReferenceSource::kSectionObject: return "SectionObject";
     }
     return "None";
 }
 
-bool SectionReferenceCoverageComplete(const ImageComparisonOutcome& outcome) noexcept {
-    if (outcome.referenceSource != ImageReferenceSource::SectionObject) {
-        return true;  // 别的来源不受这个账目约束
+bool sectionReferenceCoverageComplete(const ImageComparisonOutcome& outcome) noexcept {
+    if (outcome.referenceSource != ImageReferenceSource::kSectionObject) {
+        return true;  // Other sources are not bound by this account.
     }
-    // 一页都没请求过时不能算"覆盖完整" —— 那是没比，不是比全了。
+    // If no pages were requested, it cannot be considered 'fully covered' — that's a lack of comparison, not a complete one.
     return outcome.sectionPagesRequested != 0U &&
            outcome.sectionPagesAvailable == outcome.sectionPagesRequested;
 }
 
-bool ReferenceSupportsDifferenceClaim(const ReferenceConfidence confidence) noexcept {
-    return confidence == ReferenceConfidence::ReferenceVerified;
+bool referenceSupportsDifferenceClaim(const ReferenceConfidence confidence) noexcept {
+    return confidence == ReferenceConfidence::kReferenceVerified;
 }
 
 // ---------------------------------------------------------------------------
-// J-06：R0 扫描后端的交叉视图
+// J-06: Cross-view of R0 scanning backend
 // ---------------------------------------------------------------------------
 
-const char* KernelBackendStateName(const KernelBackendState state) noexcept {
+const char* kernelBackendStateName(const KernelBackendState state) noexcept {
     switch (state) {
-    case KernelBackendState::NotRequested: return "NotRequested";
-    case KernelBackendState::DriverUnavailable: return "DriverUnavailable";
-    case KernelBackendState::ProfileUnverified: return "ProfileUnverified";
-    case KernelBackendState::Partial: return "Partial";
-    case KernelBackendState::Available: return "Available";
+    case KernelBackendState::kNotRequested: return "NotRequested";
+    case KernelBackendState::kDriverUnavailable: return "DriverUnavailable";
+    case KernelBackendState::kProfileUnverified: return "ProfileUnverified";
+    case KernelBackendState::kPartial: return "Partial";
+    case KernelBackendState::kAvailable: return "Available";
     }
     return "NotRequested";
 }
 
-bool KernelBackendSupportsAbsenceInference(const KernelBackendState state) noexcept {
-    return state == KernelBackendState::Available;
+bool kernelBackendSupportsAbsenceInference(const KernelBackendState state) noexcept {
+    return state == KernelBackendState::kAvailable;
 }
 
 bool KernelVadView::usableForAbsenceInference() const noexcept {
-    return KernelBackendSupportsAbsenceInference(state) && !truncated &&
-           unreadableNodeCount == 0U && OutcomeIsSuccess(outcome);
+    return kernelBackendSupportsAbsenceInference(state) && !truncated &&
+           unreadableNodeCount == 0U && outcomeIsSuccess(outcome);
 }
 
-const char* VadLinkIntegrityName(const VadLinkIntegrity integrity) noexcept {
+const char* vadLinkIntegrityName(const VadLinkIntegrity integrity) noexcept {
     switch (integrity) {
-    case VadLinkIntegrity::NotChecked: return "NotChecked";
-    case VadLinkIntegrity::Consistent: return "Consistent";
-    case VadLinkIntegrity::Inconsistent: return "Inconsistent";
+    case VadLinkIntegrity::kNotChecked: return "NotChecked";
+    case VadLinkIntegrity::kConsistent: return "Consistent";
+    case VadLinkIntegrity::kInconsistent: return "Inconsistent";
     }
     return "NotChecked";
 }
 
-VadLinkIntegrity EvaluateVadLinkIntegrity(const KernelVadView& view) noexcept {
-    // 硬闸门。遍历不完整时三项读数全部无意义 —— 返回"没查"，不是"一致"。
-    if (!view.integrityValid || view.state != KernelBackendState::Available) {
-        return VadLinkIntegrity::NotChecked;
+VadLinkIntegrity evaluateVadLinkIntegrity(const KernelVadView& view) noexcept {
+    // Hard gate: If traversal is incomplete, all three readings are meaningless. Return "not checked", not "consistent".
+    if (!view.integrityValid || view.state != KernelBackendState::kAvailable) {
+        return VadLinkIntegrity::kNotChecked;
     }
 
-    // 父指针回指不上：干净的摘链不会留下这个痕迹，粗暴改写会。
+    // Parent pointer back-reference mismatch: clean unlinking leaves no such trace, but crude rewriting does.
     if (view.parentMismatchNodes != 0U) {
-        return VadLinkIntegrity::Inconsistent;
+        return VadLinkIntegrity::kInconsistent;
     }
-    // VadHint 指向树上找不到的节点。VadHint 为空是合法的（刚建的进程还没用过），
-    // 所以只有"知道 hint 且 hint 非空"时这一条才成立。
+    // VadHint points to a node not found in the tree. VadHint being null is valid (a newly created
+    // process hasn't used it yet), so this rule applies only when the hint is known and non-zero.
     if (view.vadHintKnown && view.vadHintAddress.present && view.vadHintAddress.value != 0U &&
         !view.vadHintVisited) {
-        return VadLinkIntegrity::Inconsistent;
+        return VadLinkIntegrity::kInconsistent;
     }
-    // 内核计数比走出来的多：有节点不在树上。
+    // Kernel count exceeds the traversed count: there are nodes not in the tree.
     //
-    // 只判**单向**：visitedCount < vadCount 才算。反向（走出来比计数多）在
-    // 采集与内核并发改树时会自然出现（新 VAD 已挂上、计数还没加），把它也算成
-    // 不一致会在忙碌进程上稳定误报。少了才是"有东西被摘走"的方向。
+    // Only checks **one-way**: visitedCount < vadCount counts. The reverse (walking out with a count higher than the recorded count)
+    // naturally occurs during concurrent collection and kernel tree modification (new VADs attached but count not yet incremented).
+    // Counting this as inconsistent would cause stable false positives on busy processes. Only a deficit indicates "something was removed."
     if (view.vadCountKnown && view.vadCount != 0U && view.visitedCount < view.vadCount) {
-        return VadLinkIntegrity::Inconsistent;
+        return VadLinkIntegrity::kInconsistent;
     }
-    return VadLinkIntegrity::Consistent;
+    return VadLinkIntegrity::kConsistent;
 }
 
 bool KernelPteView::usableForAbsenceInference() const noexcept {
-    return KernelBackendSupportsAbsenceInference(state) && !truncated &&
-           failedTableReads == 0U && OutcomeIsSuccess(outcome);
+    return kernelBackendSupportsAbsenceInference(state) && !truncated &&
+           failedTableReads == 0U && outcomeIsSuccess(outcome);
 }
 
-const char* KernelRegionCrossIssueName(const KernelRegionCrossIssue issue) noexcept {
+const char* kernelRegionCrossIssueName(const KernelRegionCrossIssue issue) noexcept {
     switch (issue) {
-    case KernelRegionCrossIssue::VadOnlyRange: return "VadOnlyRange";
-    case KernelRegionCrossIssue::R3OnlyCommittedRange: return "R3OnlyCommittedRange";
-    case KernelRegionCrossIssue::ExecutableBeyondR3View: return "ExecutableBeyondR3View";
-    case KernelRegionCrossIssue::ExecutableBeyondVadView: return "ExecutableBeyondVadView";
+    case KernelRegionCrossIssue::kVadOnlyRange: return "VadOnlyRange";
+    case KernelRegionCrossIssue::kR3OnlyCommittedRange: return "R3OnlyCommittedRange";
+    case KernelRegionCrossIssue::kExecutableBeyondR3View: return "ExecutableBeyondR3View";
+    case KernelRegionCrossIssue::kExecutableBeyondVadView: return "ExecutableBeyondVadView";
     }
     return "VadOnlyRange";
 }
 
 namespace {
 
-// R3 索引里 [va, va+len) 是否被**已提交**区域完整覆盖。
-// 注意"覆盖"必须逐页确认：VirtualQueryEx 的区域边界和 VAD 边界不一定重合，
-// 只比对起点会把一段只覆盖了一半的范围判成已覆盖。
-bool R3CoversCommitted(const AddressSpaceIndex& index,
+// Whether the range [va, va+len) in the R3 index is fully covered by **committed** regions.
+// Note that "coverage" must be confirmed page-by-page: the boundaries of a VirtualQueryEx region and VAD boundaries do not
+// necessarily align. Comparing only the start point would incorrectly classify a range that is only half-covered as fully covered.
+bool r3CoversCommitted(const AddressSpaceIndex& index,
                        const std::uint64_t begin,
                        const std::uint64_t end) {
     constexpr std::uint64_t kPage = 4096ULL;
@@ -1367,36 +1367,36 @@ bool R3CoversCommitted(const AddressSpaceIndex& index,
         return false;
     }
     for (std::uint64_t probe = begin; probe < end; probe += kPage) {
-        const std::size_t entryIndex = index.findEntry(probe);
-        if (entryIndex == AddressSpaceIndex::kNoEntry) {
+        const std::size_t kEntryIndex = index.findEntry(probe);
+        if (kEntryIndex == AddressSpaceIndex::kNoEntry) {
             return false;
         }
-        if (index.entries[entryIndex].state != RegionState::Commit) {
+        if (index.entries[kEntryIndex].state != RegionState::kCommit) {
             return false;
         }
-        // 一次跳到这条区域的末尾，避免对一段 64 MiB 的映射逐页问。
-        const RegionRecord& record = index.entries[entryIndex];
-        const std::uint64_t regionEnd = record.base.value + record.size.value;
-        if (regionEnd > probe) {
-            probe = (regionEnd - kPage) & ~(kPage - 1ULL);
+        // Jump directly to the end of this region to avoid querying page-by-page for a 64 MiB mapping.
+        const RegionRecord& record = index.entries[kEntryIndex];
+        const std::uint64_t kRegionEnd = record.base.value + record.size.value;
+        if (kRegionEnd > probe) {
+            probe = (kRegionEnd - kPage) & ~(kPage - 1ULL);
         }
     }
     return true;
 }
 
-bool R3RangeIsExecutable(const AddressSpaceIndex& index, const std::uint64_t va) {
-    const std::size_t entryIndex = index.findEntry(va);
-    if (entryIndex == AddressSpaceIndex::kNoEntry ||
-        entryIndex >= index.codeClasses.size()) {
+bool r3RangeIsExecutable(const AddressSpaceIndex& index, const std::uint64_t va) {
+    const std::size_t kEntryIndex = index.findEntry(va);
+    if (kEntryIndex == AddressSpaceIndex::kNoEntry ||
+        kEntryIndex >= index.codeClasses.size()) {
         return false;
     }
-    const RegionCodeClass codeClass = index.codeClasses[entryIndex];
-    return codeClass == RegionCodeClass::ImageExecutable ||
-           codeClass == RegionCodeClass::PrivateExecutable ||
-           codeClass == RegionCodeClass::MappedExecutable;
+    const RegionCodeClass kCodeClass = index.codeClasses[kEntryIndex];
+    return kCodeClass == RegionCodeClass::kImageExecutable ||
+           kCodeClass == RegionCodeClass::kPrivateExecutable ||
+           kCodeClass == RegionCodeClass::kMappedExecutable;
 }
 
-bool VadCovers(const KernelVadView& view, const std::uint64_t va) {
+bool vadCovers(const KernelVadView& view, const std::uint64_t va) {
     for (const KernelVadRegion& region : view.regions) {
         if (!region.startVa.present || !region.endVaExclusive.present) {
             continue;
@@ -1410,25 +1410,25 @@ bool VadCovers(const KernelVadView& view, const std::uint64_t va) {
 
 } // namespace
 
-KernelCrossViewReport EvaluateKernelCrossView(const KernelCrossViewInput& input) {
+KernelCrossViewReport evaluateKernelCrossView(const KernelCrossViewInput& input) {
     KernelCrossViewReport report;
 
-    const bool vadRequested = input.vadView.state != KernelBackendState::NotRequested;
-    const bool pteRequested = input.pteView.state != KernelBackendState::NotRequested;
-    if (!vadRequested && !pteRequested) {
-        // 根本没打算用内核后端：静默跳过。"没打算用"不是"想用没用上"，
-        // 不该产生缺口，否则没装驱动的机器每次扫描都背一条假缺口。
-        report.conclusion = AnalysisConclusion::NoEvidence;
+    const bool kVadRequested = input.vadView.state != KernelBackendState::kNotRequested;
+    const bool kPteRequested = input.pteView.state != KernelBackendState::kNotRequested;
+    if (!kVadRequested && !kPteRequested) {
+        // There is no intention to use the kernel backend: skip silently. "No intention to use" is not "intended but unavailable";
+        // a gap should not be generated, otherwise, machines without the driver installed would report a false gap on every scan.
+        report.conclusion = AnalysisConclusion::kNoEvidence;
         return report;
     }
 
-    // 只要用了内核视图，这一条恒挂。
-    AddUnique(report.capabilityLimitKeys, kLimitKernelTrustAssumption);
-    AddUnique(report.capabilityLimitKeys, kLimitKernelSectionCompare);
+    // If the kernel view is used, this assertion always holds.
+    addUnique(report.capabilityLimitKeys, kLimitKernelTrustAssumption);
+    addUnique(report.capabilityLimitKeys, kLimitKernelSectionCompare);
 
-    // 断链检查在这里定，因为这里是内核侧判据的入口。它只看树自身，和下面的
-    // R3/VAD/页表交叉完全独立 —— 交叉视图全对得上时树照样可能被摘过链。
-    report.linkIntegrity = EvaluateVadLinkIntegrity(input.vadView);
+    // The broken-link check is defined here, as this is the entry point for kernel-side criteria. It examines only the tree itself, completely
+    // independent of the R3/VAD/page-table cross-check below; even if the cross-view matches perfectly, the tree may still have been unlinked.
+    report.linkIntegrity = evaluateVadLinkIntegrity(input.vadView);
     report.linkVisitedCount = input.vadView.visitedCount;
     report.linkVadCount = input.vadView.vadCount;
     report.linkParentMismatchNodes = input.vadView.parentMismatchNodes;
@@ -1438,286 +1438,286 @@ KernelCrossViewReport EvaluateKernelCrossView(const KernelCrossViewInput& input)
     report.linkVadHintAddress = input.vadView.vadHintAddress;
 
     if (input.r3Index == nullptr) {
-        AddUnique(report.coverageGapKeys, kGapAddressSpaceIncomplete);
-        report.conclusion = AnalysisConclusion::NoEvidence;
+        addUnique(report.coverageGapKeys, kGapAddressSpaceIncomplete);
+        report.conclusion = AnalysisConclusion::kNoEvidence;
         return report;
     }
     const AddressSpaceIndex& r3 = *input.r3Index;
 
-    if (vadRequested) {
+    if (kVadRequested) {
         switch (input.vadView.state) {
-        case KernelBackendState::DriverUnavailable:
-            AddUnique(report.coverageGapKeys, kGapKernelBackendUnavailable);
+        case KernelBackendState::kDriverUnavailable:
+            addUnique(report.coverageGapKeys, kGapKernelBackendUnavailable);
             break;
-        case KernelBackendState::ProfileUnverified:
-            // 偏移没为当前 build 验证过 —— 一条 finding 都不产。
-            AddUnique(report.coverageGapKeys, kGapKernelProfileUnverified);
+        case KernelBackendState::kProfileUnverified:
+            // Offset not verified for the current build — no findings are generated.
+            addUnique(report.coverageGapKeys, kGapKernelProfileUnverified);
             break;
-        case KernelBackendState::Partial:
-            AddUnique(report.coverageGapKeys, kGapKernelBackendUnavailable);
+        case KernelBackendState::kPartial:
+            addUnique(report.coverageGapKeys, kGapKernelBackendUnavailable);
             break;
-        case KernelBackendState::Available:
-        case KernelBackendState::NotRequested:
+        case KernelBackendState::kAvailable:
+        case KernelBackendState::kNotRequested:
             break;
         }
-        // VAD 的保护位布局没验证过，所以只比范围、不比保护。
-        AddUnique(report.capabilityLimitKeys, kLimitKernelVadFlagsUnverified);
+        // VAD protection bit layout is unverified, so compare ranges only, not protections.
+        addUnique(report.capabilityLimitKeys, kLimitKernelVadFlagsUnverified);
     }
-    if (pteRequested) {
+    if (kPteRequested) {
         switch (input.pteView.state) {
-        case KernelBackendState::DriverUnavailable:
-        case KernelBackendState::ProfileUnverified:
-        case KernelBackendState::Partial:
-            AddUnique(report.coverageGapKeys, kGapKernelBackendUnavailable);
+        case KernelBackendState::kDriverUnavailable:
+        case KernelBackendState::kProfileUnverified:
+        case KernelBackendState::kPartial:
+            addUnique(report.coverageGapKeys, kGapKernelBackendUnavailable);
             break;
-        case KernelBackendState::Available:
-        case KernelBackendState::NotRequested:
+        case KernelBackendState::kAvailable:
+        case KernelBackendState::kNotRequested:
             break;
         }
     }
 
-    const bool vadUsable = input.vadView.usableForAbsenceInference();
-    const bool r3Usable = r3.usableForAbsenceInference();
-    report.absenceInferenceAllowed = vadUsable && r3Usable;
+    const bool kVadUsable = input.vadView.usableForAbsenceInference();
+    const bool kR3Usable = r3.usableForAbsenceInference();
+    report.absenceInferenceAllowed = kVadUsable && kR3Usable;
 
-    // --- VAD ↔ R3 范围交叉 ---
+    // --- VAD ↔ R3 range intersection.
     if (report.absenceInferenceAllowed) {
         for (const KernelVadRegion& region : input.vadView.regions) {
             if (!region.startVa.present || !region.endVaExclusive.present ||
                 region.endVaExclusive.value <= region.startVa.value) {
                 continue;
             }
-            if (R3CoversCommitted(r3, region.startVa.value, region.endVaExclusive.value)) {
+            if (r3CoversCommitted(r3, region.startVa.value, region.endVaExclusive.value)) {
                 continue;
             }
-            // VAD 说这里有一段区域，R3 的 VirtualQueryEx 没报（或报成未提交）。
+            // VAD reports a region here, but R3's VirtualQueryEx does not report it (or reports it as uncommitted).
             ++report.vadOnlyCount;
             KernelRegionCrossFinding finding;
-            finding.issue = KernelRegionCrossIssue::VadOnlyRange;
+            finding.issue = KernelRegionCrossIssue::kVadOnlyRange;
             finding.startVa = region.startVa;
             finding.endVaExclusive = region.endVaExclusive;
             finding.inputOutcome = input.vadView.outcome;
-            AddFact(finding.facts, "kernel.vad.start", HexText(region.startVa.value));
-            AddFact(finding.facts, "kernel.vad.end", HexText(region.endVaExclusive.value));
-            AddFact(finding.facts, "kernel.vad.private", region.privateMemory ? "true" : "false");
-            AddFact(finding.facts, "kernel.vad.has-section", region.hasSection ? "true" : "false");
+            addFact(finding.facts, "kernel.vad.start", hexText(region.startVa.value));
+            addFact(finding.facts, "kernel.vad.end", hexText(region.endVaExclusive.value));
+            addFact(finding.facts, "kernel.vad.private", region.privateMemory ? "true" : "false");
+            addFact(finding.facts, "kernel.vad.has-section", region.hasSection ? "true" : "false");
             if (region.vadNodeAddress.present) {
-                AddFact(finding.facts, "kernel.vad.node", HexText(region.vadNodeAddress.value));
+                addFact(finding.facts, "kernel.vad.node", hexText(region.vadNodeAddress.value));
             }
             report.findings.push_back(std::move(finding));
         }
 
         for (std::size_t i = 0; i < r3.searchableCount && i < r3.entries.size(); ++i) {
             const RegionRecord& record = r3.entries[i];
-            if (record.state != RegionState::Commit) {
+            if (record.state != RegionState::kCommit) {
                 continue;
             }
-            if (VadCovers(input.vadView, record.base.value)) {
+            if (vadCovers(input.vadView, record.base.value)) {
                 continue;
             }
             ++report.r3OnlyCount;
             KernelRegionCrossFinding finding;
-            finding.issue = KernelRegionCrossIssue::R3OnlyCommittedRange;
+            finding.issue = KernelRegionCrossIssue::kR3OnlyCommittedRange;
             finding.startVa = record.base;
             finding.endVaExclusive =
                 OptionalU64::of(record.base.value + record.size.value);
             finding.inputOutcome = r3.outcome;
-            AddFact(finding.facts, "r3.region.start", HexText(record.base.value));
-            AddFact(finding.facts, "r3.region.type", RegionTypeName(record.type));
+            addFact(finding.facts, "r3.region.start", hexText(record.base.value));
+            addFact(finding.facts, "r3.region.type", regionTypeName(record.type));
             report.findings.push_back(std::move(finding));
         }
     }
 
-    // --- 页表 ↔ R3/VAD ---
-    // 这一侧不需要"缺项推断"资格：页表**报出来**的可执行页是正面观测，
-    // 与另一侧说"这里不可执行"直接冲突，不依赖任何一方枚举完整。
-    if (pteRequested && StatusCarriesObservation(input.pteView.outcome.status)) {
+    // --- Page Table ↔ R3/VAD --- This side does not require "missing page inference" qualification: executable
+    // pages reported by the page table are positive observations. A direct conflict with the other side
+    // claiming "this region is not executable" does not depend on either side having a complete enumeration.
+    if (kPteRequested && statusCarriesObservation(input.pteView.outcome.status)) {
         for (const KernelExecutableExtent& extent : input.pteView.extents) {
             if (!extent.executable || !extent.startVa.present) {
                 continue;
             }
-            const std::uint64_t va = extent.startVa.value;
-            const bool r3Exec = R3RangeIsExecutable(r3, va);
-            const bool vadHas = vadRequested && VadCovers(input.vadView, va);
+            const std::uint64_t kVa = extent.startVa.value;
+            const bool kR3Exec = r3RangeIsExecutable(r3, kVa);
+            const bool kVadHas = kVadRequested && vadCovers(input.vadView, kVa);
 
-            if (!r3Exec) {
+            if (!kR3Exec) {
                 ++report.executableBeyondViewCount;
                 KernelRegionCrossFinding finding;
-                finding.issue = KernelRegionCrossIssue::ExecutableBeyondR3View;
+                finding.issue = KernelRegionCrossIssue::kExecutableBeyondR3View;
                 finding.startVa = extent.startVa;
                 finding.endVaExclusive = extent.byteLength.present
-                    ? OptionalU64::of(va + extent.byteLength.value)
+                    ? OptionalU64::of(kVa + extent.byteLength.value)
                     : OptionalU64::unset();
                 finding.inputOutcome = input.pteView.outcome;
-                AddFact(finding.facts, "pte.va", HexText(va));
-                AddFact(finding.facts, "pte.page-size", DecText(extent.pageSize));
-                AddFact(finding.facts, "pte.writable", extent.writable ? "true" : "false");
-                AddFact(finding.facts, "pte.user", extent.userAccessible ? "true" : "false");
+                addFact(finding.facts, "pte.va", hexText(kVa));
+                addFact(finding.facts, "pte.page-size", decText(extent.pageSize));
+                addFact(finding.facts, "pte.writable", extent.writable ? "true" : "false");
+                addFact(finding.facts, "pte.user", extent.userAccessible ? "true" : "false");
                 if (extent.firstEntryValue.present) {
-                    AddFact(finding.facts, "pte.value", HexText(extent.firstEntryValue.value));
+                    addFact(finding.facts, "pte.value", hexText(extent.firstEntryValue.value));
                 }
                 report.findings.push_back(std::move(finding));
-            } else if (vadRequested && input.vadView.state == KernelBackendState::Available &&
-                       !vadHas) {
+            } else if (kVadRequested && input.vadView.state == KernelBackendState::kAvailable &&
+                       !kVadHas) {
                 ++report.executableBeyondViewCount;
                 KernelRegionCrossFinding finding;
-                finding.issue = KernelRegionCrossIssue::ExecutableBeyondVadView;
+                finding.issue = KernelRegionCrossIssue::kExecutableBeyondVadView;
                 finding.startVa = extent.startVa;
                 finding.inputOutcome = input.pteView.outcome;
-                AddFact(finding.facts, "pte.va", HexText(va));
+                addFact(finding.facts, "pte.va", hexText(kVa));
                 report.findings.push_back(std::move(finding));
             }
         }
     }
 
     /*
-     * 结论只到 Indeterminate。理由写在这里而不是注释成"以后再说"：
-     * 内核交叉差异的**合法成因目录**（写时复制、prototype PTE、共享映射的
-     * 延迟建表、会话空间等）还没有在实机数据上建立过。没量过就给确定性，
-     * 正是 issue 第六节点名要避免的事。等有了实机基线再考虑升档。
+     * The conclusion only reaches Indeterminate. The rationale is documented here rather than left as a 'to be discussed later' comment:
+     * The legitimate causes for kernel cross-differences (copy-on-write, prototype PTEs, deferred table creation for shared
+     * mappings, session spaces, etc.) have not yet been established on real hardware data. Assigning certainty without measurement
+     * is exactly what Issue Node 6 aims to avoid. Reconsider upgrading only after establishing a real hardware baseline.
      */
     if (!report.findings.empty()) {
-        AddUnique(report.capabilityLimitKeys, kLimitKernelBenignBaseline);
+        addUnique(report.capabilityLimitKeys, kLimitKernelBenignBaseline);
     }
-    const bool anyObservation =
-        (vadRequested && StatusCarriesObservation(input.vadView.outcome.status)) ||
-        (pteRequested && StatusCarriesObservation(input.pteView.outcome.status));
-    if (!anyObservation) {
-        report.conclusion = AnalysisConclusion::NoEvidence;
+    const bool kAnyObservation =
+        (kVadRequested && statusCarriesObservation(input.vadView.outcome.status)) ||
+        (kPteRequested && statusCarriesObservation(input.pteView.outcome.status));
+    if (!kAnyObservation) {
+        report.conclusion = AnalysisConclusion::kNoEvidence;
     } else if (!report.findings.empty()) {
-        report.conclusion = AnalysisConclusion::Indeterminate;
+        report.conclusion = AnalysisConclusion::kIndeterminate;
     } else if (report.absenceInferenceAllowed && report.coverageGapKeys.empty()) {
-        report.conclusion = AnalysisConclusion::NoDifferenceObserved;
+        report.conclusion = AnalysisConclusion::kNoDifferenceObserved;
     } else {
-        report.conclusion = AnalysisConclusion::Indeterminate;
+        report.conclusion = AnalysisConclusion::kIndeterminate;
     }
     return report;
 }
 
 // ---------------------------------------------------------------------------
-// 例外
+// Exception
 // ---------------------------------------------------------------------------
 
-const char* ExceptionCategoryName(const ExceptionCategory category) noexcept {
+const char* exceptionCategoryName(const ExceptionCategory category) noexcept {
     switch (category) {
-    case ExceptionCategory::Unspecified: return "Unspecified";
-    case ExceptionCategory::RuntimeDynamicCode: return "RuntimeDynamicCode";
-    case ExceptionCategory::SecurityInstrumentation: return "SecurityInstrumentation";
-    case ExceptionCategory::SoftwareProtection: return "SoftwareProtection";
-    case ExceptionCategory::SystemCompatibility: return "SystemCompatibility";
+    case ExceptionCategory::kUnspecified: return "Unspecified";
+    case ExceptionCategory::kRuntimeDynamicCode: return "RuntimeDynamicCode";
+    case ExceptionCategory::kSecurityInstrumentation: return "SecurityInstrumentation";
+    case ExceptionCategory::kSoftwareProtection: return "SoftwareProtection";
+    case ExceptionCategory::kSystemCompatibility: return "SystemCompatibility";
     }
     return "Unspecified";
 }
 
-const char* ExceptionAdmissionName(const ExceptionAdmission admission) noexcept {
+const char* exceptionAdmissionName(const ExceptionAdmission admission) noexcept {
     switch (admission) {
-    case ExceptionAdmission::Accepted: return "Accepted";
-    case ExceptionAdmission::MissingRuleId: return "MissingRuleId";
-    case ExceptionAdmission::MissingCategory: return "MissingCategory";
-    case ExceptionAdmission::MissingTargetImageIdentity: return "MissingTargetImageIdentity";
-    case ExceptionAdmission::MissingModuleIdentity: return "MissingModuleIdentity";
-    case ExceptionAdmission::EmptyRange: return "EmptyRange";
-    case ExceptionAdmission::RangeTooWide: return "RangeTooWide";
+    case ExceptionAdmission::kAccepted: return "Accepted";
+    case ExceptionAdmission::kMissingRuleId: return "MissingRuleId";
+    case ExceptionAdmission::kMissingCategory: return "MissingCategory";
+    case ExceptionAdmission::kMissingTargetImageIdentity: return "MissingTargetImageIdentity";
+    case ExceptionAdmission::kMissingModuleIdentity: return "MissingModuleIdentity";
+    case ExceptionAdmission::kEmptyRange: return "EmptyRange";
+    case ExceptionAdmission::kRangeTooWide: return "RangeTooWide";
     }
     return "MissingRuleId";
 }
 
-ExceptionAdmission AdmitExceptionRelation(const ExceptionRelation& rule) noexcept {
+ExceptionAdmission admitExceptionRelation(const ExceptionRelation& rule) noexcept {
     if (rule.ruleId.empty()) {
-        return ExceptionAdmission::MissingRuleId;
+        return ExceptionAdmission::kMissingRuleId;
     }
-    if (rule.category == ExceptionCategory::Unspecified) {
-        return ExceptionAdmission::MissingCategory;
+    if (rule.category == ExceptionCategory::kUnspecified) {
+        return ExceptionAdmission::kMissingCategory;
     }
     if (rule.targetImageIdentity.empty()) {
-        return ExceptionAdmission::MissingTargetImageIdentity;
+        return ExceptionAdmission::kMissingTargetImageIdentity;
     }
     if (rule.modifiedModuleIdentity.empty()) {
-        return ExceptionAdmission::MissingModuleIdentity;
+        return ExceptionAdmission::kMissingModuleIdentity;
     }
     if (rule.modifiedRange.empty()) {
-        return ExceptionAdmission::EmptyRange;
+        return ExceptionAdmission::kEmptyRange;
     }
     if (rule.modifiedRange.length > kExplanationRuleMaxSpanBytes) {
-        // 一条覆盖整模块的"豁免"等于给整份模块永久放行。
-        return ExceptionAdmission::RangeTooWide;
+        // A module-wide "exemption" is equivalent to permanently allowing the entire module.
+        return ExceptionAdmission::kRangeTooWide;
     }
-    return ExceptionAdmission::Accepted;
+    return ExceptionAdmission::kAccepted;
 }
 
-const char* ExceptionMatchName(const ExceptionMatch match) noexcept {
+const char* exceptionMatchName(const ExceptionMatch match) noexcept {
     switch (match) {
-    case ExceptionMatch::NoRule: return "NoRule";
-    case ExceptionMatch::AllRulesRejected: return "AllRulesRejected";
-    case ExceptionMatch::TargetImageMismatch: return "TargetImageMismatch";
-    case ExceptionMatch::ModuleMismatch: return "ModuleMismatch";
-    case ExceptionMatch::RangeNotCovered: return "RangeNotCovered";
-    case ExceptionMatch::BranchTargetMismatch: return "BranchTargetMismatch";
-    case ExceptionMatch::BytesUnavailable: return "BytesUnavailable";
-    case ExceptionMatch::BytesMismatch: return "BytesMismatch";
-    case ExceptionMatch::Matched: return "Matched";
+    case ExceptionMatch::kNoRule: return "NoRule";
+    case ExceptionMatch::kAllRulesRejected: return "AllRulesRejected";
+    case ExceptionMatch::kTargetImageMismatch: return "TargetImageMismatch";
+    case ExceptionMatch::kModuleMismatch: return "ModuleMismatch";
+    case ExceptionMatch::kRangeNotCovered: return "RangeNotCovered";
+    case ExceptionMatch::kBranchTargetMismatch: return "BranchTargetMismatch";
+    case ExceptionMatch::kBytesUnavailable: return "BytesUnavailable";
+    case ExceptionMatch::kBytesMismatch: return "BytesMismatch";
+    case ExceptionMatch::kMatched: return "Matched";
     }
     return "NoRule";
 }
 
-std::string ModuleIdentityKeyFor(const DriverInstanceId& module) {
-    const std::string key = module.crossSessionKey();
-    return key.empty() ? NormalizePath(module.imagePath) : key;
+std::string moduleIdentityKeyFor(const DriverInstanceId& module) {
+    const std::string kKey = module.crossSessionKey();
+    return kKey.empty() ? normalizePath(module.imagePath) : kKey;
 }
 
-ExceptionMatchResult MatchExceptionRelation(const std::vector<ExceptionRelation>& rules,
+ExceptionMatchResult matchExceptionRelation(const std::vector<ExceptionRelation>& rules,
                                             const ExceptionQuery& query) {
     ExceptionMatchResult result;
     if (rules.empty()) {
-        result.match = ExceptionMatch::NoRule;
+        result.match = ExceptionMatch::kNoRule;
         return result;
     }
 
-    // 失败原因按"走到多远"排序，报最靠后的那一条，便于定位规则写错在哪。
+    // Sort failure reasons by 'how far we got' and report the furthest one to help locate the incorrect rule.
     auto rank = [](const ExceptionMatch match) -> int {
         switch (match) {
-        case ExceptionMatch::AllRulesRejected: return 0;
-        case ExceptionMatch::TargetImageMismatch: return 1;
-        case ExceptionMatch::ModuleMismatch: return 2;
-        case ExceptionMatch::RangeNotCovered: return 3;
-        case ExceptionMatch::BranchTargetMismatch: return 4;
-        case ExceptionMatch::BytesUnavailable: return 5;
-        case ExceptionMatch::BytesMismatch: return 6;
-        case ExceptionMatch::Matched: return 7;
-        case ExceptionMatch::NoRule: return -1;
+        case ExceptionMatch::kAllRulesRejected: return 0;
+        case ExceptionMatch::kTargetImageMismatch: return 1;
+        case ExceptionMatch::kModuleMismatch: return 2;
+        case ExceptionMatch::kRangeNotCovered: return 3;
+        case ExceptionMatch::kBranchTargetMismatch: return 4;
+        case ExceptionMatch::kBytesUnavailable: return 5;
+        case ExceptionMatch::kBytesMismatch: return 6;
+        case ExceptionMatch::kMatched: return 7;
+        case ExceptionMatch::kNoRule: return -1;
         }
         return -1;
     };
 
-    ExceptionMatch best = ExceptionMatch::AllRulesRejected;
+    ExceptionMatch best = ExceptionMatch::kAllRulesRejected;
     std::string bestRuleId;
     std::uint32_t bestRuleVersion = 0;
-    ExceptionCategory bestCategory = ExceptionCategory::Unspecified;
+    ExceptionCategory bestCategory = ExceptionCategory::kUnspecified;
 
     for (const ExceptionRelation& rule : rules) {
-        if (AdmitExceptionRelation(rule) != ExceptionAdmission::Accepted) {
+        if (admitExceptionRelation(rule) != ExceptionAdmission::kAccepted) {
             ++result.rejectedRuleCount;
             continue;
         }
 
-        ExceptionMatch outcome = ExceptionMatch::Matched;
+        ExceptionMatch outcome = ExceptionMatch::kMatched;
         if (rule.targetImageIdentity != query.targetImageIdentity) {
-            outcome = ExceptionMatch::TargetImageMismatch;
+            outcome = ExceptionMatch::kTargetImageMismatch;
         } else if (rule.modifiedModuleIdentity != query.modifiedModuleIdentity) {
-            outcome = ExceptionMatch::ModuleMismatch;
+            outcome = ExceptionMatch::kModuleMismatch;
         } else if (!rule.modifiedRange.containsRange(query.range)) {
-            // 部分覆盖不算命中：否则一条覆盖一个字节的规则能解释掉整段改写。
-            outcome = ExceptionMatch::RangeNotCovered;
+            // Partial coverage does not count as a hit: otherwise, a rule covering a single byte could explain an entire rewrite.
+            outcome = ExceptionMatch::kRangeNotCovered;
         } else if (!rule.allowedBranchTargetModuleIdentity.empty() &&
                    rule.allowedBranchTargetModuleIdentity !=
                        query.actualBranchTargetModuleIdentity) {
-            outcome = ExceptionMatch::BranchTargetMismatch;
+            outcome = ExceptionMatch::kBranchTargetMismatch;
         } else if (!rule.expectedBytes.empty()) {
             if (!query.bytesAvailable) {
-                // 规则要求字节检查却读不到字节 —— 不命中。白名单必须 fail-closed。
-                outcome = ExceptionMatch::BytesUnavailable;
+                // Rule requires byte verification but bytes are unavailable — no match. Whitelists must be fail-closed.
+                outcome = ExceptionMatch::kBytesUnavailable;
             } else if (rule.expectedBytes != query.actualBytes) {
-                outcome = ExceptionMatch::BytesMismatch;
+                outcome = ExceptionMatch::kBytesMismatch;
             }
         }
 
@@ -1727,7 +1727,7 @@ ExceptionMatchResult MatchExceptionRelation(const std::vector<ExceptionRelation>
             bestRuleVersion = rule.ruleVersion;
             bestCategory = rule.category;
         }
-        if (outcome == ExceptionMatch::Matched) {
+        if (outcome == ExceptionMatch::kMatched) {
             break;
         }
     }
@@ -1740,7 +1740,7 @@ ExceptionMatchResult MatchExceptionRelation(const std::vector<ExceptionRelation>
 }
 
 // ---------------------------------------------------------------------------
-// 规则 id / 缺口键 / 检查项键
+// Rule ID / gap key / check item key
 // ---------------------------------------------------------------------------
 
 const char* const kRuleIdDynamicCodeRegion = "inject.region.dynamic-code";
@@ -1799,109 +1799,109 @@ const char* const kCheckKernelVadCrossView = "inject.check.kernel-vad";
 const char* const kCheckVadLinkIntegrity = "inject.check.vad-link";
 const char* const kCheckKernelPteScan = "inject.check.kernel-pte";
 
-const char* EvidenceConfidenceName(const EvidenceConfidence confidence) noexcept {
+const char* evidenceConfidenceName(const EvidenceConfidence confidence) noexcept {
     switch (confidence) {
-    case EvidenceConfidence::InputIncomplete: return "InputIncomplete";
-    case EvidenceConfidence::SingleObservation: return "SingleObservation";
-    case EvidenceConfidence::CorroboratedIndependent: return "CorroboratedIndependent";
+    case EvidenceConfidence::kInputIncomplete: return "InputIncomplete";
+    case EvidenceConfidence::kSingleObservation: return "SingleObservation";
+    case EvidenceConfidence::kCorroboratedIndependent: return "CorroboratedIndependent";
     }
     return "InputIncomplete";
 }
 
 bool InjectionFinding::explainedByException() const noexcept {
-    return exception.match == ExceptionMatch::Matched;
+    return exception.match == ExceptionMatch::kMatched;
 }
 
 // ---------------------------------------------------------------------------
-// 观测语义表
+// Observation semantics table
 // ---------------------------------------------------------------------------
 
-const char* ObservationClassName(const ObservationClass observation) noexcept {
+const char* observationClassName(const ObservationClass observation) noexcept {
     switch (observation) {
-    case ObservationClass::PrivateOrMappedExecutablePresent:
+    case ObservationClass::kPrivateOrMappedExecutablePresent:
         return "PrivateOrMappedExecutablePresent";
-    case ObservationClass::NormalizedImageDiffers: return "NormalizedImageDiffers";
-    case ObservationClass::PayloadStructureWithReliableFrame:
+    case ObservationClass::kNormalizedImageDiffers: return "NormalizedImageDiffers";
+    case ObservationClass::kPayloadStructureWithReliableFrame:
         return "PayloadStructureWithReliableFrame";
-    case ObservationClass::MappedModuleOutsideBaseline: return "MappedModuleOutsideBaseline";
-    case ObservationClass::VadTreeLinkageInconsistent: return "VadTreeLinkageInconsistent";
-    case ObservationClass::ScanCompleteNoStrongEvidence: return "ScanCompleteNoStrongEvidence";
-    case ObservationClass::KeyInputUnavailable: return "KeyInputUnavailable";
+    case ObservationClass::kMappedModuleOutsideBaseline: return "MappedModuleOutsideBaseline";
+    case ObservationClass::kVadTreeLinkageInconsistent: return "VadTreeLinkageInconsistent";
+    case ObservationClass::kScanCompleteNoStrongEvidence: return "ScanCompleteNoStrongEvidence";
+    case ObservationClass::kKeyInputUnavailable: return "KeyInputUnavailable";
     }
     return "KeyInputUnavailable";
 }
 
-ObservationSemantics SemanticsFor(const ObservationClass observation) noexcept {
+ObservationSemantics semanticsFor(const ObservationClass observation) noexcept {
     ObservationSemantics semantics;
     semantics.observation = observation;
     switch (observation) {
-    case ObservationClass::PrivateOrMappedExecutablePresent:
+    case ObservationClass::kPrivateOrMappedExecutablePresent:
         semantics.allowedConclusionKey = "inject.semantics.dynamic-code.allowed";
         semantics.forbiddenConclusionKey = "inject.semantics.dynamic-code.forbidden";
-        semantics.contribution = AnalysisConclusion::Indeterminate;
+        semantics.contribution = AnalysisConclusion::kIndeterminate;
         break;
-    case ObservationClass::NormalizedImageDiffers:
+    case ObservationClass::kNormalizedImageDiffers:
         semantics.allowedConclusionKey = "inject.semantics.image-diff.allowed";
         semantics.forbiddenConclusionKey = "inject.semantics.image-diff.forbidden";
-        semantics.contribution = AnalysisConclusion::DifferenceObserved;
+        semantics.contribution = AnalysisConclusion::kDifferenceObserved;
         break;
-    case ObservationClass::PayloadStructureWithReliableFrame:
+    case ObservationClass::kPayloadStructureWithReliableFrame:
         semantics.allowedConclusionKey = "inject.semantics.payload-frame.allowed";
         semantics.forbiddenConclusionKey = "inject.semantics.payload-frame.forbidden";
-        semantics.contribution = AnalysisConclusion::DifferenceObserved;
+        semantics.contribution = AnalysisConclusion::kDifferenceObserved;
         break;
-    case ObservationClass::MappedModuleOutsideBaseline:
+    case ObservationClass::kMappedModuleOutsideBaseline:
         semantics.allowedConclusionKey = "inject.semantics.module-baseline.allowed";
         semantics.forbiddenConclusionKey = "inject.semantics.module-baseline.forbidden";
-        semantics.contribution = AnalysisConclusion::Indeterminate;
+        semantics.contribution = AnalysisConclusion::kIndeterminate;
         break;
-    case ObservationClass::VadTreeLinkageInconsistent:
+    case ObservationClass::kVadTreeLinkageInconsistent:
         semantics.allowedConclusionKey = "inject.semantics.vad-link.allowed";
         semantics.forbiddenConclusionKey = "inject.semantics.vad-link.forbidden";
-        // 只到待解释。摘链没有已知的良性成因，但**这一维的误报率还没在实机上量过**，
-        // 而且遍历与内核改树是并发的。先按 Indeterminate 出货、量完再考虑升档，
-        // 和 kLimitKernelBenignBaseline 是同一个理由。
-        semantics.contribution = AnalysisConclusion::Indeterminate;
+        // Stops at "needs explanation." Chain removal has no known benign causes, but **the false positive rate for this
+        // dimension has not yet been measured on real machines**, and traversal is concurrent with kernel tree modification. Ship
+        // as Indeterminate first, then consider upgrading after measurement, for the same reason as kLimitKernelBenignBaseline.
+        semantics.contribution = AnalysisConclusion::kIndeterminate;
         break;
-    case ObservationClass::ScanCompleteNoStrongEvidence:
+    case ObservationClass::kScanCompleteNoStrongEvidence:
         semantics.allowedConclusionKey = "inject.semantics.no-strong-evidence.allowed";
         semantics.forbiddenConclusionKey = "inject.semantics.no-strong-evidence.forbidden";
-        semantics.contribution = AnalysisConclusion::NoDifferenceObserved;
+        semantics.contribution = AnalysisConclusion::kNoDifferenceObserved;
         break;
-    case ObservationClass::KeyInputUnavailable:
+    case ObservationClass::kKeyInputUnavailable:
         semantics.allowedConclusionKey = "inject.semantics.input-unavailable.allowed";
         semantics.forbiddenConclusionKey = "inject.semantics.input-unavailable.forbidden";
-        semantics.contribution = AnalysisConclusion::Indeterminate;
+        semantics.contribution = AnalysisConclusion::kIndeterminate;
         break;
     }
     return semantics;
 }
 
 // ---------------------------------------------------------------------------
-// 身份复核
+// Identity recheck
 // ---------------------------------------------------------------------------
 
-const char* IdentityRecheckVerdictName(const IdentityRecheckVerdict verdict) noexcept {
+const char* identityRecheckVerdictName(const IdentityRecheckVerdict verdict) noexcept {
     switch (verdict) {
-    case IdentityRecheckVerdict::Same: return "Same";
-    case IdentityRecheckVerdict::Changed: return "Changed";
-    case IdentityRecheckVerdict::Unverifiable: return "Unverifiable";
+    case IdentityRecheckVerdict::kSame: return "Same";
+    case IdentityRecheckVerdict::kChanged: return "Changed";
+    case IdentityRecheckVerdict::kUnverifiable: return "Unverifiable";
     }
     return "Unverifiable";
 }
 
-IdentityRecheckVerdict RecheckProcessIdentity(const ProcessInstanceId& before,
+IdentityRecheckVerdict recheckProcessIdentity(const ProcessInstanceId& before,
                                               const ProcessInstanceId& after) noexcept {
-    switch (MatchProcessInstance(before, after)) {
-    case MatchResult::Confirmed: return IdentityRecheckVerdict::Same;
-    case MatchResult::NoMatch: return IdentityRecheckVerdict::Changed;
-    case MatchResult::Candidate: return IdentityRecheckVerdict::Unverifiable;
+    switch (matchProcessInstance(before, after)) {
+    case MatchResult::kConfirmed: return IdentityRecheckVerdict::kSame;
+    case MatchResult::kNoMatch: return IdentityRecheckVerdict::kChanged;
+    case MatchResult::kCandidate: return IdentityRecheckVerdict::kUnverifiable;
     }
-    return IdentityRecheckVerdict::Unverifiable;
+    return IdentityRecheckVerdict::kUnverifiable;
 }
 
 // ---------------------------------------------------------------------------
-// 总入口
+// Main entry point
 // ---------------------------------------------------------------------------
 
 bool SurveyReport::hasObservation(const ObservationClass observation) const noexcept {
@@ -1921,39 +1921,39 @@ bool SurveyReport::hasLimit(const std::string& limitKey) const noexcept {
 
 namespace {
 
-void AddObservation(SurveyReport& report, const ObservationClass observation) {
+void addObservation(SurveyReport& report, const ObservationClass observation) {
     if (!report.hasObservation(observation)) {
         report.observations.push_back(observation);
     }
 }
 
-InjectionFinding MakeFinding(const SurveyInput& input, const char* ruleId) {
+InjectionFinding makeFinding(const SurveyInput& input, const char* ruleId) {
     InjectionFinding finding;
     finding.ruleId = ruleId;
     finding.ruleVersion = kInjectionSurveyRuleSetVersion;
     finding.detectorVersion = input.detectorVersion;
     finding.payloadProcess = input.processBefore;
     finding.firstObservedUtc100ns = input.collectedUtc100ns;
-    // 注入源进程默认未知，而且本模块不提供任何把它升格的入口。
-    finding.injectorAttribution = OwnerAttribution::Unknown;
+    // The injector source process is unknown by default, and this module provides no entry point to elevate it.
+    finding.injectorAttribution = OwnerAttribution::kUnknown;
     return finding;
 }
 
 } // namespace
 
-SurveyReport RunInjectionSurvey(const SurveyInput& input) {
+SurveyReport runInjectionSurvey(const SurveyInput& input) {
     SurveyReport report;
     report.mode = input.mode;
     report.detectorVersion = input.detectorVersion;
     report.process = input.processBefore;
     report.firstObservedUtc100ns = input.collectedUtc100ns;
-    report.identity = RecheckProcessIdentity(input.processBefore, input.processAfter);
+    report.identity = recheckProcessIdentity(input.processBefore, input.processAfter);
 
-    // --- 身份复核。Changed 时整份证据作废：它可能属于另一个进程实例。 ---
-    if (report.identity == IdentityRecheckVerdict::Changed) {
-        AddUnique(report.coverageGapKeys, kGapIdentityChanged);
-        AddObservation(report, ObservationClass::KeyInputUnavailable);
-        report.conclusion = AnalysisConclusion::NoEvidence;
+    // --- Identity recheck. If Changed, discard the entire evidence: it may belong to another process instance. ---
+    if (report.identity == IdentityRecheckVerdict::kChanged) {
+        addUnique(report.coverageGapKeys, kGapIdentityChanged);
+        addObservation(report, ObservationClass::kKeyInputUnavailable);
+        report.conclusion = AnalysisConclusion::kNoEvidence;
         report.scopeIntact = false;
         report.coverageComplete = false;
         report.notPerformedCheckKeys = {
@@ -1962,37 +1962,37 @@ SurveyReport RunInjectionSurvey(const SurveyInput& input) {
         };
         return report;
     }
-    if (report.identity == IdentityRecheckVerdict::Unverifiable) {
-        AddUnique(report.coverageGapKeys, kGapIdentityUnverifiable);
+    if (report.identity == IdentityRecheckVerdict::kUnverifiable) {
+        addUnique(report.coverageGapKeys, kGapIdentityUnverifiable);
     }
 
-    const ModuleEnumerationTrust trust =
-        EvaluateModuleEnumerationTrust(input.collectorArchitecture, input.targetArchitecture);
-    if (trust == ModuleEnumerationTrust::FilterIgnoredUnderWow64) {
-        AddUnique(report.coverageGapKeys, kGapModuleEnumerationWow64);
+    const ModuleEnumerationTrust kTrust =
+        evaluateModuleEnumerationTrust(input.collectorArchitecture, input.targetArchitecture);
+    if (kTrust == ModuleEnumerationTrust::kFilterIgnoredUnderWow64) {
+        addUnique(report.coverageGapKeys, kGapModuleEnumerationWow64);
     }
 
-    // --- 地址空间索引 ---
-    const bool addressSpaceUsable = StatusCarriesObservation(input.addressSpace.outcome.status);
-    if (addressSpaceUsable) {
-        AddUnique(report.completedCheckKeys, kCheckAddressSpaceIndex);
+    // --- Address space index ---
+    const bool kAddressSpaceUsable = statusCarriesObservation(input.addressSpace.outcome.status);
+    if (kAddressSpaceUsable) {
+        addUnique(report.completedCheckKeys, kCheckAddressSpaceIndex);
     } else {
-        AddUnique(report.notPerformedCheckKeys, kCheckAddressSpaceIndex);
+        addUnique(report.notPerformedCheckKeys, kCheckAddressSpaceIndex);
     }
     if (!input.addressSpace.usableForAbsenceInference()) {
-        AddUnique(report.coverageGapKeys, kGapAddressSpaceIncomplete);
+        addUnique(report.coverageGapKeys, kGapAddressSpaceIncomplete);
     }
 
-    // 同一块内存不要出两行。"私有可执行"和"这块内存里有载荷结构"是同一块内存的两种
-    // 说法，各报一条会让一次观测在列表里变成两条证据 —— 这正是 issue 第六节点名的
-    // 重复计分（这里没有分数，但列表噪声是一样的）。所以载荷结构优先并进区域那一条。
+    // Do not report the same memory region twice. 'Private Executable' and 'Contains Payload Structure' describe the same memory;
+    // reporting both would duplicate a single observation in the evidence list, mirroring the duplicate scoring issue at node 6 (no scores
+    // here, but the list noise is identical). Therefore, prioritize the Payload Structure entry and merge it with the Region entry.
     std::unordered_map<std::uint64_t, std::size_t> dynamicFindingByBase;
 
     for (std::size_t i = 0; i < input.addressSpace.entries.size() &&
                             i < input.addressSpace.codeClasses.size();
          ++i) {
-        const RegionCodeClass codeClass = input.addressSpace.codeClasses[i];
-        if (!IsDynamicCodeCandidate(codeClass)) {
+        const RegionCodeClass kCodeClass = input.addressSpace.codeClasses[i];
+        if (!isDynamicCodeCandidate(kCodeClass)) {
             continue;
         }
         const RegionRecord& record = input.addressSpace.entries[i];
@@ -2001,243 +2001,243 @@ SurveyReport RunInjectionSurvey(const SurveyInput& input) {
             dynamicFindingByBase.emplace(record.base.value, report.findings.size());
         }
 
-        InjectionFinding finding = MakeFinding(input, kRuleIdDynamicCodeRegion);
+        InjectionFinding finding = makeFinding(input, kRuleIdDynamicCodeRegion);
         finding.address = record.base;
         finding.size = record.size;
         finding.regionType = record.type;
         finding.protection = record.protection;
         finding.mappedPath = record.mappedPath;
         finding.inputOutcome = input.addressSpace.outcome;
-        finding.confidence = EvidenceConfidence::SingleObservation;
-        AddFact(finding.facts, "region.code-class", RegionCodeClassName(codeClass));
-        const ProtectionFacts protection = ClassifyWin32Protection(record.protection.rawValue);
-        AddFact(finding.facts, "region.execute", ExecuteProtectionName(protection.execute));
-        if (protection.writable) {
-            AddFact(finding.facts, "region.writable", "true");
+        finding.confidence = EvidenceConfidence::kSingleObservation;
+        addFact(finding.facts, "region.code-class", regionCodeClassName(kCodeClass));
+        const ProtectionFacts kProtection = classifyWin32Protection(record.protection.rawValue);
+        addFact(finding.facts, "region.execute", executeProtectionName(kProtection.execute));
+        if (kProtection.writable) {
+            addFact(finding.facts, "region.writable", "true");
         }
-        if (protection.guard) {
-            AddFact(finding.facts, "region.guard", "true");
+        if (kProtection.guard) {
+            addFact(finding.facts, "region.guard", "true");
         }
         if (record.allocationBase.present) {
-            AddFact(finding.facts, "region.allocation-base",
-                    HexText(record.allocationBase.value));
+            addFact(finding.facts, "region.allocation-base",
+                    hexText(record.allocationBase.value));
         }
-        if (record.mappedPath.empty() && record.type == RegionType::Mapped) {
-            AddFact(finding.facts, "region.mapped-path", "unavailable");
-            AddUnique(finding.coverageGapKeys, kGapMappedPathUnavailable);
+        if (record.mappedPath.empty() && record.type == RegionType::kMapped) {
+            addFact(finding.facts, "region.mapped-path", "unavailable");
+            addUnique(finding.coverageGapKeys, kGapMappedPathUnavailable);
         }
         report.findings.push_back(std::move(finding));
     }
     if (report.dynamicCodeRegionCount != 0U) {
-        AddObservation(report, ObservationClass::PrivateOrMappedExecutablePresent);
+        addObservation(report, ObservationClass::kPrivateOrMappedExecutablePresent);
     }
 
-    // --- 模块交叉视图 ---
-    if (input.moduleCrossView.conclusion != AnalysisConclusion::NoEvidence) {
-        AddUnique(report.completedCheckKeys, kCheckModuleCrossView);
+    // --- Module cross view ---
+    if (input.moduleCrossView.conclusion != AnalysisConclusion::kNoEvidence) {
+        addUnique(report.completedCheckKeys, kCheckModuleCrossView);
     } else {
-        AddUnique(report.notPerformedCheckKeys, kCheckModuleCrossView);
+        addUnique(report.notPerformedCheckKeys, kCheckModuleCrossView);
     }
     for (const std::string& gap : input.moduleCrossView.coverageGapKeys) {
-        AddUnique(report.coverageGapKeys, gap);
+        addUnique(report.coverageGapKeys, gap);
     }
     for (const ModuleCrossFinding& crossFinding : input.moduleCrossView.findings) {
         const char* ruleId = kRuleIdModuleIdentityMismatch;
         switch (crossFinding.issue) {
-        case ModuleCrossIssue::ImageMappingWithoutLoaderEntry:
+        case ModuleCrossIssue::kImageMappingWithoutLoaderEntry:
             ruleId = kRuleIdImageWithoutLoaderEntry;
             break;
-        case ModuleCrossIssue::LoaderEntryWithoutImageMapping:
+        case ModuleCrossIssue::kLoaderEntryWithoutImageMapping:
             ruleId = kRuleIdLoaderEntryWithoutMapping;
             break;
-        case ModuleCrossIssue::MainImageIdentityConflict:
+        case ModuleCrossIssue::kMainImageIdentityConflict:
             ruleId = kRuleIdMainImageConflict;
             break;
-        case ModuleCrossIssue::MappedPathUnavailable:
-            // 路径取不到只是缺口，不产出 finding —— 缺口键已经并进去了。
+        case ModuleCrossIssue::kMappedPathUnavailable:
+            // Path retrieval failure is merely a gap, not a finding; the gap key has already been merged.
             continue;
-        case ModuleCrossIssue::LoaderPathMismatch:
-        case ModuleCrossIssue::LoaderSizeMismatch:
+        case ModuleCrossIssue::kLoaderPathMismatch:
+        case ModuleCrossIssue::kLoaderSizeMismatch:
             ruleId = kRuleIdModuleIdentityMismatch;
             break;
         }
         ++report.moduleCrossIssueCount;
-        if (ModuleCrossIssueIsContradiction(crossFinding.issue)) {
+        if (moduleCrossIssueIsContradiction(crossFinding.issue)) {
             ++report.moduleCrossConflictCount;
         }
-        InjectionFinding finding = MakeFinding(input, ruleId);
+        InjectionFinding finding = makeFinding(input, ruleId);
         finding.address = crossFinding.base;
         finding.size = crossFinding.mappedSize.present ? crossFinding.mappedSize
                                                        : crossFinding.loaderSize;
-        finding.regionType = RegionType::Image;
+        finding.regionType = RegionType::kImage;
         finding.mappedPath = crossFinding.mappedPath.empty() ? crossFinding.loaderPath
                                                              : crossFinding.mappedPath;
-        finding.moduleName = FileNameOf(finding.mappedPath);
+        finding.moduleName = fileNameOf(finding.mappedPath);
         finding.facts = crossFinding.facts;
         finding.inputOutcome = crossFinding.inputOutcome;
-        finding.confidence = EvidenceConfidence::CorroboratedIndependent;
-        AddFact(finding.facts, "module.cross-issue", ModuleCrossIssueName(crossFinding.issue));
+        finding.confidence = EvidenceConfidence::kCorroboratedIndependent;
+        addFact(finding.facts, "module.cross-issue", moduleCrossIssueName(crossFinding.issue));
         report.findings.push_back(std::move(finding));
-        AddObservation(report, ObservationClass::MappedModuleOutsideBaseline);
+        addObservation(report, ObservationClass::kMappedModuleOutsideBaseline);
     }
 
-    // --- 工作集筛选 ---
-    if (input.workingSetQueried && StatusCarriesObservation(input.workingSetOutcome.status)) {
-        AddUnique(report.completedCheckKeys, kCheckWorkingSetScreen);
-        if (!OutcomeIsSuccess(input.workingSetOutcome)) {
-            AddUnique(report.coverageGapKeys, kGapWorkingSetUnavailable);
+    // --- Working set filtering ---
+    if (input.workingSetQueried && statusCarriesObservation(input.workingSetOutcome.status)) {
+        addUnique(report.completedCheckKeys, kCheckWorkingSetScreen);
+        if (!outcomeIsSuccess(input.workingSetOutcome)) {
+            addUnique(report.coverageGapKeys, kGapWorkingSetUnavailable);
         }
     } else {
-        AddUnique(report.notPerformedCheckKeys, kCheckWorkingSetScreen);
-        AddUnique(report.coverageGapKeys, kGapWorkingSetUnavailable);
+        addUnique(report.notPerformedCheckKeys, kCheckWorkingSetScreen);
+        addUnique(report.coverageGapKeys, kGapWorkingSetUnavailable);
     }
 
-    // --- 线程起点 ---
-    if (StatusCarriesObservation(input.threadEnumerationOutcome.status) &&
+    // --- Thread start ---
+    if (statusCarriesObservation(input.threadEnumerationOutcome.status) &&
         !input.threadStarts.empty()) {
-        AddUnique(report.completedCheckKeys, kCheckThreadStart);
+        addUnique(report.completedCheckKeys, kCheckThreadStart);
     } else {
-        AddUnique(report.notPerformedCheckKeys, kCheckThreadStart);
-        AddUnique(report.coverageGapKeys, kGapThreadStartUnavailable);
+        addUnique(report.notPerformedCheckKeys, kCheckThreadStart);
+        addUnique(report.coverageGapKeys, kGapThreadStartUnavailable);
     }
     for (const ThreadStartFinding& start : input.threadStarts) {
-        const bool anomalous = start.landing == ThreadStartLanding::NonImagePrivate ||
-                               start.landing == ThreadStartLanding::NonImageMapped ||
-                               start.landing == ThreadStartLanding::FreeOrReserved ||
-                               start.landing == ThreadStartLanding::ImageOutsideCode;
-        const bool unknown = start.landing == ThreadStartLanding::NotCollected ||
-                             start.landing == ThreadStartLanding::OutsideIndex ||
-                             start.landing == ThreadStartLanding::ImageLayoutUnknown;
-        const bool trampoline = start.branchTarget.present &&
+        const bool kAnomalous = start.landing == ThreadStartLanding::kNonImagePrivate ||
+                               start.landing == ThreadStartLanding::kNonImageMapped ||
+                               start.landing == ThreadStartLanding::kFreeOrReserved ||
+                               start.landing == ThreadStartLanding::kImageOutsideCode;
+        const bool kUnknown = start.landing == ThreadStartLanding::kNotCollected ||
+                             start.landing == ThreadStartLanding::kOutsideIndex ||
+                             start.landing == ThreadStartLanding::kImageLayoutUnknown;
+        const bool kTrampoline = start.branchTarget.present &&
                                 start.branchLeavesOwningModule;
-        if (!anomalous && !unknown && !trampoline) {
+        if (!kAnomalous && !kUnknown && !kTrampoline) {
             continue;
         }
 
-        // 起点没采到 ≠ 归属不一致：两者用不同的 ruleId，否则一条零观测的结果
-        // 会把结论从 NoEvidence 抬成 Indeterminate。
+        // A missing start point is not an ownership mismatch. Use different ruleId values, or a
+        // result with no observations would raise the conclusion from NoEvidence to Indeterminate.
         const char* ruleId = kRuleIdThreadStartOutsideImage;
-        if (unknown && !anomalous) {
+        if (kUnknown && !kAnomalous) {
             ruleId = kRuleIdThreadStartUnknown;
-        } else if (trampoline && !anomalous) {
+        } else if (kTrampoline && !kAnomalous) {
             ruleId = kRuleIdThreadStartTrampoline;
         }
 
-        InjectionFinding finding = MakeFinding(input, ruleId);
+        InjectionFinding finding = makeFinding(input, ruleId);
         finding.address = start.startAddress;
         finding.mappedPath = start.owningPath;
-        finding.moduleName = FileNameOf(start.owningPath);
+        finding.moduleName = fileNameOf(start.owningPath);
         finding.facts = start.facts;
         finding.relatedThreads.push_back(start.thread);
         finding.inputOutcome = start.outcome;
-        finding.confidence = unknown ? EvidenceConfidence::InputIncomplete
-                                     : EvidenceConfidence::SingleObservation;
-        if (unknown) {
-            AddUnique(finding.coverageGapKeys, kGapThreadStartUnavailable);
-            AddUnique(report.coverageGapKeys, kGapThreadStartUnavailable);
+        finding.confidence = kUnknown ? EvidenceConfidence::kInputIncomplete
+                                     : EvidenceConfidence::kSingleObservation;
+        if (kUnknown) {
+            addUnique(finding.coverageGapKeys, kGapThreadStartUnavailable);
+            addUnique(report.coverageGapKeys, kGapThreadStartUnavailable);
         } else {
             ++report.threadStartAnomalyCount;
         }
         report.findings.push_back(std::move(finding));
     }
 
-    // --- 归一化映像比较 ---
+    // --- Normalized Image Comparison ---
     if (!input.imageComparisons.empty()) {
-        AddUnique(report.completedCheckKeys, kCheckNormalizedImageDiff);
+        addUnique(report.completedCheckKeys, kCheckNormalizedImageDiff);
     } else {
-        AddUnique(report.notPerformedCheckKeys, kCheckNormalizedImageDiff);
+        addUnique(report.notPerformedCheckKeys, kCheckNormalizedImageDiff);
     }
     if (input.plannedComparisonsNotRun != 0U) {
-        AddUnique(report.coverageGapKeys, kGapBudgetTruncated);
+        addUnique(report.coverageGapKeys, kGapBudgetTruncated);
     }
 
     for (const ImageComparisonOutcome& comparison : input.imageComparisons) {
-        const bool referenceUsable = ReferenceSupportsDifferenceClaim(
+        const bool kReferenceUsable = referenceSupportsDifferenceClaim(
             comparison.referenceConfidence);
-        if (!referenceUsable) {
-            AddUnique(report.coverageGapKeys, kGapReferenceUncertain);
+        if (!kReferenceUsable) {
+            addUnique(report.coverageGapKeys, kGapReferenceUncertain);
         }
-        if (comparison.referenceSource == ImageReferenceSource::SectionObject) {
+        if (comparison.referenceSource == ImageReferenceSource::kSectionObject) {
             ++report.sectionReferenceComparisons;
-            if (!SectionReferenceCoverageComplete(comparison)) {
-                // 节对象参考里有页拿不到（原型 PTE 不是 valid 形态，本版本按设计
-                // 不把页面调进来）。差异仍然算数，但"没发现差异"不能成立 ——
-                // 没比到的页不是比过了。
-                AddUnique(report.coverageGapKeys, kGapSectionReferenceIncomplete);
+            if (!sectionReferenceCoverageComplete(comparison)) {
+                // The section object reference cannot resolve a page (the prototype PTE is not in a valid state;
+                // by design, this version does not bring the page into memory). The difference is still counted,
+                // but "no difference found" is invalid—pages that were not matched are still considered compared.
+                addUnique(report.coverageGapKeys, kGapSectionReferenceIncomplete);
             }
         }
         for (const std::string& limitation : comparison.report.limitationKeys) {
-            if (ImageLimitationIsScopeDefining(limitation)) {
-                AddUnique(report.capabilityLimitKeys, limitation);
+            if (imageLimitationIsScopeDefining(limitation)) {
+                addUnique(report.capabilityLimitKeys, limitation);
             } else {
-                AddUnique(report.coverageGapKeys, limitation);
+                addUnique(report.coverageGapKeys, limitation);
             }
         }
 
         for (const ImageDiffEntry& entry : comparison.report.entries) {
-            if (entry.kind == DiffKind::MissingLiveBytes) {
-                AddUnique(report.coverageGapKeys, kGapAddressSpaceIncomplete);
+            if (entry.kind == DiffKind::kMissingLiveBytes) {
+                addUnique(report.coverageGapKeys, kGapAddressSpaceIncomplete);
                 continue;
             }
-            if (entry.explanation == DiffExplanation::Explained) {
-                continue;  // ImageDiff 自己的规则已经解释掉了
+            if (entry.explanation == DiffExplanation::kExplained) {
+                continue;  // ImageDiff's own rules have already explained this.
             }
 
             ExceptionQuery query;
-            // 目标程序版本身份与被修改模块身份是两件事：前者决定"这条豁免在哪个
-            // 程序上有效"，后者决定"改的是哪个模块"。目标身份没取到时留空，
-            // 任何要求非空 targetImageIdentity 的规则都匹配不上（fail-closed）。
+            // The target program version identity and the modified module identity are distinct: the former determines "on which
+            // program this exemption is valid," while the latter determines "which module was modified." If the target identity is
+            // unavailable, leave it empty; any rule requiring a non-empty targetImageIdentity will fail to match (fail-closed).
             query.targetImageIdentity = input.targetImageIdentity;
-            query.modifiedModuleIdentity = ModuleIdentityKeyFor(comparison.module);
+            query.modifiedModuleIdentity = moduleIdentityKeyFor(comparison.module);
             query.range = RvaRange{ entry.rva, entry.length };
             query.bytesAvailable = !entry.liveBytes.empty();
             query.actualBytes = entry.liveBytes;
-            const ExceptionMatchResult exception =
-                MatchExceptionRelation(input.exceptions, query);
+            const ExceptionMatchResult kException =
+                matchExceptionRelation(input.exceptions, query);
 
-            InjectionFinding finding = MakeFinding(
-                input, referenceUsable ? kRuleIdImageBytesUnexplained
+            InjectionFinding finding = makeFinding(
+                input, kReferenceUsable ? kRuleIdImageBytesUnexplained
                                        : kRuleIdImageReferenceUncertain);
             finding.address = OptionalU64::of(entry.va);
             finding.size = OptionalU64::of(entry.length);
-            finding.regionType = RegionType::Image;
+            finding.regionType = RegionType::kImage;
             finding.mappedPath = comparison.module.imagePath;
-            finding.moduleName = FileNameOf(comparison.module.imagePath);
+            finding.moduleName = fileNameOf(comparison.module.imagePath);
             finding.sectionName = entry.sectionName;
             finding.rva = OptionalU64::of(entry.rva);
-            finding.exception = exception;
+            finding.exception = kException;
             finding.inputOutcome = comparison.report.outcome;
-            finding.confidence = referenceUsable ? EvidenceConfidence::SingleObservation
-                                                 : EvidenceConfidence::InputIncomplete;
-            AddFact(finding.facts, "image.reference",
-                    ReferenceConfidenceName(comparison.referenceConfidence));
-            AddFact(finding.facts, "image.rva", HexText(entry.rva));
-            AddFact(finding.facts, "image.length", DecText(entry.length));
-            AddFact(finding.facts, "image.normalization", kNormalizationProfileId);
+            finding.confidence = kReferenceUsable ? EvidenceConfidence::kSingleObservation
+                                                 : EvidenceConfidence::kInputIncomplete;
+            addFact(finding.facts, "image.reference",
+                    referenceConfidenceName(comparison.referenceConfidence));
+            addFact(finding.facts, "image.rva", hexText(entry.rva));
+            addFact(finding.facts, "image.length", decText(entry.length));
+            addFact(finding.facts, "image.normalization", kNormalizationProfileId);
             if (entry.byteEvidenceTruncated) {
-                AddFact(finding.facts, "image.byte-evidence", "truncated");
+                addFact(finding.facts, "image.byte-evidence", "truncated");
             }
-            if (exception.match == ExceptionMatch::Matched) {
+            if (kException.match == ExceptionMatch::kMatched) {
                 ++report.exceptionExplainedCount;
-                AddFact(finding.facts, "exception.rule", exception.ruleId);
-                AddFact(finding.facts, "exception.category",
-                        ExceptionCategoryName(exception.category));
-            } else if (referenceUsable) {
+                addFact(finding.facts, "exception.rule", kException.ruleId);
+                addFact(finding.facts, "exception.category",
+                        exceptionCategoryName(kException.category));
+            } else if (kReferenceUsable) {
                 ++report.unexplainedImageDiffCount;
             }
-            if (!referenceUsable) {
-                AddUnique(finding.coverageGapKeys, kGapReferenceUncertain);
+            if (!kReferenceUsable) {
+                addUnique(finding.coverageGapKeys, kGapReferenceUncertain);
             }
             report.findings.push_back(std::move(finding));
         }
     }
     if (report.unexplainedImageDiffCount != 0U) {
-        AddObservation(report, ObservationClass::NormalizedImageDiffers);
+        addObservation(report, ObservationClass::kNormalizedImageDiffers);
     }
 
-    // --- 栈回溯：算出可靠前缀里各帧的落点 ---
-    // 采集侧只交原始帧和"上一帧有没有展开数据"这两项事实，可靠性判定全在这里，
-    // 因为这一层有离线测试而采集侧没有。
+    // --- Stack backtrace: calculate the landing points for each frame within the reliable prefix --- The collection
+    // side only provides raw frames and the fact of "whether the previous frame had unwind data"; reliability
+    // determination happens entirely here, as this layer has offline testing while the collection side does not.
     struct ReliableFrameHit final {
         std::uint64_t instructionPointer = 0U;
         ThreadInstanceId thread;
@@ -2246,12 +2246,12 @@ SurveyReport RunInjectionSurvey(const SurveyInput& input) {
     std::vector<ReliableFrameHit> reliableFrames;
     for (const ThreadStackInput& stack : input.threadStacks) {
         ++report.stackThreadsWalked;
-        const std::size_t admitted = AdmitStackFrames(stack);
-        if (admitted == 0U) {
+        const std::size_t kAdmitted = admitStackFrames(stack);
+        if (kAdmitted == 0U) {
             continue;
         }
         ++report.stackThreadsTrusted;
-        for (std::size_t depth = 0U; depth < admitted; ++depth) {
+        for (std::size_t depth = 0U; depth < kAdmitted; ++depth) {
             const RawStackFrame& frame = stack.frames[depth];
             if (!frame.instructionPointer.present) {
                 continue;
@@ -2264,51 +2264,51 @@ SurveyReport RunInjectionSurvey(const SurveyInput& input) {
             reliableFrames.push_back(std::move(hit));
         }
     }
-    // 这一位由实际产出重算，不采信调用方填的值 —— 否则"能力可用"会变成一个
-    // 可以被随手置真的开关，而它是抬结论的三道闸门之一。
-    const bool stackWalkAvailable = report.stackThreadsTrusted != 0U;
+    // This bit is recalculated from actual output and must not trust the value provided by the caller; otherwise, 'capability
+    // available' would become a switch that can be trivially set to true, yet it is one of the three gates that elevate the conclusion.
+    const bool kStackWalkAvailable = report.stackThreadsTrusted != 0U;
     if (report.stackThreadsWalked != 0U && report.stackThreadsTrusted == 0U) {
-        // 做了，但一个可信上下文都没拿到。是缺口，不是能力限制。
-        AddUnique(report.coverageGapKeys, kGapStackWalkUntrusted);
+        // Done, but no trusted context was obtained. This is a coverage gap, not a capability limitation.
+        addUnique(report.coverageGapKeys, kGapStackWalkUntrusted);
     }
 
-    // --- 非映像载荷结构 ---
+    // --- Non-Image Payload Structure ---
     bool payloadExamined = false;
     for (const PayloadCandidateEntry& payload : input.payloadCandidates) {
-        if (payload.structure != PayloadStructure::NotExamined) {
+        if (payload.structure != PayloadStructure::kNotExamined) {
             payloadExamined = true;
         }
-        const bool structural = payload.structure == PayloadStructure::MappedPeImage ||
-                                payload.structure == PayloadStructure::HeaderErasedPe ||
-                                payload.structure == PayloadStructure::BareCode ||
-                                payload.structure == PayloadStructure::DataOnlyPeFile;
-        if (!structural) {
+        const bool kStructural = payload.structure == PayloadStructure::kMappedPeImage ||
+                                payload.structure == PayloadStructure::kHeaderErasedPe ||
+                                payload.structure == PayloadStructure::kBareCode ||
+                                payload.structure == PayloadStructure::kDataOnlyPeFile;
+        if (!kStructural) {
             continue;
         }
 
-        // 这块内存已经作为动态代码区域报过了：把结构事实并进那一条，不再单独成行。
-        // 记下落在哪一条上，下面"可靠帧进入"要往同一条里加线程与栈深。
+        // This memory was already reported as a dynamic code region: merge the structural fact into that entry instead of creating a separate line.
+        // Record which entry it falls into; the subsequent "reliable frame entry" will add threads and stack depth to the same entry.
         std::size_t payloadFindingIndex = report.findings.size();
-        const auto existing = payload.base.present
+        const auto kExisting = payload.base.present
                                   ? dynamicFindingByBase.find(payload.base.value)
                                   : dynamicFindingByBase.end();
-        if (existing != dynamicFindingByBase.end() && existing->second < report.findings.size()) {
-            payloadFindingIndex = existing->second;
-            InjectionFinding& target = report.findings[existing->second];
-            AddFact(target.facts, "payload.structure", PayloadStructureName(payload.structure));
+        if (kExisting != dynamicFindingByBase.end() && kExisting->second < report.findings.size()) {
+            payloadFindingIndex = kExisting->second;
+            InjectionFinding& target = report.findings[kExisting->second];
+            addFact(target.facts, "payload.structure", payloadStructureName(payload.structure));
             for (const std::string& fact : payload.structureFacts) {
                 target.facts.push_back(fact);
             }
         } else {
-            InjectionFinding finding = MakeFinding(input, kRuleIdPayloadStructure);
+            InjectionFinding finding = makeFinding(input, kRuleIdPayloadStructure);
             finding.address = payload.base;
             finding.size = payload.size;
             finding.regionType = payload.type;
             finding.inputOutcome = payload.outcome;
-            finding.confidence = EvidenceConfidence::SingleObservation;
-            AddFact(finding.facts, "payload.structure", PayloadStructureName(payload.structure));
-            // 这一位决定这条能不能参与升结论，必须能在证据里回源。
-            AddFact(finding.facts, "payload.executable-at-scan",
+            finding.confidence = EvidenceConfidence::kSingleObservation;
+            addFact(finding.facts, "payload.structure", payloadStructureName(payload.structure));
+            // This bit determines whether the finding can support a stronger conclusion; its source must be traceable in the evidence.
+            addFact(finding.facts, "payload.executable-at-scan",
                     payload.executableAtScanTime ? "true" : "false");
             for (const std::string& fact : payload.structureFacts) {
                 finding.facts.push_back(fact);
@@ -2316,13 +2316,13 @@ SurveyReport RunInjectionSurvey(const SurveyInput& input) {
             report.findings.push_back(std::move(finding));
         }
 
-        // 可靠帧有没有落进这块内存。调用方（或测试）已经算出来的话就认，
-        // 否则用上面刚算出的可靠前缀自己判一次。
+        // Whether the reliable frame entered this memory region. If the caller (or test) has already
+        // computed it, use that; otherwise, re-evaluate using the reliable prefix computed above.
         bool frameEnters = payload.reliableFrameEntersRegion;
         const ReliableFrameHit* enteringFrame = nullptr;
         if (payload.base.present && payload.size.present && payload.size.value != 0U) {
             for (const ReliableFrameHit& hit : reliableFrames) {
-                // 相减而不是相加：base + size 在畸形输入下会绕回。
+                // Subtract instead of add: base + size can wrap around with malformed input.
                 if (hit.instructionPointer >= payload.base.value &&
                     hit.instructionPointer - payload.base.value < payload.size.value) {
                     frameEnters = true;
@@ -2332,72 +2332,72 @@ SurveyReport RunInjectionSurvey(const SurveyInput& input) {
             }
         }
 
-        // "自洽载荷结构 + 可靠栈帧进入其中"才是那条更强的观测。三个条件缺一不可：
-        // 栈回溯能力可用、这块内存**确实**被可靠帧进入、结构不是"数据里的一个 PE 文件"
-        // （缓冲区里躺着一个 PE，与这个 PE 已经被加载执行，是两件事）。
-        if (stackWalkAvailable && frameEnters &&
-            PayloadCandidateCanRaiseConclusion(payload) &&
-            payload.structure != PayloadStructure::DataOnlyPeFile) {
-            AddObservation(report, ObservationClass::PayloadStructureWithReliableFrame);
+        // The stronger observation is a self-consistent payload structure with a reliable stack frame entering it. All three conditions are required:
+        // Stack walking is available, this memory region is **definitely** entered by a reliable frame, and the structure is not
+        // "a PE file within data" (a PE file lying in a buffer is distinct from a PE file that has been loaded and executed).
+        if (kStackWalkAvailable && frameEnters &&
+            payloadCandidateCanRaiseConclusion(payload) &&
+            payload.structure != PayloadStructure::kDataOnlyPeFile) {
+            addObservation(report, ObservationClass::kPayloadStructureWithReliableFrame);
             ++report.payloadWithExecutionCount;
             if (enteringFrame != nullptr && payloadFindingIndex < report.findings.size()) {
-                // 落点要能回源到具体线程和栈深度，否则"有可靠帧进入"没法复核。
+                // The target must be traceable to a specific thread and stack depth; otherwise, 'reliable frame entry' cannot be verified.
                 InjectionFinding& target = report.findings[payloadFindingIndex];
-                AddFact(target.facts, "stack.frame.pc", HexText(enteringFrame->instructionPointer));
-                AddFact(target.facts, "stack.frame.depth", DecText(enteringFrame->depth));
-                AddFact(target.facts, "stack.frame.tid",
-                        DecText(enteringFrame->thread.tid.valueOr(0U)));
+                addFact(target.facts, "stack.frame.pc", hexText(enteringFrame->instructionPointer));
+                addFact(target.facts, "stack.frame.depth", decText(enteringFrame->depth));
+                addFact(target.facts, "stack.frame.tid",
+                        decText(enteringFrame->thread.tid.valueOr(0U)));
                 target.relatedThreads.push_back(enteringFrame->thread);
-                // 内存结构与线程执行是两个独立来源，凑到一起才够 CorroboratedIndependent。
-                target.confidence = EvidenceConfidence::CorroboratedIndependent;
+                // Memory structure and thread execution are independent sources; only when combined do they suffice for CorroboratedIndependent.
+                target.confidence = EvidenceConfidence::kCorroboratedIndependent;
             }
         }
     }
     if (payloadExamined) {
-        AddUnique(report.completedCheckKeys, kCheckPayloadStructure);
+        addUnique(report.completedCheckKeys, kCheckPayloadStructure);
     } else {
-        AddUnique(report.notPerformedCheckKeys, kCheckPayloadStructure);
+        addUnique(report.notPerformedCheckKeys, kCheckPayloadStructure);
     }
 
-    // --- R0 扫描后端的交叉视图 ---
-    if (input.kernelVadState != KernelBackendState::NotRequested ||
-        input.kernelPteState != KernelBackendState::NotRequested) {
-        if (input.kernelVadState != KernelBackendState::NotRequested) {
-            if (input.kernelVadState == KernelBackendState::Available) {
-                AddUnique(report.completedCheckKeys, kCheckKernelVadCrossView);
+    // --- Cross-view of R0 scanning backend ---
+    if (input.kernelVadState != KernelBackendState::kNotRequested ||
+        input.kernelPteState != KernelBackendState::kNotRequested) {
+        if (input.kernelVadState != KernelBackendState::kNotRequested) {
+            if (input.kernelVadState == KernelBackendState::kAvailable) {
+                addUnique(report.completedCheckKeys, kCheckKernelVadCrossView);
             } else {
-                AddUnique(report.notPerformedCheckKeys, kCheckKernelVadCrossView);
+                addUnique(report.notPerformedCheckKeys, kCheckKernelVadCrossView);
             }
         }
-        if (input.kernelPteState != KernelBackendState::NotRequested) {
-            if (input.kernelPteState == KernelBackendState::Available) {
-                AddUnique(report.completedCheckKeys, kCheckKernelPteScan);
+        if (input.kernelPteState != KernelBackendState::kNotRequested) {
+            if (input.kernelPteState == KernelBackendState::kAvailable) {
+                addUnique(report.completedCheckKeys, kCheckKernelPteScan);
             } else {
-                AddUnique(report.notPerformedCheckKeys, kCheckKernelPteScan);
+                addUnique(report.notPerformedCheckKeys, kCheckKernelPteScan);
             }
         }
         for (const std::string& gap : input.kernelCrossView.coverageGapKeys) {
-            AddUnique(report.coverageGapKeys, gap);
+            addUnique(report.coverageGapKeys, gap);
         }
         for (const std::string& limit : input.kernelCrossView.capabilityLimitKeys) {
-            AddUnique(report.capabilityLimitKeys, limit);
+            addUnique(report.capabilityLimitKeys, limit);
         }
         for (const KernelRegionCrossFinding& crossFinding : input.kernelCrossView.findings) {
             const char* ruleId = kRuleIdKernelExecutableBeyondView;
             switch (crossFinding.issue) {
-            case KernelRegionCrossIssue::VadOnlyRange:
+            case KernelRegionCrossIssue::kVadOnlyRange:
                 ruleId = kRuleIdKernelRegionHiddenFromR3;
                 break;
-            case KernelRegionCrossIssue::R3OnlyCommittedRange:
+            case KernelRegionCrossIssue::kR3OnlyCommittedRange:
                 ruleId = kRuleIdKernelRegionMissingInVad;
                 break;
-            case KernelRegionCrossIssue::ExecutableBeyondR3View:
-            case KernelRegionCrossIssue::ExecutableBeyondVadView:
+            case KernelRegionCrossIssue::kExecutableBeyondR3View:
+            case KernelRegionCrossIssue::kExecutableBeyondVadView:
                 ruleId = kRuleIdKernelExecutableBeyondView;
                 break;
             }
             ++report.kernelCrossIssueCount;
-            InjectionFinding finding = MakeFinding(input, ruleId);
+            InjectionFinding finding = makeFinding(input, ruleId);
             finding.address = crossFinding.startVa;
             if (crossFinding.startVa.present && crossFinding.endVaExclusive.present &&
                 crossFinding.endVaExclusive.value > crossFinding.startVa.value) {
@@ -2406,98 +2406,98 @@ SurveyReport RunInjectionSurvey(const SurveyInput& input) {
             }
             finding.facts = crossFinding.facts;
             finding.inputOutcome = crossFinding.inputOutcome;
-            // 两个独立来源都到场了，所以这一档是互证；但结论仍只到待解释 ——
-            // 合法成因目录还没在实机上建起来（kLimitKernelBenignBaseline）。
-            finding.confidence = EvidenceConfidence::CorroboratedIndependent;
-            AddFact(finding.facts, "kernel.cross-issue",
-                    KernelRegionCrossIssueName(crossFinding.issue));
+            // Note: Both independent sources are present, so this level is corroborated; however, the conclusion remains 'pending explanation'
+            // because the directory of legitimate causes has not yet been established on the physical machine (kLimitKernelBenignBaseline).
+            finding.confidence = EvidenceConfidence::kCorroboratedIndependent;
+            addFact(finding.facts, "kernel.cross-issue",
+                    kernelRegionCrossIssueName(crossFinding.issue));
             report.findings.push_back(std::move(finding));
         }
 
-        // --- VAD 断链：树自身的链接自洽性 ---
-        // 和上面的交叉视图是互补的两维：那一维问"两个视图说的一不一样"，
-        // 这一维问"这棵树自己站不站得住"。摘链的直接痕迹在后者。
+        // --- VAD Link Break: Internal Tree Consistency --- Complementary to the cross-view
+        // dimension above: the former asks "Do the two views agree?", while this one asks "Is this
+        // tree internally consistent?". The direct evidence of link breaks appears in the latter.
         const KernelCrossViewReport& kernel = input.kernelCrossView;
         report.vadLinkIntegrity = kernel.linkIntegrity;
-        if (kernel.linkIntegrity == VadLinkIntegrity::Consistent) {
-            AddUnique(report.completedCheckKeys, kCheckVadLinkIntegrity);
-        } else if (kernel.linkIntegrity == VadLinkIntegrity::NotChecked) {
-            // 遍历不完整（截断 / 续扫 / 有节点读不到），或者根本没跑 VAD 后端。
-            // 这是**缺口**：打算查、没查成。折成"一致"就是把没查成读作树是好的。
-            AddUnique(report.notPerformedCheckKeys, kCheckVadLinkIntegrity);
-            if (input.kernelVadState == KernelBackendState::Available) {
-                AddUnique(report.coverageGapKeys, kGapVadLinkUncheckable);
+        if (kernel.linkIntegrity == VadLinkIntegrity::kConsistent) {
+            addUnique(report.completedCheckKeys, kCheckVadLinkIntegrity);
+        } else if (kernel.linkIntegrity == VadLinkIntegrity::kNotChecked) {
+            // Incomplete traversal (truncated / resumed scan / some nodes unreadable), or the VAD backend was never executed.
+            // This is a **gap**: intended to check but failed. Converting to "consistent" means treating the failed check as if the tree is valid.
+            addUnique(report.notPerformedCheckKeys, kCheckVadLinkIntegrity);
+            if (input.kernelVadState == KernelBackendState::kAvailable) {
+                addUnique(report.coverageGapKeys, kGapVadLinkUncheckable);
             }
         } else {
-            AddUnique(report.completedCheckKeys, kCheckVadLinkIntegrity);
+            addUnique(report.completedCheckKeys, kCheckVadLinkIntegrity);
             ++report.vadLinkIssueCount;
-            InjectionFinding finding = MakeFinding(input, kRuleIdKernelVadLinkBroken);
-            // 只到"单一观测"：这一维的误报率还没在实机上量过。量完再考虑升档，
-            // 和 kLimitKernelBenignBaseline 是同一个理由。
-            finding.confidence = EvidenceConfidence::SingleObservation;
-            AddFact(finding.facts, "vad.visited", DecText(kernel.linkVisitedCount));
+            InjectionFinding finding = makeFinding(input, kRuleIdKernelVadLinkBroken);
+            // Only up to 'Single Observation': the false positive rate for this dimension has not yet been measured on
+            // real hardware. Reconsider upgrading after measurement, for the same reason as kLimitKernelBenignBaseline.
+            finding.confidence = EvidenceConfidence::kSingleObservation;
+            addFact(finding.facts, "vad.visited", decText(kernel.linkVisitedCount));
             if (kernel.linkVadCountKnown) {
-                AddFact(finding.facts, "vad.count-from-eprocess", DecText(kernel.linkVadCount));
+                addFact(finding.facts, "vad.count-from-eprocess", decText(kernel.linkVadCount));
             }
-            AddFact(finding.facts, "vad.parent-mismatch",
-                    DecText(kernel.linkParentMismatchNodes));
+            addFact(finding.facts, "vad.parent-mismatch",
+                    decText(kernel.linkParentMismatchNodes));
             if (kernel.linkVadHintKnown) {
-                AddFact(finding.facts, "vad.hint",
-                        HexText(kernel.linkVadHintAddress.valueOr(0U)));
-                AddFact(finding.facts, "vad.hint-visited",
+                addFact(finding.facts, "vad.hint",
+                        hexText(kernel.linkVadHintAddress.valueOr(0U)));
+                addFact(finding.facts, "vad.hint-visited",
                         kernel.linkVadHintVisited ? "true" : "false");
             }
-            AddObservation(report, ObservationClass::VadTreeLinkageInconsistent);
+            addObservation(report, ObservationClass::kVadTreeLinkageInconsistent);
             report.findings.push_back(std::move(finding));
         }
     } else {
-        AddUnique(report.notPerformedCheckKeys, kCheckKernelVadCrossView);
-        AddUnique(report.notPerformedCheckKeys, kCheckKernelPteScan);
-        AddUnique(report.notPerformedCheckKeys, kCheckVadLinkIntegrity);
+        addUnique(report.notPerformedCheckKeys, kCheckKernelVadCrossView);
+        addUnique(report.notPerformedCheckKeys, kCheckKernelPteScan);
+        addUnique(report.notPerformedCheckKeys, kCheckVadLinkIntegrity);
     }
 
-    // --- 深度模式的两项额外要求 ---
-    if (input.mode == SurveyMode::Deep) {
-        if (stackWalkAvailable) {
-            AddUnique(report.completedCheckKeys, kCheckReliableStackWalk);
+    // --- Two additional requirements for deep mode ---
+    if (input.mode == SurveyMode::kDeep) {
+        if (kStackWalkAvailable) {
+            addUnique(report.completedCheckKeys, kCheckReliableStackWalk);
         } else if (report.stackThreadsWalked != 0U) {
-            // 做了但没拿到可信上下文：缺口已经在上面记过，这里只记"没做成"，
-            // **不**再记能力限制 —— 那会把"这次没查成"说成"本版本不做"。
-            AddUnique(report.notPerformedCheckKeys, kCheckReliableStackWalk);
+            // Attempted but failed to obtain trusted context: The gap is already recorded above; here only record 'not completed'.
+            // **Do not** record capability limitations anymore — doing so would confuse "this check failed this time" with "this version does not perform this check".
+            addUnique(report.notPerformedCheckKeys, kCheckReliableStackWalk);
         } else {
-            AddUnique(report.notPerformedCheckKeys, kCheckReliableStackWalk);
-            AddUnique(report.capabilityLimitKeys, kLimitStackUnwindUnavailable);
+            addUnique(report.notPerformedCheckKeys, kCheckReliableStackWalk);
+            addUnique(report.capabilityLimitKeys, kLimitStackUnwindUnavailable);
         }
         if (input.nonExecutableMemoryScanned) {
-            AddUnique(report.completedCheckKeys, kCheckNonExecutableScan);
+            addUnique(report.completedCheckKeys, kCheckNonExecutableScan);
         } else {
-            // 载荷休眠时可以不保持执行权限，所以"只看可执行页"必须显式写出来。
-            AddUnique(report.notPerformedCheckKeys, kCheckNonExecutableScan);
-            AddUnique(report.capabilityLimitKeys, kLimitNonExecutableNotScanned);
+            // When the payload is dormant, execute permissions need not be retained, so "scan only executable pages" must be explicitly specified.
+            addUnique(report.notPerformedCheckKeys, kCheckNonExecutableScan);
+            addUnique(report.capabilityLimitKeys, kLimitNonExecutableNotScanned);
         }
     } else {
-        AddUnique(report.notPerformedCheckKeys, kCheckNonExecutableScan);
-        AddUnique(report.notPerformedCheckKeys, kCheckReliableStackWalk);
-        AddUnique(report.capabilityLimitKeys, kLimitNonExecutableNotScanned);
-        AddUnique(report.capabilityLimitKeys, kLimitStackUnwindUnavailable);
+        addUnique(report.notPerformedCheckKeys, kCheckNonExecutableScan);
+        addUnique(report.notPerformedCheckKeys, kCheckReliableStackWalk);
+        addUnique(report.capabilityLimitKeys, kLimitNonExecutableNotScanned);
+        addUnique(report.capabilityLimitKeys, kLimitStackUnwindUnavailable);
     }
 
-    // --- 采集器自报的缺口与能力限制 ---
+    // --- Collector-reported gaps and capability limitations.
     for (const std::string& gap : input.extraCoverageGapKeys) {
-        AddUnique(report.coverageGapKeys, gap);
+        addUnique(report.coverageGapKeys, gap);
     }
     for (const std::string& limit : input.extraCapabilityLimitKeys) {
-        AddUnique(report.capabilityLimitKeys, limit);
+        addUnique(report.capabilityLimitKeys, limit);
     }
 
-    // --- 预算截断：截断必须显示，绝不返回"干净" ---
-    if (input.budgetStop != BudgetStop::Continue) {
-        AddUnique(report.coverageGapKeys, kGapBudgetTruncated);
-        report.coverage.limitHit = input.budgetStop != BudgetStop::Cancelled;
-        report.coverage.cancelled = input.budgetStop == BudgetStop::Cancelled;
+    // --- Budget truncation: report truncation explicitly; never return a "clean" result ---
+    if (input.budgetStop != BudgetStop::kContinue) {
+        addUnique(report.coverageGapKeys, kGapBudgetTruncated);
+        report.coverage.limitHit = input.budgetStop != BudgetStop::kCancelled;
+        report.coverage.cancelled = input.budgetStop == BudgetStop::kCancelled;
     }
 
-    // --- 账目 ---
+    // --- Accounting ---
     report.coverage.succeeded = report.completedCheckKeys.size();
     report.coverage.skipped = report.notPerformedCheckKeys.size();
     report.coverage.totalKnown =
@@ -2507,48 +2507,48 @@ SurveyReport RunInjectionSurvey(const SurveyInput& input) {
     }
 
     report.scopeIntact = report.coverageGapKeys.empty() &&
-                         report.identity == IdentityRecheckVerdict::Same &&
-                         input.budgetStop == BudgetStop::Continue;
+                         report.identity == IdentityRecheckVerdict::kSame &&
+                         input.budgetStop == BudgetStop::kContinue;
     report.coverageComplete = report.scopeIntact && report.capabilityLimitKeys.empty();
     if (!report.coverageGapKeys.empty()) {
-        AddObservation(report, ObservationClass::KeyInputUnavailable);
+        addObservation(report, ObservationClass::kKeyInputUnavailable);
     }
 
-    // --- 结论 ---
-    const bool anyObservation =
-        addressSpaceUsable ||
-        input.moduleCrossView.conclusion != AnalysisConclusion::NoEvidence ||
+    // --- Conclusion ---
+    const bool kAnyObservation =
+        kAddressSpaceUsable ||
+        input.moduleCrossView.conclusion != AnalysisConclusion::kNoEvidence ||
         !input.imageComparisons.empty() || !input.threadStarts.empty();
 
-    if (!anyObservation) {
-        report.conclusion = AnalysisConclusion::NoEvidence;
+    if (!kAnyObservation) {
+        report.conclusion = AnalysisConclusion::kNoEvidence;
     } else if (report.unexplainedImageDiffCount != 0U ||
                report.moduleCrossConflictCount != 0U ||
                report.payloadWithExecutionCount != 0U) {
-        // 只有这三类能撑起 DifferenceObserved：归一化后仍与可靠参考不同、
-        // 交叉视图**矛盾**（不是"一边有一边没有"）、载荷结构且可靠帧进入其中。
-        // 私有 RX 本身只是待解释的动态代码，撑不起这一档。
-        report.conclusion = AnalysisConclusion::DifferenceObserved;
+        // Only these three categories can support DifferenceObserved: differences remaining after normalization against a trusted reference,
+        // cross-view contradictions (not merely 'present in one but not the other'), and payload structures where trusted frames enter them.
+        // Private RX is merely dynamic code awaiting explanation and cannot support this tier.
+        report.conclusion = AnalysisConclusion::kDifferenceObserved;
     } else if (report.dynamicCodeRegionCount != 0U ||
                report.threadStartAnomalyCount != 0U ||
                report.moduleCrossIssueCount != 0U ||
                report.kernelCrossIssueCount != 0U ||
                report.vadLinkIssueCount != 0U ||
                !report.coverageGapKeys.empty()) {
-        report.conclusion = AnalysisConclusion::Indeterminate;
+        report.conclusion = AnalysisConclusion::kIndeterminate;
     } else {
-        report.conclusion = AnalysisConclusion::NoDifferenceObserved;
-        AddObservation(report, ObservationClass::ScanCompleteNoStrongEvidence);
+        report.conclusion = AnalysisConclusion::kNoDifferenceObserved;
+        addObservation(report, ObservationClass::kScanCompleteNoStrongEvidence);
     }
 
-    // 硬闸门：声明要查的范围破了，就永远不可能是"未发现差异"。
-    // 注意这里用的是 scopeIntact 而不是 coverageComplete —— 能力限制不该把结论
-    // 永久钉死在 Indeterminate，否则四态在生产里退化成三态。
+    // Hard gate: If the declared scope is compromised, it can never be 'No Difference Observed'.
+    // Note: We use scopeIntact instead of coverageComplete here. Capability limitations should not permanently
+    // pin the conclusion to Indeterminate, otherwise the four-state model degrades to three states in production.
     if (!report.scopeIntact &&
-        report.conclusion == AnalysisConclusion::NoDifferenceObserved) {
-        report.conclusion = AnalysisConclusion::Indeterminate;
+        report.conclusion == AnalysisConclusion::kNoDifferenceObserved) {
+        report.conclusion = AnalysisConclusion::kIndeterminate;
     }
     return report;
 }
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

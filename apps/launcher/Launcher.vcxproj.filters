@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <Filter Include="apps">
+      <UniqueIdentifier>{15051319-D5C0-5763-B0A7-2B31632B6C32}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\desktop">
+      <UniqueIdentifier>{3A6C9F61-EB24-52DA-BA1A-8C8ED001BECD}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\desktop\Resource">
+      <UniqueIdentifier>{A5AA41CC-ED8F-5FFD-828D-F4BA9375CB62}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\desktop\Resource\Logo">
+      <UniqueIdentifier>{54CB810B-B906-509B-82F7-F3C713525FCF}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared">
+      <UniqueIdentifier>{4299B902-8A1A-5B30-96C0-F9324B182A9C}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared\crash">
+      <UniqueIdentifier>{4259B899-22F3-5BBC-BB6F-A8E2E8C6DEF1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="tools">
+      <UniqueIdentifier>{F396DCF3-9CDF-596D-8652-3B44420C77D3}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Bundle.cpp" />
+    <ClCompile Include="Compatibility.cpp" />
+    <ClCompile Include="CrashReport.cpp" />
+    <ClCompile Include="Json.cpp" />
+    <ClInclude Include="Json.h" />
+    <ClInclude Include="Launcher.h" />
+    <ResourceCompile Include="Launcher.rc" />
+    <ClCompile Include="Main.cpp" />
+    <ClCompile Include="Marker.cpp" />
+    <ClCompile Include="Ui.cpp" />
+    <ClCompile Include="Utilities.cpp" />
+    <None Include="launcher_support_manifest.json" />
+    <None Include="launcher_support_manifest.schema.json" />
+    <None Include="support_manifest_source.json" />
+    <Image Include="..\desktop\Resource\Logo\KswordLogo.ico">
+      <Filter>apps\desktop\Resource\Logo</Filter>
+    </Image>
+    <ClCompile Include="..\..\shared\crash\WinCrashHandler.cpp">
+      <Filter>shared\crash</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\crash\WinCrashHandler.h">
+      <Filter>shared\crash</Filter>
+    </ClInclude>
+    <None Include="tools\generate_support_manifest.py">
+      <Filter>tools</Filter>
+    </None>
+  </ItemGroup>
+</Project>

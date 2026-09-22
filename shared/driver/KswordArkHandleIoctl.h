@@ -4,10 +4,10 @@
 
 // ============================================================
 // KswordArkHandleIoctl.h
-// 作用：
-// - 定义 R3/R0 进程 HandleTable 直接枚举协议；
-// - 只暴露诊断和差异分析所需字段，不把对象地址当作后续操作凭据；
-// - 所有私有结构字段均由 DynData capability 门控。
+// Purpose:
+// - Defines R3/R0 process HandleTable direct enumeration protocol;
+// - Exposes only fields required for diagnostics and differential analysis; does not treat object addresses as credentials for subsequent operations.
+// - All private structure fields are gated by the DynData capability.
 // ============================================================
 
 #define KSWORD_ARK_HANDLE_PROTOCOL_VERSION 2UL

@@ -11,22 +11,22 @@
 - `shared/driver/KswordArkNetworkIoctl.h`
   - Current R0 network protocol only exposes `IOCTL_KSWORD_ARK_NETWORK_SET_RULES` and `IOCTL_KSWORD_ARK_NETWORK_QUERY_STATUS`.
   - Current rule model supports allow/block/hide-port rule snapshots for TCP/UDP/ANY, direction, PID, local/remote ports.
-- `KswordARKDriver/src/features/network/network_ioctl.c`
+- `drivers/ark/src/features/network/network_ioctl.c`
   - `SET_RULES` requires write access and logs rule changes.
   - `QUERY_STATUS` is fixed-output, read-only, and returns runtime flags/rules/counters.
-- `KswordARKDriver/src/features/network/network_runtime.c`
+- `drivers/ark/src/features/network/network_runtime.c`
   - Current runtime stores WFP registration state, rule snapshot, generation, classify count, blocked count.
-  - `KswordARKNetworkShouldHidePort()` already exists as a policy hook, but current repo does not have R0 TCP/UDP table enumeration.
-- `KswordARKDriver/src/features/network/network_wfp.c`
+  - `kswordArkNetworkShouldHidePort()` already exists as a policy hook, but current repo does not have R0 TCP/UDP table enumeration.
+- `drivers/ark/src/features/network/network_wfp.c`
   - Current R0 WFP use is ALE connect and recv-accept callout/filter registration.
   - It is a policy/classify path, not a WFP inventory/audit path.
-- `Ksword5.1/Ksword5.1/ksword/network/network_connection_tools.h`
+- `shared/platform/network/NetworkConnectionTools.h`
   - Existing R3 connection snapshot uses `GetExtendedTcpTable`, `GetExtendedUdpTable`, and `SetTcpEntry(DELETE_TCB)` for IPv4 TCP termination.
-- `Ksword5.1/Ksword5.1/NetworkDock/NetworkDock.ConnectionManage.cpp`
+- `apps/desktop/network_dock/NetworkDock.ConnectionManage.cpp`
   - Existing UI has TCP and UDP tables: PID, process name, local endpoint, remote endpoint, TCP state.
-- `Ksword5.1/Ksword5.1/NetworkDock/NetworkFirewallPage.*`
+- `apps/desktop/network_dock/NetworkFirewallPage.*`
   - Existing Qt UI already has WFP net-event history/live view and Windows Firewall rule management through user-mode WFP/COM APIs.
-- `docs/OpenArk功能对照与TODO.md`
+- `docs/research/openark-comparison.zh-CN.md`
   - Network TCP/UDP is covered at R3 level, but WFP/NDIS/LSP/filter-chain style enumeration remains a P1 gap.
 
 ### PDB cache observations
@@ -92,7 +92,7 @@ These names are candidates, not contracts. Later implementation must resolve per
 | R3/UI fields | PID, process name/path, local endpoint, AF, compartment, interface, endpoint object, API presence, anomaly flags. |
 | Public API cross-view | Compare against existing `GetExtendedUdpTable(AF_INET/AF_INET6, UDP_TABLE_OWNER_PID)` rows. Key by AF + local address + local port + PID when available. |
 | Risk/degrade | UDP wildcard and dual-stack sockets can collapse multiple user-mode rows into one kernel endpoint or vice versa. Degrade by showing multiplicity and `wildcardAddress` flags instead of forcing one-to-one matching. |
-| Data source | `tcpip.pdb`; existing `EnumerateUdpEndpointRecords()`; `NetworkDock` UDP table. |
+| Data source | `tcpip.pdb`; existing `enumerateUdpEndpointRecords()`; `NetworkDock` UDP table. |
 | Acceptance | R3 UDP rows must appear in R0 or be explained as wildcard/dual-stack/permission/PDB-degraded. R0-only UDP rows should show enough endpoint/PID data to triage hidden or stale entries. |
 
 ### P0.3 Hidden connection detection

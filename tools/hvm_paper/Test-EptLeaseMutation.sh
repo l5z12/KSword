@@ -21,7 +21,7 @@ trap 'rm -rf "$work"' EXIT
 CC=${CC:-cc}
 command -v "$CC" >/dev/null 2>&1 || CC=gcc
 base_rev=${BASE_REV:-HEAD}
-hvm=$root/KswordARKDriver/src/features/hvm
+hvm=$root/drivers/ark/src/features/hvm
 
 mkdir -p "$out"
 : > "$out/ept-lease-unit.txt"
@@ -33,11 +33,11 @@ unique=0
 prepare() {
     cp "$hvm/$1" "$work/$1.orig"
     cp "$work/$1.orig" "$work/$1"
-    sed "s#\.\./\.\./KswordARKDriver/src/features/hvm/$1#$1#" \
+    sed "s#\.\./\.\./drivers/ark/src/features/hvm/$1#$1#" \
         "$root/tools/hvm_paper/$2" > "$work/new.c"
     if git -C "$root" cat-file -e "$base_rev:tools/hvm_paper/$2" 2>/dev/null; then
         git -C "$root" show "$base_rev:tools/hvm_paper/$2" \
-            | sed "s#\.\./\.\./KswordARKDriver/src/features/hvm/$1#$1#" > "$work/old.c"
+            | sed "s#\.\./\.\./drivers/ark/src/features/hvm/$1#$1#" > "$work/old.c"
     else
         rm -f "$work/old.c"
     fi

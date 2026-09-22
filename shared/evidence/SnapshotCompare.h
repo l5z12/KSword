@@ -1,37 +1,37 @@
 #pragma once
 
-// D 模块：快照比较与变化解释。
+// Module D: Snapshot comparison and change interpretation.
 //
-// 这是**实体级**比较，不是文本行 diff。两份快照按实体身份配对，字段逐项给出
-// 旧值/新值/来源/时间/证据引用；地址与排序不参与"有没有这个对象"的判断。
+// This is an **entity-level** comparison, not a text-line diff. Snapshots are paired by entity identity, with fields providing old value/new
+// value/source/time/evidence reference per item; addresses and sorting do not participate in determining 'whether this object exists'.
 //
-// 贯穿全模块的硬规则（为什么这样判，见各处 D-xx 注释）：
-//   * D-01：选择范围不同**不是**对象被删除。删除结论只有在"新快照的选择范围
-//     完全盖住旧快照的选择范围"时才成立；新增结论反过来。范围未声明即未知。
-//   * D-02：身份走 ObjectIdentity。进程/线程/句柄/连接是实例，跨启动周期一律
-//     不硬配；驱动/模块/服务/文件按逻辑身份可跨启动比较。无法稳定匹配时标
-//     MatchConfidence::Uncertain，绝不落成一对假增删。
-//   * D-03：内核地址先归一化成"匹配的映像身份 + RVA"，且**只有确认两侧映像可比
-//     较时才归一化**。同映像不同装载基址无差异；不同版本相同 RVA 不是相同代码；
-//     模块缺失一律不归一化。
-//   * D-04：旧快照有数据而新快照来源失败/不支持/截断时，结论是 NotComparable 或
-//     InsufficientCoverage，永远不是"全部对象已移除"。同一次比较里已成功覆盖的
-//     分区照常比较，不被别的分区连坐。
-//   * D-05：变化事实与复核解释是两个字段。本层的 ReviewNote 只承载调用方声明的
-//     复核优先级与依据键，API 里没有 malicious / threat / risk / suspicious。
-//   * D-06：持久化带 schema 与主/次版本。未知可选字段保留并原样回写，未知**主**
-//     版本明确拒绝。读取器是纯函数，不碰任何文件，源数据不会被就地"修好"。
-//   * D-07：脱敏在同一次导出内对同一原值使用同一替换值，不同原值不撞；被替换和
-//     被删除的内容都会列进清单；源快照是 const 输入，不被覆盖。**未知可选字段
-//     （D-06 承诺原样回写的那些）同样要脱敏**——否则敏感原值正好躲在它们里面
-//     被原样导出，这是 D-07 点名禁止的"藏在原始字段里"。
+// Hard rules spanning the entire module (see D-xx comments throughout for the rationale):
+//   * D-01: A different selection scope does not mean the object was deleted. A deletion conclusion only holds when "the new snapshot's
+//     selection scope completely covers the old snapshot's selection scope"; the reverse applies to additions. An undeclared scope is unknown.
+//   * D-02: Identity follows ObjectIdentity. Processes, threads, handles, and connections are instances and are never hard-mapped across boot cycles;
+//     drivers, modules, services, and files can be compared by logical identity across boot cycles. When stable matching is impossible, timestamps are used.
+//     MatchConfidence::Uncertain: never record a false addition or deletion pair.
+//   * D-03: Kernel addresses are normalized to "matching image identity + RVA" only when both sides are confirmed
+//     comparable. Same image with different load bases has no difference; same RVA in different versions is not the same code.
+//     Missing modules are not normalized.
+//   * D-04: When the old snapshot has data but the new snapshot source fails, is unsupported, or is truncated, the
+//     conclusion is NotComparable or InsufficientCoverage, never "all objects removed". In the same comparison, partitions
+//     that have already been successfully covered are compared normally and are not affected by other partitions.
+//   * D-05: The fact of change and the review explanation are two separate fields. The ReviewNote at this level only
+//     carries the caller-declared review priority and basis key; the API contains no malicious / threat / risk / suspicious.
+//   * D-06: Persist schema with primary/secondary versions. Unknown optional fields are preserved and written back unchanged; unknown primary
+//     versions are explicitly rejected. The reader is a pure function that touches no files, so source data is never repaired in-place.
+//   * D-07: Masking must use the same replacement value for the same original value within a single export, while different original values
+//     must not collide. Both replaced and deleted content must be listed in the manifest. The source snapshot is a const input and must not
+//     be overwritten. **Unknown optional fields (those that D-06 promises to write back as-is) must also be masked**; otherwise, sensitive
+//     original values hidden within them would be exported as-is, which is explicitly prohibited by D-07 as 'hiding in original fields'.
 //
-// 本文件是 C++20、Qt-free、Win32-free，只用标准库。
+// This file is C++20, Qt-free, and Win32-free, using only the standard library.
 
 #include "EvidenceEnvelope.h"
 #include "EvidenceJson.h"
 #include "ObjectIdentity.h"
-#include "PeImageMap.h"  // 只读复用 RvaRange 与其区间判定
+#include "PeImageMap.h"  // Read-only reuse of RvaRange and its interval checks.
 
 #include <cstddef>
 #include <cstdint>
@@ -41,162 +41,162 @@
 #include <string_view>
 #include <vector>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 
 // ---------------------------------------------------------------------------
-// D-02：配置类对象的逻辑身份
+// D-02: Logical identity of configuration objects.
 //
-// 服务、规则、设备名这类对象持久存在于注册表/磁盘上，重启后仍是同一个逻辑对象，
-// 因此它们的身份里**没有** bootId —— 这正是与 ProcessInstanceId 相反的一面。
+// Objects such as service, rule, and device names persist in the registry or on disk; they remain the same logical object
+// after a reboot. Therefore, their identity **does not** include bootId—this is the opposite of ProcessInstanceId.
 // ---------------------------------------------------------------------------
 struct LogicalObjectId final {
-    std::string domain;    // "service" / "rule" / "device" …；空即身份不成立
-    std::string name;      // 域内唯一名
-    std::string scopeKey;  // 可选的所属范围（策略集 / SID / 卷），缺失只降级不致错
+    std::string domain;    // "service" / "rule" / "device" ...; empty means identity is invalid.
+    std::string name;      // Domain-unique name
+    std::string scopeKey;  // Optional owning scope (policy set / SID / volume); if missing, it degrades gracefully without causing errors.
 
     IdentityStrength strength() const noexcept;
 
-    // D-02：键在这里对 name/scopeKey 做大小写折叠。服务名、注册表键名、SID 文本在
-    // Windows 上都是大小写不敏感的，两个 collector（SCM 与注册表枚举）给出的大小写
-    // 常常不同 —— 那是**表示**变化，不是对象变化。不折叠会让两侧落进不同的桶，
-    // 直接造出一对假增删（D-02 明令禁止）。折叠只影响分桶，不代表"确认是同一个"：
-    // 仅大小写不同的两条记录在 MatchLogicalObject 里最高只给 Candidate。
+    // D-02: Case-folding is applied to name/scopeKey here. Service names, registry key names, and SID text are case-insensitive on
+    // Windows; the two collectors (SCM and registry enumeration) often provide different casing. This represents a **representation**
+    // change, not an object change. Without folding, the two sides would fall into different buckets, directly creating a pair of false
+    // add/delete events (D-02 explicitly forbids this). Folding only affects bucketing and does not imply "confirmed as the same object":
+    // In matchLogicalObject, two records differing only in case are assigned at most a Candidate status.
     std::string crossSessionKey() const;
 };
 
-// domain/name 任一为空 -> Candidate（身份不足，统一门槛压顶）。
-// name/scopeKey 折叠后不同 -> NoMatch（同名不同作用域是两个对象）。
-// 折叠后相同但原文大小写不同 -> Candidate：可能是同一个，但两侧表示不一致，
-// 不足以"确认"，也绝不允许据此产出增删。
-MatchResult MatchLogicalObject(const LogicalObjectId& a, const LogicalObjectId& b) noexcept;
+// If either domain or name is empty -> Candidate (insufficient identity, unified threshold applied).
+// name/scopeKey folded differently -> NoMatch (same name but different scopes are two distinct objects).
+// Folded to be identical but original case differs -> Candidate: possibly the same, but the two sides are inconsistent;
+// insufficient to 'confirm', and absolutely not allowed to generate additions or deletions based on this.
+MatchResult matchLogicalObject(const LogicalObjectId& a, const LogicalObjectId& b) noexcept;
 
-// D-02：驱动/模块在快照层的身份键。
-// 它在 DriverInstanceId::crossSessionKey() 之上再把 imagePath 折叠成大小写与分隔符
-// 归一化的形式：PsLoadedModuleList、SCM 与磁盘枚举给出的内核模块路径在大小写和
-// "\SystemRoot\" 前缀写法上本来就会不同，不折叠同样会造出假增删。
-// 与逻辑身份同理，折叠只影响分桶：路径原文不同的两条记录在 MatchDriverInstance 里
-// 仍然只能是 Candidate。
-std::string SnapshotDriverKey(const DriverInstanceId& id);
+// D-02: Identity key for the driver/module at the snapshot layer.
+// It folds `imagePath` into a case-insensitive and delimiter-normalized form on top of
+// `DriverInstanceId::crossSessionKey()`. Kernel module paths from `PsLoadedModuleList`, SCM, and disk enumeration inherently
+// differ in case and `\SystemRoot\` prefix notation; without folding, this would create false additions and deletions.
+// Similar to logical identity, folding only affects bucketing: two records with
+// different path originals remain only as Candidates in matchDriverInstance.
+std::string snapshotDriverKey(const DriverInstanceId& id);
 
-// D-02：该实体类型能否跨启动周期比较。
-// 实例对象（进程/线程/句柄/连接/设备对象）为 false —— 跨启动的"缺席"不是"被删除"。
-bool KindComparableAcrossBoot(ObjectKind kind) noexcept;
+// D-02: Whether this entity type can be compared across boot cycles.
+// Instance objects (process/thread/handle/connection/device object) are false — 'absence' across boots is not 'deletion'.
+bool kindComparableAcrossBoot(ObjectKind kind) noexcept;
 
 // ---------------------------------------------------------------------------
-// D-01：快照的选择范围
+// D-01: Snapshot selection scope.
 // ---------------------------------------------------------------------------
 struct SnapshotScope final {
-    std::string scopeId;                 // 域标识，例如 "services"；两侧不同即无交集
-    bool declared = false;               // 是否声明过选择范围。未声明一律按未知处理
-    bool wholeDomain = false;            // 声称覆盖整个域
-    std::vector<std::string> selectors;  // 非全域时的具体筛选项（已归一化的键）
+    std::string scopeId;                 // Scope identifier, e.g., "services"; different values on both sides indicate no intersection.
+    bool declared = false;               // Whether a selection range has been declared. If not declared, treat as unknown.
+    bool wholeDomain = false;            // Claims to cover the entire domain.
+    std::vector<std::string> selectors;  // Specific selectors when not global (normalized keys).
 };
 
-// 两份快照选择范围之间的关系。命名一律以"谁是子集"表述，避免宽窄词歧义。
+// Relationship between the scope selections of two snapshots. Naming always uses 'is subset of' to avoid ambiguity between 'wide' and 'narrow'.
 enum class ScopeComparability {
-    Unknown,               // 至少一侧未声明范围 —— 增删都不可推断
-    Identical,             // 两侧范围一致
-    EarlierSubsetOfLater,  // 旧 ⊂ 新：新快照看得更全，可判删除，不可判新增
-    LaterSubsetOfEarlier,  // 新 ⊂ 旧：可判新增，不可判删除
-    PartialOverlap,        // 互有独有项 —— 增删都不可推断
-    Disjoint,              // 无交集
+    kUnknown,               // At least one side has no declared range; additions and deletions cannot be inferred.
+    kIdentical,             // Both ranges are identical.
+    kEarlierSubsetOfLater,  // Old ⊂ New: The new snapshot is more comprehensive, allowing detection of deletions but not additions.
+    kLaterSubsetOfEarlier,  // New ⊂ Old: can detect additions, cannot detect deletions
+    kPartialOverlap,        // Mutually exclusive items — additions and deletions cannot be inferred
+    kDisjoint,              // Disjoint
 };
 
-const char* ScopeComparabilityName(ScopeComparability value) noexcept;
+const char* scopeComparabilityName(ScopeComparability value) noexcept;
 
-ScopeComparability CompareScopes(const SnapshotScope& earlier, const SnapshotScope& later);
+ScopeComparability compareScopes(const SnapshotScope& earlier, const SnapshotScope& later);
 
-// D-01 的核心判据：只有新范围盖住旧范围时，"旧有新无"才允许被解释成移除。
-bool RemovalInferable(ScopeComparability value) noexcept;
-// 对称：只有旧范围盖住新范围时，"新有旧无"才允许被解释成新增。
-bool AdditionInferable(ScopeComparability value) noexcept;
+// D-01 core criterion: 'Old has new, new has none' is only interpretable as a removal when the new range covers the old range.
+bool removalInferable(ScopeComparability value) noexcept;
+// Symmetric: Only when the old range covers the new range is "new has old none" allowed to be interpreted as an addition.
+bool additionInferable(ScopeComparability value) noexcept;
 
-// D-02：两份快照的启动周期关系。
+// D-02: Boot cycle relationship between the two snapshots.
 enum class CrossBootComparability {
-    UnknownBoot,    // 至少一侧没有 bootId —— 无法证明同一次启动
-    SameBoot,
-    DifferentBoot,
+    kUnknownBoot,    // At least one side lacks a bootId — cannot prove it is the same boot.
+    kSameBoot,
+    kDifferentBoot,
 };
 
-const char* CrossBootComparabilityName(CrossBootComparability value) noexcept;
+const char* crossBootComparabilityName(CrossBootComparability value) noexcept;
 
 // ---------------------------------------------------------------------------
-// 字段
+// field
 // ---------------------------------------------------------------------------
 
-// D-07：字段承载的敏感类别，供脱敏声明使用（值本身不因此改变比较语义）。
+// D-07: The sensitive category carried by the field, used for redaction declarations (the value itself does not change comparison semantics).
 enum class RedactionClass {
-    None,
-    UserName,
-    Hostname,
-    FilePath,
-    AccountSid,
+    kNone,
+    kUserName,
+    kHostname,
+    kFilePath,
+    kAccountSid,
 };
 
-const char* RedactionClassName(RedactionClass value) noexcept;
-bool ParseRedactionClassName(std::string_view text, RedactionClass& out) noexcept;
+const char* redactionClassName(RedactionClass value) noexcept;
+bool parseRedactionClassName(std::string_view text, RedactionClass& out) noexcept;
 
-// D-03：字段的比较语义。地址类字段绝不按原值比。
+// D-03: Field comparison semantics. Address fields are never compared by raw value.
 enum class FieldSemantics {
-    Opaque,           // 按值比较（文本或整数）
-    LoadBaseAddress,  // 映像装载基址：同映像不同基址不是差异
-    KernelAddress,    // 内核绝对地址：归一化成"映像身份 + RVA"后再比
+    kOpaque,           // Compare by value (text or integer).
+    kLoadBaseAddress,  // Image load base address: different base addresses for the same image are not considered a difference.
+    kKernelAddress,    // Kernel absolute address: normalized to 'Image Identity + RVA' before comparison.
 };
 
-const char* FieldSemanticsName(FieldSemantics value) noexcept;
-bool ParseFieldSemanticsName(std::string_view text, FieldSemantics& out) noexcept;
+const char* fieldSemanticsName(FieldSemantics value) noexcept;
+bool parseFieldSemanticsName(std::string_view text, FieldSemantics& out) noexcept;
 
-// Absent 是独立状态：它既不是空串也不是 0，比较时只会产出"未知"。
+// Absent is a distinct state: it is neither an empty string nor 0; comparisons yield only "unknown".
 enum class FieldValueKind {
-    Absent,
-    Text,
-    Number,
+    kAbsent,
+    kText,
+    kNumber,
 };
 
-const char* FieldValueKindName(FieldValueKind value) noexcept;
-bool ParseFieldValueKindName(std::string_view text, FieldValueKind& out) noexcept;
+const char* fieldValueKindName(FieldValueKind value) noexcept;
+bool parseFieldValueKindName(std::string_view text, FieldValueKind& out) noexcept;
 
 struct EntityField final {
     std::string name;
-    FieldSemantics semantics = FieldSemantics::Opaque;
-    FieldValueKind kind = FieldValueKind::Absent;
+    FieldSemantics semantics = FieldSemantics::kOpaque;
+    FieldValueKind kind = FieldValueKind::kAbsent;
     std::string text;                              // kind == Text
     OptionalU64 number;                            // kind == Number
-    U64Format numberFormat = U64Format::Decimal;   // 仅决定展示与持久化写法
-    RedactionClass redaction = RedactionClass::None;
+    U64Format numberFormat = U64Format::kDecimal;   // Determines display and persistence format only.
+    RedactionClass redaction = RedactionClass::kNone;
 };
 
 // ---------------------------------------------------------------------------
-// D-03：地址归一化材料
+// D-03: Address normalization materials.
 // ---------------------------------------------------------------------------
 struct SnapshotModule final {
-    std::string moduleId;        // 快照内引用用的稳定 id
-    DriverInstanceId identity;   // 映像身份：pdbSignature 或 timeDateStamp+imageSize+path
+    std::string moduleId;        // Stable ID used for references within the snapshot.
+    DriverInstanceId identity;   // Image identity: pdbSignature or timeDateStamp + imageSize + path
     OptionalU64 imageBase;
     OptionalU64 imageSize;
 
-    // 该模块覆盖的 RVA 区间（复用 PeImageMap 的区间类型）。尺寸未知或越过 32 位
-    // 时返回空区间 —— 空区间不 contains 任何 RVA，于是地址一律解析不到，不会被
-    // 硬当成"落在本模块内"。
+    // The RVA range covered by this module (reusing PeImageMap's range type). Returns an empty
+    // range if the size is unknown or exceeds 32 bits—an empty range contains no RVAs, so all
+    // addresses fail to resolve and are never incorrectly treated as 'within this module'.
     RvaRange rvaExtent() const noexcept;
 };
 
-// 地址归一化的判定结果。每一档都必须能单独展示 —— 把它们塌成一个 bool 正是
-// D-03 想禁止的（"不同版本的相同 RVA"会被当成"相同代码"）。
+// The result of address normalization. Each level must be independently displayable; collapsing them into a single bool is exactly
+// D-03: Intended to prohibit ("same RVA in different versions" is treated as "same code").
 enum class AddressNormalizationState {
-    NotApplicable,        // 该字段不是地址语义
-    ValueMissing,         // 至少一侧地址未知
-    ModuleNotFound,       // 至少一侧地址不落在任何已知模块内 -> 不归一化
-    ImageIdentityWeak,    // 两侧映像只能候选匹配 -> 不确认可比，不归一化
-    ImageVersionDiffers,  // 同一路径的两个不同版本 -> 相同 RVA 不是相同代码
-    DifferentModule,      // 两侧解析到不同映像
-    Normalized,           // 确认可比，已按 RVA 比较
+    kNotApplicable,        // This field is not address semantics
+    kValueMissing,         // At least one side address is unknown
+    kModuleNotFound,       // If the address on at least one side does not fall within any known module -> do not normalize.
+    kImageIdentityWeak,    // Images on both sides can only be candidate matches -> not confirmed comparable, not normalized.
+    kImageVersionDiffers,  // Two different versions at the same path -> identical RVA does not imply identical code.
+    kDifferentModule,      // Parsed to different images on both sides
+    kNormalized,           // Confirmed comparable; compared by RVA.
 };
 
-const char* AddressNormalizationStateName(AddressNormalizationState value) noexcept;
+const char* addressNormalizationStateName(AddressNormalizationState value) noexcept;
 
 struct AddressNormalization final {
-    AddressNormalizationState state = AddressNormalizationState::NotApplicable;
+    AddressNormalizationState state = AddressNormalizationState::kNotApplicable;
     std::string earlierModuleId;
     std::string laterModuleId;
     OptionalU64 earlierRva;
@@ -204,118 +204,118 @@ struct AddressNormalization final {
 };
 
 // ---------------------------------------------------------------------------
-// 快照
+// snapshot
 // ---------------------------------------------------------------------------
 
-// D-01/D-04：一个采集分区（通常一个 collector 一个），自带来源、状态与覆盖账目。
-// 分区是 D-04 "已成功覆盖部分仍可单独比较"的粒度：某个分区失败不牵连别的分区。
+// D-01/D-04: A collection partition (typically one per collector), with its own source, status, and coverage accounting.
+// The partition is the granularity for D-04 "Partially covered but still independently comparable": a failure in one partition does not affect others.
 struct SnapshotPartition final {
     std::string partitionId;
-    ObjectKind kind = ObjectKind::Unknown;
+    ObjectKind kind = ObjectKind::kUnknown;
     EvidenceEnvelope envelope;
-    bool coversScope = false;  // 该分区是否声称覆盖了本快照声明的选择范围
+    bool coversScope = false;  // Whether this partition claims to cover the selection scope of this snapshot.
 };
 
 struct SnapshotEntity final {
     std::string partitionId;
-    ObjectKind kind = ObjectKind::Unknown;
+    ObjectKind kind = ObjectKind::kUnknown;
 
-    // 身份载荷按 kind 取用。Handle/Connection/Device/Service/Unknown 在快照层用
-    // 逻辑身份表达（句柄与连接的实例身份属于 X 模块的跨视图分析，不在 D 的语义里）。
+    // Identity payload is accessed by kind. Handle/Connection/Device/Service/Unknown are expressed as logical identities at the snapshot
+    // layer (instance identities for handles and connections belong to cross-view analysis in the X module, not within D's semantics).
     ProcessInstanceId process;
     ThreadInstanceId thread;
     DriverInstanceId driver;
     FileIdentity file;
     LogicalObjectId logical;
 
-    std::string rawRecordId;      // D-05：回到源记录
-    std::size_t displayOrder = 0; // D-02：仅用于证明"排序变了但对象没变"
+    std::string rawRecordId;      // D-05: Return to source record
+    std::size_t displayOrder = 0; // D-02: Used solely to prove 'order changed but objects remained unchanged'.
     std::vector<EntityField> fields;
 
-    // D-06：读入时遇到的未知可选字段原样保留，回写时原样吐出。
+    // D-06: Unknown optional fields encountered during read are preserved as-is and written back unchanged.
     JsonObject unknownFields;
 
-    // 稳定身份键；身份不足时为空。D-02：驱动/模块与逻辑对象的键会先做表示归一化
-    // （路径与名字的大小写、路径分隔符），见 SnapshotDriverKey / LogicalObjectId。
+    // Stable identity key; empty if identity is insufficient. D-02: Driver/module and logical object keys undergo representation
+    // normalization (path/name case sensitivity, path separators) first, see snapshotDriverKey / LogicalObjectId.
     std::string identityKey() const;
-    std::string candidateKey() const;  // 弱身份去重键，只在本次比较内有效
+    std::string candidateKey() const;  // Weak identity deduplication key, valid only within this comparison.
     IdentityStrength strength() const noexcept;
     std::string displayText() const;
 };
 
 struct Snapshot final {
     std::string snapshotId;
-    EvidenceEnvelope envelope;   // D-01：系统/启动标识、collector 版本、采集区间
+    EvidenceEnvelope envelope;   // D-01: System/boot identifier, collector version, collection interval
     SnapshotScope scope;
     std::vector<SnapshotPartition> partitions;
     std::vector<SnapshotModule> modules;
     std::vector<SnapshotEntity> entities;
 
-    JsonObject unknownFields;  // D-06：顶层未知可选字段
+    JsonObject unknownFields;  // D-06: Top-level unknown optional fields.
 
     const SnapshotPartition* findPartition(std::string_view partitionId) const noexcept;
     const SnapshotModule* findModule(std::string_view moduleId) const noexcept;
 };
 
 // ---------------------------------------------------------------------------
-// 比较结果
+// Comparison result
 // ---------------------------------------------------------------------------
 
-// 某一侧对某个实体的"在场情况"。各种未知彼此可分 —— 塌成一个"没有"正是 D-04 的红线，
-// 而把"来源失败"塞进"覆盖不足"同样是 D-04 禁止的混淆（两者的处置完全不同）。
+// The "presence status" of an entity on a given side. Various unknowns are distinct from each other — collapsing into a single "absent" state violates
+// the D-04 red line, and conflating "source failure" with "insufficient coverage" is also prohibited by D-04 (as their handling differs completely).
 enum class EntitySideState {
-    Present,              // 该侧列出了这个实体
-    AbsentCovered,        // 该侧采集成功、账目正面证明完整、范围也覆盖它 —— 确实没有
-    AbsentOutOfScope,     // 该侧的选择范围不覆盖它 —— 不是"没有"
-    UnknownSourceFailed,  // 该侧分区未采集/失败/不支持/拒绝访问
-    UnknownCoverage,      // 该侧成功但被截断或账目不足以证明完整
-    UnknownCrossBoot,     // D-02：该类实体不跨启动周期比较
-    // D-02：该侧存在同一稳定键的多条记录，无法确定这一条对应哪一条。既不是"没有"，
-    // 也不能说"在"——"在"会让 UI 读成两侧配上了。
-    UnknownAmbiguousIdentity,
+    kPresent,              // This side lists this entity
+    kAbsentCovered,        // This side collected successfully, the account has positive proof of completeness, and the scope covers it — indeed, nothing is missing.
+    kAbsentOutOfScope,     // The selection range on this side does not cover it — it is not 'absent'.
+    kUnknownSourceFailed,  // This partition side was not captured, failed, is unsupported, or access was denied.
+    kUnknownCoverage,      // This side succeeded but was truncated or the account is insufficient to prove completeness.
+    kUnknownCrossBoot,     // D-02: This entity does not compare across boot cycles.
+    // D-02: This side has multiple records with the same stable key, so the corresponding record cannot be determined.
+    // It is neither absent nor confirmed present; reporting it as present would imply a match between the two sides.
+    kUnknownAmbiguousIdentity,
 };
 
-const char* EntitySideStateName(EntitySideState value) noexcept;
+const char* entitySideStateName(EntitySideState value) noexcept;
 
-// D-02：配对置信度。Uncertain 表示"可能是同一个，但身份不足以确认"。
+// D-02: Match confidence. Uncertain means "possibly the same, but identity is insufficient to confirm".
 enum class MatchConfidence {
-    NoMatch,     // 没有配上，且身份足够强，缺席本身有意义
-    Uncertain,   // 身份不足或只有候选证据 —— 不得据此宣称同一对象或宣称增删
-    Confirmed,   // 稳定身份配对
+    kNoMatch,     // No match, but identity is strong enough that absence itself is meaningful.
+    kUncertain,   // Insufficient identity or only candidate evidence — do not claim the same object or claim additions/deletions based on this.
+    kConfirmed,   // Stable identity pairing
 };
 
-const char* MatchConfidenceName(MatchConfidence value) noexcept;
+const char* matchConfidenceName(MatchConfidence value) noexcept;
 
 enum class EntityChange {
-    Unchanged,             // 两侧都在，所有可比较字段一致，且没有不可比较字段
-    PartiallyComparable,   // 两侧都在，已比较的字段一致，但有字段无法比较
-    Modified,              // 两侧都在且至少一个字段确实变了
-    Added,                 // 只在新快照出现，且范围与覆盖都支持"新增"结论
-    Removed,               // 只在旧快照出现，且范围与覆盖都支持"移除"结论
-    NotComparable,         // D-04：至少一侧未知/跨启动/范围外 —— 不给增删结论
-    InsufficientCoverage,  // D-04：该侧采到了但覆盖不足以判定
+    kUnchanged,             // Both sides present, all comparable fields match, and no incomparable fields exist.
+    kPartiallyComparable,   // Both sides are present, compared fields are consistent, but some fields cannot be compared.
+    kModified,              // Present on both sides with at least one field actually changed.
+    kAdded,                 // Only present in the new snapshot, and both the range and coverage support the 'addition' conclusion.
+    kRemoved,               // Only appears in the old snapshot, and both range and coverage support the 'Removed' conclusion.
+    kNotComparable,         // D-04: At least one side unknown / cross-boot / out-of-range — no add/remove conclusion.
+    kInsufficientCoverage,  // D-04: Data collected on this side but insufficient coverage to determine.
 };
 
-const char* EntityChangeName(EntityChange value) noexcept;
+const char* entityChangeName(EntityChange value) noexcept;
 
 enum class FieldChange {
-    Unchanged,
-    NormalizedUnchanged,  // D-03：原值不同但归一化后相同（同映像不同基址）
-    Changed,
-    Unknown,              // 至少一侧未知 —— 不得当成变化
-    NotComparable,        // D-03：映像不可比 / 模块缺失 / 值表示形式不同
+    kUnchanged,
+    kNormalizedUnchanged,  // D-03: Original values differ but are identical after normalization (same image, different base address).
+    kChanged,
+    kUnknown,              // At least one side is unknown — do not treat as a change.
+    kNotComparable,        // D-03: Image not comparable / module missing / value representation differs.
 };
 
-const char* FieldChangeName(FieldChange value) noexcept;
+const char* fieldChangeName(FieldChange value) noexcept;
 
-// D-05：一条字段变化的完整说明。旧值、新值、来源、时间、证据引用都在这里。
+// D-05: Complete description of a field change. Old value, new value, source, timestamp, and evidence reference are all included here.
 struct FieldDelta final {
     std::string name;
-    FieldSemantics semantics = FieldSemantics::Opaque;
-    FieldChange change = FieldChange::Unknown;
+    FieldSemantics semantics = FieldSemantics::kOpaque;
+    FieldChange change = FieldChange::kUnknown;
 
     bool earlierKnown = false;
-    std::string earlierText;   // 展示串；earlierKnown 为 false 时恒为空
+    std::string earlierText;   // Display string; always empty when earlierKnown is false.
     bool laterKnown = false;
     std::string laterText;
 
@@ -329,36 +329,36 @@ struct FieldDelta final {
     AddressNormalization normalization;
 };
 
-// D-05：复核解释。与变化事实分开存放，默认 NotAssessed —— 引擎自己不发明优先级，
-// 只执行调用方声明的规则。这里没有、也不会有 malicious / risk / threat 字段。
+// D-05: Review explanation. Stored separately from change facts; defaults to NotAssessed. The engine does not invent priorities;
+// it only executes rules declared by the caller. There is no malicious / risk / threat field here, nor will there be.
 enum class ReviewPriority {
-    NotAssessed,
-    Informational,
-    NeedsReview,   // 需要人来看一眼，不是"恶意"
+    kNotAssessed,
+    kInformational,
+    kNeedsReview,   // Needs human review, not 'malicious'.
 };
 
-const char* ReviewPriorityName(ReviewPriority value) noexcept;
+const char* reviewPriorityName(ReviewPriority value) noexcept;
 
 struct ReviewNote final {
-    ReviewPriority priority = ReviewPriority::NotAssessed;
-    std::vector<std::string> reasonKeys;  // i18n 键；UI 负责翻译
+    ReviewPriority priority = ReviewPriority::kNotAssessed;
+    std::vector<std::string> reasonKeys;  // i18n key; UI handles translation
 };
 
 struct EntityDelta final {
     std::string partitionId;
-    ObjectKind kind = ObjectKind::Unknown;
-    std::string identityKey;   // 空表示身份不足（此时 candidateKey 非空）
+    ObjectKind kind = ObjectKind::kUnknown;
+    std::string identityKey;   // Empty indicates insufficient identity (at this point, candidateKey is non-empty).
     std::string candidateKey;
-    IdentityStrength strength = IdentityStrength::Unusable;
+    IdentityStrength strength = IdentityStrength::kUnusable;
     std::string displayText;
 
-    EntitySideState earlierState = EntitySideState::UnknownSourceFailed;
-    EntitySideState laterState = EntitySideState::UnknownSourceFailed;
-    MatchConfidence matchConfidence = MatchConfidence::NoMatch;
-    EntityChange change = EntityChange::NotComparable;
+    EntitySideState earlierState = EntitySideState::kUnknownSourceFailed;
+    EntitySideState laterState = EntitySideState::kUnknownSourceFailed;
+    MatchConfidence matchConfidence = MatchConfidence::kNoMatch;
+    EntityChange change = EntityChange::kNotComparable;
 
-    std::vector<FieldDelta> fields;           // 有话可说的字段（变化/未知/不可比较）
-    std::vector<std::string> limitationKeys;  // 为什么不可比较
+    std::vector<FieldDelta> fields;           // Fields with meaningful content (changed/unknown/incomparable).
+    std::vector<std::string> limitationKeys;  // Why comparison is not possible
 
     std::string earlierRawRecordId;
     std::string laterRawRecordId;
@@ -369,37 +369,37 @@ struct EntityDelta final {
 
     std::size_t earlierDisplayOrder = 0;
     std::size_t laterDisplayOrder = 0;
-    bool displayOrderChanged = false;  // D-02：排序变化被单独记录，不生成增删
+    bool displayOrderChanged = false;  // D-02: Sort changes are recorded separately without generating additions or deletions.
 
-    ReviewNote review;  // D-05：与上面的事实字段互不推导
+    ReviewNote review;  // D-05: Mutually non-derivable from the fact fields above.
 };
 
-// D-01/D-04：逐分区账目。分区在某一侧缺席时会被显式记成 NotCollected 并计入，
-// 绝不"整轮缺席就当没发生过"。
+// D-01/D-04: Per-partition accounts. If a partition is absent on one side, it is explicitly
+// recorded as NotCollected and included; never treat a full-round absence as if it never happened.
 struct PartitionAccount final {
     std::string partitionId;
-    ObjectKind kind = ObjectKind::Unknown;
+    ObjectKind kind = ObjectKind::kUnknown;
     bool earlierPresent = false;
     bool laterPresent = false;
-    CollectionStatus earlierStatus = CollectionStatus::NotCollected;
-    CollectionStatus laterStatus = CollectionStatus::NotCollected;
-    bool earlierUsableForAbsence = false;  // 该侧是否有资格支撑"确实没有"
+    CollectionStatus earlierStatus = CollectionStatus::kNotCollected;
+    CollectionStatus laterStatus = CollectionStatus::kNotCollected;
+    bool earlierUsableForAbsence = false;  // Whether this side qualifies to support 'definitely absent'.
     bool laterUsableForAbsence = false;
-    bool comparable = false;               // 两侧都携带观测
-    AnalysisConclusion conclusion = AnalysisConclusion::NoEvidence;
+    bool comparable = false;               // Both sides carry observations
+    AnalysisConclusion conclusion = AnalysisConclusion::kNoEvidence;
     std::size_t entitiesCompared = 0;
     std::size_t entitiesNotComparable = 0;
     std::vector<std::string> limitationKeys;
 };
 
 struct SnapshotComparison final {
-    ScopeComparability scope = ScopeComparability::Unknown;
-    CrossBootComparability boot = CrossBootComparability::UnknownBoot;
+    ScopeComparability scope = ScopeComparability::kUnknown;
+    CrossBootComparability boot = CrossBootComparability::kUnknownBoot;
 
-    std::vector<EntityDelta> deltas;         // 按 (partitionId, 键) 稳定排序
+    std::vector<EntityDelta> deltas;         // Stably sort by (partitionId, key).
     std::vector<PartitionAccount> partitions;
     TrustStatement trust;
-    AnalysisConclusion conclusion = AnalysisConclusion::NoEvidence;
+    AnalysisConclusion conclusion = AnalysisConclusion::kNoEvidence;
 
     std::size_t unchangedCount = 0;
     std::size_t partiallyComparableCount = 0;
@@ -409,185 +409,185 @@ struct SnapshotComparison final {
     std::size_t notComparableCount = 0;
     std::size_t insufficientCoverageCount = 0;
 
-    // 内部一致性自检。false 说明计数口径与逐条结论对不上，UI 必须降级展示。
-    // 判据见 CheckComparisonSelfConsistency —— 它只读本结构体已发布的字段，
-    // 不复用产生这些字段的中间变量，否则"自检"只是把同一个变量抄一遍。
+    // Internal consistency self-check. If false, the counting method does not align with itemized conclusions; the UI must degrade its display.
+    // Criteria are defined in checkComparisonSelfConsistency—it only reads the published fields of this structure, not
+    // the intermediate variables that generated them; otherwise, the 'self-check' would merely copy the same variable.
     bool selfCheckPassed = true;
 
     std::vector<std::string> limitationKeys;
 };
 
-// 对一份**已经产出**的比较结果做独立复核：逐条重算计数、核对每条增删所依据的分区
-// 账目、核对每条结论与其字段清单相容。CompareSnapshots 用它填 selfCheckPassed，
-// 调用方也可以对反序列化或跨进程传回来的结果再核一次。
+// Independently review an already produced comparison result: recalculate counts item by item, verify the partition ledger
+// for each addition/deletion, and ensure each conclusion is compatible with its field list. compareSnapshots uses this to
+// populate selfCheckPassed; callers may also re-verify results after deserialization or cross-process transmission.
 //
-// 之所以是公开函数而不是内联在 CompareSnapshots 里：判据必须能被独立构造的反例
-// 打成 false，否则这个不变式永远无法被测试证伪（旧实现就是这样）。
-bool CheckComparisonSelfConsistency(const SnapshotComparison& comparison);
+// Expose this function separately from compareSnapshots so an independently constructed counterexample can make the
+// predicate return false. Otherwise, the invariant cannot be falsified by a test, as happened in the old implementation.
+bool checkComparisonSelfConsistency(const SnapshotComparison& comparison);
 
-// D-05：调用方声明的复核规则。partitionId/fieldName 为空表示"任意"。
+// D-05: Review rules declared by the caller. An empty partitionId/fieldName indicates "any".
 struct ReviewRule final {
     std::string partitionId;
     std::string fieldName;
-    ReviewPriority priority = ReviewPriority::Informational;
+    ReviewPriority priority = ReviewPriority::kInformational;
     std::string reasonKey;
 };
 
 struct SnapshotCompareOptions final {
     std::vector<ReviewRule> reviewRules;
-    bool emitUnchanged = true;  // false 时结果里不保留 Unchanged 条目（计数仍然准）
+    bool emitUnchanged = true;  // When false, Unchanged entries are not retained in the result (count remains accurate).
 };
 
-SnapshotComparison CompareSnapshots(const Snapshot& earlier,
+SnapshotComparison compareSnapshots(const Snapshot& earlier,
                                     const Snapshot& later,
                                     const SnapshotCompareOptions& options = SnapshotCompareOptions{});
 
 // ---------------------------------------------------------------------------
-// D-08：预期变化清单核对（离线这一半）
+// D-08: Expected change list verification (offline half).
 //
-// 目标环境实测负责"只改自有对象、采前后快照、再清理"；本层只负责核对结果是否
-// 恰好包含预先声明的变化。未声明的变化只被列出来，不做任何归因。
+// The target environment is responsible for 'modifying only owned objects, capturing pre/post snapshots, and then cleaning up'; this
+// layer only verifies that the results exactly contain the pre-declared changes. Undeclared changes are listed but not attributed.
 // ---------------------------------------------------------------------------
 struct ExpectedChange final {
     std::string partitionId;
-    // 二选一：强身份用 identityKey（= EntityDelta::identityKey）；弱身份对象没有
-    // 跨会话主键，只能用本次比较内的 candidateKey（= EntityDelta::candidateKey）。
-    // 两个都空的声明**没有指向任何对象**，会被记进 invalid 而不是被随便配上一条。
+    // Choice: Strong identity uses identityKey (= EntityDelta::identityKey); weak identity objects lack a
+    // cross-session primary key and must use candidateKey (= EntityDelta::candidateKey) within this comparison only.
+    // A declaration where both are empty **does not point to any object** and is recorded as invalid rather than arbitrarily assigned.
     std::string identityKey;
     std::string candidateKey;
-    EntityChange change = EntityChange::Modified;
+    EntityChange change = EntityChange::kModified;
     std::vector<std::string> fieldNames;
 };
 
-// D-08：核对结论。三态而不是一个 bool —— "什么都没声明"与"声明的都观察到了"
-// 绝不能是同一个值，否则一份忘了填清单的验收报告会自动变成绿的。
+// D-08: Verification conclusion. Three-state instead of a bool: "nothing declared" and "all declared items observed"
+// must never be the same value, or a verification report with an empty checklist would automatically turn green.
 enum class ExpectationOutcome {
-    NotAssessed,  // 没有声明，或这份比较根本没有可用证据 —— 无从核对
-    Satisfied,    // 每一条声明都在有证据的比较里被观察到
-    Violated,     // 至少一条声明没被观察到，或声明本身不可核对
+    kNotAssessed,  // No declaration or no available evidence for this comparison — cannot verify.
+    kSatisfied,    // Every declaration is observed in a comparison with evidence.
+    kViolated,     // At least one assertion was not observed, or the assertion itself is unverifiable.
 };
 
-const char* ExpectationOutcomeName(ExpectationOutcome value) noexcept;
+const char* expectationOutcomeName(ExpectationOutcome value) noexcept;
 
 struct ExpectationCheck final {
-    ExpectationOutcome outcome = ExpectationOutcome::NotAssessed;
+    ExpectationOutcome outcome = ExpectationOutcome::kNotAssessed;
     std::vector<std::string> satisfied;
-    std::vector<std::string> missing;         // 声明了却没观察到
-    std::vector<std::string> unexpectedKeys;  // 观察到但未声明 —— 只记录
-    // 声明本身不可核对：身份键为空，或它指向的分区在本次比较里不可比较。
-    // 元素是该声明的 partitionId + '/' + 身份键（键为空时是 "<no-identity>"）。
+    std::vector<std::string> missing;         // Declared but not observed.
+    std::vector<std::string> unexpectedKeys;  // Observed but undeclared; record only.
+    // The declaration cannot be checked: the identity key is empty, or its partition is not comparable in this comparison.
+    // Elements are the partitionId + '/' + identity key (or "<no-identity>" if the key is empty).
     std::vector<std::string> invalid;
-    // 恒等于 outcome == Satisfied。NotAssessed 也是 false —— 无从核对不是通过。
+    // Always equivalent to outcome == Satisfied. NotAssessed is also false — lack of verification does not constitute success.
     bool allSatisfied = false;
 };
 
-ExpectationCheck CheckExpectedChanges(const SnapshotComparison& comparison,
+ExpectationCheck checkExpectedChanges(const SnapshotComparison& comparison,
                                       const std::vector<ExpectedChange>& expected);
 
 // ---------------------------------------------------------------------------
-// D-06：持久化
+// D-06: Persistent
 // ---------------------------------------------------------------------------
 inline constexpr const char* kSnapshotSchemaId = "ksword.snapshot";
 inline constexpr std::uint32_t kSnapshotSchemaMajor = 1;
 inline constexpr std::uint32_t kSnapshotSchemaMinor = 0;
 
 enum class SnapshotLoadStatus {
-    Ok,
-    OkWithUnknownFields,      // 有未知可选字段，已原样保留
-    EmptyInput,
-    MalformedJson,
-    MissingSchema,
-    WrongSchemaId,
-    UnsupportedMajorVersion,  // 明确拒绝，不做"尽力而为"的解析
-    MissingRequiredField,
-    InvalidFieldValue,        // 含未知枚举名 —— 不静默回落到默认值
-    // 文档本身合法，只是超过了本次调用给的解析上限（字节 / 节点 / 深度）。
-    // 它必须与 MalformedJson 分开：一份合法的大快照和一份损坏文件对使用者的
-    // 处置完全不同（抬高上限 vs. 这份文件坏了），D-06 要求错误状态明确。
-    LimitExceeded,
+    kOk,
+    kOkWithUnknownFields,      // Unknown optional fields present; preserved as-is.
+    kEmptyInput,
+    kMalformedJson,
+    kMissingSchema,
+    kWrongSchemaId,
+    kUnsupportedMajorVersion,  // Explicitly reject; do not attempt best-effort parsing.
+    kMissingRequiredField,
+    kInvalidFieldValue,        // Includes unknown enum names; never silently use a default.
+    // The document is valid but exceeds this call's parsing limits for bytes, nodes, or depth.
+    // It must be distinct from MalformedJson: a valid large snapshot versus a corrupted file require completely
+    // different user handling (raising limits vs. file corruption); D-06 requires explicit error states.
+    kLimitExceeded,
 };
 
-const char* SnapshotLoadStatusName(SnapshotLoadStatus value) noexcept;
+const char* snapshotLoadStatusName(SnapshotLoadStatus value) noexcept;
 
-// D-06 + 7.2：快照持久化用的解析上限。
+// D-06 + 7.2: Parsing limits for snapshot persistence.
 //
-// JsonLimits 的默认值是给**不可信输入**用的（32 MiB / 524,288 节点 / 64 MiB 节点
-// 预算），而 7.2 规定的 L1 负载是 100,000 条实体记录 —— 本模块自己写出来的合法
-// 文档在那个规模下有约 100 MiB、数百万节点，用通用默认值一律读不回来。快照文件
-// 是本机刚写出的会话数据，因此这里给一份显式的持久化档位；需要处理外来文件的
-// 调用方仍可传自己的 JsonLimits。
-JsonLimits SnapshotJsonLimits() noexcept;
+// The default value for JsonLimits is intended for **untrusted input** (32 MiB / 524,288 nodes / 64 MiB node budget),
+// whereas the L1 workload specified in section 7.2 consists of 100,000 entity records. A valid document generated by
+// this module at that scale is approximately 100 MiB with millions of nodes, so the generic default values cannot
+// read it back. Since the snapshot file contains session data just written by the local machine, an explicit
+// persistence tier is provided here; callers that need to handle external files can still pass their own JsonLimits.
+JsonLimits snapshotJsonLimits() noexcept;
 
 struct SnapshotLoadResult final {
-    SnapshotLoadStatus status = SnapshotLoadStatus::EmptyInput;
+    SnapshotLoadStatus status = SnapshotLoadStatus::kEmptyInput;
     Snapshot snapshot;
     std::uint32_t versionMajor = 0;
     std::uint32_t versionMinor = 0;
-    std::vector<std::string> unknownFieldPaths;  // 保留下来的未知可选字段位置
-    std::string errorDetail;                     // 原始错误说明，不猜、不美化
+    std::vector<std::string> unknownFieldPaths;  // Positions of unknown optional fields that are retained.
+    std::string errorDetail;                     // Original error description; do not guess or beautify.
     std::size_t errorOffset = 0;
 
     bool ok() const noexcept {
-        return status == SnapshotLoadStatus::Ok || status == SnapshotLoadStatus::OkWithUnknownFields;
+        return status == SnapshotLoadStatus::kOk || status == SnapshotLoadStatus::kOkWithUnknownFields;
     }
 };
 
-std::string WriteSnapshotJson(const Snapshot& snapshot, unsigned indent = 0);
+std::string writeSnapshotJson(const Snapshot& snapshot, unsigned indent = 0);
 
-// 纯函数：只读文本，不打开也不写任何文件。失败时 snapshot 保持默认构造 ——
-// 不留半个解析到一半的对象，调用方就无从"顺手存回去"覆盖源数据（D-06）。
-SnapshotLoadResult ReadSnapshotJson(std::string_view text);
-SnapshotLoadResult ReadSnapshotJson(std::string_view text, const JsonLimits& limits);
+// Pure function: reads text only, opens no files, and writes to no files. On failure, the snapshot remains default-constructed—leaving
+// no half-parsed object behind, so the caller cannot "accidentally save back" and overwrite the source data (D-06).
+SnapshotLoadResult readSnapshotJson(std::string_view text);
+SnapshotLoadResult readSnapshotJson(std::string_view text, const JsonLimits& limits);
 
 // ---------------------------------------------------------------------------
-// D-07：脱敏
+// D-07: Data masking.
 // ---------------------------------------------------------------------------
 struct RedactionOptions final {
     bool redactUserNames = true;
     bool redactHostnames = true;
     bool redactSids = true;
-    // 采集器原始错误文本经常带完整路径。true 时整段删除并登记在 removedFieldPaths，
-    // false 时按其它规则替换。删除与替换必须能被分辨，所以是两个清单。
+    // Collector raw error text often contains full paths. When true, the entire string is deleted and registered in removedFieldPaths;
+    // when false, it is replaced according to other rules. Deletion and replacement must be distinguishable, hence two separate lists.
     bool dropCollectorMessages = false;
 };
 
 struct RedactionMapping final {
-    RedactionClass cls = RedactionClass::None;
-    std::string original;     // 仅存在于内存，供一致性核对；绝不写进导出
-    std::string replacement;  // "<user-1>" 之类的稳定占位符
+    RedactionClass cls = RedactionClass::kNone;
+    std::string original;     // Exists in memory only for consistency verification; never written to export.
+    std::string replacement;  // Stable placeholders like "<user-1>"
 };
 
 struct RedactionReport final {
     std::vector<RedactionMapping> mappings;
-    std::vector<std::string> replacedFieldPaths;  // 被替换的字段位置
-    std::vector<std::string> removedFieldPaths;   // 被整体删除的字段位置
+    std::vector<std::string> replacedFieldPaths;  // Replaced field paths
+    std::vector<std::string> removedFieldPaths;   // Locations of fields deleted entirely.
     std::size_t replacementCount = 0;
 
-    // 7.3：本次脱敏被调用方取消。此时 redact 的输出被清空 —— 半脱敏的快照比不
-    // 脱敏更危险（看着像已处理，实际还带着原值），所以取消一律不交付部分结果。
+    // 7.3: The current redaction was cancelled by the caller. At this point, the redact output is cleared. Partially redacted snapshots are more
+    // dangerous than unredacted ones (they appear processed but still contain original values), so partial results are never delivered upon cancellation.
     bool cancelled = false;
 
-    // 7.3 的可核查性：实际做过的"候选串比较"次数。朴素实现是
-    //   文本长度 × 不同占位名数量，而占位名是从数据里自动收割的，会随快照增长。
-    // 这个计数让"扫描代价与占位名数量无关"成为可断言的事实，而不是靠计时。
+    // 7.3 Verifiability: The actual count of 'candidate string comparisons' performed. A naive implementation is text length ×
+    //   number of distinct placeholders, where placeholders are automatically harvested from the data and grow with the snapshot.
+    // This count makes "scan cost independent of placeholder count" an assertable fact rather than relying on timing.
     std::size_t needleComparisons = 0;
 };
 
-// 同一个 session 内的多次 redact 共享映射表 —— 这正是"同一导出内一致映射"。
-// 源快照是 const 输入，任何情况下都不会被修改。
+// Multiple redactions within the same session share the mapping table—this is exactly "consistent mapping within the same export."
+// The source snapshot is a const input and will never be modified under any circumstances.
 class RedactionSession final {
 public:
-    // 7.3：本地可中断工作必须有取消点。返回 true 表示调用方要求停止。
+    // 7.3: Locally interruptible work must have cancellation points. Return true if the caller requests a stop.
     using CancelHook = std::function<bool()>;
 
     RedactionSession() = default;
     explicit RedactionSession(RedactionOptions options) : options_(std::move(options)) {}
 
-    // 先学习再改写：free-text 字段里可能出现只在别处路径里露过面的用户名。
-    // 需要跨多份快照完全一致时，调用方可以先对全部快照 learn 一遍再逐份 redact。
+    // Learn first, then redact: usernames that appear only in paths elsewhere may exist in free-text fields.
+    // When requiring full consistency across multiple snapshots, the caller should first call learn on all snapshots, then redact each one individually.
     void learn(const Snapshot& source);
 
-    // 取消时 out 被置回默认构造，report().cancelled 为 true。
+    // On cancellation, out is reset to default-constructed state, and report().cancelled is true.
     void redact(const Snapshot& source, Snapshot& out);
 
     void setCancelHook(CancelHook hook) { cancel_ = std::move(hook); }
@@ -595,7 +595,7 @@ public:
     const RedactionReport& report() const noexcept { return report_; }
     const RedactionOptions& options() const noexcept { return options_; }
 
-    // 查询某个原值当前的占位符；未登记时返回空串。给测试与一致性核对用。
+    // Query the current placeholder for a given original value; returns an empty string if not registered. Used for testing and consistency checks.
     std::string replacementFor(RedactionClass cls, std::string_view original) const;
 
 private:
@@ -604,15 +604,15 @@ private:
     RedactionOptions options_;
     RedactionReport report_;
     CancelHook cancel_;
-    std::map<std::string, std::string> map_;  // 键 = 类别 + '\x1F' + 小写原值
+    std::map<std::string, std::string> map_;  // Key = category + '\x1F' + lowercase original value
     std::size_t userCount_ = 0;
     std::size_t hostCount_ = 0;
     std::size_t sidCount_ = 0;
 };
 
-void RedactSnapshot(const Snapshot& source,
+void redactSnapshot(const Snapshot& source,
                     const RedactionOptions& options,
                     Snapshot& out,
                     RedactionReport& report);
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

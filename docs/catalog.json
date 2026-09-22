@@ -1,0 +1,140 @@
+[
+  {
+    "title": "Coding style",
+    "titleZh": "代码风格",
+    "en": "docs/coding-style.md",
+    "zh": "docs/zh-CN/coding-style.md"
+  },
+  {
+    "title": "Project overview",
+    "titleZh": "项目概览",
+    "en": "README.md",
+    "zh": "docs/zh-CN/README.md"
+  },
+  {
+    "title": "Contributing",
+    "titleZh": "贡献指南",
+    "en": "CONTRIBUTING.md",
+    "zh": "docs/zh-CN/contributing.md"
+  },
+  {
+    "title": "Documentation index",
+    "titleZh": "文档目录",
+    "en": "docs/README.md",
+    "zh": "docs/zh-CN/index.md"
+  },
+  {
+    "title": "Build and setup",
+    "titleZh": "构建与环境",
+    "en": "docs/development.md",
+    "zh": "docs/zh-CN/development.md"
+  },
+  {
+    "title": "Code map and maintenance",
+    "titleZh": "代码地图与维护",
+    "en": "docs/maintenance.md",
+    "zh": "docs/zh-CN/maintenance.md"
+  },
+  {
+    "title": "Testing",
+    "titleZh": "测试",
+    "en": "tests/README.md",
+    "zh": "docs/zh-CN/testing.md"
+  },
+  {
+    "title": "Scripts",
+    "titleZh": "脚本",
+    "en": "scripts/README.md",
+    "zh": "docs/zh-CN/scripts.md"
+  },
+  {
+    "title": "Build layout",
+    "titleZh": "构建目录",
+    "en": "build/README.md",
+    "zh": "docs/zh-CN/build-layout.md"
+  },
+  {
+    "title": "Releases",
+    "titleZh": "发行包",
+    "en": "docs/releasing.md",
+    "zh": "docs/zh-CN/releasing.md"
+  },
+  {
+    "title": "Agent notes",
+    "titleZh": "Agent 工作约定",
+    "en": "AGENTS.md",
+    "zh": "docs/zh-CN/agent-notes.md"
+  },
+  {
+    "title": "CLI reference",
+    "titleZh": "CLI 参考",
+    "en": "docs/cli.md",
+    "zh": "docs/zh-CN/cli.md"
+  },
+  {
+    "title": "Language packs",
+    "titleZh": "语言包",
+    "en": "docs/language-packs.md",
+    "zh": "docs/zh-CN/language-packs.md"
+  },
+  {
+    "title": "DynData integration",
+    "titleZh": "动态偏移接入",
+    "en": "docs/dyndata.md",
+    "zh": "docs/zh-CN/dyndata.md"
+  },
+  {
+    "title": "Plugin specification",
+    "titleZh": "插件规范",
+    "en": "docs/plugins.md",
+    "zh": "docs/zh-CN/plugins.md"
+  },
+  {
+    "title": "Desktop drawing",
+    "titleZh": "桌面绘制",
+    "en": "docs/desktop-drawing.md",
+    "zh": "docs/zh-CN/desktop-drawing.md"
+  },
+  {
+    "title": "Memory audit",
+    "titleZh": "系统内存审计",
+    "en": "docs/memory-audit.md",
+    "zh": "docs/zh-CN/memory-audit.md"
+  },
+  {
+    "title": "Kernel knowledge",
+    "titleZh": "内核知识中心",
+    "en": "docs/kernel-knowledge.md",
+    "zh": "docs/zh-CN/kernel-knowledge.md"
+  },
+  {
+    "title": "Window input",
+    "titleZh": "窗口输入",
+    "en": "docs/window-input.md",
+    "zh": "docs/zh-CN/window-input.md"
+  },
+  {
+    "title": "IOCTL audit",
+    "titleZh": "IOCTL 审计",
+    "en": "docs/ioctl-audit.md",
+    "zh": "docs/zh-CN/ioctl-audit.md"
+  },
+  {
+    "title": "Repository layout",
+    "titleZh": "仓库目录结构",
+    "en": "docs/repository-layout.md",
+    "zh": "docs/zh-CN/repository-layout.md"
+  },
+  {
+    "title": "Driver agent notes",
+    "titleZh": "驱动开发约定",
+    "en": "drivers/ark/AGENTS.md",
+    "zh": "docs/zh-CN/driver-agent-notes.md"
+  },
+  {
+    "title": "Source archive",
+    "titleZh": "源码归档",
+    "en": "archive/README.md",
+    "zh": "docs/zh-CN/source-archive.md"
+  }
+]

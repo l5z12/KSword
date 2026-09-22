@@ -1,40 +1,40 @@
 <#
 .SYNOPSIS
-    一条命令跑完本轮所有该测的东西，跑完给一份合并报告。为无人值守设计。
+    Run all required tests for this round with a single command and generate a merged report. Designed for unattended execution.
 
 .DESCRIPTION
-    这个脚本本身**不做**任何新的测试逻辑 —— 它按依赖顺序调度已有的 stage，
-    在每一段之间把状态查干净，并在出事时自动取证。之所以单独存在，是因为
-    无人值守跑最容易出的问题不是"某一项失败"，而是：
+    This script itself performs no new test logic; it schedules existing stages in dependency order, clears
+    state between each stage, and automatically collects evidence upon failure. It exists separately
+    because the most common issue in unattended runs is not "a single stage failing," but rather:
 
-      * 前一项把机器留在脏状态里，后面每一项都在测另一台机器；
-      * 中途蓝屏 + 自动重启，脚本没看出来，后面全部"通过"；
-      * 跑完了才发现 guest 里那份驱动不是刚构建的那份。
+      * The previous item leaves the machine in a dirty state; each subsequent item tests a different machine.
+      * Note: A mid-run BSOD + auto-restart goes undetected by the script, causing all subsequent checks to report 'pass'.
+      * Discovered after completion that the driver in the guest was not the one just built.
 
-    所以顺序、状态核验、哈希核验、崩溃取证都在这里，而不是留给人记。
+    Thus, sequence verification, status checks, hash verification, and crash forensics are all handled here, not left for human memory.
 
-    **顺序是有依据的，不要随便调**：
-      1. 离线断言 + 工具编译     —— 不碰虚拟机，先失败在这里最省
-      2. 部署 + SHA256 核验      —— 之后所有读数才可归因
-      3. probe-platform          —— 只读，标定 CET / KVA shadow / GS base
-      4. probe-flags             —— 只发请求、期望全部被拒，不改状态
-      5. self-test               —— 只 VMXON/VMXOFF
-      6. launch-guest            —— 一次性受控 guest，爆炸半径一个 4KiB 栈
-      7. resident + stop         —— 验常驻活过发起进程（HOST_CR3 与 CR3 恢复）
-      8. soak                    —— 长跑，验 StateFlags 全量 interlocked 之后仍稳
-      9. view-probe / view-effect —— 分离视图：装得上，且**真的生效**
-     10. probe-xonly             —— 会退虚拟化，所以放最后
+    **Order is intentional; do not change it arbitrarily.
+      1. Offline assertion + tool compilation — fail here first to avoid touching the VM, saving the most resources.
+      2. Deploy + SHA256 verification — only then can subsequent readings be attributed.
+      3. probe-platform — Read-only; calibrate CET, KVA shadow, and GS base.
+      4. probe-flags —— Send requests only, expect all to be rejected, do not change state.
+      5. self-test —— VMXON/VMXOFF only
+      6. launch-guest — a one-time controlled guest with an explosion radius of a single 4KiB stack
+      7. resident + stop — Verify residency liveness after the initiating process (HOST_CR3 and CR3 restoration).
+      8. soak: Long-duration stress test to verify StateFlags remain stable after full interlocked operations.
+      9. view-probe / view-effect — Separate views: installed and **actually effective**
+     10. probe-xonly — Will exit virtualization, so place it last
 
-    3 和 4 在 5 之前，是因为它们只读：万一驱动这一版有问题，先拿到平台读数
-    比先把机器打挂有用。9 放最后，是因为它按设计会让常驻退出。
+    3 and 4 precede 5 because they are read-only: if this driver version has issues, obtaining platform readings first is
+    more useful than crashing the machine. 9 is placed last because it is designed to cause the resident component to exit.
 
 .PARAMETER SoakMs
-    浸泡时长。**驱动侧硬上限 30 秒**（KSWORD_ARK_HVM_SOAK_MAX_MILLISECONDS），
-    传更大的值会被静默夹到 30000 —— 报告里读 soakElapsedMilliseconds 才是
-    真正跑了多久。所以默认就是 30000，不写一个做不到的数字。
+    Soak duration. **Hard upper limit on the driver side is 30 seconds** (KSWORD_ARK_HVM_SOAK_MAX_MILLISECONDS);
+    values larger than this are silently clamped to 30000—the soakElapsedMilliseconds in the report reflects the
+    actual duration. Thus, the default is set to 30000, avoiding an unachievable number.
 
 .PARAMETER SkipOffline
-    跳过第 1 段。只在刚刚已经跑过离线套件时用。
+    Skip section 1. Use only when the offline suite has just been run.
 
 .EXAMPLE
     .\Invoke-KswordUnattendedSuite.ps1
@@ -42,7 +42,7 @@
 [CmdletBinding()]
 param(
     [string] $VMName  = 'KSword-HVM-Target',
-    [ValidateRange(1, 30000)]   # 驱动硬上限，超了会被静默夹掉
+    [ValidateRange(1, 30000)]   # Hard limit for the driver; values exceeding this are silently dropped.
     [int]    $SoakMs  = 30000,
     [switch] $SkipOffline
 )
@@ -53,7 +53,7 @@ $logDir = Join-Path $repo 'docs\next\logs'
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
 $stamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
 
-$sysPath = Join-Path $repo 'Ksword5.1\x64\Release\KswordARK.sys'
+$sysPath = Join-Path $repo 'artifacts/bin\x64\Release\KswordARK.sys'
 $record  = [ordered]@{
     schema      = 'ksword-unattended-suite/1'
     startedUtc  = (Get-Date).ToUniversalTime().ToString('o')
@@ -68,7 +68,7 @@ $resultPath = Join-Path $logDir "unattended-$stamp.json"
 
 function Save-Record {
     $record.finishedUtc = (Get-Date).ToUniversalTime().ToString('o')
-    # JSON 必须无 BOM，见文件末尾说明。
+    # JSON must be BOM-free; see the note at the end of the file.
     [IO.File]::WriteAllText(
         $resultPath,
         ($record | ConvertTo-Json -Depth 14),
@@ -90,26 +90,26 @@ function Add-Stage {
     Save-Record
 }
 
-# 崩溃取证：**只在 guest 真崩了时**跑。
+# Crash forensics: **Run only when the guest truly crashes**.
 #
-# 一段失败不等于 guest 崩了。实测过一次：一次性 guest 跑成功了、驱动正常返回，
-# 是 hvm_ctl.exe 回用户态时 AV，退出码 0xC0000005 一路传上来 —— 那是工具侧的
-# 事故，跟 guest 无关。照样去取转储只会取回一份**几小时前的旧转储**，
-# 然后给出一个完全自洽、完全错误的故事。
+# A single failure does not mean the guest crashed. We tested this once: the guest ran successfully in one attempt, and the driver returned normally,
+# This is an hvm_ctl.exe AV when returning to user mode, with exit code 0xC0000005 bubbling up — that's a tool-side issue, unrelated to the guest.
+# The incident is unrelated to the guest. Attempting to retrieve the dump will only return a **dump from several hours ago**.
+# Then it presents a completely self-consistent yet entirely false narrative.
 #
-# 判据用控制脚本自己记的 alive 步骤：它比对过开机时刻，OK 就说明没重启过。
+# Use the control script's recorded 'alive' steps as the criterion: if it matches the boot-time state and returns OK, it indicates no reboot occurred.
 function Test-GuestActuallyCrashed {
     param($StageData)
     if ($null -eq $StageData -or $null -eq $StageData.steps) { return $true }
     $alive = @($StageData.steps | Where-Object { $_.name -like 'alive:*' })
-    if ($alive.Count -eq 0) { return $true }      # 没测过存活，保守取证
-    # 任何一条 alive 判 FAIL 才算 guest 出事
+    if ($alive.Count -eq 0) { return $true }      # Liveness not tested; conservative forensics.
+    # Consider the guest to have failed only if an alive check reports FAIL.
     return [bool](@($alive | Where-Object { $_.outcome -ne 'OK' }).Count -gt 0)
 }
 
 function Invoke-CrashForensics {
     param([string] $AfterStage)
-    Write-Host "`n出事了，自动取证……" -ForegroundColor Yellow
+    Write-Host "`nSomething went wrong, starting automatic forensics..." -ForegroundColor Yellow
     try {
         & (Join-Path $PSScriptRoot 'Get-KswordVmBugcheck.ps1') -VMName $VMName 2>&1 |
             Tee-Object -Variable out | Out-Host
@@ -117,14 +117,14 @@ function Invoke-CrashForensics {
                   Sort-Object -Property { $_.LastWriteTime } -Descending |
                   Select-Object -First 1
         if ($newest) {
-            [void]$record.notes.Add("崩溃取证（$AfterStage 之后）：$($newest.FullName)")
+            [void]$record.notes.Add("Crash forensics (after $AfterStage): $($newest.FullName)")
         }
     } catch {
-        [void]$record.notes.Add("崩溃取证失败：$($_.Exception.Message)")
+        [void]$record.notes.Add("Crash forensics failed: $($_.Exception.Message)")
     }
 }
 
-# 跑一个 stage，返回 $true/$false。失败时把控制脚本写的那份记录挂进报告。
+# Run a stage and return $true/$false. On failure, attach the log written by the control script to the report.
 function Invoke-Stage {
     param([string] $Stage, [string] $Why, [int] $Soak = 0)
 
@@ -132,13 +132,13 @@ function Invoke-Stage {
     $before = Get-ChildItem $logDir -Filter 'hvm-autotest-*.json' -ErrorAction SilentlyContinue
     $beforeNames = @($before | ForEach-Object { $_.Name })
 
-    # splat 必须用**哈希表**，不能用数组。
+    # splat must use a **hash table**, not an array.
     #
-    # 数组 splat 是**按位置**传参：`@('-Stage','resident')` 会把字符串 "-Stage"
-    # 本身绑给第一个位置参数（正好就是 $Stage），于是报
+    # Array splatting passes arguments **by position**: `@('-Stage','resident')` will pass the string "-Stage" as a positional argument.
+    # It is bound to the first positional parameter (which happens to be $Stage), so it reports
     # "The argument '-Stage' does not belong to the set ..." ——
-    # 看着像 stage 名字写错了，其实是传参方式错了。实测吃掉过一整轮。
-    # 只有哈希表 splat 才是按名字传。
+    # Looks like a typo in the stage name, but it's actually a parameter passing error. This has consumed an entire test run in practice.
+    # Only hash table splatting passes arguments by name.
     $stageArgs = @{ Stage = $Stage; VMName = $VMName }
     if ($Soak -gt 0) { $stageArgs['SoakMs'] = $Soak }
 
@@ -146,13 +146,13 @@ function Invoke-Stage {
     & (Join-Path $PSScriptRoot 'Invoke-KswordHvmControl.ps1') @stageArgs | Out-Host
     $code = $LASTEXITCODE
     if ($null -eq $code) {
-        # 绑定失败或脚本抛异常时 $LASTEXITCODE 不会被设置。把它当成失败，
-        # 而不是让 `$code -eq 0` 的比较悄悄为假、错误信息指向别处。
-        Add-Stage $Stage 'FAIL' "调用没有返回退出码（多半是参数绑定失败）—— $Why"
+        # When binding fails or the script throws an exception, $LASTEXITCODE is not set. Treat this as a failure.
+        # Instead of letting the `$code -eq 0` comparison silently evaluate to false with error messages pointing elsewhere.
+        Add-Stage $Stage 'FAIL' "Call did not return an exit code (likely parameter binding failure) — $Why"
         return $false
     }
 
-    # 把控制脚本刚写的那份在机记录并进来，报告才自足。
+    # Import the machine log just written by the control script so the report is self-contained.
     $data = $null
     $after = Get-ChildItem $logDir -Filter 'hvm-autotest-*.json' -ErrorAction SilentlyContinue |
              Where-Object { $_.Name -notin $beforeNames } |
@@ -167,169 +167,169 @@ function Invoke-Stage {
         return $true
     }
     if ($code -eq 4) {
-        # 本机不适用：判据依赖的硬件能力这台机器不提供，没东西可修。
+        # Not applicable to this machine: the hardware capabilities required by the criteria are not provided, so there is nothing to fix.
         #
-        # 与 3 分开的理由不是措辞：3 拖着总判定降级是**对的**，因为有人该去修；
-        # 4 若也降级，套件在这一整类硬件上就永远判 PARTIAL，而永远不绿的报告与
-        # 没有报告等价 —— 下次真出问题时那一行不会有人多看一眼。
+        # The reason for separating from 3 is not wording: dragging the overall verdict to downgrade in 3 is **correct** because someone should fix it;
+        # 4 If also downgraded, the suite will always be marked PARTIAL for this entire class of hardware, and reports that never turn green with
+        # No report equivalence — the next time a real issue occurs, no one will pay extra attention to that line.
         #
-        # 它同样**不算通过**：这一项什么都没测到，只是没测到的原因不归我们管。
-        Add-Stage $Stage 'NOT_APPLICABLE' "本机问不出这个问题 —— $Why" $data
-        [void]$record.notes.Add("$Stage 在本机不适用：判据依赖的硬件能力不存在，不是这次没准备好。")
+        # It also **does not count as passed**: this item measured nothing; the reason for not measuring is outside our scope.
+        Add-Stage $Stage 'NOT_APPLICABLE' "This issue cannot be reproduced on the local machine —— $Why" $data
+        [void]$record.notes.Add("$Stage Not applicable on local machine: the hardware capabilities required by the criteria do not exist; this is not a matter of being unprepared.")
         return $true
     }
     if ($code -eq 3) {
-        # 空过：跑完了但没有区分力。**不是通过**，但也不该中断整轮 ——
-        # 后面的项和它无关。记 BLOCKED 让总判定降级，然后继续。
-        Add-Stage $Stage 'BLOCKED' "空过（跑完但没测到）—— $Why" $data
-        [void]$record.notes.Add("$Stage 空过：这一项这次什么都没测到，不算通过。")
+        # Skipped: Completed but lacks discriminative power. **Not a pass**, but should not interrupt the entire round --
+        # Subsequent items are unrelated. Mark as BLOCKED to downgrade the overall verdict, then continue.
+        Add-Stage $Stage 'BLOCKED' "Skipped (ran but no test detected) — $Why" $data
+        [void]$record.notes.Add("$Stage Skipped: This item did not test anything this time, so it does not count as passed.")
         $script:anyBlocked = $true
         return $true
     }
-    Add-Stage $Stage 'FAIL' "退出码 $code —— $Why" $data
+    Add-Stage $Stage 'FAIL' "Exit code $code — $Why" $data
     return $false
 }
 
 $anyBlocked = $false
 
 # ---------------------------------------------------------------------------
-Write-Host "=== KSword 无人值守套件 ===" -ForegroundColor Cyan
-Write-Host "记录 -> $resultPath`n"
+Write-Host "=== KSword Unattended Suite ===" -ForegroundColor Cyan
+Write-Host "Log -> $resultPath`n"
 
 try {
-    # --- 0. 驱动哈希：先记下来，之后所有读数才知道属于哪一份二进制 ---
+    # --- 0. Driver hash: Record it first so all subsequent readings can be identified as belonging to a specific binary.
     if (-not (Test-Path $sysPath)) {
-        Add-Stage '前置:驱动存在' 'FAIL' "找不到 $sysPath —— 先构建"
+        Add-Stage 'Pre: Driver Exists' 'FAIL' "Cannot find $sysPath — Build first"
         $record.verdict = 'FAIL'
         exit 1
     }
     $record.driverSha256 = (Get-FileHash $sysPath -Algorithm SHA256).Hash
-    Add-Stage '前置:驱动哈希' 'PASS' $record.driverSha256
+    Add-Stage 'Pre: Driver Hash' 'PASS' $record.driverSha256
 
     $sig = Get-AuthenticodeSignature $sysPath
     if ($sig.Status -eq 'NotSigned') {
-        Add-Stage '前置:驱动已签名' 'FAIL' '未签名，送进 guest 只会得到 sc start 577'
+        Add-Stage 'Pre: Driver Signed' 'FAIL' 'Unsigned, sending to guest will only result in sc start 577'
         $record.verdict = 'FAIL'
         exit 1
     }
-    Add-Stage '前置:驱动已签名' 'PASS' "$($sig.Status)"
+    Add-Stage 'Pre: Driver Signed' 'PASS' "$($sig.Status)"
 
-    # --- 0b. 先腾磁盘 ---
+    # --- 0b. Free up disk space first ---
     #
-    # 这一轮的 risky stage 会打 5 个检查点，加上部署自己那个，每个约 8 GiB。
-    # 无人值守时磁盘满的表现很有迷惑性：检查点失败 → 虚拟机进 Paused-Critical
-    # → 看起来像挂死。与其跑到一半撞上，不如开跑前先清。
-    # clean-install 永不删除（它是回到干净系统的唯一退路）。
+    # This round's risky stage creates 5 checkpoints, plus one for the deployment itself, each consuming approximately 8 GiB.
+    # In unattended mode, a full disk is misleading: checkpoint failure → VM enters Paused-Critical.
+    # → Looks like a hang. Better to clear it before starting than to crash halfway through.
+    # clean-install: Never delete (it is the only fallback to return to a clean system).
     $freeGb = [math]::Round((Get-PSDrive C).Free / 1GB, 1)
-    Write-Host "`n=== 磁盘 ===  C: 剩余 $freeGb GB" -ForegroundColor Cyan
+    Write-Host "`n=== Disk ===  C: $freeGb GB remaining" -ForegroundColor Cyan
     if ($freeGb -lt 80) {
         try {
             & (Join-Path $PSScriptRoot 'Clear-KswordVmCheckpoints.ps1') `
                 -VMName $VMName -KeepLast 0 -Confirm | Out-Host
             $freeGb = [math]::Round((Get-PSDrive C).Free / 1GB, 1)
-            Add-Stage '前置:清理检查点' 'PASS' "清理后剩余 $freeGb GB（clean-install 保留）"
+            Add-Stage 'Pre: Checkpoint Cleanup' 'PASS' "Remaining $freeGb GB after cleanup (clean-install reserved)"
         } catch {
-            Add-Stage '前置:清理检查点' 'BLOCKED' $_.Exception.Message
+            Add-Stage 'Pre: Checkpoint Cleanup' 'BLOCKED' $_.Exception.Message
         }
     } else {
-        Add-Stage '前置:清理检查点' 'SKIP' "剩余 $freeGb GB，够用"
+        Add-Stage 'Pre: Checkpoint Cleanup' 'SKIP' "Remaining $freeGb GB, sufficient"
     }
     if ($freeGb -lt 50) {
         [void]$record.notes.Add(
-            "磁盘只剩 $freeGb GB，5 个检查点很可能放不下 —— 中途失败先看是不是磁盘满。")
+            "Only $freeGb GB of disk space remains; 5 checkpoints likely won't fit —— if it fails midway, first check if the disk is full.")
     }
 
-    # --- 1. 离线：不碰虚拟机，先失败在这里最省 ---
+    # --- 1. Offline: Avoid touching the VM; failing here early saves the most resources ---
     if ($SkipOffline) {
-        Add-Stage '离线断言+工具' 'SKIP' '按 -SkipOffline 跳过'
+        Add-Stage 'Offline Assertion + Tool' 'SKIP' 'Skip with -SkipOffline'
     } else {
-        Write-Host "`n=== 离线断言 + 工具编译 ===" -ForegroundColor Cyan
+        Write-Host "`n=== Offline Assertion + Tool Compilation ===" -ForegroundColor Cyan
         & (Join-Path $PSScriptRoot 'Invoke-KswordAutomatedAcceptance.ps1') -OfflineOnly | Out-Host
         if ($LASTEXITCODE -ne 0) {
-            Add-Stage '离线断言+工具' 'FAIL' "退出码 $LASTEXITCODE"
+            Add-Stage 'Offline Assertion + Tool' 'FAIL' "Exit Code $LASTEXITCODE"
             $record.verdict = 'FAIL'
             exit 1
         }
-        Add-Stage '离线断言+工具' 'PASS' '4000 条断言 + 两个 /MT 工具'
+        Add-Stage 'Offline Assertion + Tools' 'PASS' '4000 Assertions + Two /MT Tools'
     }
 
-    # --- 2. 部署（脚本内部会比对宿主与 guest 的 SHA256）---
-    Write-Host "`n=== 部署 ===" -ForegroundColor Cyan
+    # --- 2. Deployment (scripts internally compare host and guest SHA256) ---
+    Write-Host "`n=== Deployment ===" -ForegroundColor Cyan
     & (Join-Path $PSScriptRoot 'Deploy-KswordDriverToVm.ps1') -VMName $VMName | Out-Host
     if ($LASTEXITCODE -ne 0) {
-        Add-Stage '部署+哈希核验' 'FAIL' "退出码 $LASTEXITCODE —— 前提或哈希不符，后面全部不跑"
+        Add-Stage 'Deploy + Hash Verification' 'FAIL' "Exit code $LASTEXITCODE --- Prerequisites or hash mismatch, subsequent stages will not run"
         $record.verdict = 'FAIL'
         exit 1
     }
-    Add-Stage '部署+哈希核验' 'PASS' 'guest 上就是刚构建的那份'
+    Add-Stage 'Deploy + Hash Verification' 'PASS' 'On the guest, it is exactly the freshly built version'
 
-    # --- 3..9 按依赖顺序 ---
+    # --- Steps 3..9 in dependency order ---
     $plan = @(
-        @{ S = 'probe-platform'; W = '只读：CET / KVA shadow / GS base 标定';            Soak = 0 }
+        @{ S = 'probe-platform'; W = 'Read-only: CET / KVA shadow / GS base calibration';            Soak = 0 }
         @{ S = 'self-test';      W = 'VMXON/VMXOFF';                                      Soak = 0 }
-        # probe-flags 排在 self-test **之后**：驱动的前置检查排在所有能力门之前，
-        # 没 prepare+self-test 时能力门根本没被问到，用例会空过。
-        @{ S = 'probe-flags';    W = '负向：ENFORCE 与能力 flag 是否在该拒的地方拒';      Soak = 0 }
-        @{ S = 'launch-guest';   W = '一次性受控 guest：VMCS 构造 + EPTP + VMLAUNCH';     Soak = 0 }
-        @{ S = 'resident';       W = '常驻活过发起进程（HOST_CR3 + 退虚拟化 CR3 恢复）';  Soak = 0 }
-        # 嵌套端到端，排在 resident 之后、soak 之前。
+        # probe-flags is placed **after** self-test: driver pre-checks occur before all capability gates.
+        # Without prepare+self-test, the capability gate is never queried, so the test would pass by default.
+        @{ S = 'probe-flags';    W = 'Negative: Whether ENFORCE and capability flags are rejected at the places they should be rejected';      Soak = 0 }
+        @{ S = 'launch-guest';   W = 'One-time controlled guest: VMCS construction + EPTP + VMLAUNCH';     Soak = 0 }
+        @{ S = 'resident';       W = 'Resident hypervisor survives the initiating process (HOST_CR3 + CR3 restoration when leaving virtualization)';  Soak = 0 }
+        # Nested end-to-end, scheduled after resident and before soak.
         #
-        # 之前这一整条线只能手工跑，于是它验过的东西没有一样会被回归再碰一次
-        # —— 而嵌套里出错最贵的那条路径（MSR 退出判给我们之后没人服务它）的
-        # 症状是**静默挂死**，不是报错。一次没人跑的验证等于没有验证。
-        @{ S = 'nested';         W = 'L2 端到端：vmcs02 合并 + 影子 EPT + MSR 位图路由';  Soak = 0 }
-        @{ S = 'soak';           W = "长跑 $SoakMs ms（驱动上限 30000）：StateFlags 全量 interlocked 之后仍稳"; Soak = $SoakMs }
-        # 视图归因探针只发一次 VIEW_OP_ADD、不进 VMX，所以排在会退虚拟化的两级之前。
-        @{ S = 'view-probe';     W = '分离视图安装期归因：拒绝发生在该拒的那道门上';      Soak = 0 }
-        # 端到端生效判据。它自己起停常驻，并且是**唯一**会真正走到 EPTP 切换退出
-        # 路径的一级，所以排在 probe-xonly 之前 —— probe-xonly 按设计会退虚拟化，
-        # 让它先跑就等于让后面这一级在一台刚被打掉常驻的机器上开工。
-        @{ S = 'view-effect';    W = 'CLOAK 真的生效：内核读被重定向到影子且常驻未掉';   Soak = 0 }
-        @{ S = 'probe-xonly';    W = 'EPT 权限仍被强制（按设计会退虚拟化，故放最后）';    Soak = 0 }
+        # Previously, this entire line could only be run manually, so nothing it verified was ever re-verified in regression.
+        # — while the most expensive path in nested virtualization (where an MSR exit is dispatched to us but no one services it)
+        # The symptom is a **silent hang**, not an error. A validation run with no one watching equals no validation.
+        @{ S = 'nested';         W = 'L2 end-to-end: vmcs02 merge + shadow EPT + MSR bitmap routing';  Soak = 0 }
+        @{ S = 'soak';           W = "Long-distance run $SoakMs ms (driver limit 30000): StateFlags full interlocked remains stable"; Soak = $SoakMs }
+        # View attribution probes emit VIEW_OP_ADD only once and do not enter VMX, so they are placed before the two levels that may exit virtualization.
+        @{ S = 'view-probe';     W = 'Attribution during separated view installation: Rejection occurs at that specific door of denial';      Soak = 0 }
+        # End-to-end effectiveness criterion. It starts and stops the resident component itself and is the **only** one that truly triggers an EPTP switch exit.
+        # This is a level in the path, so it runs before probe-xonly — probe-xonly is designed to exit virtualization.
+        # Running it first means the next level starts on a machine where the resident component has just been removed.
+        @{ S = 'view-effect';    W = 'CLOAK is truly effective: kernel reads are redirected to shadow and the resident hypervisor remains active';   Soak = 0 }
+        @{ S = 'probe-xonly';    W = 'EPT permissions are still enforced (leaving virtualization is by design, so placed last)';    Soak = 0 }
     )
 
     $anyFail = $false
     foreach ($p in $plan) {
         if (-not (Invoke-Stage $p.S $p.W $p.Soak)) {
             $anyFail = $true
-            # 一段失败就停：脏状态下继续跑，后面每一项都在测另一台机器。
-            [void]$record.notes.Add("在 $($p.S) 失败后停止 —— 不在脏状态上继续。")
+            # Stop on first failure: Continuing in a dirty state would cause subsequent items to test a different machine.
+            [void]$record.notes.Add("Stop after failure in $($p.S) — do not continue on a dirty state.")
             $lastStage = $record.stages[$record.stages.Count - 1]
             if (Test-GuestActuallyCrashed $lastStage.data) {
                 Invoke-CrashForensics $p.S
             } else {
                 [void]$record.notes.Add(
-                    "guest 全程存活且没有重启 —— 这是**工具或脚本侧**的失败，" +
-                    "不是 guest 崩溃。没有去取转储（取回来的会是旧的）。")
-                Write-Host "`nguest 没崩（alive 全 OK 且没重启）—— 不取转储。" -ForegroundColor Yellow
+                    "guest survives throughout without rebooting —— this is a failure on the **tool or script side**," +
+                    "Not a guest crash. No dump was taken (what would be retrieved is an old one).")
+                Write-Host "`nguest did not crash (all alive checks OK and no reboot) — do not collect dump." -ForegroundColor Yellow
             }
             break
         }
-        # 每段之后修剪到只留最近一个检查点。
+        # Trim each segment to keep only the most recent checkpoint.
         #
-        # 每个 stage 的 plan 自己会垫 self-test，所以一轮下来会打十来个检查点，
-        # 每个约 8 GiB —— 按当前剩余空间必然撞满，而磁盘满的表现（虚拟机进
-        # Paused-Critical）看起来像挂死。留一个就够回滚到上一段。
+        # Each stage's plan includes its own self-test, so a full round generates about a dozen checkpoints.
+        # Each is about 8 GiB — with current free space, it will inevitably fill the disk, and the symptom of a full disk (the VM hangs
+        # Paused-Critical appears to be hung. Keeping one is sufficient to roll back to the previous state.
         try {
             & (Join-Path $PSScriptRoot 'Clear-KswordVmCheckpoints.ps1') `
                 -VMName $VMName -KeepLast 1 -Confirm | Out-Null
         } catch { }
     }
 
-    # 三态总判定。PARTIAL 不是"基本通过"，是"有项目没测到" —— 单列出来，
-    # 否则它会被当成绿灯。
+    # Three-state overall verdict. PARTIAL is not 'basically passed'; it means 'some items were not tested' — listed separately.
+    # Otherwise, it is treated as a green light.
     $record.verdict = if ($anyFail) { 'FAIL' }
                       elseif ($anyBlocked) { 'PARTIAL' }
                       else { 'PASS' }
 }
 catch {
     $record.verdict = 'ERROR'
-    [void]$record.notes.Add("套件异常：$($_.Exception.Message)")
-    Write-Host "`n套件异常：$($_.Exception.Message)" -ForegroundColor Red
+    [void]$record.notes.Add("Suite exception: $($_.Exception.Message)")
+    Write-Host "`nSuite exception: $($_.Exception.Message)" -ForegroundColor Red
 }
 finally {
-    # 无论怎么退出，都把常驻收干净 —— 留着它会让下一次部署撞上
-    # "CPUID 看不到 VMX"那个很有迷惑性的报错。
+    # No matter how it exits, clean up the resident component completely; leaving it will cause the next deployment to collide.
+    # The misleading error message 'CPUID does not show VMX'.
     try {
         & (Join-Path $PSScriptRoot 'Invoke-KswordHvmControl.ps1') `
             -Stage stop -VMName $VMName -SkipCheckpoint 2>&1 | Out-Null
@@ -337,14 +337,14 @@ finally {
 
     Save-Record
     Write-Host ""
-    Write-Host ("================ 无人值守套件总判定: {0} ================" -f $record.verdict) `
+    Write-Host ("================ Unattended Suite Final Verdict: {0} ================" -f $record.verdict) `
         -ForegroundColor $(switch ($record.verdict) {
             'PASS' { 'Green' } 'PARTIAL' { 'Yellow' } default { 'Red' } })
     if ($record.verdict -eq 'PARTIAL') {
-        Write-Host "  PARTIAL 不是'基本通过' —— 有项目跑完了但什么都没测到。" -ForegroundColor Yellow
+        Write-Host "  PARTIAL is not 'Basic Pass' -- some projects ran but nothing was tested." -ForegroundColor Yellow
     }
     foreach ($n in $record.notes) { Write-Host "  · $n" -ForegroundColor Yellow }
-    Write-Host "  报告 : $resultPath" -ForegroundColor Cyan
-    Write-Host "  驱动 : $($record.driverSha256)" -ForegroundColor DarkGray
+    Write-Host "  Report : $resultPath" -ForegroundColor Cyan
+    Write-Host "  Driver : $($record.driverSha256)" -ForegroundColor DarkGray
     exit $(switch ($record.verdict) { 'PASS' { 0 } 'PARTIAL' { 3 } default { 1 } })
 }

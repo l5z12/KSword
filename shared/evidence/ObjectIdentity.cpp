@@ -1,69 +1,69 @@
 #include "ObjectIdentity.h"
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 namespace {
 
-// 主键分隔符不会出现在路径、GUID 或数字里，避免 "a|b" 与 "a" + "|b" 撞键。
+// The primary key separator does not appear in paths, GUIDs, or numbers to avoid key collisions between "a|b" and "a" + "|b".
 constexpr char kSep = '\x1F';
 
-void AppendField(std::string& key, const std::string& value) {
+void appendField(std::string& key, const std::string& value) {
     key.push_back(kSep);
     key.append(value);
 }
 
-void AppendField(std::string& key, const OptionalU64& value, U64Format format) {
+void appendField(std::string& key, const OptionalU64& value, U64Format format) {
     key.push_back(kSep);
     if (value.present) {
-        key.append(FormatU64(value.value, format));
+        key.append(formatU64(value.value, format));
     }
 }
 
-// 两个可选值的三态比较：都在且相等 -> Equal；都在且不等 -> Differ；任一缺失 -> Missing。
-enum class FieldCompare { Equal, Differ, Missing };
+// Three-state comparison of two optional values: both present and equal -> Equal; both present and unequal -> Differ; either missing -> Missing.
+enum class FieldCompare { kEqual, kDiffer, kMissing };
 
-FieldCompare Compare(const OptionalU64& a, const OptionalU64& b) noexcept {
+FieldCompare compare(const OptionalU64& a, const OptionalU64& b) noexcept {
     if (!a.present || !b.present) {
-        return FieldCompare::Missing;
+        return FieldCompare::kMissing;
     }
-    return a.value == b.value ? FieldCompare::Equal : FieldCompare::Differ;
+    return a.value == b.value ? FieldCompare::kEqual : FieldCompare::kDiffer;
 }
 
-FieldCompare Compare(const std::string& a, const std::string& b) noexcept {
+FieldCompare compare(const std::string& a, const std::string& b) noexcept {
     if (a.empty() || b.empty()) {
-        return FieldCompare::Missing;
+        return FieldCompare::kMissing;
     }
-    return a == b ? FieldCompare::Equal : FieldCompare::Differ;
+    return a == b ? FieldCompare::kEqual : FieldCompare::kDiffer;
 }
 
-// 启动周期：两边都有且不同 -> 不是同一个实例。有一边缺失只能降级为不确定。
-FieldCompare CompareBoot(const std::string& a, const std::string& b) noexcept {
-    return Compare(a, b);
+// Boot cycle: if both sides exist but differ, they are not the same instance. If one side is missing, the result degrades to uncertain.
+FieldCompare compareBoot(const std::string& a, const std::string& b) noexcept {
+    return compare(a, b);
 }
 
-// F-03 统一身份门槛：任一侧连弱主键都构不成时，最强只能是 Candidate。
+// F-03 unified identity threshold: if neither side can form even a weak primary key, the strongest possible result is Candidate.
 //
-// 为什么必须统一加：strength() 与 crossSessionKey() 已经在说"身份不足、不给主键"，
-// 匹配器却可能因为几个次要字段恰好相等而回 Confirmed（例如两个 imagePath/pdb 全空、
-// 只剩 timeDateStamp+imageSize 的模块记录）。那不仅自相矛盾，还会出现单调性倒置：
-// 补上不同的路径（信息变多）反而从 Confirmed 掉到 NoMatch。矛盾证据仍可判 NoMatch，
-// 这里只封"确认"这一档。
-MatchResult CapByStrength(MatchResult result, IdentityStrength a, IdentityStrength b) noexcept {
-    if (result != MatchResult::Confirmed) {
+// Why must we unify the addition: strength() and crossSessionKey() already indicate 'insufficient identity, no primary key', yet the
+// matcher might return Confirmed due to coincidental equality in a few secondary fields (e.g., module records where both imagePath
+// and pdb are empty, leaving only timeDateStamp + imageSize). This creates a contradiction and causes monotonicity inversion:
+// Adding a different path (more information) can downgrade the result from Confirmed to NoMatch.
+// Contradictory evidence still yields NoMatch; here we only restrict the 'Confirmed' tier.
+MatchResult capByStrength(MatchResult result, IdentityStrength a, IdentityStrength b) noexcept {
+    if (result != MatchResult::kConfirmed) {
         return result;
     }
-    if (a == IdentityStrength::Unusable || b == IdentityStrength::Unusable) {
-        return MatchResult::Candidate;
+    if (a == IdentityStrength::kUnusable || b == IdentityStrength::kUnusable) {
+        return MatchResult::kCandidate;
     }
     return result;
 }
 
-// 路径归一化：只做大小写折叠与分隔符统一，不解析符号链接（那需要现场访问）。
-// 用于文件"内容+路径"主键，保证 "C:\\A\\B.sys" 与 "c:/a/b.sys" 不被当成两个对象。
-std::string NormalizePath(const std::string& path) {
+// Path normalization: performs only case folding and delimiter unification; does not resolve symbolic links (which would require live access).
+// Used for the primary key of 'content + path' to ensure 'C:\A\B.sys' and 'c:/a/b.sys' are not treated as two distinct objects.
+std::string normalizePath(const std::string& path) {
     std::string out;
     out.reserve(path.size());
-    for (const char raw : path) {
-        char c = raw;
+    for (const char kRaw : path) {
+        char c = kRaw;
         if (c == '/') {
             c = '\\';
         } else if (c >= 'A' && c <= 'Z') {
@@ -74,429 +74,429 @@ std::string NormalizePath(const std::string& path) {
     return out;
 }
 
-MatchResult MatchProcessInstanceCore(const ProcessInstanceId& a, const ProcessInstanceId& b) noexcept;
-MatchResult MatchThreadInstanceCore(const ThreadInstanceId& a, const ThreadInstanceId& b) noexcept;
-MatchResult MatchDriverInstanceCore(const DriverInstanceId& a, const DriverInstanceId& b) noexcept;
-MatchResult MatchFileIdentityCore(const FileIdentity& a, const FileIdentity& b) noexcept;
-MatchResult MatchHandleIdentityCore(const HandleIdentity& a, const HandleIdentity& b) noexcept;
-MatchResult MatchConnectionIdentityCore(const ConnectionIdentity& a, const ConnectionIdentity& b) noexcept;
+MatchResult matchProcessInstanceCore(const ProcessInstanceId& a, const ProcessInstanceId& b) noexcept;
+MatchResult matchThreadInstanceCore(const ThreadInstanceId& a, const ThreadInstanceId& b) noexcept;
+MatchResult matchDriverInstanceCore(const DriverInstanceId& a, const DriverInstanceId& b) noexcept;
+MatchResult matchFileIdentityCore(const FileIdentity& a, const FileIdentity& b) noexcept;
+MatchResult matchHandleIdentityCore(const HandleIdentity& a, const HandleIdentity& b) noexcept;
+MatchResult matchConnectionIdentityCore(const ConnectionIdentity& a, const ConnectionIdentity& b) noexcept;
 
 } // namespace
 
-const char* ObjectKindName(ObjectKind kind) noexcept {
+const char* objectKindName(ObjectKind kind) noexcept {
     switch (kind) {
-    case ObjectKind::Unknown:    return "Unknown";
-    case ObjectKind::Process:    return "Process";
-    case ObjectKind::Thread:     return "Thread";
-    case ObjectKind::Driver:     return "Driver";
-    case ObjectKind::Module:     return "Module";
-    case ObjectKind::File:       return "File";
-    case ObjectKind::Handle:     return "Handle";
-    case ObjectKind::Connection: return "Connection";
-    case ObjectKind::Device:     return "Device";
-    case ObjectKind::Service:    return "Service";
+    case ObjectKind::kUnknown:    return "Unknown";
+    case ObjectKind::kProcess:    return "Process";
+    case ObjectKind::kThread:     return "Thread";
+    case ObjectKind::kDriver:     return "Driver";
+    case ObjectKind::kModule:     return "Module";
+    case ObjectKind::kFile:       return "File";
+    case ObjectKind::kHandle:     return "Handle";
+    case ObjectKind::kConnection: return "Connection";
+    case ObjectKind::kDevice:     return "Device";
+    case ObjectKind::kService:    return "Service";
     }
     return "Unknown";
 }
 
-const char* MatchResultName(MatchResult result) noexcept {
+const char* matchResultName(MatchResult result) noexcept {
     switch (result) {
-    case MatchResult::NoMatch:   return "NoMatch";
-    case MatchResult::Candidate: return "Candidate";
-    case MatchResult::Confirmed: return "Confirmed";
+    case MatchResult::kNoMatch:   return "NoMatch";
+    case MatchResult::kCandidate: return "Candidate";
+    case MatchResult::kConfirmed: return "Confirmed";
     }
     return "Candidate";
 }
 
-const char* IdentityStrengthName(IdentityStrength strength) noexcept {
+const char* identityStrengthName(IdentityStrength strength) noexcept {
     switch (strength) {
-    case IdentityStrength::Unusable: return "Unusable";
-    case IdentityStrength::Weak:     return "Weak";
-    case IdentityStrength::Strong:   return "Strong";
+    case IdentityStrength::kUnusable: return "Unusable";
+    case IdentityStrength::kWeak:     return "Weak";
+    case IdentityStrength::kStrong:   return "Strong";
     }
     return "Unusable";
 }
 
 // ---------------------------------------------------------------------------
-// 进程
+// Process
 // ---------------------------------------------------------------------------
 IdentityStrength ProcessInstanceId::strength() const noexcept {
     if (!pid.present) {
-        return IdentityStrength::Unusable;
+        return IdentityStrength::kUnusable;
     }
     if (createTime100ns.present && !bootId.empty()) {
-        return IdentityStrength::Strong;
+        return IdentityStrength::kStrong;
     }
-    return IdentityStrength::Weak;
+    return IdentityStrength::kWeak;
 }
 
 std::string ProcessInstanceId::crossSessionKey() const {
-    if (strength() != IdentityStrength::Strong) {
-        return std::string();  // F-03：身份不足不给跨会话主键
+    if (strength() != IdentityStrength::kStrong) {
+        return std::string();  // F-03: Insufficient identity, do not provide cross-session primary key.
     }
     std::string key("proc");
-    AppendField(key, bootId);
-    AppendField(key, pid, U64Format::Decimal);
-    AppendField(key, createTime100ns, U64Format::Decimal);
+    appendField(key, bootId);
+    appendField(key, pid, U64Format::kDecimal);
+    appendField(key, createTime100ns, U64Format::kDecimal);
     return key;
 }
 
-MatchResult MatchProcessInstance(const ProcessInstanceId& a, const ProcessInstanceId& b) noexcept {
-    return CapByStrength(MatchProcessInstanceCore(a, b), a.strength(), b.strength());
+MatchResult matchProcessInstance(const ProcessInstanceId& a, const ProcessInstanceId& b) noexcept {
+    return capByStrength(matchProcessInstanceCore(a, b), a.strength(), b.strength());
 }
 
 namespace {
 
-MatchResult MatchProcessInstanceCore(const ProcessInstanceId& a, const ProcessInstanceId& b) noexcept {
-    if (Compare(a.pid, b.pid) == FieldCompare::Differ) {
-        return MatchResult::NoMatch;
+MatchResult matchProcessInstanceCore(const ProcessInstanceId& a, const ProcessInstanceId& b) noexcept {
+    if (compare(a.pid, b.pid) == FieldCompare::kDiffer) {
+        return MatchResult::kNoMatch;
     }
-    if (CompareBoot(a.bootId, b.bootId) == FieldCompare::Differ) {
-        return MatchResult::NoMatch;  // 不同启动周期的同 PID 一定不是同一实例
+    if (compareBoot(a.bootId, b.bootId) == FieldCompare::kDiffer) {
+        return MatchResult::kNoMatch;  // The same PID across different boot cycles is definitely not the same instance.
     }
-    switch (Compare(a.createTime100ns, b.createTime100ns)) {
-    case FieldCompare::Differ:
-        return MatchResult::NoMatch;  // PID 复用：创建时间不同即不同实例
-    case FieldCompare::Equal:
-        // 创建时间一致，还需要 PID 在场才谈得上确认。
-        if (Compare(a.pid, b.pid) == FieldCompare::Equal && !a.bootId.empty() && !b.bootId.empty()) {
-            return MatchResult::Confirmed;
+    switch (compare(a.createTime100ns, b.createTime100ns)) {
+    case FieldCompare::kDiffer:
+        return MatchResult::kNoMatch;  // PID reuse: Different creation times indicate different instances.
+    case FieldCompare::kEqual:
+        // Matching creation times alone are insufficient; the PID must also be present to confirm.
+        if (compare(a.pid, b.pid) == FieldCompare::kEqual && !a.bootId.empty() && !b.bootId.empty()) {
+            return MatchResult::kConfirmed;
         }
-        return MatchResult::Candidate;
-    case FieldCompare::Missing:
+        return MatchResult::kCandidate;
+    case FieldCompare::kMissing:
         break;
     }
-    // 创建时间缺失：地址只能当本次辅助证据，不足以确认。
-    return MatchResult::Candidate;
+    // Creation time is missing: the address can only serve as auxiliary evidence for this instance and is insufficient for confirmation.
+    return MatchResult::kCandidate;
 }
 
 } // namespace
 
 // ---------------------------------------------------------------------------
-// 线程
+// Thread
 // ---------------------------------------------------------------------------
 IdentityStrength ThreadInstanceId::strength() const noexcept {
     if (!tid.present) {
-        return IdentityStrength::Unusable;
+        return IdentityStrength::kUnusable;
     }
-    if (process.strength() == IdentityStrength::Strong && createTime100ns.present) {
-        return IdentityStrength::Strong;
+    if (process.strength() == IdentityStrength::kStrong && createTime100ns.present) {
+        return IdentityStrength::kStrong;
     }
-    return IdentityStrength::Weak;
+    return IdentityStrength::kWeak;
 }
 
 std::string ThreadInstanceId::crossSessionKey() const {
-    if (strength() != IdentityStrength::Strong) {
+    if (strength() != IdentityStrength::kStrong) {
         return std::string();
     }
     std::string key("thread");
-    AppendField(key, process.crossSessionKey());
-    AppendField(key, tid, U64Format::Decimal);
-    AppendField(key, createTime100ns, U64Format::Decimal);
+    appendField(key, process.crossSessionKey());
+    appendField(key, tid, U64Format::kDecimal);
+    appendField(key, createTime100ns, U64Format::kDecimal);
     return key;
 }
 
-MatchResult MatchThreadInstance(const ThreadInstanceId& a, const ThreadInstanceId& b) noexcept {
-    return CapByStrength(MatchThreadInstanceCore(a, b), a.strength(), b.strength());
+MatchResult matchThreadInstance(const ThreadInstanceId& a, const ThreadInstanceId& b) noexcept {
+    return capByStrength(matchThreadInstanceCore(a, b), a.strength(), b.strength());
 }
 
 namespace {
 
-MatchResult MatchThreadInstanceCore(const ThreadInstanceId& a, const ThreadInstanceId& b) noexcept {
-    if (Compare(a.tid, b.tid) == FieldCompare::Differ) {
-        return MatchResult::NoMatch;
+MatchResult matchThreadInstanceCore(const ThreadInstanceId& a, const ThreadInstanceId& b) noexcept {
+    if (compare(a.tid, b.tid) == FieldCompare::kDiffer) {
+        return MatchResult::kNoMatch;
     }
-    const MatchResult owner = MatchProcessInstance(a.process, b.process);
-    if (owner == MatchResult::NoMatch) {
-        // X-03：残缺所属信息不会挂到同 PID 的新进程。
-        return MatchResult::NoMatch;
+    const MatchResult kOwner = matchProcessInstance(a.process, b.process);
+    if (kOwner == MatchResult::kNoMatch) {
+        // X-03: Incomplete ownership information is not attached to new processes with the same PID.
+        return MatchResult::kNoMatch;
     }
-    switch (Compare(a.createTime100ns, b.createTime100ns)) {
-    case FieldCompare::Differ:
-        return MatchResult::NoMatch;  // TID 复用
-    case FieldCompare::Equal:
-        return owner == MatchResult::Confirmed ? MatchResult::Confirmed : MatchResult::Candidate;
-    case FieldCompare::Missing:
+    switch (compare(a.createTime100ns, b.createTime100ns)) {
+    case FieldCompare::kDiffer:
+        return MatchResult::kNoMatch;  // TID reuse
+    case FieldCompare::kEqual:
+        return kOwner == MatchResult::kConfirmed ? MatchResult::kConfirmed : MatchResult::kCandidate;
+    case FieldCompare::kMissing:
         break;
     }
-    return MatchResult::Candidate;
+    return MatchResult::kCandidate;
 }
 
 } // namespace
 
 // ---------------------------------------------------------------------------
-// 驱动
+// Driver
 // ---------------------------------------------------------------------------
 IdentityStrength DriverInstanceId::strength() const noexcept {
     if (imagePath.empty() && pdbSignature.empty()) {
-        return IdentityStrength::Unusable;
+        return IdentityStrength::kUnusable;
     }
     if (!pdbSignature.empty()) {
-        return IdentityStrength::Strong;
+        return IdentityStrength::kStrong;
     }
     if (timeDateStamp.present && imageSize.present) {
-        return IdentityStrength::Strong;
+        return IdentityStrength::kStrong;
     }
-    return IdentityStrength::Weak;
+    return IdentityStrength::kWeak;
 }
 
 std::string DriverInstanceId::crossSessionKey() const {
-    if (strength() != IdentityStrength::Strong) {
+    if (strength() != IdentityStrength::kStrong) {
         return std::string();
     }
     std::string key("driver");
-    AppendField(key, imagePath);
-    AppendField(key, pdbSignature);
-    AppendField(key, timeDateStamp, U64Format::Decimal);
-    AppendField(key, imageSize, U64Format::Decimal);
+    appendField(key, imagePath);
+    appendField(key, pdbSignature);
+    appendField(key, timeDateStamp, U64Format::kDecimal);
+    appendField(key, imageSize, U64Format::kDecimal);
     return key;
 }
 
-MatchResult MatchDriverInstance(const DriverInstanceId& a, const DriverInstanceId& b) noexcept {
-    return CapByStrength(MatchDriverInstanceCore(a, b), a.strength(), b.strength());
+MatchResult matchDriverInstance(const DriverInstanceId& a, const DriverInstanceId& b) noexcept {
+    return capByStrength(matchDriverInstanceCore(a, b), a.strength(), b.strength());
 }
 
 namespace {
 
-MatchResult MatchDriverInstanceCore(const DriverInstanceId& a, const DriverInstanceId& b) noexcept {
-    // I-01：磁盘同名文件不自动视为加载时的对应版本。
-    const FieldCompare pdb = Compare(a.pdbSignature, b.pdbSignature);
-    if (pdb == FieldCompare::Differ) {
-        return MatchResult::NoMatch;
+MatchResult matchDriverInstanceCore(const DriverInstanceId& a, const DriverInstanceId& b) noexcept {
+    // I-01: Disk files with the same name are not automatically treated as the corresponding version at load time.
+    const FieldCompare kPdb = compare(a.pdbSignature, b.pdbSignature);
+    if (kPdb == FieldCompare::kDiffer) {
+        return MatchResult::kNoMatch;
     }
-    const FieldCompare stamp = Compare(a.timeDateStamp, b.timeDateStamp);
-    const FieldCompare size = Compare(a.imageSize, b.imageSize);
-    if (stamp == FieldCompare::Differ || size == FieldCompare::Differ) {
-        return MatchResult::NoMatch;
+    const FieldCompare kStamp = compare(a.timeDateStamp, b.timeDateStamp);
+    const FieldCompare kSize = compare(a.imageSize, b.imageSize);
+    if (kStamp == FieldCompare::kDiffer || kSize == FieldCompare::kDiffer) {
+        return MatchResult::kNoMatch;
     }
-    const FieldCompare path = Compare(a.imagePath, b.imagePath);
-    if (path == FieldCompare::Differ) {
-        // 路径不同但映像身份一致仍可能是同一份文件的两处副本 —— 保留候选。
-        // 注意这里也覆盖 stamp+size 一致的情形：否则"弱证据(stamp+size)得 NoMatch、
-        // 强证据(pdb)得 Candidate"又是一次结论强度倒置。
-        if (pdb == FieldCompare::Equal || (stamp == FieldCompare::Equal && size == FieldCompare::Equal)) {
-            return MatchResult::Candidate;
+    const FieldCompare kPath = compare(a.imagePath, b.imagePath);
+    if (kPath == FieldCompare::kDiffer) {
+        // Different paths but identical image identity may still be two copies of the same file — keep as a candidate.
+        // Note that this also covers the case where stamp and size match: otherwise, 'weak evidence (stamp+size)' yielding
+        // NoMatch while 'strong evidence (pdb)' yields Candidate would constitute a reversal of conclusion strength.
+        if (kPdb == FieldCompare::kEqual || (kStamp == FieldCompare::kEqual && kSize == FieldCompare::kEqual)) {
+            return MatchResult::kCandidate;
         }
-        return MatchResult::NoMatch;
+        return MatchResult::kNoMatch;
     }
-    if (pdb == FieldCompare::Equal) {
-        return MatchResult::Confirmed;  // RSDS GUID+Age 是最强的映像身份
+    if (kPdb == FieldCompare::kEqual) {
+        return MatchResult::kConfirmed;  // RSDS GUID + Age is the strongest image identity.
     }
-    // F-03：timeDateStamp+imageSize 是弱得多的组合（同一次编译的任何副本都相同，
-    // 且 R0 枚举拿不到路径时它们是唯一剩下的字段）。只有两侧 imagePath 都在场并
-    // 相等，才谈得上"同一个加载实例"；路径缺失一律停在 Candidate。
-    if (stamp == FieldCompare::Equal && size == FieldCompare::Equal && path == FieldCompare::Equal) {
-        return MatchResult::Confirmed;
+    // F-03: timeDateStamp + imageSize is a much weaker combination (identical for any copy from the same build, and the
+    // only remaining fields when R0 enumeration cannot retrieve the path). Only when both sides have imagePath present
+    // and equal can we discuss "the same loaded instance"; if the path is missing, the result must remain Candidate.
+    if (kStamp == FieldCompare::kEqual && kSize == FieldCompare::kEqual && kPath == FieldCompare::kEqual) {
+        return MatchResult::kConfirmed;
     }
-    return MatchResult::Candidate;
+    return MatchResult::kCandidate;
 }
 
 } // namespace
 
 // ---------------------------------------------------------------------------
-// 文件
+// File
 // ---------------------------------------------------------------------------
 IdentityStrength FileIdentity::strength() const noexcept {
     if (path.empty() && fileId.empty() && contentHash.empty()) {
-        return IdentityStrength::Unusable;
+        return IdentityStrength::kUnusable;
     }
     if (!fileId.empty() && volumeSerial.present) {
-        return IdentityStrength::Strong;  // (卷序列号, FileId) 才是文件对象身份
+        return IdentityStrength::kStrong;  // The (Volume Serial Number, FileId) pair is the true identity of a file object.
     }
-    // F-03：内容哈希单独不构成文件对象身份 —— 同一串字节可以同时躺在
-    // System32 和用户目录下。只有"内容 + 路径"一起才够做跨会话主键。
+    // F-03: Content hash alone does not constitute file object identity; the same byte sequence can exist in
+    // both System32 and user directories. Only 'content + path' together form a valid cross-session primary key.
     if (!contentHash.empty() && !path.empty()) {
-        return IdentityStrength::Strong;
+        return IdentityStrength::kStrong;
     }
-    return IdentityStrength::Weak;
+    return IdentityStrength::kWeak;
 }
 
 std::string FileIdentity::crossSessionKey() const {
-    // 对象身份键：硬链接的多条路径共享同一个 (volumeSerial, fileId)，因此有它时
-    // 不掺路径，键才在同一个文件对象的不同路径之间保持一致。
+    // Object identity key: Hard links share the same (volumeSerial, fileId) across multiple paths. Therefore, when
+    // this key is present, excluding the path ensures consistency across different paths of the same file object.
     if (!fileId.empty() && volumeSerial.present) {
         std::string key("file");
-        AppendField(key, volumeSerial, U64Format::Decimal);
-        AppendField(key, fileId);
+        appendField(key, volumeSerial, U64Format::kDecimal);
+        appendField(key, fileId);
         return key;
     }
-    // 内容键：前缀与对象身份键区分开，并且必须带上归一化路径 —— 否则正版驱动与
-    // 被投放到别处的同字节副本会共用一个主键（F-03）。
+    // Content key: The prefix must be distinct from the object identity key, and it must include the normalized path; otherwise,
+    // a genuine driver and an identical byte-for-byte copy deployed elsewhere would share the same primary key (F-03).
     if (!contentHash.empty() && !path.empty()) {
         std::string key("file-content");
-        AppendField(key, contentHash);
-        AppendField(key, NormalizePath(path));
+        appendField(key, contentHash);
+        appendField(key, normalizePath(path));
         return key;
     }
-    return std::string();  // 身份不足不给跨会话主键
+    return std::string();  // Do not provide cross-session primary key if identity is insufficient.
 }
 
-MatchResult MatchFileIdentity(const FileIdentity& a, const FileIdentity& b) noexcept {
-    return CapByStrength(MatchFileIdentityCore(a, b), a.strength(), b.strength());
+MatchResult matchFileIdentity(const FileIdentity& a, const FileIdentity& b) noexcept {
+    return capByStrength(matchFileIdentityCore(a, b), a.strength(), b.strength());
 }
 
 namespace {
 
-MatchResult MatchFileIdentityCore(const FileIdentity& a, const FileIdentity& b) noexcept {
-    const FieldCompare hash = Compare(a.contentHash, b.contentHash);
-    if (hash == FieldCompare::Differ) {
-        return MatchResult::NoMatch;
+MatchResult matchFileIdentityCore(const FileIdentity& a, const FileIdentity& b) noexcept {
+    const FieldCompare kHash = compare(a.contentHash, b.contentHash);
+    if (kHash == FieldCompare::kDiffer) {
+        return MatchResult::kNoMatch;
     }
-    const FieldCompare volume = Compare(a.volumeSerial, b.volumeSerial);
-    const FieldCompare id = Compare(a.fileId, b.fileId);
-    if (volume == FieldCompare::Differ || id == FieldCompare::Differ) {
-        return MatchResult::NoMatch;  // 同路径不同文件
+    const FieldCompare kVolume = compare(a.volumeSerial, b.volumeSerial);
+    const FieldCompare kId = compare(a.fileId, b.fileId);
+    if (kVolume == FieldCompare::kDiffer || kId == FieldCompare::kDiffer) {
+        return MatchResult::kNoMatch;  // Same path, different files
     }
-    // 只有 (卷序列号, FileId) 才是文件对象身份。它相等就是同一个文件对象，
-    // 哪怕两条路径不同（硬链接）。
-    if (volume == FieldCompare::Equal && id == FieldCompare::Equal) {
-        return MatchResult::Confirmed;
+    // Only (Volume Serial Number, FileId) constitutes file object identity. Equality
+    // implies the same file object, even if the two paths differ (hard links).
+    if (kVolume == FieldCompare::kEqual && kId == FieldCompare::kEqual) {
+        return MatchResult::kConfirmed;
     }
-    // F-03：路径判据必须排在内容哈希前面。内容一致 ≠ 同一个文件对象：
-    // System32 下的正版驱动和被投放到用户目录的同字节副本内容哈希完全相同，
-    // 早先的实现在这里直接凭 hash 给 Confirmed，下面那条"路径不同即 NoMatch"
-    // 永远够不着，两个文件于是共用一个身份。
-    if (Compare(a.path, b.path) == FieldCompare::Differ) {
-        return (hash == FieldCompare::Equal) ? MatchResult::Candidate : MatchResult::NoMatch;
+    // F-03: Path criteria must precede content hash. Content match does not imply the same file object:
+    // Genuine drivers under System32 and identical byte-for-byte copies deployed to user directories have the exact
+    // same content hash. The earlier implementation here directly returned Confirmed based on the hash; the subsequent
+    // rule "different paths imply NoMatch" was never reached, causing the two files to share a single identity.
+    if (compare(a.path, b.path) == FieldCompare::kDiffer) {
+        return (kHash == FieldCompare::kEqual) ? MatchResult::kCandidate : MatchResult::kNoMatch;
     }
-    // 内容一致但 (volume,fileId) 拿不到：说明不了这是同一个文件对象，停在候选。
-    return MatchResult::Candidate;
+    // Content matches but (volume, fileId) cannot be retrieved: this does not prove it is the same file object; stop at candidate.
+    return MatchResult::kCandidate;
 }
 
 } // namespace
 
 // ---------------------------------------------------------------------------
-// 句柄
+// handle
 // ---------------------------------------------------------------------------
 IdentityStrength HandleIdentity::strength() const noexcept {
     if (!handleValue.present) {
-        return IdentityStrength::Unusable;
+        return IdentityStrength::kUnusable;
     }
-    if (owner.strength() == IdentityStrength::Strong) {
-        return IdentityStrength::Strong;
+    if (owner.strength() == IdentityStrength::kStrong) {
+        return IdentityStrength::kStrong;
     }
-    return IdentityStrength::Weak;
+    return IdentityStrength::kWeak;
 }
 
 std::string HandleIdentity::crossSessionKey() const {
-    if (strength() != IdentityStrength::Strong) {
+    if (strength() != IdentityStrength::kStrong) {
         return std::string();
     }
     std::string key("handle");
-    AppendField(key, owner.crossSessionKey());
-    AppendField(key, handleValue, U64Format::HexAddress);
+    appendField(key, owner.crossSessionKey());
+    appendField(key, handleValue, U64Format::kHexAddress);
     return key;
 }
 
-MatchResult MatchHandleIdentity(const HandleIdentity& a, const HandleIdentity& b) noexcept {
-    return CapByStrength(MatchHandleIdentityCore(a, b), a.strength(), b.strength());
+MatchResult matchHandleIdentity(const HandleIdentity& a, const HandleIdentity& b) noexcept {
+    return capByStrength(matchHandleIdentityCore(a, b), a.strength(), b.strength());
 }
 
 namespace {
 
-MatchResult MatchHandleIdentityCore(const HandleIdentity& a, const HandleIdentity& b) noexcept {
-    if (Compare(a.handleValue, b.handleValue) == FieldCompare::Differ) {
-        return MatchResult::NoMatch;
+MatchResult matchHandleIdentityCore(const HandleIdentity& a, const HandleIdentity& b) noexcept {
+    if (compare(a.handleValue, b.handleValue) == FieldCompare::kDiffer) {
+        return MatchResult::kNoMatch;
     }
-    const MatchResult owner = MatchProcessInstance(a.owner, b.owner);
-    if (owner == MatchResult::NoMatch) {
-        return MatchResult::NoMatch;
+    const MatchResult kOwner = matchProcessInstance(a.owner, b.owner);
+    if (kOwner == MatchResult::kNoMatch) {
+        return MatchResult::kNoMatch;
     }
-    if (Compare(a.typeName, b.typeName) == FieldCompare::Differ) {
-        return MatchResult::NoMatch;
+    if (compare(a.typeName, b.typeName) == FieldCompare::kDiffer) {
+        return MatchResult::kNoMatch;
     }
-    // 句柄值会被回收：即使 owner 已确认，也只有对象地址一致才谈得上同一对象。
-    if (owner == MatchResult::Confirmed && Compare(a.objectAddress, b.objectAddress) == FieldCompare::Equal) {
-        return MatchResult::Confirmed;
+    // Handle values are recycled: even if the owner is confirmed, the objects are considered the same only if their addresses match.
+    if (kOwner == MatchResult::kConfirmed && compare(a.objectAddress, b.objectAddress) == FieldCompare::kEqual) {
+        return MatchResult::kConfirmed;
     }
-    return MatchResult::Candidate;
+    return MatchResult::kCandidate;
 }
 
 } // namespace
 
 // ---------------------------------------------------------------------------
-// 连接
+// Connection
 // ---------------------------------------------------------------------------
 IdentityStrength ConnectionIdentity::strength() const noexcept {
     if (localAddress.empty() || protocol == 0U) {
-        return IdentityStrength::Unusable;
+        return IdentityStrength::kUnusable;
     }
     if (observedFirstUtc100ns.present && !bootId.empty()) {
-        return IdentityStrength::Strong;
+        return IdentityStrength::kStrong;
     }
-    return IdentityStrength::Weak;
+    return IdentityStrength::kWeak;
 }
 
 std::string ConnectionIdentity::fiveTupleKey() const {
     std::string key("conn5");
-    AppendField(key, FormatU64(protocol, U64Format::Decimal));
-    AppendField(key, localAddress);
-    AppendField(key, FormatU64(localPort, U64Format::Decimal));
-    AppendField(key, remoteAddress);
-    AppendField(key, FormatU64(remotePort, U64Format::Decimal));
+    appendField(key, formatU64(protocol, U64Format::kDecimal));
+    appendField(key, localAddress);
+    appendField(key, formatU64(localPort, U64Format::kDecimal));
+    appendField(key, remoteAddress);
+    appendField(key, formatU64(remotePort, U64Format::kDecimal));
     return key;
 }
 
 std::string ConnectionIdentity::crossSessionKey() const {
-    if (strength() != IdentityStrength::Strong) {
+    if (strength() != IdentityStrength::kStrong) {
         return std::string();
     }
     std::string key = fiveTupleKey();
-    AppendField(key, bootId);
-    AppendField(key, observedFirstUtc100ns, U64Format::Decimal);
+    appendField(key, bootId);
+    appendField(key, observedFirstUtc100ns, U64Format::kDecimal);
     return key;
 }
 
-MatchResult MatchConnectionIdentity(const ConnectionIdentity& a, const ConnectionIdentity& b) noexcept {
-    return CapByStrength(MatchConnectionIdentityCore(a, b), a.strength(), b.strength());
+MatchResult matchConnectionIdentity(const ConnectionIdentity& a, const ConnectionIdentity& b) noexcept {
+    return capByStrength(matchConnectionIdentityCore(a, b), a.strength(), b.strength());
 }
 
 namespace {
 
-MatchResult MatchConnectionIdentityCore(const ConnectionIdentity& a, const ConnectionIdentity& b) noexcept {
+MatchResult matchConnectionIdentityCore(const ConnectionIdentity& a, const ConnectionIdentity& b) noexcept {
     if (a.fiveTupleKey() != b.fiveTupleKey()) {
-        return MatchResult::NoMatch;
+        return MatchResult::kNoMatch;
     }
-    const FieldCompare boot = CompareBoot(a.bootId, b.bootId);
-    if (boot == FieldCompare::Differ) {
-        return MatchResult::NoMatch;
+    const FieldCompare kBoot = compareBoot(a.bootId, b.bootId);
+    if (kBoot == FieldCompare::kDiffer) {
+        return MatchResult::kNoMatch;
     }
-    // 相同五元组不同时段是不同连接：观察区间不相交即判 NoMatch。
+    // Different connections with the same five-tuple but different time intervals: non-overlapping observation intervals result in NoMatch.
     if (a.observedFirstUtc100ns.present && a.observedLastUtc100ns.present &&
         b.observedFirstUtc100ns.present && b.observedLastUtc100ns.present) {
-        const bool disjoint = a.observedLastUtc100ns.value < b.observedFirstUtc100ns.value ||
+        const bool kDisjoint = a.observedLastUtc100ns.value < b.observedFirstUtc100ns.value ||
                               b.observedLastUtc100ns.value < a.observedFirstUtc100ns.value;
-        if (disjoint) {
-            return MatchResult::NoMatch;
+        if (kDisjoint) {
+            return MatchResult::kNoMatch;
         }
-        const MatchResult owner = MatchProcessInstance(a.owner, b.owner);
-        if (owner == MatchResult::NoMatch) {
-            return MatchResult::NoMatch;
+        const MatchResult kOwner = matchProcessInstance(a.owner, b.owner);
+        if (kOwner == MatchResult::kNoMatch) {
+            return MatchResult::kNoMatch;
         }
-        // F-03：跨启动保护需要正面证据。两侧 bootId 都为空时 Compare() 返回的是
-        // Missing 而不是 Differ，早先的实现就这样跳过了整条保护 —— 两台机器/两次
-        // 启动的同一个五元组会被判成同一条连接。
-        if (boot != FieldCompare::Equal) {
-            return MatchResult::Candidate;
+        // F-03: Cross-boot protection requires positive evidence. When both bootId values are empty, Compare() returns
+        // Missing rather than Differ. The earlier implementation skipped the entire protection rule this way, causing
+        // the same five-tuple across two machines or two boot sessions to be incorrectly judged as a single connection.
+        if (kBoot != FieldCompare::kEqual) {
+            return MatchResult::kCandidate;
         }
-        // 五元组会被复用（同一个端口在同一次启动里也会被下一个进程重新绑上），
-        // 所属进程完全未知时最多只能是候选。
-        if (owner != MatchResult::Confirmed) {
-            return MatchResult::Candidate;
+        // The five-tuple may be reused (the same port can be rebound to a different process in the same
+        // boot session); if the owning process is completely unknown, the result can only be a candidate.
+        if (kOwner != MatchResult::kConfirmed) {
+            return MatchResult::kCandidate;
         }
-        return MatchResult::Confirmed;
+        return MatchResult::kConfirmed;
     }
-    return MatchResult::Candidate;
+    return MatchResult::kCandidate;
 }
 
 } // namespace
 
 // ---------------------------------------------------------------------------
-// 通用引用
+// Generic reference
 // ---------------------------------------------------------------------------
 namespace {
 
-ObjectRef MakeRef(ObjectKind kind,
+ObjectRef makeRef(ObjectKind kind,
                   std::string key,
                   IdentityStrength strength,
                   std::string display,
@@ -512,42 +512,42 @@ ObjectRef MakeRef(ObjectKind kind,
 
 } // namespace
 
-ObjectRef MakeProcessRef(const ProcessInstanceId& id, std::string evidenceId) {
+ObjectRef makeProcessRef(const ProcessInstanceId& id, std::string evidenceId) {
     std::string display = id.imageName;
     if (id.pid.present) {
-        display += " (" + FormatU64(id.pid.value, U64Format::Decimal) + ")";
+        display += " (" + formatU64(id.pid.value, U64Format::kDecimal) + ")";
     }
-    return MakeRef(ObjectKind::Process, id.crossSessionKey(), id.strength(), std::move(display),
+    return makeRef(ObjectKind::kProcess, id.crossSessionKey(), id.strength(), std::move(display),
                    std::move(evidenceId));
 }
 
-ObjectRef MakeThreadRef(const ThreadInstanceId& id, std::string evidenceId) {
-    std::string display = "TID " + FormatOptionalU64(id.tid, U64Format::Decimal);
-    return MakeRef(ObjectKind::Thread, id.crossSessionKey(), id.strength(), std::move(display),
+ObjectRef makeThreadRef(const ThreadInstanceId& id, std::string evidenceId) {
+    std::string display = "TID " + formatOptionalU64(id.tid, U64Format::kDecimal);
+    return makeRef(ObjectKind::kThread, id.crossSessionKey(), id.strength(), std::move(display),
                    std::move(evidenceId));
 }
 
-ObjectRef MakeDriverRef(const DriverInstanceId& id, std::string evidenceId) {
-    return MakeRef(ObjectKind::Driver, id.crossSessionKey(), id.strength(), id.imagePath,
+ObjectRef makeDriverRef(const DriverInstanceId& id, std::string evidenceId) {
+    return makeRef(ObjectKind::kDriver, id.crossSessionKey(), id.strength(), id.imagePath,
                    std::move(evidenceId));
 }
 
-ObjectRef MakeFileRef(const FileIdentity& id, std::string evidenceId) {
-    return MakeRef(ObjectKind::File, id.crossSessionKey(), id.strength(), id.path,
+ObjectRef makeFileRef(const FileIdentity& id, std::string evidenceId) {
+    return makeRef(ObjectKind::kFile, id.crossSessionKey(), id.strength(), id.path,
                    std::move(evidenceId));
 }
 
-ObjectRef MakeHandleRef(const HandleIdentity& id, std::string evidenceId) {
-    std::string display = id.typeName + " " + FormatOptionalU64(id.handleValue, U64Format::HexAddress);
-    return MakeRef(ObjectKind::Handle, id.crossSessionKey(), id.strength(), std::move(display),
+ObjectRef makeHandleRef(const HandleIdentity& id, std::string evidenceId) {
+    std::string display = id.typeName + " " + formatOptionalU64(id.handleValue, U64Format::kHexAddress);
+    return makeRef(ObjectKind::kHandle, id.crossSessionKey(), id.strength(), std::move(display),
                    std::move(evidenceId));
 }
 
-ObjectRef MakeConnectionRef(const ConnectionIdentity& id, std::string evidenceId) {
-    std::string display = id.localAddress + ":" + FormatU64(id.localPort, U64Format::Decimal) + " -> " +
-                          id.remoteAddress + ":" + FormatU64(id.remotePort, U64Format::Decimal);
-    return MakeRef(ObjectKind::Connection, id.crossSessionKey(), id.strength(), std::move(display),
+ObjectRef makeConnectionRef(const ConnectionIdentity& id, std::string evidenceId) {
+    std::string display = id.localAddress + ":" + formatU64(id.localPort, U64Format::kDecimal) + " -> " +
+                          id.remoteAddress + ":" + formatU64(id.remotePort, U64Format::kDecimal);
+    return makeRef(ObjectKind::kConnection, id.crossSessionKey(), id.strength(), std::move(display),
                    std::move(evidenceId));
 }
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

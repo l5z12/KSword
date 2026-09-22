@@ -1,40 +1,40 @@
 name: Driver Functional Matrix
 
-# 两段式：
-# - plan-gate 在普通 Windows runner 上跑，保证功能矩阵计划与 IOCTL 注册表同步，
-#   并自检 harness 的安全逻辑。没有驱动测试机也必须通过。
-# - functional-matrix 只在开启了测试签名的专用自托管机器上跑，真正加载驱动、
-#   遍历功能、并把系统崩溃判为失败。
+# Two-stage:
+# - plan-gate runs on a standard Windows runner to ensure the functional matrix plan stays synchronized with the IOCTL registry,
+#   Also verify the harness's safety logic. The build must pass even without a driver test machine.
+# - functional-matrix runs only on dedicated self-hosted machines with test signatures enabled, actually loading the driver,
+#   Traverse functions and treat system crashes as failures.
 
 on:
   push:
     paths:
       - 'shared/driver/**'
-      - 'KswordARKDriver/src/dispatch/**'
-      - 'KswordARKDriver/tests/DriverFunctionalMatrix.ps1'
-      - 'KswordCLI/**'
+      - 'drivers/ark/src/dispatch/**'
+      - 'drivers/ark/tests/DriverFunctionalMatrix.ps1'
+      - 'apps/cli/**'
       - 'tools/driver_functional_ci/**'
       - '.github/workflows/driver-functional-ci.yml'
   pull_request:
     paths:
       - 'shared/driver/**'
-      - 'KswordARKDriver/src/dispatch/**'
-      - 'KswordARKDriver/tests/DriverFunctionalMatrix.ps1'
-      - 'KswordCLI/**'
+      - 'drivers/ark/src/dispatch/**'
+      - 'drivers/ark/tests/DriverFunctionalMatrix.ps1'
+      - 'apps/cli/**'
       - 'tools/driver_functional_ci/**'
       - '.github/workflows/driver-functional-ci.yml'
   workflow_dispatch:
     inputs:
       include_guarded:
-        description: '执行 guarded 层用例（写 EPROCESS 私有偏移、下发全局规则等）。崩溃归因会降级为 harness-attributable。'
+        description: 'Run guarded cases (private EPROCESS writes, global rules, etc.). Crash attribution is downgraded to harness-attributable.'
         type: boolean
         default: false
       case_filter:
-        description: '只执行 id 匹配该正则的用例，留空表示全部。'
+        description: 'Run cases whose IDs match this regex; leave empty to run all cases.'
         type: string
         default: ''
       acknowledge_previous_crash:
-        description: '上一轮崩溃已人工定位完毕，解除对本次运行的阻塞。'
+        description: 'Acknowledge that the previous crash has been investigated and unblock this run.'
         type: boolean
         default: false
 
@@ -42,7 +42,7 @@ permissions:
   contents: read
 
 concurrency:
-  # 驱动测试机是独占资源，同一时刻只允许一轮加载驱动。
+  # The driver test machine is an exclusive resource; only one driver load cycle is allowed at a time.
   group: driver-functional-matrix-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
@@ -67,7 +67,7 @@ jobs:
 
       - name: Self-test the matrix harness
         shell: pwsh
-        run: ./KswordARKDriver/tests/DriverFunctionalMatrix.ps1 -Mode SelfTest
+        run: ./drivers/ark/tests/DriverFunctionalMatrix.ps1 -Mode SelfTest
 
       - name: Upload plan coverage report
         if: always()
@@ -80,7 +80,7 @@ jobs:
   functional-matrix:
     name: Driver functional matrix (test-signing runner)
     needs: plan-gate
-    # 只有在仓库变量声明存在驱动测试机时才排队，否则 job 会永远挂在等待 runner。
+    # Queue only when the repository variable declaring a driver test runner exists; otherwise, the job will hang indefinitely waiting for a runner.
     if: ${{ github.event_name == 'workflow_dispatch' || vars.KSWORD_DRIVER_TESTMODE_RUNNER == 'true' }}
     runs-on: [self-hosted, windows, x64, ksword-driver-testmode]
     timeout-minutes: 120
@@ -94,15 +94,15 @@ jobs:
           $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
           $principal = New-Object Security.Principal.WindowsPrincipal($identity)
           if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-            throw 'runner 必须以管理员身份运行，否则无法加载内核驱动或读取崩溃证据。'
+            throw 'The runner must run as administrator to load the kernel driver and read crash evidence.'
           }
           $bcd = & bcdedit.exe /enum '{current}' | Out-String
           if ($bcd -notmatch '(?im)^\s*testsigning\s+Yes\s*$') {
-            throw '该 runner 未开启测试签名模式。执行 bcdedit /set testsigning on 并重启后再挂上 ksword-driver-testmode 标签。'
+            throw 'Test signing is disabled. Run bcdedit /set testsigning on and reboot before adding the ksword-driver-testmode label.'
           }
-          Write-Host '测试签名模式已开启。'
+          Write-Host 'Test signing is enabled.'
 
-      - name: Build driver and KswordCLI
+      - name: Build driver and apps/cli
         shell: pwsh
         run: |
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
@@ -111,26 +111,26 @@ jobs:
           if (-not $msbuild -or -not (Test-Path $msbuild)) {
             throw 'Could not locate MSBuild through vswhere.'
           }
-          & $msbuild 'KswordARKDriver/KswordARKDriver.vcxproj' `
+          & $msbuild 'drivers/ark/KswordARKDriver.vcxproj' `
             /t:Build /p:Configuration=Release /p:Platform=x64 `
             /p:KswordArkSkipAutoVariantSign=true `
             /p:KswordArkSkipAutoTestSign=true `
             /m:1 /v:minimal
           if ($LASTEXITCODE -ne 0) { throw "Driver MSBuild failed with exit code $LASTEXITCODE." }
-          & $msbuild 'KswordCLI/KswordCLI.vcxproj' `
+          & $msbuild 'apps/cli/KswordCLI.vcxproj' `
             /t:Build /p:Configuration=Release /p:Platform=x64 /m:1 /v:minimal
-          if ($LASTEXITCODE -ne 0) { throw "KswordCLI MSBuild failed with exit code $LASTEXITCODE." }
+          if ($LASTEXITCODE -ne 0) { throw "apps/cli MSBuild failed with exit code $LASTEXITCODE." }
 
       - name: Test-sign the driver
         shell: pwsh
         run: >-
           ./scripts/Sign-KswordArkDriverTest.ps1
-          -DriverPath 'Ksword5.1/x64/Release/KswordARK.sys'
+          -DriverPath 'artifacts/bin/x64/Release/KswordARK.sys'
 
       - name: Collect the previous run journal
         shell: pwsh
         run: |
-          # 上一轮如果把机器打崩，本次 checkout 之前的日志是唯一的现场记录。
+          # If the machine crashed in the previous run, the logs before this checkout are the only record of the scene.
           $state = Join-Path $env:ProgramData 'KswordARK\driver-functional-ci'
           $target = 'artifacts/driver-functional-ci'
           New-Item -ItemType Directory -Path $target -Force | Out-Null
@@ -156,15 +156,15 @@ jobs:
           if (-not [string]::IsNullOrWhiteSpace($filter)) {
             $arguments += @('-CaseFilter', $filter)
           }
-          # 用独立进程调用，退出码才不会被外层 pwsh 的脚本作用域吞掉。
-          & pwsh -NoProfile -File ./KswordARKDriver/tests/DriverFunctionalMatrix.ps1 @arguments
+          # Invoke via a separate process so the exit code is not swallowed by the outer pwsh script scope.
+          & pwsh -NoProfile -File ./drivers/ark/tests/DriverFunctionalMatrix.ps1 @arguments
           $code = $LASTEXITCODE
           "exitCode=$code" >> $env:GITHUB_OUTPUT
           switch ($code) {
-            0 { Write-Host '驱动功能矩阵全部通过，未观察到系统崩溃。'; break }
-            2 { throw '系统在功能矩阵执行期间崩溃。判定文件里的 attribution 说明了归因，driver-defect 表示计划内的安全操作把机器打崩了。' }
-            3 { throw '预检失败：请按上面的提示处理测试签名、管理员权限、内核转储配置或上一轮未定位的崩溃。' }
-            default { throw "驱动功能矩阵存在失败用例（退出码 $code）。" }
+            0 { Write-Host 'All driver functional matrix cases passed; no system crash was observed.'; break }
+            2 { throw 'The system crashed during the functional matrix. See attribution in the verdict file; driver-defect means a planned safe operation crashed the machine.' }
+            3 { throw 'Preflight failed: follow the diagnostics above for test signing, administrator privileges, kernel dumps, or an unresolved previous crash.' }
+            default { throw "The driver functional matrix contains failed cases (exit code $code)." }
           }
 
       - name: Collect this run journal
@@ -184,27 +184,27 @@ jobs:
         run: |
           $verdictPath = 'artifacts/driver-functional-ci/verdict.json'
           if (-not (Test-Path -LiteralPath $verdictPath)) {
-            'matrix 未产生判定文件，请查看上一步日志。' | Out-File -Append $env:GITHUB_STEP_SUMMARY -Encoding utf8
+            'The matrix produced no verdict file; inspect the previous step logs.' | Out-File -Append $env:GITHUB_STEP_SUMMARY -Encoding utf8
             return
           }
           $verdict = Get-Content -LiteralPath $verdictPath -Raw | ConvertFrom-Json
           $lines = @(
-            '## 驱动功能矩阵',
+            '## Driver functional matrix',
             '',
-            "- 判定：``$($verdict.verdict)``",
-            "- 崩溃归因：``$($verdict.attribution)``",
-            "- 归因是否被 guarded 层削弱：$($verdict.attributionWeakened)",
-            "- 用例：通过 $($verdict.counts.passed) / 失败 $($verdict.counts.failed) / 跳过 $($verdict.counts.skipped)",
+            "- Verdict: ``$($verdict.verdict)``",
+            "- Crash attribution: ``$($verdict.attribution)``",
+            "- Attribution weakened by guarded cases: $($verdict.attributionWeakened)",
+            "- Cases: passed $($verdict.counts.passed) / failed $($verdict.counts.failed) / skipped $($verdict.counts.skipped)",
             ''
           )
           if ($verdict.crash.crashed) {
-            $lines += @('### 崩溃证据', '', "- 新增转储：$($verdict.crash.newDumps.Count)",
-                        "- 意外重启：$($verdict.crash.unexpectedBoot)",
-                        "- 相关事件：$($verdict.crash.events.Count)", '')
+            $lines += @('### Crash evidence', '', "- New dumps: $($verdict.crash.newDumps.Count)",
+                        "- Unexpected reboot: $($verdict.crash.unexpectedBoot)",
+                        "- Related events: $($verdict.crash.events.Count)", '')
           }
           $failed = @($verdict.results | Where-Object { $_.status -eq 'failed' })
           if ($failed.Count -gt 0) {
-            $lines += @('### 失败用例', '', '| 用例 | 层级 | 原因 |', '| --- | --- | --- |')
+            $lines += @('### Failed cases', '', '| Case | Tier | Reason |', '| --- | --- | --- |')
             foreach ($item in $failed) { $lines += "| $($item.case) | $($item.tier) | $($item.reason) |" }
             $lines += ''
           }

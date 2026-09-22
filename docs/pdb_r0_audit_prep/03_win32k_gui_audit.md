@@ -7,10 +7,10 @@
 当前本地依据：
 
 - PDB 缓存根：`E:\KswordPDB\PDB\pdb-cache\amd64`，已存在 `win32k.pdb`、`win32kbase.pdb`、`win32kfull.pdb`，且三个目录下均已有多个 GUID 子目录。可作为离线 profile 生成资产。
-- 现有轻量窗口页：`KswordARKLight\Features\Window\` 当前基于 R3 Win32 API 枚举窗口，核心 API 包括 `EnumWindows`、`GetWindowInfo`、`GetWindowThreadProcessId`、`GetClassNameW`、`GetWindowTextW`、`IsWindowVisible`、`IsWindowEnabled`、`IsIconic`、`IsZoomed`、`IsWindowUnicode`。
-- Qt 主项目 `Ksword5.1\Ksword5.1\WindowDock\WindowDock.cpp` 当前只是保留编译入口，实际窗口管理逻辑仍在旧的 `OtherDock` 路径。
+- 现有轻量窗口页：`apps\ark_light\features\window\` 当前基于 R3 Win32 API 枚举窗口，核心 API 包括 `EnumWindows`、`GetWindowInfo`、`GetWindowThreadProcessId`、`GetClassNameW`、`GetWindowTextW`、`IsWindowVisible`、`IsWindowEnabled`、`IsIconic`、`IsZoomed`、`IsWindowUnicode`。
+- Qt 主项目 `apps\desktop\window_dock\WindowDock.cpp` 当前只是保留编译入口，实际窗口管理逻辑仍在旧的 `OtherDock` 路径。
 - 现有 R0 键盘/Hook 协议：`shared\driver\KswordArkKeyboardIoctl.h` 已定义 `IOCTL_KSWORD_ARK_ENUM_KEYBOARD_HOTKEYS`、`IOCTL_KSWORD_ARK_ENUM_KEYBOARD_HOOKS`，并已有 hotkey/hook 返回字段。
-- 现有 R0 实现：`KswordARKDriver\src\features\keyboard\keyboard_query.c` 已读取 `win32kfull.sys` / `win32kbase.sys`，解析 `UserGetSiloGlobals`，通过 `EditionIsHotKey` 附近模式定位热键布局，并使用一批硬编码 hook 偏移遍历 `WH_KEYBOARD` / `WH_KEYBOARD_LL` 链。
+- 现有 R0 实现：`drivers/ark\src\features\keyboard\keyboard_query.c` 已读取 `win32kfull.sys` / `win32kbase.sys`，解析 `UserGetSiloGlobals`，通过 `EditionIsHotKey` 附近模式定位热键布局，并使用一批硬编码 hook 偏移遍历 `WH_KEYBOARD` / `WH_KEYBOARD_LL` 链。
 - `docs\OpenArk功能对照与TODO.md` 明确把 `System Hotkey` 作为未覆盖项，把 GUI/窗口方向视为可补齐 ARK 核心能力。
 
 设计原则：
@@ -132,7 +132,7 @@
 
 - 字段：HWND、R0 tagWND、PID、TID、进程名、标题、类名、Style、ExStyle、Rect、Parent、Owner、Desktop、可见/启用/最小化、R0/R3 cross-view 状态。
 - 支持筛选：PID/TID、Desktop、隐藏窗口、message-only、R0-only、标题/类名关键字。
-- 验收：现有 `KswordARKLight\Features\Window` R3 枚举结果可作为 baseline；新增 R0 表至少能覆盖 baseline 顶层窗口。
+- 验收：现有 `apps\ark_light\features\Window` R3 枚举结果可作为 baseline；新增 R0 表至少能覆盖 baseline 顶层窗口。
 
 ### 4.3 线程队列表
 
@@ -201,7 +201,7 @@ P0 MVP 只做以下字段，避免一次铺开：
 
 1. 建立 `win32kbase/win32kfull` PDB profile schema，并把模块身份、结构成员偏移、全局 RVA、字段有效位写清楚。
 2. 把现有 keyboard hotkey/hook 枚举从“模式扫描 + 硬编码偏移”迁移为“PDB profile 主路径 + 模式扫描降级诊断”。
-3. 做 `tagWND` 顶层窗口 cross-view MVP，把 R0 只读窗口快照与现有 `KswordARKLight\Features\Window` R3 baseline 对齐。
+3. 做 `tagWND` 顶层窗口 cross-view MVP，把 R0 只读窗口快照与现有 `apps\ark_light\features\Window` R3 baseline 对齐。
 
 ### 最大风险点
 

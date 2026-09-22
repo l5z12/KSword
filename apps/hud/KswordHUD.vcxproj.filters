@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <Filter Include="shared">
+      <UniqueIdentifier>{49DC96F2-94F7-5589-8DD8-5B51A96C4368}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared\ui">
+      <UniqueIdentifier>{BD6A5B2B-1DE1-54B0-968B-403000368A86}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Get.cpp" />
+    <ClInclude Include="HardwareQueries.h" />
+    <ClCompile Include="HudPerformancePanel.cpp" />
+    <ClInclude Include="HudPerformancePanel.h" />
+    <ClCompile Include="HudProcessListPanel.cpp" />
+    <ClInclude Include="HudProcessListPanel.h" />
+    <ClCompile Include="KswordHUD.cpp" />
+    <QtMoc Include="KswordHUD.h" />
+    <QtRcc Include="KswordHUD.qrc" />
+    <QtUic Include="KswordHUD.ui" />
+    <ClCompile Include="PerformanceNavCard.cpp" />
+    <ClInclude Include="PerformanceNavCard.h" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="..\..\shared\ui\KsPainterChart.cpp">
+      <Filter>shared\ui</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ui\KsPainterChart.h">
+      <Filter>shared\ui</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

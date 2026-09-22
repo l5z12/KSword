@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{bde77103-b963-40a8-a28e-0b9c26a5c5dd}</ProjectGuid>
+    <RootNamespace>KswordCLI</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <Import Project="$(MSBuildProjectDirectory)\..\..\build\msbuild\Ksword.Output.props" />
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>Iphlpapi.lib;Ws2_32.lib;Setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>Iphlpapi.lib;Ws2_32.lib;Setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>Iphlpapi.lib;Ws2_32.lib;Setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>Iphlpapi.lib;Ws2_32.lib;Setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="KswordCLI.cpp" />
+    <ClCompile Include="ArkDriverExtended.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverClient.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverBlind.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverBugcheck.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverCallbackMonitor.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDebugOutput.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverError.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverFile.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverFileIrp.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverHvm.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverIoctlRegistry.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverKernel.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverKernelBaseline.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverKeyboard.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverNetworkTraffic.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverPiDdb.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverPower.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessProtect.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverStorageForensics.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverSystemTime.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverVirtualization.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverWorkQueue.cpp" />
+    <ClCompile Include="..\..\shared\platform\string\String.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ArkDriverExtended.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverFirmware.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessControl.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessEnumeration.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessInjection.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessSecurity.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverThreadControl.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDeviceAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDynDataV4.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverI8042Audit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverNetworkAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverNetworkEvents.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverObjectAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverPlatformAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverSecurityAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverStorageAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverWin32kAudit.cpp" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverAuditSupport.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverCallbackTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverDebugOutputTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverDriverControlTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverDynDataTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverFileTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverHvmTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverIoTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverKernelTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverMemoryTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverMutationTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverNetworkSupport.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverNetworkTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverObjectTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverPlatformTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverProcessTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverRegistryTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverResponseSupport.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverSecurityTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverStorageTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverWindowTypes.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="CliArguments.cpp" />
+    <ClInclude Include="CliArguments.h" />
+    <ClCompile Include="CliCallback.cpp" />
+    <ClCompile Include="CliDdma.cpp" />
+    <ClCompile Include="CliDevices.cpp" />
+    <ClCompile Include="CliDispatch.cpp" />
+    <ClCompile Include="CliDriver.cpp" />
+    <ClCompile Include="CliDynData.cpp" />
+    <ClCompile Include="CliFile.cpp" />
+    <ClCompile Include="CliHelp.cpp" />
+    <ClCompile Include="CliIo.cpp" />
+    <ClCompile Include="CliKernel.cpp" />
+    <ClCompile Include="CliLog.cpp" />
+    <ClCompile Include="CliMemory.cpp" />
+    <ClCompile Include="CliMutation.cpp" />
+    <ClCompile Include="CliNetwork.cpp" />
+    <ClCompile Include="CliNetworkAudit.cpp" />
+    <ClCompile Include="CliObjects.cpp" />
+    <ClCompile Include="CliOutput.cpp" />
+    <ClCompile Include="CliProcess.cpp" />
+    <ClCompile Include="CliRegistry.cpp" />
+    <ClCompile Include="CliRuntimeFields.cpp" />
+    <ClCompile Include="CliSecurity.cpp" />
+    <ClCompile Include="CliStorage.cpp" />
+    <ClInclude Include="CliSupport.h" />
+    <ClCompile Include="CliThread.cpp" />
+    <ClCompile Include="CliWindow.cpp" />
+  </ItemGroup>
+</Project>

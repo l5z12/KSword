@@ -4,10 +4,10 @@
 
 // ============================================================
 // KswordArkCallbackMonitorIoctl.h
-// 作用：
-// - 定义独立于回调规则/AskUser 的只读内核回调遥测协议；
-// - R0 把六类回调事件写入固定环形缓冲区；
-// - R3 使用独立游标读取，多个读取者不会相互消费事件。
+// Purpose:
+// - Defines a read-only kernel callback telemetry protocol independent of callback rules and AskUser;
+// - R0 writes six categories of callback events into a fixed circular buffer;
+// - R3 uses independent cursors for reading; multiple readers do not consume each other's events.
 // ============================================================
 
 #ifndef FILE_READ_ACCESS
@@ -64,7 +64,7 @@
     (KSWORD_ARK_CALLBACK_MONITOR_CATEGORY_CORE | \
      KSWORD_ARK_CALLBACK_MONITOR_CATEGORY_MINIFILTER)
 
-// 进程规则协议只有创建操作；遥测额外记录不会参与规则匹配的退出操作。
+// The process rule protocol only includes create operations; telemetry extra records do not participate in rule matching for exit operations.
 #define KSWORD_ARK_CALLBACK_MONITOR_PROCESS_OP_EXIT 0x00000002UL
 
 #define KSWORD_ARK_CALLBACK_MONITOR_RUNTIME_CAPTURING 0x00000001UL

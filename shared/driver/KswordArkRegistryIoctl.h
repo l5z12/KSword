@@ -4,9 +4,9 @@
 
 // ============================================================
 // KswordArkRegistryIoctl.h
-// 作用：
-// - 定义 R3/R0 注册表查询与编辑协议；
-// - 协议只承载路径、值名、类型和原始数据，不承载 UI 格式化细节。
+// Purpose:
+// - Define the R3/R0 registry query and edit protocol;
+// - The protocol carries only paths, value names, types, and raw data, excluding UI formatting details.
 // ============================================================
 
 #define KSWORD_ARK_REGISTRY_PROTOCOL_VERSION 1UL

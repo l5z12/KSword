@@ -1,9 +1,9 @@
 #include "PageTableWalk.h"
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 namespace {
 
-// x64 四级分页每级 9 位索引。
+// x64 four-level paging uses a 9-bit index per level.
 constexpr std::uint64_t kIndexMask = 0x1FFULL;
 constexpr std::uint32_t kShiftPml4 = 39U;
 constexpr std::uint32_t kShiftPdpt = 30U;
@@ -16,80 +16,80 @@ constexpr std::uint64_t kBitPresent = 1ULL << 0;
 constexpr std::uint64_t kBitWritable = 1ULL << 1;
 constexpr std::uint64_t kBitUser = 1ULL << 2;
 constexpr std::uint64_t kBitLargePage = 1ULL << 7;   // PS
-constexpr std::uint64_t kBitPrototype = 1ULL << 10;  // 软件 PTE：Prototype
-constexpr std::uint64_t kBitTransition = 1ULL << 11; // 软件 PTE：Transition
+constexpr std::uint64_t kBitPrototype = 1ULL << 10;  // Software PTE: Prototype
+constexpr std::uint64_t kBitTransition = 1ULL << 11; // Software PTE: Transition
 constexpr std::uint64_t kBitExecuteDisable = 1ULL << 63;
 
-// 各页大小对应的物理基址掩码（bit12/21/30 起，到 bit51 止）。
+// Physical base address masks corresponding to each page size (starting from bit12/21/30 up to bit51).
 constexpr std::uint64_t kFrameMask4KiB = 0x000FFFFFFFFFF000ULL;
 constexpr std::uint64_t kFrameMask2MiB = 0x000FFFFFFFE00000ULL;
 constexpr std::uint64_t kFrameMask1GiB = 0x000FFFFFC0000000ULL;
 
-// PS=1 时，页帧字段以下、PAT(bit12) 以上的位是保留位，硬件要求为 0。
-// 1GiB 项：bit13..29；2MiB 项：bit13..20。
+// When PS=1, bits below the page frame field and above PAT (bit12) are reserved and must be 0 per hardware requirements.
+// 1GiB entries: bit13..29; 2MiB entries: bit13..20.
 constexpr std::uint64_t kReservedLow1GiB = 0x000000003FFFE000ULL;
 constexpr std::uint64_t kReservedLow2MiB = 0x00000000001FE000ULL;
 
-// 架构上物理地址字段的最高位。bit52..62 是 ignored/protection key，不在此列。
+// Highest bit of the architectural physical-address field. bit52..62 are ignored/protection-key bits and are excluded.
 constexpr std::uint64_t kArchAddressMask = 0x000FFFFFFFFFFFFFULL;
 
-std::uint32_t ExtractIndex(std::uint64_t virtualAddress, std::uint32_t shift) noexcept {
+std::uint32_t extractIndex(std::uint64_t virtualAddress, std::uint32_t shift) noexcept {
     return static_cast<std::uint32_t>((virtualAddress >> shift) & kIndexMask);
 }
 
-// MAXPHYADDR 以上、bit51 以下的位掩码。
-// 0 表示调用方没提供 MAXPHYADDR —— 该项检查明确不生效（结果里也会如实标成 unset），
-// 而不是悄悄按某个默认值放行。>=52 时架构上本来就没有位被保留。
-std::uint64_t AddressReservedMask(std::uint32_t maxPhysAddrBits) noexcept {
+// Bitmask for bits below bit51 but above MAXPHYADDR.
+// 0 indicates the caller did not provide MAXPHYADDR — this check is explicitly disabled (and correctly marked as unset in
+// the result), rather than silently allowing it via a default value. When >= 52, no bits are reserved by the architecture.
+std::uint64_t addressReservedMask(std::uint32_t maxPhysAddrBits) noexcept {
     if (maxPhysAddrBits == 0U) {
         return 0ULL;
     }
     std::uint32_t bits = maxPhysAddrBits;
     if (bits < 12U) {
-        bits = 12U;  // 低于页大小的 MAXPHYADDR 在架构上不存在，按下限钳制
+        bits = 12U;  // MAXPHYADDR values below page size do not exist in the architecture; clamp to the lower bound.
     }
     if (bits >= 52U) {
         return 0ULL;
     }
-    const std::uint64_t low = (1ULL << bits) - 1ULL;
-    return kArchAddressMask & ~low;
+    const std::uint64_t kLow = (1ULL << bits) - 1ULL;
+    return kArchAddressMask & ~kLow;
 }
 
-// 只对 present=1 的表项有意义：present=0 时其余位由 OS 自定义（M-05）。
-std::uint64_t ReservedMaskForEntry(PageTableLevel level,
+// Only meaningful for entries with present=1: when present=0, the remaining bits are OS-defined (M-05).
+std::uint64_t reservedMaskForEntry(PageTableLevel level,
                                    bool largePage,
                                    const TranslateOptions& options) noexcept {
-    std::uint64_t mask = AddressReservedMask(options.maxPhysAddrBits);
+    std::uint64_t mask = addressReservedMask(options.maxPhysAddrBits);
     switch (level) {
-    case PageTableLevel::Pml4:
-        // 四级分页里 PML4E 没有大页形态，bit7 是保留位。
+    case PageTableLevel::kPml4:
+        // In 4-level paging, PML4E has no large page format; bit7 is reserved.
         mask |= kBitLargePage;
         break;
-    case PageTableLevel::Pdpt:
+    case PageTableLevel::kPdpt:
         if (!options.supports1GiBPages) {
-            // Intel SDM：CPUID.80000001H:EDX.Page1GB == 0 时 PDPTE 的 bit7 是保留位，
-            // 置位会触发 reserved-bit #PF。没有这条判据，解析不支持 1GiB 的机器时
-            // 我们会为一个硬件根本不会接受的表项翻译出物理地址（M-04）。
+            // Intel SDM: When CPUID.80000001H:EDX.Page1GB == 0, bit7 of the PDPTE is a reserved bit; setting
+            // it triggers a reserved-bit #PF. Without this check, when parsing machines that do not support
+            // 1GiB pages, we would translate a hardware-invalid table entry into a physical address (M-04).
             mask |= kBitLargePage;
         } else if (largePage) {
             mask |= kReservedLow1GiB;
         }
         break;
-    case PageTableLevel::Pd:
+    case PageTableLevel::kPd:
         if (largePage) {
             mask |= kReservedLow2MiB;
         }
         break;
-    case PageTableLevel::Pt:
-        // PTE 的 bit7 是 PAT，不是 PS，不做大页判断也不算保留位。
+    case PageTableLevel::kPt:
+        // bit7 of the PTE is PAT, not PS. It is not treated as a reserved bit for large page detection.
         break;
-    case PageTableLevel::None:
+    case PageTableLevel::kNone:
         break;
     }
     return mask;
 }
 
-bool ReadEntry(const PhysicalReader& reader,
+bool readEntry(const PhysicalReader& reader,
                std::uint64_t physicalAddress,
                std::uint64_t& out) {
     if (!reader) {
@@ -107,26 +107,26 @@ bool ReadEntry(const PhysicalReader& reader,
     return true;
 }
 
-void MergePermissions(EffectivePermissions& permissions,
+void mergePermissions(EffectivePermissions& permissions,
                       std::uint64_t entry,
                       bool first) noexcept {
-    const bool writable = (entry & kBitWritable) != 0ULL;
-    const bool user = (entry & kBitUser) != 0ULL;
-    const bool nx = (entry & kBitExecuteDisable) != 0ULL;
+    const bool kWritable = (entry & kBitWritable) != 0ULL;
+    const bool kUser = (entry & kBitUser) != 0ULL;
+    const bool kNx = (entry & kBitExecuteDisable) != 0ULL;
     if (first) {
-        permissions.writable = writable;
-        permissions.userAccessible = user;
-        permissions.executeDisable = nx;
+        permissions.writable = kWritable;
+        permissions.userAccessible = kUser;
+        permissions.executeDisable = kNx;
         return;
     }
-    // 写权限与用户可访问是逐级"与"，NX 是逐级"或" —— 与硬件一致。
-    permissions.writable = permissions.writable && writable;
-    permissions.userAccessible = permissions.userAccessible && user;
-    permissions.executeDisable = permissions.executeDisable || nx;
+    // Write permission and user accessibility are cumulative AND operations, while NX is a cumulative OR operation — consistent with hardware behavior.
+    permissions.writable = permissions.writable && kWritable;
+    permissions.userAccessible = permissions.userAccessible && kUser;
+    permissions.executeDisable = permissions.executeDisable || kNx;
 }
 
-// 走到某一级失败时的统一收尾：绝不填 physicalAddress。
-void FailAt(TranslateResult& result,
+// Unified cleanup when walking to a level fails: never populate physicalAddress.
+void failAt(TranslateResult& result,
             TranslationStatus status,
             PageTableLevel level,
             std::uint64_t reservedBits) {
@@ -140,118 +140,118 @@ void FailAt(TranslateResult& result,
 
 } // namespace
 
-const char* PagingModeName(PagingMode mode) noexcept {
+const char* pagingModeName(PagingMode mode) noexcept {
     switch (mode) {
-    case PagingMode::LongMode4Level: return "LongMode4Level";
-    case PagingMode::Unsupported:    return "Unsupported";
+    case PagingMode::kLongMode4Level: return "LongMode4Level";
+    case PagingMode::kUnsupported:    return "Unsupported";
     }
     return "Unsupported";
 }
 
-const char* PageTableLevelName(PageTableLevel level) noexcept {
+const char* pageTableLevelName(PageTableLevel level) noexcept {
     switch (level) {
-    case PageTableLevel::None: return "None";
-    case PageTableLevel::Pml4: return "PML4E";
-    case PageTableLevel::Pdpt: return "PDPTE";
-    case PageTableLevel::Pd:   return "PDE";
-    case PageTableLevel::Pt:   return "PTE";
+    case PageTableLevel::kNone: return "None";
+    case PageTableLevel::kPml4: return "PML4E";
+    case PageTableLevel::kPdpt: return "PDPTE";
+    case PageTableLevel::kPd:   return "PDE";
+    case PageTableLevel::kPt:   return "PTE";
     }
     return "None";
 }
 
-const char* TranslationStatusName(TranslationStatus status) noexcept {
+const char* translationStatusName(TranslationStatus status) noexcept {
     switch (status) {
-    case TranslationStatus::Translated:         return "Translated";
-    case TranslationStatus::NotCanonical:       return "NotCanonical";
-    case TranslationStatus::EntryNotPresent:    return "EntryNotPresent";
-    case TranslationStatus::ReservedBitSet:     return "ReservedBitSet";
-    case TranslationStatus::PhysicalReadFailed: return "PhysicalReadFailed";
-    case TranslationStatus::UnsupportedMode:    return "UnsupportedMode";
-    case TranslationStatus::ContextRejected:    return "ContextRejected";
+    case TranslationStatus::kTranslated:         return "Translated";
+    case TranslationStatus::kNotCanonical:       return "NotCanonical";
+    case TranslationStatus::kEntryNotPresent:    return "EntryNotPresent";
+    case TranslationStatus::kReservedBitSet:     return "ReservedBitSet";
+    case TranslationStatus::kPhysicalReadFailed: return "PhysicalReadFailed";
+    case TranslationStatus::kUnsupportedMode:    return "UnsupportedMode";
+    case TranslationStatus::kContextRejected:    return "ContextRejected";
     }
     return "UnsupportedMode";
 }
 
-const char* SoftwarePteKindName(SoftwarePteKind kind) noexcept {
+const char* softwarePteKindName(SoftwarePteKind kind) noexcept {
     switch (kind) {
-    case SoftwarePteKind::Transition: return "Transition";
-    case SoftwarePteKind::Prototype:  return "Prototype";
-    case SoftwarePteKind::PageFile:   return "PageFile";
-    case SoftwarePteKind::DemandZero: return "DemandZero";
-    case SoftwarePteKind::Zero:       return "Zero";
-    case SoftwarePteKind::Unknown:    return "Unknown";
+    case SoftwarePteKind::kTransition: return "Transition";
+    case SoftwarePteKind::kPrototype:  return "Prototype";
+    case SoftwarePteKind::kPageFile:   return "PageFile";
+    case SoftwarePteKind::kDemandZero: return "DemandZero";
+    case SoftwarePteKind::kZero:       return "Zero";
+    case SoftwarePteKind::kUnknown:    return "Unknown";
     }
     return "Unknown";
 }
 
-const char* PageSizeClassName(PageSizeClass size) noexcept {
+const char* pageSizeClassName(PageSizeClass size) noexcept {
     switch (size) {
-    case PageSizeClass::Size4KiB: return "4KiB";
-    case PageSizeClass::Size2MiB: return "2MiB";
-    case PageSizeClass::Size1GiB: return "1GiB";
+    case PageSizeClass::kSize4KiB: return "4KiB";
+    case PageSizeClass::kSize2MiB: return "2MiB";
+    case PageSizeClass::kSize1GiB: return "1GiB";
     }
     return "4KiB";
 }
 
-std::uint64_t PageSizeBytes(PageSizeClass size) noexcept {
+std::uint64_t pageSizeBytes(PageSizeClass size) noexcept {
     switch (size) {
-    case PageSizeClass::Size4KiB: return 0x1000ULL;
-    case PageSizeClass::Size2MiB: return 0x200000ULL;
-    case PageSizeClass::Size1GiB: return 0x40000000ULL;
+    case PageSizeClass::kSize4KiB: return 0x1000ULL;
+    case PageSizeClass::kSize2MiB: return 0x200000ULL;
+    case PageSizeClass::kSize1GiB: return 0x40000000ULL;
     }
     return 0x1000ULL;
 }
 
-bool IsCanonicalAddress48(std::uint64_t virtualAddress) noexcept {
-    // 四级分页只使用低 48 位；bit47 必须符号扩展到 bit63。
-    const std::uint64_t upper = virtualAddress & 0xFFFF000000000000ULL;
+bool isCanonicalAddress48(std::uint64_t virtualAddress) noexcept {
+    // Level-4 paging uses only the lower 48 bits; bit47 must be sign-extended to bit63.
+    const std::uint64_t kUpper = virtualAddress & 0xFFFF000000000000ULL;
     if ((virtualAddress & 0x0000800000000000ULL) != 0ULL) {
-        return upper == 0xFFFF000000000000ULL;
+        return kUpper == 0xFFFF000000000000ULL;
     }
-    return upper == 0ULL;
+    return kUpper == 0ULL;
 }
 
-SoftwarePteDecode DecodeSoftwarePte(std::uint64_t rawEntry) noexcept {
+SoftwarePteDecode decodeSoftwarePte(std::uint64_t rawEntry) noexcept {
     SoftwarePteDecode decode;
     decode.transitionBit = (rawEntry & kBitTransition) != 0ULL;
     decode.prototypeBit = (rawEntry & kBitPrototype) != 0ULL;
 
     if (rawEntry == 0ULL) {
-        // 全零项：从未建立过映射。它不是"页被换出"，UI 不能混用同一个文案。
-        decode.kind = SoftwarePteKind::Zero;
+        // All-zero entry: mapping was never established. This is not 'page swapped out'; the UI must not reuse the same text for both cases.
+        decode.kind = SoftwarePteKind::kZero;
         return decode;
     }
     if (decode.transitionBit && decode.prototypeBit) {
-        // 两个编码位在已公开的软件 PTE 布局里互斥；同时置位说明我们不认识这个
-        // 编码，标 Unknown 而不是硬挑一个。
-        decode.kind = SoftwarePteKind::Unknown;
+        // The two encoding bits are mutually exclusive in the public software PTE layout; setting both
+        // indicates we do not recognize the encoding, so mark as Unknown rather than arbitrarily choosing one.
+        decode.kind = SoftwarePteKind::kUnknown;
         return decode;
     }
     if (decode.transitionBit) {
-        decode.kind = SoftwarePteKind::Transition;
+        decode.kind = SoftwarePteKind::kTransition;
         return decode;
     }
     if (decode.prototypeBit) {
-        decode.kind = SoftwarePteKind::Prototype;
+        decode.kind = SoftwarePteKind::kPrototype;
         return decode;
     }
-    // MMPTE_SOFTWARE 里 PageFileHigh 占 bit32..63，它才是"页在分页文件里的位置"。
-    // 为 0 说明这一项根本没有分页文件位置：典型的是已提交但从未触碰的 demand-zero
-    // 页（例如 entry=0x20，只置了 Protection 字段 bit5..9）。以前这里把"非零且两个
-    // 编码位都不置"一律判成 PageFile 并**无条件**填 pageFileNumber/pageFileOffset，
-    // 等于凭空造出一个分页文件位置 —— M-05 明令禁止（不伪造观测）。
-    const std::uint64_t pageFileHigh = rawEntry >> 32U;
-    if (pageFileHigh == 0ULL) {
-        decode.kind = SoftwarePteKind::DemandZero;
-        return decode;  // 两个 OptionalU64 保持 unset
+    // In MMPTE_SOFTWARE, PageFileHigh occupies bit32..63 and identifies the page's location in the page file.
+    // A value of 0 indicates that this entry has no page file location: typically a committed but never-touched demand-zero page (e.g.,
+    // entry=0x20, where only the Protection field bit5..9 are set). Previously, any case with a non-zero value where neither of the two
+    // encoding bits was set was unconditionally classified as PageFile, and pageFileNumber/pageFileOffset were filled without condition.
+    // This effectively fabricated a page file location out of thin air, which is explicitly prohibited by M-05 (no fabricated observations).
+    const std::uint64_t kPageFileHigh = rawEntry >> 32U;
+    if (kPageFileHigh == 0ULL) {
+        decode.kind = SoftwarePteKind::kDemandZero;
+        return decode;  // Both OptionalU64 values remain unset.
     }
-    decode.kind = SoftwarePteKind::PageFile;
+    decode.kind = SoftwarePteKind::kPageFile;
     decode.pageFileNumber = OptionalU64::of((rawEntry >> 1U) & 0xFULL);
-    decode.pageFileOffset = OptionalU64::of(pageFileHigh);
+    decode.pageFileOffset = OptionalU64::of(kPageFileHigh);
     return decode;
 }
 
-TranslateResult TranslateVirtualAddress(std::uint64_t virtualAddress,
+TranslateResult translateVirtualAddress(std::uint64_t virtualAddress,
                                         std::uint64_t pageTableRootPhysical,
                                         const PhysicalReader& reader,
                                         const TranslateOptions& options) {
@@ -260,30 +260,30 @@ TranslateResult TranslateVirtualAddress(std::uint64_t virtualAddress,
     result.mode = options.mode;
     result.supports1GiBPages = options.supports1GiBPages;
     if (options.maxPhysAddrBits != 0U) {
-        // 只有调用方真的提供了 MAXPHYADDR，这项检查才算生效并被记进结果里。
+        // This check only takes effect and is recorded in the result if the caller actually provides MAXPHYADDR.
         result.effectiveMaxPhysAddrBits = OptionalU64::of(options.maxPhysAddrBits);
     }
 
-    if (options.mode != PagingMode::LongMode4Level) {
-        // M-04：不支持的模式明确拒绝。LA57 五级分页本实现没有做，因此它落在这里，
-        // 绝不按四级去猜 —— 猜出来的物理地址是伪造的。
-        FailAt(result, TranslationStatus::UnsupportedMode, PageTableLevel::None, 0ULL);
+    if (options.mode != PagingMode::kLongMode4Level) {
+        // M-04: Unsupported modes are explicitly rejected. LA57 five-level paging is not implemented here, so this
+        // code path is taken. Never guess based on four-level paging—the resulting physical address would be forged.
+        failAt(result, TranslationStatus::kUnsupportedMode, PageTableLevel::kNone, 0ULL);
         return result;
     }
-    if (!IsCanonicalAddress48(virtualAddress)) {
-        FailAt(result, TranslationStatus::NotCanonical, PageTableLevel::None, 0ULL);
+    if (!isCanonicalAddress48(virtualAddress)) {
+        failAt(result, TranslationStatus::kNotCanonical, PageTableLevel::kNone, 0ULL);
         return result;
     }
 
-    const std::uint64_t addressReserved = AddressReservedMask(options.maxPhysAddrBits);
-    // 根的低 12 位在 CR3 里是 PCID/PWT/PCD，不是地址位，按架构掩掉而不是当成错误；
-    // 但 MAXPHYADDR 以上的地址位置位说明这个根本身就不可能是硬件给的值。
-    if ((pageTableRootPhysical & addressReserved) != 0ULL) {
-        // 根不合法时一层都不该走 —— failedLevel 保持 None 表示"还没进到 PML4E"。
-        FailAt(result,
-               TranslationStatus::ReservedBitSet,
-               PageTableLevel::None,
-               pageTableRootPhysical & addressReserved);
+    const std::uint64_t kAddressReserved = addressReservedMask(options.maxPhysAddrBits);
+    // The lower 12 bits of the root in CR3 are PCID/PWT/PCD, not address bits; mask them according to the architecture instead of treating them as errors.
+    // But if the address above MAXPHYADDR is set, the value could not have come from hardware.
+    if ((pageTableRootPhysical & kAddressReserved) != 0ULL) {
+        // If the root is invalid, no level should be traversed; failedLevel remaining as None indicates 'not yet entered PML4E'.
+        failAt(result,
+               TranslationStatus::kReservedBitSet,
+               PageTableLevel::kNone,
+               pageTableRootPhysical & kAddressReserved);
         result.pageTableRootPhysical = OptionalU64::of(pageTableRootPhysical);
         return result;
     }
@@ -293,170 +293,170 @@ TranslateResult TranslateVirtualAddress(std::uint64_t virtualAddress,
         PageTableLevel level;
         std::uint32_t shift;
     };
-    const LevelPlan plan[4] = {
-        {PageTableLevel::Pml4, kShiftPml4},
-        {PageTableLevel::Pdpt, kShiftPdpt},
-        {PageTableLevel::Pd, kShiftPd},
-        {PageTableLevel::Pt, kShiftPt},
+    const LevelPlan kPlan[4] = {
+        {PageTableLevel::kPml4, kShiftPml4},
+        {PageTableLevel::kPdpt, kShiftPdpt},
+        {PageTableLevel::kPd, kShiftPd},
+        {PageTableLevel::kPt, kShiftPt},
     };
 
     std::uint64_t tableBase = pageTableRootPhysical & kFrameMask4KiB;
     bool firstLevel = true;
 
-    for (const LevelPlan& step : plan) {
+    for (const LevelPlan& step : kPlan) {
         PageTableEntryEvidence evidence;
         evidence.level = step.level;
-        evidence.index = ExtractIndex(virtualAddress, step.shift);
+        evidence.index = extractIndex(virtualAddress, step.shift);
         evidence.entryPhysicalAddress =
             tableBase + (static_cast<std::uint64_t>(evidence.index) * kEntryBytes);
 
         std::uint64_t raw = 0ULL;
-        if (!ReadEntry(reader, evidence.entryPhysicalAddress, raw)) {
-            // 读不到就是读不到。表项物理地址和索引仍然保留，UI 据此说明卡在哪一层。
+        if (!readEntry(reader, evidence.entryPhysicalAddress, raw)) {
+            // If the read fails, it fails. The entry's physical address and index are retained so the UI can indicate which level failed.
             result.levels.push_back(evidence);
-            FailAt(result, TranslationStatus::PhysicalReadFailed, step.level, 0ULL);
+            failAt(result, TranslationStatus::kPhysicalReadFailed, step.level, 0ULL);
             return result;
         }
         evidence.read = true;
         evidence.rawValue = raw;
         evidence.present = (raw & kBitPresent) != 0ULL;
-        // PS 位只在 PDPTE/PDE 上按大页解释；PTE 的同一位是 PAT。
-        evidence.largePage = (step.level == PageTableLevel::Pdpt || step.level == PageTableLevel::Pd)
+        // PS bit is interpreted as large page only in PDPTE/PDE; the same bit in PTE represents PAT.
+        evidence.largePage = (step.level == PageTableLevel::kPdpt || step.level == PageTableLevel::kPd)
                                  ? ((raw & kBitLargePage) != 0ULL)
                                  : false;
 
         if (!evidence.present) {
-            // M-05：非驻留项一律不产出物理地址，只解码软件 PTE 说明"为什么没有"。
+            // M-05: Non-resident entries never produce a physical address; only decode the software PTE to explain why.
             result.levels.push_back(evidence);
             result.softwarePteDecoded = true;
-            result.softwarePte = DecodeSoftwarePte(raw);
-            FailAt(result, TranslationStatus::EntryNotPresent, step.level, 0ULL);
+            result.softwarePte = decodeSoftwarePte(raw);
+            failAt(result, TranslationStatus::kEntryNotPresent, step.level, 0ULL);
             return result;
         }
 
-        const std::uint64_t reservedMask =
-            ReservedMaskForEntry(step.level, evidence.largePage, options);
-        const std::uint64_t violated = raw & reservedMask;
-        if (violated != 0ULL) {
-            // M-04：保留位异常不是"正常映射"。此前 R0 只判 P 位，会把它当成有效映射。
-            evidence.reservedBitsSet = violated;
+        const std::uint64_t kReservedMask =
+            reservedMaskForEntry(step.level, evidence.largePage, options);
+        const std::uint64_t kViolated = raw & kReservedMask;
+        if (kViolated != 0ULL) {
+            // M-04: Reserved bit violation is not a 'valid mapping'. Previously, R0 only checked the P bit and treated it as a valid mapping.
+            evidence.reservedBitsSet = kViolated;
             result.levels.push_back(evidence);
-            FailAt(result, TranslationStatus::ReservedBitSet, step.level, violated);
+            failAt(result, TranslationStatus::kReservedBitSet, step.level, kViolated);
             return result;
         }
 
-        MergePermissions(result.permissions, raw, firstLevel);
+        mergePermissions(result.permissions, raw, firstLevel);
         firstLevel = false;
         result.levels.push_back(evidence);
 
         if (evidence.largePage) {
-            const PageSizeClass sizeClass = (step.level == PageTableLevel::Pdpt)
-                                                ? PageSizeClass::Size1GiB
-                                                : PageSizeClass::Size2MiB;
-            if (sizeClass == PageSizeClass::Size1GiB && !options.supports1GiBPages) {
-                // 双保险。上面的保留位掩码已经把这种项拦成 ReservedBitSet 了，
-                // 这里再拦一次：没有 1GiB 能力就绝不产出 1GiB 物理地址，将来谁放宽
-                // 了掩码也不至于让伪造的物理地址漏出去（M-04）。
-                FailAt(result, TranslationStatus::ReservedBitSet, step.level, kBitLargePage);
+            const PageSizeClass kSizeClass = (step.level == PageTableLevel::kPdpt)
+                                                ? PageSizeClass::kSize1GiB
+                                                : PageSizeClass::kSize2MiB;
+            if (kSizeClass == PageSizeClass::kSize1GiB && !options.supports1GiBPages) {
+                // Double insurance: The reserved bit mask above already blocks such entries as ReservedBitSet.
+                // This acts as a second barrier: without 1GiB capability, we never produce a 1GiB physical
+                // address. Even if the mask is relaxed later, forged physical addresses will not leak (M-04).
+                failAt(result, TranslationStatus::kReservedBitSet, step.level, kBitLargePage);
                 return result;
             }
-            const std::uint64_t frameMask =
-                (sizeClass == PageSizeClass::Size1GiB) ? kFrameMask1GiB : kFrameMask2MiB;
-            const std::uint64_t frame = raw & frameMask;
-            const std::uint64_t offset = virtualAddress & (PageSizeBytes(sizeClass) - 1ULL);
-            result.pageSize = sizeClass;
-            result.pageFrameBase = OptionalU64::of(frame);
-            result.pageOffset = OptionalU64::of(offset);
-            result.physicalAddress = OptionalU64::of(frame | offset);
-            result.status = TranslationStatus::Translated;
-            result.failedLevel = PageTableLevel::None;
+            const std::uint64_t kFrameMask =
+                (kSizeClass == PageSizeClass::kSize1GiB) ? kFrameMask1GiB : kFrameMask2MiB;
+            const std::uint64_t kFrame = raw & kFrameMask;
+            const std::uint64_t kOffset = virtualAddress & (pageSizeBytes(kSizeClass) - 1ULL);
+            result.pageSize = kSizeClass;
+            result.pageFrameBase = OptionalU64::of(kFrame);
+            result.pageOffset = OptionalU64::of(kOffset);
+            result.physicalAddress = OptionalU64::of(kFrame | kOffset);
+            result.status = TranslationStatus::kTranslated;
+            result.failedLevel = PageTableLevel::kNone;
             return result;
         }
 
         tableBase = raw & kFrameMask4KiB;
     }
 
-    // 四级走完且最后一级是普通 PTE。
-    const std::uint64_t frame = result.levels.back().rawValue & kFrameMask4KiB;
-    const std::uint64_t offset = virtualAddress & (PageSizeBytes(PageSizeClass::Size4KiB) - 1ULL);
-    result.pageSize = PageSizeClass::Size4KiB;
-    result.pageFrameBase = OptionalU64::of(frame);
-    result.pageOffset = OptionalU64::of(offset);
-    result.physicalAddress = OptionalU64::of(frame | offset);
-    result.status = TranslationStatus::Translated;
-    result.failedLevel = PageTableLevel::None;
+    // Completed four-level walk with the final level being a normal PTE.
+    const std::uint64_t kFrame = result.levels.back().rawValue & kFrameMask4KiB;
+    const std::uint64_t kOffset = virtualAddress & (pageSizeBytes(PageSizeClass::kSize4KiB) - 1ULL);
+    result.pageSize = PageSizeClass::kSize4KiB;
+    result.pageFrameBase = OptionalU64::of(kFrame);
+    result.pageOffset = OptionalU64::of(kOffset);
+    result.physicalAddress = OptionalU64::of(kFrame | kOffset);
+    result.status = TranslationStatus::kTranslated;
+    result.failedLevel = PageTableLevel::kNone;
     return result;
 }
 
 // ---------------------------------------------------------------------------
-// M-03 上下文
+// M-03 Context
 // ---------------------------------------------------------------------------
 
-const char* ContextValidityName(ContextValidity validity) noexcept {
+const char* contextValidityName(ContextValidity validity) noexcept {
     switch (validity) {
-    case ContextValidity::Usable:                     return "Usable";
-    case ContextValidity::RejectProcessExited:        return "RejectProcessExited";
-    case ContextValidity::RejectIdentityMismatch:     return "RejectIdentityMismatch";
-    case ContextValidity::RejectIdentityUnverifiable: return "RejectIdentityUnverifiable";
-    case ContextValidity::RejectNoPageTableRoot:      return "RejectNoPageTableRoot";
-    case ContextValidity::RejectUnsupportedMode:      return "RejectUnsupportedMode";
+    case ContextValidity::kUsable:                     return "Usable";
+    case ContextValidity::kRejectProcessExited:        return "RejectProcessExited";
+    case ContextValidity::kRejectIdentityMismatch:     return "RejectIdentityMismatch";
+    case ContextValidity::kRejectIdentityUnverifiable: return "RejectIdentityUnverifiable";
+    case ContextValidity::kRejectNoPageTableRoot:      return "RejectNoPageTableRoot";
+    case ContextValidity::kRejectUnsupportedMode:      return "RejectUnsupportedMode";
     }
     return "RejectIdentityUnverifiable";
 }
 
-ContextValidity CheckContextUsable(const TranslationContext& saved,
+ContextValidity checkContextUsable(const TranslationContext& saved,
                                    const LiveResolution& live) noexcept {
-    // 先问身份：进程退出 / PID 复用是最主要的失效原因，也是 UI 最需要的理由。
-    switch (ResolveProcessNavigation(saved.process, live)) {
-    case LiveNavigationDecision::RejectObjectExited:
-        return ContextValidity::RejectProcessExited;
-    case LiveNavigationDecision::RejectIdentityMismatch:
-        return ContextValidity::RejectIdentityMismatch;
-    case LiveNavigationDecision::RejectIdentityUnverifiable:
-        return ContextValidity::RejectIdentityUnverifiable;
-    case LiveNavigationDecision::Allow:
+    // First check identity: process exit or PID reuse are the primary causes of invalidation and the reasons most needed by the UI.
+    switch (resolveProcessNavigation(saved.process, live)) {
+    case LiveNavigationDecision::kRejectObjectExited:
+        return ContextValidity::kRejectProcessExited;
+    case LiveNavigationDecision::kRejectIdentityMismatch:
+        return ContextValidity::kRejectIdentityMismatch;
+    case LiveNavigationDecision::kRejectIdentityUnverifiable:
+        return ContextValidity::kRejectIdentityUnverifiable;
+    case LiveNavigationDecision::kAllow:
         break;
     }
-    if (saved.mode != PagingMode::LongMode4Level) {
-        return ContextValidity::RejectUnsupportedMode;
+    if (saved.mode != PagingMode::kLongMode4Level) {
+        return ContextValidity::kRejectUnsupportedMode;
     }
     if (!saved.pageTableRootPhysical.present) {
-        // 没有页表根就没有地址空间。这里绝不回退到"用当前进程的 CR3 试试"。
-        return ContextValidity::RejectNoPageTableRoot;
+        // No page table root means no address space. Never fall back to "try the current process's CR3".
+        return ContextValidity::kRejectNoPageTableRoot;
     }
-    return ContextValidity::Usable;
+    return ContextValidity::kUsable;
 }
 
-bool ContextAllowsLiveReuse(ContextValidity validity) noexcept {
-    return validity == ContextValidity::Usable;
+bool contextAllowsLiveReuse(ContextValidity validity) noexcept {
+    return validity == ContextValidity::kUsable;
 }
 
-bool TranslateUsingContext(const TranslationContext& context,
+bool translateUsingContext(const TranslationContext& context,
                            ContextValidity validity,
                            std::uint64_t virtualAddress,
                            const PhysicalReader& reader,
                            const TranslateOptions& options,
                            TranslateResult& out) {
     out = TranslateResult{};
-    if (!ContextAllowsLiveReuse(validity)) {
-        // 失效上下文禁止复用（M-03）。以前这里让 out 保持默认值，而默认 status 是
-        // UnsupportedMode —— 于是"进程已退出"会被 UI 渲染成"分页模式不支持"，
-        // 用户拿到的是一个假的拒绝理由。现在状态与理由都原样写进去。
-        out.status = TranslationStatus::ContextRejected;
+    if (!contextAllowsLiveReuse(validity)) {
+        // Invalidated contexts are prohibited from reuse (M-03). Previously, `out` retained its default value, where the default
+        // status was `UnsupportedMode`—causing "process exited" to be rendered by the UI as "page table mode unsupported,"
+        // giving the user a false rejection reason. Now, both the status and reason are written exactly as they are.
+        out.status = TranslationStatus::kContextRejected;
         out.contextRefusal = validity;
         out.virtualAddress = virtualAddress;
         out.mode = context.mode;
-        // 保存下来的根照实带出去：它是历史观测的一部分，不是本次翻译的结果。
+        // The saved root is exported as-is: it is part of the historical observation, not the result of this translation.
         out.pageTableRootPhysical = context.pageTableRootPhysical;
         return false;
     }
     TranslateOptions effective = options;
-    effective.mode = context.mode;  // 分页模式以上下文为准，不接受调用方另给一个
-    out = TranslateVirtualAddress(virtualAddress,
+    effective.mode = context.mode;  // Page table walk mode is determined by the context; the caller cannot provide an alternative.
+    out = translateVirtualAddress(virtualAddress,
                                   context.pageTableRootPhysical.value,
                                   reader,
                                   effective);
     return true;
 }
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

@@ -7,17 +7,17 @@ This document prepares a read-only R0 audit feature for HID, keyboard, mouse, US
 Implementation must stay aligned with the Phase -1 rules:
 
 - R0/R3 protocol definitions live only under `shared/driver/`.
-- R0 IOCTL handlers are registered only through `KswordARKDriver/src/dispatch/ioctl_registry.c`.
-- User-mode KswordARK device access goes through `Ksword5.1/Ksword5.1/ArkDriverClient/`.
+- R0 IOCTL handlers are registered only through `drivers/ark/src/dispatch/ioctl_registry.c`.
+- User-mode KswordARK device access goes through `shared/ark_client/`.
 - Device audit is cross-view evidence collection, not remediation.
 
 Existing code that should be reused or mirrored:
 
-- `KswordARKLight/Features/Hardware/` already builds a SetupAPI/Configuration Manager devnode tree with instance ID, parent ID, class, service, driver key, location, hardware IDs, status flags, and problem code.
+- `apps/ark_light/features/hardware/` already builds a SetupAPI/Configuration Manager devnode tree with instance ID, parent ID, class, service, driver key, location, hardware IDs, status flags, and problem code.
 - `shared/driver/KswordArkKeyboardIoctl.h` already defines read-only win32k hotkey/hook enumeration protocol.
-- `KswordARKDriver/src/features/keyboard/keyboard_query.c` already enumerates win32k hotkeys and `WH_KEYBOARD` / `WH_KEYBOARD_LL` hook chains without recording keystrokes.
-- `KswordARKDriver/src/features/kernel/driver_object_query.c` already references `DriverObject` by name, snapshots `MajorFunction[]`, walks `DriverObject->DeviceObject`, and optionally walks `DeviceObject->AttachedDevice` chains.
-- `KswordARKDriver/src/features/kernel/driver_integrity.c` already classifies driver object, module ownership, dispatch pointers, fast I/O pointers, service key evidence, and device chain loop/cross-driver attach risks.
+- `drivers/ark/src/features/keyboard/keyboard_query.c` already enumerates win32k hotkeys and `WH_KEYBOARD` / `WH_KEYBOARD_LL` hook chains without recording keystrokes.
+- `drivers/ark/src/features/kernel/driver_object_query.c` already references `DriverObject` by name, snapshots `MajorFunction[]`, walks `DriverObject->DeviceObject`, and optionally walks `DeviceObject->AttachedDevice` chains.
+- `drivers/ark/src/features/kernel/driver_integrity.c` already classifies driver object, module ownership, dispatch pointers, fast I/O pointers, service key evidence, and device chain loop/cross-driver attach risks.
 
 ## PDB module inventory
 

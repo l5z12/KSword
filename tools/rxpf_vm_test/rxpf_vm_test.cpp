@@ -22,7 +22,7 @@ namespace
         0xC3U
     };
 
-    KSWORD_ARK_RXPF_REQUEST_HEADER MakeHeader(
+    KSWORD_ARK_RXPF_REQUEST_HEADER makeHeader(
         const unsigned long size,
         const unsigned long extraFlags = 0UL)
     {
@@ -35,7 +35,7 @@ namespace
     }
 
     template <typename Request, typename Response>
-    bool SendIoctl(
+    bool sendIoctl(
         const HANDLE device,
         const DWORD code,
         const Request& request,
@@ -44,7 +44,7 @@ namespace
     {
         DWORD returned = 0UL;
         std::memset(&response, 0, sizeof(response));
-        const BOOL ok = ::DeviceIoControl(
+        const BOOL kOk = ::DeviceIoControl(
             device,
             code,
             const_cast<Request*>(&request),
@@ -53,7 +53,7 @@ namespace
             static_cast<DWORD>(sizeof(response)),
             &returned,
             nullptr);
-        if (ok == FALSE)
+        if (kOk == FALSE)
         {
             std::cerr << "[FAIL] " << operation
                       << ": Win32=" << ::GetLastError() << '\n';
@@ -70,16 +70,16 @@ namespace
         return true;
     }
 
-    bool QuerySupport(
+    bool querySupport(
         const HANDLE device,
         KSWORD_ARK_RXPF_QUERY_SUPPORT_RESPONSE& response)
     {
-        const auto request = MakeHeader(
+        const auto kRequest = makeHeader(
             static_cast<unsigned long>(sizeof(KSWORD_ARK_RXPF_REQUEST_HEADER)));
-        if (!SendIoctl(
+        if (!sendIoctl(
                 device,
                 IOCTL_KSWORD_ARK_RXPF_QUERY_SUPPORT,
-                request,
+                kRequest,
                 response,
                 "query support"))
         {
@@ -96,15 +96,15 @@ namespace
         return true;
     }
 
-    bool UnregisterPage(
+    bool unregisterPage(
         const HANDLE device,
         const unsigned long long recordId)
     {
         KSWORD_ARK_RXPF_RECORD_REQUEST request{};
         KSWORD_ARK_RXPF_PAGE_RESPONSE response{};
-        request.header = MakeHeader(static_cast<unsigned long>(sizeof(request)));
+        request.header = makeHeader(static_cast<unsigned long>(sizeof(request)));
         request.recordId = recordId;
-        return SendIoctl(
+        return sendIoctl(
             device,
             IOCTL_KSWORD_ARK_RXPF_UNREGISTER_PAGE,
             request,
@@ -112,7 +112,7 @@ namespace
             "unregister page");
     }
 
-    bool TriggerChainedUserFault()
+    bool triggerChainedUserFault()
     {
         void* faultPage = ::VirtualAlloc(
             nullptr,
@@ -137,9 +137,9 @@ namespace
         }
         __try
         {
-            const volatile unsigned char value =
+            const volatile unsigned char kValue =
                 *static_cast<volatile unsigned char*>(faultPage);
-            (void)value;
+            (void)kValue;
         }
         __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION
             ? EXCEPTION_EXECUTE_HANDLER
@@ -151,7 +151,7 @@ namespace
         return caught;
     }
 
-    bool ExercisePage(
+    bool exercisePage(
         const HANDLE device,
         const unsigned long targetKind,
         const std::string_view label)
@@ -161,12 +161,12 @@ namespace
         unsigned long long recordId = 0ULL;
         bool passed = true;
 
-        registerRequest.header = MakeHeader(
+        registerRequest.header = makeHeader(
             static_cast<unsigned long>(sizeof(registerRequest)),
             KSWORD_ARK_RXPF_FLAG_CAPTURE_BACKUP);
         registerRequest.targetKind = targetKind;
         registerRequest.targetAddress = 0ULL;
-        if (!SendIoctl(
+        if (!sendIoctl(
                 device,
                 IOCTL_KSWORD_ARK_RXPF_REGISTER_PAGE,
                 registerRequest,
@@ -178,10 +178,10 @@ namespace
         recordId = page.recordId;
 
         KSWORD_ARK_RXPF_RECORD_REQUEST recordRequest{};
-        recordRequest.header = MakeHeader(
+        recordRequest.header = makeHeader(
             static_cast<unsigned long>(sizeof(recordRequest)));
         recordRequest.recordId = recordId;
-        if (!SendIoctl(
+        if (!sendIoctl(
                 device,
                 IOCTL_KSWORD_ARK_RXPF_CHANGE_PAGE,
                 recordRequest,
@@ -201,7 +201,7 @@ namespace
         if (passed)
         {
             KSWORD_ARK_RXPF_WRITE_PAGE_REQUEST writeRequest{};
-            writeRequest.header = MakeHeader(
+            writeRequest.header = makeHeader(
                 static_cast<unsigned long>(sizeof(writeRequest)));
             writeRequest.recordId = recordId;
             writeRequest.offset = 0UL;
@@ -210,7 +210,7 @@ namespace
                 writeRequest.bytes,
                 kSelfTestCode,
                 sizeof(kSelfTestCode));
-            passed = SendIoctl(
+            passed = sendIoctl(
                 device,
                 IOCTL_KSWORD_ARK_RXPF_WRITE_PAGE,
                 writeRequest,
@@ -221,11 +221,11 @@ namespace
         if (passed)
         {
             KSWORD_ARK_RXPF_SET_EMULATION_REQUEST setRequest{};
-            setRequest.header = MakeHeader(
+            setRequest.header = makeHeader(
                 static_cast<unsigned long>(sizeof(setRequest)));
             setRequest.recordId = recordId;
             setRequest.enable = 1UL;
-            passed = SendIoctl(
+            passed = sendIoctl(
                 device,
                 IOCTL_KSWORD_ARK_RXPF_SET_EMULATION,
                 setRequest,
@@ -233,19 +233,19 @@ namespace
                 "install shadow IDTs");
             if (passed)
             {
-                const bool enableStatePassed =
+                const bool kEnableStatePassed =
                     page.emulationEnabled == 1UL;
-                const bool chainPassed = TriggerChainedUserFault();
-                if (!enableStatePassed)
+                const bool kChainPassed = triggerChainedUserFault();
+                if (!kEnableStatePassed)
                 {
                     std::cerr << "[FAIL] emulation enable was not published\n";
                 }
-                if (!chainPassed)
+                if (!kChainPassed)
                 {
                     std::cerr << "[FAIL] user #PF did not chain to Windows SEH\n";
                 }
                 setRequest.enable = 0UL;
-                bool restorePassed = SendIoctl(
+                bool restorePassed = sendIoctl(
                     device,
                     IOCTL_KSWORD_ARK_RXPF_SET_EMULATION,
                     setRequest,
@@ -256,7 +256,7 @@ namespace
                     std::cerr << "[FAIL] emulation disable was not published\n";
                     restorePassed = false;
                 }
-                passed = enableStatePassed && chainPassed &&
+                passed = kEnableStatePassed && kChainPassed &&
                     restorePassed;
             }
         }
@@ -264,7 +264,7 @@ namespace
         if (passed)
         {
             KSWORD_ARK_RXPF_SELF_TEST_RESPONSE selfTest{};
-            passed = SendIoctl(
+            passed = sendIoctl(
                 device,
                 IOCTL_KSWORD_ARK_RXPF_RUN_SELF_TEST,
                 recordRequest,
@@ -284,19 +284,19 @@ namespace
             }
         }
 
-        const bool cleanupPassed = UnregisterPage(device, recordId);
-        return passed && cleanupPassed;
+        const bool kCleanupPassed = unregisterPage(device, recordId);
+        return passed && kCleanupPassed;
     }
 
-    bool QueryDiagnostics(const HANDLE device)
+    bool queryDiagnostics(const HANDLE device)
     {
-        const auto statsRequest = MakeHeader(
+        const auto kStatsRequest = makeHeader(
             static_cast<unsigned long>(sizeof(KSWORD_ARK_RXPF_REQUEST_HEADER)));
         KSWORD_ARK_RXPF_STATS_RESPONSE stats{};
-        if (!SendIoctl(
+        if (!sendIoctl(
                 device,
                 IOCTL_KSWORD_ARK_RXPF_QUERY_STATS,
-                statsRequest,
+                kStatsRequest,
                 stats,
                 "query statistics"))
         {
@@ -312,11 +312,11 @@ namespace
 
         KSWORD_ARK_RXPF_DRAIN_EVENTS_REQUEST eventRequest{};
         KSWORD_ARK_RXPF_DRAIN_EVENTS_RESPONSE events{};
-        eventRequest.header = MakeHeader(
+        eventRequest.header = makeHeader(
             static_cast<unsigned long>(sizeof(eventRequest)));
         eventRequest.afterSequence = 0ULL;
         eventRequest.maxRows = KSWORD_ARK_RXPF_MAX_EVENT_ROWS;
-        if (!SendIoctl(
+        if (!sendIoctl(
                 device,
                 IOCTL_KSWORD_ARK_RXPF_DRAIN_EVENTS,
                 eventRequest,
@@ -334,9 +334,9 @@ namespace
 
 int wmain(const int argc, wchar_t** argv)
 {
-    const bool runImageTest =
+    const bool kRunImageTest =
         argc == 2 && std::wstring_view(argv[1]) == L"--self-image";
-    const HANDLE device = ::CreateFileW(
+    const HANDLE kDevice = ::CreateFileW(
         kDevicePath,
         GENERIC_READ | GENERIC_WRITE,
         FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -344,24 +344,24 @@ int wmain(const int argc, wchar_t** argv)
         OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL,
         nullptr);
-    if (device == INVALID_HANDLE_VALUE)
+    if (kDevice == INVALID_HANDLE_VALUE)
     {
         std::cerr << "CreateFileW failed: " << ::GetLastError() << '\n';
         return 2;
     }
 
     KSWORD_ARK_RXPF_QUERY_SUPPORT_RESPONSE support{};
-    bool passed = QuerySupport(device, support);
+    bool passed = querySupport(kDevice, support);
     if (passed)
     {
-        passed = ExercisePage(
-            device,
+        passed = exercisePage(
+            kDevice,
             KSWORD_ARK_RXPF_TARGET_ALLOCATED_TEST,
             "allocated test page");
     }
     if (passed)
     {
-        passed = QuerySupport(device, support) &&
+        passed = querySupport(kDevice, support) &&
             (support.supportFlags &
                 KSWORD_ARK_RXPF_SUPPORT_ALLOCATED_TEST_PASSED) != 0UL;
         if (!passed)
@@ -369,31 +369,31 @@ int wmain(const int argc, wchar_t** argv)
             std::cerr << "[FAIL] allocated-page gate was not published\n";
         }
     }
-    if (passed && runImageTest)
+    if (passed && kRunImageTest)
     {
-        const unsigned long required =
+        const unsigned long kRequired =
             KSWORD_ARK_RXPF_SUPPORT_BUILD_MATCH |
             KSWORD_ARK_RXPF_SUPPORT_ABI_VERIFIED |
             KSWORD_ARK_RXPF_SUPPORT_SELF_IMAGE_TEST_PAGE;
-        if ((support.supportFlags & required) != required)
+        if ((support.supportFlags & kRequired) != kRequired)
         {
             std::cerr << "[FAIL] exact self-image build profile is unavailable\n";
             passed = false;
         }
         else
         {
-            passed = ExercisePage(
-                device,
+            passed = exercisePage(
+                kDevice,
                 KSWORD_ARK_RXPF_TARGET_SELF_IMAGE_TEST,
                 "dedicated self-image page");
         }
     }
     if (passed)
     {
-        passed = QueryDiagnostics(device);
+        passed = queryDiagnostics(kDevice);
     }
 
-    ::CloseHandle(device);
+    ::CloseHandle(kDevice);
     std::cout << (passed ? "RXPF VM test passed\n" : "RXPF VM test failed\n");
     return passed ? 0 : 1;
 }

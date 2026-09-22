@@ -4,10 +4,10 @@
 
 // ============================================================
 // KswordArkUnloadedDriverIoctl.h
-// 作用：
-// - 定义 R3/R0 共用的“已卸载驱动”只读枚举协议；
-// - 三个来源共用一套行结构，UI 可在来源间切换并复用过滤/复制逻辑；
-// - 本协议没有删除、清理、修改 PiDDB 或 CI 哈希缓存的动作。
+// Purpose:
+// - Define a read-only enumeration protocol for 'unloaded drivers' shared between R3 and R0.
+// - Three sources share a single row structure; the UI can switch between sources and reuse filtering/copying logic.
+// - This protocol performs no actions to delete, clean, or modify the PiDDB or CI hash cache.
 // ============================================================
 
 #define KSWORD_ARK_UNLOADED_DRIVER_PROTOCOL_VERSION 1UL
@@ -28,7 +28,7 @@
 #define KSWORD_ARK_UNLOADED_DRIVER_MAX_ROWS 4096UL
 #define KSWORD_ARK_UNLOADED_DRIVER_NAME_CHARS 260U
 
-// 查询状态属于业务状态；IOCTL 传输成功时也可能返回可读的降级原因。
+// Query status is a business state; even when the IOCTL transfer succeeds, a readable degradation reason may be returned.
 #define KSWORD_ARK_UNLOADED_DRIVER_STATUS_OK 0UL
 #define KSWORD_ARK_UNLOADED_DRIVER_STATUS_INVALID_REQUEST 1UL
 #define KSWORD_ARK_UNLOADED_DRIVER_STATUS_DYNDATA_UNAVAILABLE 2UL
@@ -41,7 +41,7 @@
 #define KSWORD_ARK_UNLOADED_DRIVER_RESPONSE_FLAG_SKIPPED_INVALID_ROW 0x00000002UL
 #define KSWORD_ARK_UNLOADED_DRIVER_RESPONSE_FLAG_SNAPSHOT_RACY 0x00000004UL
 
-// 每个 HAS_* 位精确说明该列是否有来源支持，UI 不把缺失值伪装成 0。
+// Each HAS_* bit precisely indicates whether that column has source support; the UI does not mask missing values as 0.
 #define KSWORD_ARK_UNLOADED_DRIVER_ROW_FLAG_HAS_NAME 0x00000001UL
 #define KSWORD_ARK_UNLOADED_DRIVER_ROW_FLAG_HAS_BASE 0x00000002UL
 #define KSWORD_ARK_UNLOADED_DRIVER_ROW_FLAG_HAS_SIZE 0x00000004UL

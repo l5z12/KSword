@@ -56,10 +56,10 @@
         METHOD_BUFFERED, \
         FILE_ANY_ACCESS)
 
-// 单窗口运行时详情协议：
-// - 输入：HWND/PID/TID 过滤信息只作为定位线索，不信任 R3 传入 tagWND 地址；
-// - 处理：当前阶段返回 profile/capability/offset readiness，后续可由 tagWND PDB profile 扩展；
-// - 输出：固定响应包，确保 UI 有稳定 unsupported/profile-missing 解释而不是空表。
+// Single-window runtime detail protocol:
+// - Input: HWND/PID/TID filtering info serves only as a locating clue; do not trust the R3-provided tagWND address;
+// - Processing: Return profile/capability/offset readiness in the current phase; later extensible via tagWND PDB profile.
+// - Output: Fixed response packet to ensure UI has a stable unsupported/profile-missing explanation instead of an empty table.
 #define IOCTL_KSWORD_ARK_QUERY_WIN32K_WINDOW_DETAIL \
     CTL_CODE( \
         KSWORD_ARK_IOCTL_DEVICE_TYPE, \
@@ -67,7 +67,7 @@
         METHOD_BUFFERED, \
         FILE_ANY_ACCESS)
 
-// 窗口定时器查询只读遍历 win32kbase 导出的 gTimerHashTable，不提供删除或修改入口。
+// Window timer query performs a read-only traversal of the gTimerHashTable exported by win32kbase; no delete or modify entry points are provided.
 #define IOCTL_KSWORD_ARK_QUERY_WIN32K_TIMERS \
     CTL_CODE( \
         KSWORD_ARK_IOCTL_DEVICE_TYPE, \
@@ -75,7 +75,7 @@
         METHOD_BUFFERED, \
         FILE_ANY_ACCESS)
 
-// WinEvent Hook 查询只读遍历 win32kbase!gpWinEventHooks，不提供 unhook 入口。
+// WinEvent Hook query performs a read-only traversal of win32kbase!gpWinEventHooks and provides no unhook entry point.
 #define IOCTL_KSWORD_ARK_QUERY_WIN32K_EVENT_HOOKS \
     CTL_CODE( \
         KSWORD_ARK_IOCTL_DEVICE_TYPE, \
@@ -231,7 +231,7 @@
 #define KSWORD_ARK_WIN32K_HARD_MAX_ENTRIES 8192UL
 #define KSWORD_ARK_WIN32K_OFFSET_UNAVAILABLE 0xFFFFFFFFUL
 
-// tagTIMER 的布局单独传输，避免改变已有 KSWORD_ARK_WIN32K_FIELD_OFFSETS ABI。
+// tagTIMER layout is transmitted separately to avoid changing the existing KSWORD_ARK_WIN32K_FIELD_OFFSETS ABI.
 typedef struct _KSWORD_ARK_WIN32K_TIMER_LAYOUT
 {
     unsigned long objectSize;
@@ -254,7 +254,7 @@ typedef struct _KSWORD_ARK_WIN32K_TIMER_LAYOUT
     unsigned long imageSize;
 } KSWORD_ARK_WIN32K_TIMER_LAYOUT;
 
-// tagEVENTHOOK 布局独立传输，避免改变旧 Win32k profile ABI。
+// tagEVENTHOOK layout is transmitted independently to avoid changing the old Win32k profile ABI.
 typedef struct _KSWORD_ARK_WIN32K_EVENT_HOOK_LAYOUT
 {
     unsigned long objectSize;
@@ -275,7 +275,7 @@ typedef struct _KSWORD_ARK_WIN32K_EVENT_HOOK_LAYOUT
     unsigned long imageSize;
 } KSWORD_ARK_WIN32K_EVENT_HOOK_LAYOUT;
 
-// tagHOOK/tagTHREADINFO/DESKTOPINFO 布局独立传输；source 区分精确身份与最近旧版回退。
+// tagHOOK/tagTHREADINFO/DESKTOPINFO layouts are transmitted independently; source distinguishes precise identity from recent legacy fallback.
 typedef struct _KSWORD_ARK_WIN32K_MESSAGE_HOOK_LAYOUT
 {
     unsigned long objectSize;

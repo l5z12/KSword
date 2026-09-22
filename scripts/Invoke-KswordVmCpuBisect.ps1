@@ -1,40 +1,40 @@
 <#
 .SYNOPSIS
-    把测试机的 vCPU 数改成指定值并重新部署驱动，用来二分"挂死是不是多处理器
-    rendezvous 造成的"。
+    Change the test VM's vCPU count to the specified value and redeploy the
+    driver to bisect whether a hang is caused by multi-processor rendezvous.
 
 .DESCRIPTION
-    必须以**管理员**运行。
+    Must run as **Administrator**.
 
-    为什么是这个实验：START_RESIDENT 在 4 vCPU 下把 guest 挂死，而且挂死到
-    **连 NMI 都打不进调试器**（kd 报 "Retry sending the same data packet" /
-    "transport connection seems lost"），所以事后调试这条路走不通。
+    Why this experiment: START_RESIDENT hangs the guest on 4 vCPU, and the hang is so
+    **severe that NMI cannot even reach the debugger (kd reports 'Retry sending the same data
+    packet' / 'transport connection seems lost'), making post-mortem debugging impossible.
 
-    1 个处理器时**根本没有 rendezvous 屏障可以死锁**：
-      * 常驻成功  -> 问题确定在多处理器汇合逻辑里，搜索范围缩到一个函数；
-      * 仍然挂死  -> 问题在"当前上下文变成 guest"的构造或 VMRESUME 退出循环里，
-                     同样缩掉一大半，而且单核挂死比四核挂死好调试得多。
+    With only 1 processor, **there is no rendezvous barrier to cause a deadlock**:
+      * Resident success -> The issue is confirmed in the multi-processor merge logic, narrowing the search scope to a single function;
+      * Still hangs -> the issue lies in the construction of 'current context becomes guest' or the VMRESUME exit
+                     loop. Reducing the scope by half helps; single-core hangs are far easier to debug than four-core hangs.
 
-    脚本做的事（每步都回读校验）：
-      1. 可选：把当前（可能已挂死的）内存现场存成检查点 —— 这是唯一还能留下的
-         证据，强制断电会把它毁掉；
-      2. 强制断电（挂死的 guest 无法优雅关机）；
-      3. 改 vCPU 数；
-      4. 启动并等待 guest 就绪；
-      5. 调用 Deploy-KswordDriverToVm.ps1 重新加载驱动
-         （驱动服务是 start= demand，重启后不会自动加载）。
+    What the script does (re-read and verify at each step):
+      1. Optional: Save the current (possibly hung) memory state as a checkpoint
+         — this is the only remaining evidence; forced power-off will destroy it.
+      2) Force power-off (a hung guest cannot shut down gracefully);
+      3. Modify vCPU count;
+      4. Start and wait for the guest to be ready;
+      5. Call Deploy-KswordDriverToVm.ps1 to reload the driver (the driver service
+         is set to start=demand, so it won't load automatically after reboot).
 
-    脚本**不跑** resident —— 那一步由你在确认调试器就位之后手动执行。
+    The script does **not** run resident — that step is manually executed by you after confirming the debugger is ready.
 
 .PARAMETER Count
-    目标 vCPU 数。默认 1。恢复原样用 -Count 4。
+    Target vCPU count. Default is 1. Use -Count 4 to restore the original.
 
 .PARAMETER PreserveHungState
-    断电前先把当前内存现场存成检查点。默认开启；确定不需要时用 -PreserveHungState:$false 跳过。
+    Save the current memory state as a checkpoint before power-off. Enabled by default; skip with -PreserveHungState:$false if not needed.
 
 .EXAMPLE
-    .\Invoke-KswordVmCpuBisect.ps1              # 降到 1 核并重新部署
-    .\Invoke-KswordVmCpuBisect.ps1 -Count 4     # 恢复 4 核
+    .\Invoke-KswordVmCpuBisect.ps1 # Reduce to 1 core and redeploy
+    .\Invoke-KswordVmCpuBisect.ps1 -Count 4 # Restore to 4 cores
 #>
 [CmdletBinding()]
 param(
@@ -74,103 +74,103 @@ function Wait-GuestReady {
 
 $vm = Get-VM -Name $VMName -ErrorAction Stop
 $before = (Get-VMProcessor -VMName $VMName).Count
-Write-Host ("虚拟机 {0}  状态 {1}  当前 {2} vCPU  ->  目标 {3} vCPU" -f
+Write-Host ("VM {0}  status {1}  current {2} vCPU  ->  target {3} vCPU" -f
     $vm.Name, $vm.State, $before, $Count) -ForegroundColor Cyan
 
 if ($before -eq $Count -and $vm.State -eq 'Running') {
-    Write-Host "  已经是目标核数且在运行；只重新部署驱动。" -ForegroundColor Yellow
+    Write-Host "  Already at target core count and running; only redeploying driver." -ForegroundColor Yellow
 } else {
-    # ---- 1. 留下现场 --------------------------------------------------------
+    # ---- 1. Preserve current state --------------------------------------------------------
     if ($vm.State -ne 'Off' -and $PreserveHungState) {
-        Write-Host "`n--- 1. 保存当前内存现场 ---" -ForegroundColor Cyan
+        Write-Host "`n--- 1. Save current memory context ---" -ForegroundColor Cyan
         $snap = 'hung-' + (Get-Date -Format 'MMdd-HHmmss')
         try {
             Checkpoint-VM -Name $VMName -SnapshotName $snap
-            Show-Check "检查点 '$snap'" $true '强制断电会毁掉内存现场，这是唯一留下的证据' | Out-Null
+            Show-Check "Checkpoint '$snap'" $true 'Forced power-off will destroy the memory state; this is the only remaining evidence' | Out-Null
         } catch {
-            # 挂死的 guest 有时连检查点都打不了。这不该阻断整个实验。
-            Write-Host ("  [跳过] 检查点失败：{0}" -f $_.Exception.Message) -ForegroundColor Yellow
+            # Frozen guests sometimes cannot even create checkpoints. This should not block the entire experiment.
+            Write-Host ("  [Skip] Checkpoint failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
         }
     }
 
-    # ---- 2. 断电 ------------------------------------------------------------
+    # ---- 2. Power off ------------------------------------------------------------
     if ($vm.State -ne 'Off') {
-        Write-Host "`n--- 2. 强制断电 ---" -ForegroundColor Cyan
-        Write-Host "  挂死的 guest 无法优雅关机，只能 TurnOff。" -ForegroundColor Yellow
+        Write-Host "`n--- 2. Force Power Off ---" -ForegroundColor Cyan
+        Write-Host "  A hung guest cannot be gracefully shut down, only TurnOff." -ForegroundColor Yellow
         Stop-VM -Name $VMName -TurnOff -Force
         $deadline = (Get-Date).AddMinutes(3)
         while ((Get-Date) -lt $deadline -and (Get-VM -Name $VMName).State -ne 'Off') {
             Start-Sleep -Seconds 3
         }
-        if (-not (Show-Check '已关机' ((Get-VM -Name $VMName).State -eq 'Off'))) {
-            throw '虚拟机没能关机。'
+        if (-not (Show-Check 'Powered Off' ((Get-VM -Name $VMName).State -eq 'Off'))) {
+            throw 'The virtual machine failed to shut down.'
         }
     }
 
-    # ---- 3. 改核数 ----------------------------------------------------------
-    Write-Host "`n--- 3. 设置 vCPU 数 ---" -ForegroundColor Cyan
+    # ---- 3. Change Core Count -------------------------------------------------------
+    Write-Host "`n--- 3. Set vCPU count ---" -ForegroundColor Cyan
     Set-VMProcessor -VMName $VMName -Count $Count
     $now = (Get-VMProcessor -VMName $VMName).Count
-    if (-not (Show-Check "vCPU = $Count" ($now -eq $Count) "实际 $now")) {
-        throw 'vCPU 数回读不符。'
+    if (-not (Show-Check "vCPU = $Count" ($now -eq $Count) "Actual $now")) {
+        throw 'vCPU count readback mismatch.'
     }
-    # 嵌套虚拟化开关是按虚拟机的，改核数不应该动它 —— 但还是回读一次，
-    # 因为它一旦被关掉，后面所有 VMX 操作都会以看不懂的方式失败。
+    # The nested virtualization switch is per-VM; changing the core count should not affect it — but still re-read once,
+    # Because once disabled, all subsequent VMX operations will fail in an unintelligible manner.
     $nested = (Get-VMProcessor -VMName $VMName).ExposeVirtualizationExtensions
-    if (-not (Show-Check '嵌套虚拟化仍然开启' ([bool]$nested))) {
-        throw '嵌套虚拟化被关掉了 —— Set-VMProcessor -ExposeVirtualizationExtensions $true'
+    if (-not (Show-Check 'Nested virtualization is still enabled' ([bool]$nested))) {
+        throw 'Nested virtualization is disabled —— Set-VMProcessor -ExposeVirtualizationExtensions $true'
     }
 
-    # ---- 4. 启动 ------------------------------------------------------------
-    Write-Host "`n--- 4. 启动并等待就绪 ---" -ForegroundColor Cyan
+    # ---- 4. Start ------------------------------------------------------------
+    Write-Host "`n--- 4. Start and wait for ready ---" -ForegroundColor Cyan
     Start-VM -Name $VMName
-    if (-not (Wait-GuestReady)) { throw 'guest 在 5 分钟内没有响应 PowerShell Direct。' }
-    Show-Check 'guest 已就绪' $true | Out-Null
+    if (-not (Wait-GuestReady)) { throw 'guest did not respond to PowerShell Direct within 5 minutes.' }
+    Show-Check 'guest is ready' $true | Out-Null
 }
 
-# ---- 5. 重新部署驱动 --------------------------------------------------------
-Write-Host "`n--- 5. 重新加载驱动 ---" -ForegroundColor Cyan
-Write-Host "  驱动服务是 start= demand，重启后不会自动加载。" -ForegroundColor DarkGray
+# ---- 5. Redeploy driver --------------------------------------------------------
+Write-Host "`n--- 5. Reload driver ---" -ForegroundColor Cyan
+Write-Host "  The driver service is start=demand, so it will not load automatically after a restart." -ForegroundColor DarkGray
 & (Join-Path $PSScriptRoot 'Deploy-KswordDriverToVm.ps1') -VMName $VMName `
     -GuestUser $GuestUser -GuestPassword $GuestPassword | Out-Host
 
-Write-Host "`n=== 接下来 ===" -ForegroundColor Cyan
+Write-Host "`n=== Next ===" -ForegroundColor Cyan
 Write-Host @"
 
-**在跑 resident 之前先把断点下好** —— 这次的挂死连 NMI 都打不进调试器
-（kd 报 transport connection lost），所以事后再断入是不可能的。
-但调试器在挂死**之前**完全可用，把断点提前下好就能看到它走到哪一步为止。
+**Set breakpoints before running the resident hypervisor** — this hang prevents even NMIs from entering the debugger
+(kd reports transport connection lost), so it is impossible to reconnect afterwards.
+But the debugger is fully available before the hang, so setting breakpoints in advance lets you see exactly how far it gets.
 
-1) 连调试器：
+1) Attach debugger:
 
      & "C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\kd.exe" -k com:pipe,port=\\.\pipe\KSword-HVM-Target-kd,resets=0,reconnect
 
-2) 断进去之后先把我们的符号加载好（否则栈里只有 KswordARK+0x1234）：
+2) After breaking in, first load our symbols (otherwise the stack will only show KswordARK+0x1234):
 
      .symfix+ C:\symbols
-     .sympath+ C:\Users\Felix\CLionProjects\KSword\Ksword5.1\x64\Release\KswordARKDriver
+     .sympath+ C:\Users\Felix\CLionProjects\KSword\artifacts/bin\x64\Release\KswordARKDriver
      .reload /f KswordARK.sys
      x KswordARK!KswordARKHvmResident*
 
-   最后一条能验证符号是否真的加载了 —— 列不出符号就别往下走，
-   下出来的断点不会命中。
+   The last command to verify if symbols are truly loaded — if symbols cannot be listed, do not proceed further,
+   The breakpoints derived from the bisect will not be hit.
 
-3) 在常驻路径上下断点。**从最外层开始**，先确认它进没进来：
+3) Set a breakpoint on the resident path. **Start from the outermost layer**, first confirm whether it entered:
 
      bp KswordARK!KswordARKHvmResidentStart
      bp KswordARK!KswordARKHvmResidentStartCurrent
      bp KswordARK!KswordARKHvmConfigureResidentVmcsFromAsm
      bl
 
-4) g 放行，另一个窗口跑：
+4) g resume, run in another window:
 
      .\scripts\Invoke-KswordAutomatedAcceptance.ps1 -Stage resident
 
-5) 每次命中断点，记下是哪个，然后 g 继续。**最后一个命中的断点就是挂死的上界** ——
-   走到它之后再没有命中，说明 wedge 发生在它和下一个断点之间。
-   逐步把断点往里加细，二分到具体那几行。
+5) Each time a breakpoint is hit, record which one it is, then g to continue. **The last breakpoint hit is the upper bound of the hang** —
+   After reaching it, if there is no further hit, it indicates that the wedge occurred between it and the next breakpoint.
+   Gradually refine the breakpoints inward, bisecting down to the specific few lines.
 
-注意：断点命中在 IPI_LEVEL 上时整机会被调试器冻住，这是正常的。
+Note: When a breakpoint is hit on IPI_LEVEL, the entire machine will freeze in the debugger, which is normal.
 
-跑完恢复 4 核：.\scripts\Invoke-KswordVmCpuBisect.ps1 -Count 4
+After completion, restore to 4 cores: .\scripts\Invoke-KswordVmCpuBisect.ps1 -Count 4
 "@ -ForegroundColor Yellow

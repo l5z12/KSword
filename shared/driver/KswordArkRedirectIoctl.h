@@ -4,10 +4,10 @@
 
 // ============================================================
 // KswordArkRedirectIoctl.h
-// 作用：
-// - 定义 R3/R0 文件与注册表重定向控制协议；
-// - R0 只维护受控规则表并在公开回调路径中做名字替换；
-// - 默认不启用任何规则，必须由 R3 显式设置规则后才生效。
+// Purpose:
+// - Define the R3/R0 file and registry redirection control protocol;
+// - R0 maintains only the controlled rule table and performs name substitution in the public callback path;
+// - No rules are enabled by default; rules must be explicitly set by R3 to take effect.
 // ============================================================
 
 #define KSWORD_ARK_REDIRECT_PROTOCOL_VERSION 1UL
@@ -57,7 +57,7 @@
 #define KSWORD_ARK_REDIRECT_PATH_CHARS 520U
 #define KSWORD_ARK_REDIRECT_ALTITUDE_CHARS 32U
 
-// 单条重定向规则。sourcePath 与 targetPath 都使用 NT namespace 路径。
+// Single redirection rule. Both sourcePath and targetPath use NT namespace paths.
 typedef struct _KSWORD_ARK_REDIRECT_RULE
 {
     unsigned long ruleId;
@@ -72,7 +72,7 @@ typedef struct _KSWORD_ARK_REDIRECT_RULE
     wchar_t targetPath[KSWORD_ARK_REDIRECT_PATH_CHARS];
 } KSWORD_ARK_REDIRECT_RULE;
 
-// 设置规则请求。ruleCount 为 0 或 action=CLEAR 时清空指定类型规则。
+// Set rules request. When ruleCount is 0 or action is CLEAR, clear the specified type of rules.
 typedef struct _KSWORD_ARK_REDIRECT_SET_RULES_REQUEST
 {
     unsigned long version;
@@ -86,7 +86,7 @@ typedef struct _KSWORD_ARK_REDIRECT_SET_RULES_REQUEST
     KSWORD_ARK_REDIRECT_RULE rules[KSWORD_ARK_REDIRECT_MAX_RULES];
 } KSWORD_ARK_REDIRECT_SET_RULES_REQUEST;
 
-// 设置规则响应。lastStatus 记录 R0 真实 NTSTATUS，appliedCount 记录启用规则数。
+// Set rules response. lastStatus records the true R0 NTSTATUS, and appliedCount records the number of rules enabled.
 typedef struct _KSWORD_ARK_REDIRECT_SET_RULES_RESPONSE
 {
     unsigned long version;
@@ -101,7 +101,7 @@ typedef struct _KSWORD_ARK_REDIRECT_SET_RULES_RESPONSE
     unsigned long reserved;
 } KSWORD_ARK_REDIRECT_SET_RULES_RESPONSE;
 
-// 查询运行时响应。R3 后续 UI 可直接展示规则数量与最新命中计数。
+// Query runtime response. The R3 UI can directly display the rule count and latest hit count.
 typedef struct _KSWORD_ARK_REDIRECT_STATUS_RESPONSE
 {
     unsigned long version;

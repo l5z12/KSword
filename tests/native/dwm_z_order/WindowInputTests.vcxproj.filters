@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <Filter Include="apps">
+      <UniqueIdentifier>{CE36A1FA-357C-5CC9-B081-15B48C4C943F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\desktop">
+      <UniqueIdentifier>{48A6B645-F8B4-5F78-9E68-93C141C32E96}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\desktop\other_dock">
+      <UniqueIdentifier>{AEB13876-755D-5137-99AC-7EB5D3C6A05E}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="WindowInputTests.cpp" />
+    <ClCompile Include="..\..\..\apps\desktop\other_dock\WindowInputClient.cpp">
+      <Filter>apps\desktop\other_dock</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\apps\desktop\other_dock\WindowInputClient.h">
+      <Filter>apps\desktop\other_dock</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

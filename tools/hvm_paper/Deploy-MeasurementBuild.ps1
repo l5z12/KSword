@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory)][PSCredential]$Credential,
     [Parameter(Mandatory)][string]$OutputDirectory,
     [string]$VMName='KSword-HVM-Target',
-    [string]$DriverPath='Ksword5.1/x64/Release/KswordARK.sys',
+    [string]$DriverPath='artifacts/bin/x64/Release/KswordARK.sys',
     [string]$ControlPath='tools/hvm_ctl/hvm_ctl.exe'
 )
 $ErrorActionPreference='Stop'

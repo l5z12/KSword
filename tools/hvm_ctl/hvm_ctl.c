@@ -4,5 +4,5 @@
 
 int wmain(int argc, wchar_t** argv)
 {
-    return KswordHvmCommandMainWide(argc, argv);
+    return kswordHvmCommandMainWide(argc, argv);
 }

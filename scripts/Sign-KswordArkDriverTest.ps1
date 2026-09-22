@@ -1,58 +1,58 @@
-﻿<#
+<#
 .SYNOPSIS
-    为 KswordARK.sys 生成/复用本机测试签名证书，并对开发输出目录中的驱动进行测试签名。
+    Generate or reuse a local test signing certificate for KswordARK.sys and perform test signing on drivers in the development output directory.
 
 .DESCRIPTION
-    Windows x64 的测试模式不是“完全放行未签名驱动”。
-    即使已经执行 bcdedit /set testsigning on，内核仍然要求 .sys 至少带有测试签名，
-    并且签名证书需要被本机信任。否则 StartServiceW/NtLoadDriver 仍会返回 577。
+    Windows x64 test mode does not mean "fully allow unsigned drivers".
+    Even if bcdedit /set testsigning on has been executed, the kernel still requires .sys files to have at least a test signature,
+    and the signing certificate must be trusted by the local machine. Otherwise, StartServiceW/NtLoadDriver will still return 577.
 
-    本脚本默认处理仓库中常见的 KswordARK.sys 输出位置：
-    - KswordARKDriver\x64\Release\KswordARK.sys
-    - KswordARKDriver\x64\Debug\KswordARK.sys
-    - Ksword5.1\x64\Release\KswordARK.sys
-    - Ksword5.1\x64\Debug\KswordARK.sys
-    - Ksword5.1\x64\Release\KswordARKDriver\KswordARK.sys
-    - Ksword5.1\x64\Debug\KswordARKDriver\KswordARK.sys
+    This script defaults to handling common KswordARK.sys output locations in the repository:
+    - drivers/ark\x64\Release\KswordARK.sys
+    - drivers/ark\x64\Debug\KswordARK.sys
+    - artifacts/bin\x64\Release\KswordARK.sys
+    - artifacts/bin\x64\Debug\KswordARK.sys
+    - artifacts/bin\x64\Release\KswordARKDriver\KswordARK.sys
+    - artifacts/bin\x64\Debug\KswordARKDriver\KswordARK.sys
 
-    也可以通过 -TargetPath 显式指定主程序、DLL 或其它最终产物。
-    该模式复用同一份 .cert\KswordARK-TestSigning.pfx/.cer，不会生成第二套签名证书。
+    Alternatively, explicitly specify the main executable, DLL, or other final artifacts via -TargetPath.
+    This mode reuses the same .cert\KswordARK-TestSigning.pfx/.cer and does not generate a second set of signing certificates.
 
-    推荐用管理员 PowerShell 运行。管理员运行时会把测试证书导入 LocalMachine
-    的 Root 和 TrustedPublisher；非管理员运行时只能导入 CurrentUser，文件会被签名，
-    但内核加载仍可能因为机器级信任缺失而报 577。
+    Recommended to run with an Administrator PowerShell. When run as Administrator, the test certificate is imported into
+    LocalMachine\Root and TrustedPublisher; when run without Administrator privileges, it is imported only into CurrentUser.
+    The file will be signed, but kernel loading may still fail with error 577 due to missing machine-level trust.
 #>
 
 [CmdletBinding()]
 param(
-    # DriverPath：显式指定一个或多个 .sys 路径；不指定时自动签名仓库内已存在的 KswordARK.sys。
+    # DriverPath: Explicitly specifies one or more .sys file paths; if not specified, automatically signs the existing KswordARK.sys in the repository.
     [Parameter(ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
     [string[]] $DriverPath,
 
-    # TargetPath：显式指定一个或多个待签名文件；主程序最终签名通过该参数复用驱动测试证书。
+    # TargetPath: explicitly specifies one or more files to be signed; the main program ultimately reuses the driver test certificate for signing via this parameter.
     [string[]] $TargetPath,
 
-    # Subject：测试证书主题；保持稳定可让后续构建复用同一证书。
+    # Subject: Test certificate subject; keeping it stable allows subsequent builds to reuse the same certificate.
     [string] $Subject = 'CN=KswordARK Test Signing Certificate',
 
-    # PfxPassword：保护本地 .pfx 文件的密码；默认值仅用于本仓库开发测试证书。
+    # PfxPassword: Password to protect the local .pfx file; the default value is for development and testing certificates in this repository only.
     [string] $PfxPassword = 'KswordARK-TestSigning-LocalOnly',
 
-    # EnableTestSigning：顺手打开 Windows 测试签名模式；需要管理员并且重启后生效。
+    # EnableTestSigning: Conveniently enables Windows test signing mode; requires administrator privileges and takes effect after a reboot.
     [switch] $EnableTestSigning,
 
-    # SkipMachineTrust：即使当前是管理员也不导入 LocalMachine 信任区，仅用于排查证书污染。
+    # SkipMachineTrust: do not import the LocalMachine trust store even if running as administrator; used only for troubleshooting certificate contamination.
     [switch] $SkipMachineTrust,
 
-    # NonFatal：给 VS/MSBuild 后置构建使用；签名失败只输出警告并返回 0，保证编译不被签名环境阻断。
+    # NonFatal: Used for VS/MSBuild post-build steps; signature failures output warnings and return 0 to prevent build interruption by the signing environment.
     [switch] $NonFatal
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# Windows PowerShell 5.1 在部分机器上创建文件型自签证书会走旧 CSP，并触发 NTE_NOT_FOUND。
-# PowerShell 7 使用新版 .NET 证书 API 更稳定；如果可用，就自动转交给 pwsh 执行同一个脚本。
+# Windows PowerShell 5.1 may use legacy CSPs to create file-based self-signed certificates on some machines, triggering NTE_NOT_FOUND.
+# PowerShell 7 uses the newer .NET certificate API for better stability; if available, automatically delegate to pwsh to execute the same script.
 if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $env:KSWORD_SIGN_SCRIPT_PWSH_BOOTSTRAPPED) {
     $pwshCommand = Get-Command pwsh.exe -ErrorAction SilentlyContinue
     if ($pwshCommand -and (Test-Path -LiteralPath $pwshCommand.Source)) {
@@ -94,22 +94,22 @@ if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $env:KSWORD_SIGN_SCRIPT_PWSH
         exit $exitCode
     }
 
-    Write-Warning '未找到 pwsh.exe，将继续使用 Windows PowerShell；如果证书生成失败，请安装 PowerShell 7 后重试。'
+    Write-Warning 'pwsh.exe not found, continuing with Windows PowerShell; if certificate generation fails, please install PowerShell 7 and retry.'
 }
 
 # Resolve-RepoRoot：
-# - 输入：无；
-# - 处理：从脚本路径向上定位仓库根目录；
-# - 返回：仓库根目录的绝对路径。
+# - Inputs: None;
+# - Handling: Locate the repository root directory by traversing up from the script path.
+# - Returns: Absolute path to the repository root.
 function Resolve-RepoRoot {
     $scriptDirectory = Split-Path -Parent $PSCommandPath
     return (Resolve-Path (Join-Path $scriptDirectory '..')).Path
 }
 
 # Test-Admin：
-# - 输入：无；
-# - 处理：检查当前令牌是否属于 Administrators；
-# - 返回：true 表示管理员 PowerShell，false 表示普通权限。
+# - Inputs: None;
+# - Processing: Check if the current token belongs to the Administrators group.
+# - Returns: true indicates an administrator PowerShell session; false indicates standard user permissions.
 function Test-Admin {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($identity)
@@ -117,9 +117,9 @@ function Test-Admin {
 }
 
 # Find-SignTool：
-# - 输入：无；
-# - 处理：优先使用 KSWORD_SIGNTOOL/PATH，再扫描常见 Windows Kits 目录；
-# - 返回：signtool.exe 的绝对路径。
+# - Inputs: None;
+# - Handling: Prioritize KSWORD_SIGNTOOL/PATH, then scan common Windows Kits directories;
+# - Returns: the absolute path to signtool.exe.
 function Find-SignTool {
     if ($env:KSWORD_SIGNTOOL -and (Test-Path -LiteralPath $env:KSWORD_SIGNTOOL)) {
         return (Resolve-Path -LiteralPath $env:KSWORD_SIGNTOOL).Path
@@ -148,16 +148,16 @@ function Find-SignTool {
 
     $bestTool = $candidateTools | Sort-Object FullName -Descending | Select-Object -First 1
     if (-not $bestTool) {
-        throw '未找到 signtool.exe。请安装 Windows SDK/WDK，或设置环境变量 KSWORD_SIGNTOOL。'
+        throw 'signtool.exe not found. Please install Windows SDK/WDK, or set the KSWORD_SIGNTOOL environment variable.'
     }
 
     return $bestTool.FullName
 }
 
 # New-FileBackedCertificate：
-# - 输入：证书主题、pfx 路径、cer 路径、pfx 密码；
-# - 处理：用 .NET CertificateRequest 生成不依赖系统证书库的 Code Signing 证书；
-# - 返回：带私钥的 X509Certificate2 对象。
+# - Input: Certificate subject, PFX path, CER path, and PFX password;
+# - Processing: Generate a Code Signing certificate using .NET CertificateRequest that does not rely on the system certificate store.
+# - Returns: an X509Certificate2 object containing the private key.
 function New-FileBackedCertificate {
     param(
         [Parameter(Mandatory = $true)]
@@ -227,9 +227,9 @@ function New-FileBackedCertificate {
 }
 
 # Get-OrCreate-TestCertificate：
-# - 输入：证书主题、仓库根目录、pfx 密码；
-# - 处理：优先复用 .cert\KswordARK-TestSigning.pfx，缺失或过期时重新生成；
-# - 返回：包含证书对象、pfx 路径、cer 路径的 hashtable。
+# - Input: Certificate subject, repository root directory, and PFX password;
+# - Handling: Prioritize reusing .cert\KswordARK-TestSigning.pfx; regenerate if missing or expired;
+# - Return: A hashtable containing the certificate object, PFX path, and CER path.
 function Get-OrCreate-TestCertificate {
     param(
         [Parameter(Mandatory = $true)]
@@ -261,7 +261,7 @@ function Get-OrCreate-TestCertificate {
                     $cerBytes = $existingCertificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
                     [System.IO.File]::WriteAllBytes($cerPath, $cerBytes)
                 }
-                Write-Host "复用文件型测试证书：$($existingCertificate.Thumbprint)"
+                Write-Host "Reusing file-based test certificate: $($existingCertificate.Thumbprint)"
                 return @{
                     Certificate = $existingCertificate
                     PfxPath = $pfxPath
@@ -271,11 +271,11 @@ function Get-OrCreate-TestCertificate {
             }
         }
         catch {
-            Write-Warning "现有 PFX 无法复用，将重新生成：$($_.Exception.Message)"
+            Write-Warning "Existing PFX cannot be reused, will regenerate: $($_.Exception.Message)"
         }
     }
 
-    Write-Host "创建文件型测试证书：$CertificateSubject"
+    Write-Host "Creating file-type test certificate: $CertificateSubject"
     $newCertificate = New-FileBackedCertificate `
         -CertificateSubject $CertificateSubject `
         -PfxPath $pfxPath `
@@ -293,9 +293,9 @@ function Get-OrCreate-TestCertificate {
 }
 
 # Import-TestCertificateTrust：
-# - 输入：cer 路径、是否跳过机器信任；
-# - 处理：导入 CurrentUser/LocalMachine 信任区；
-# - 返回：无返回值。
+# - Input: certificate path, skip machine trust flag;
+# - Processing: Import into CurrentUser/LocalMachine trust stores.
+# - Returns: Nothing.
 function Import-TestCertificateTrust {
     param(
         [Parameter(Mandatory = $true)]
@@ -305,33 +305,33 @@ function Import-TestCertificateTrust {
         [bool] $SkipMachine
     )
 
-    Write-Host "证书文件：$CerPath"
+    Write-Host "Certificate file: $CerPath"
     try {
         Import-Certificate -FilePath $CerPath -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
         Import-Certificate -FilePath $CerPath -CertStoreLocation Cert:\CurrentUser\TrustedPublisher | Out-Null
-        Write-Host '已导入 CurrentUser\Root 与 CurrentUser\TrustedPublisher。'
+        Write-Host 'Imported CurrentUser\Root and CurrentUser\TrustedPublisher.'
     }
     catch {
-        Write-Warning "导入 CurrentUser 证书信任失败：$($_.Exception.Message)"
+        Write-Warning "Failed to import CurrentUser certificate trust: $($_.Exception.Message)"
     }
 
     if ((Test-Admin) -and -not $SkipMachine) {
         Import-Certificate -FilePath $CerPath -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
         Import-Certificate -FilePath $CerPath -CertStoreLocation Cert:\LocalMachine\TrustedPublisher | Out-Null
-        Write-Host '已导入 LocalMachine\Root 与 LocalMachine\TrustedPublisher。'
+        Write-Host 'Imported LocalMachine\Root and LocalMachine\TrustedPublisher.'
         return
     }
 
     if (-not $SkipMachine) {
-        Write-Warning '当前不是管理员：无法导入 LocalMachine 信任区。内核加载可能仍然报 577。'
-        Write-Warning '请用管理员 PowerShell 重新运行本脚本，或手工把 .cert\KswordARK-TestSigning.cer 导入“本地计算机\受信任的根证书颁发机构”和“受信任的发布者”。'
+        Write-Warning 'Not running as administrator: cannot import LocalMachine trust store. Kernel loading may still report 577.'
+        Write-Warning 'Please re-run this script with Administrator PowerShell, or manually import .cert\KswordARK-TestSigning.cer into "Local Computer\Trusted Root Certification Authorities" and "Trusted Publishers".'
     }
 }
 
 # Resolve-SignTargets：
-# - 输入：仓库根目录、显式最终产物路径、兼容旧参数的驱动路径；
-# - 处理：优先归一化显式路径；未提供显式路径时回落到默认驱动输出扫描；
-# - 返回：去重后的签名目标绝对路径数组。
+# - Input: repository root directory, explicit final artifact path, and driver path for legacy parameter compatibility;
+# - Processing: Prefer normalizing explicit paths; fall back to scanning the default driver output directory if no explicit path is provided.
+# - Returns: An array of absolute paths for deduplicated signing targets.
 function Resolve-SignTargets {
     param(
         [Parameter(Mandatory = $true)]
@@ -358,9 +358,9 @@ function Resolve-SignTargets {
 }
 
 # Resolve-DriverTargets：
-# - 输入：仓库根目录与用户显式路径；
-# - 处理：显式路径优先，否则收集仓库内常见输出路径；
-# - 返回：去重后的驱动绝对路径数组。
+# - Input: Repository root directory and user-specified explicit path;
+# - Handling: Explicit paths take precedence; otherwise, collect common output paths within the repository.
+# - Returns: an array of unique absolute driver paths.
 function Resolve-DriverTargets {
     param(
         [Parameter(Mandatory = $true)]
@@ -382,12 +382,12 @@ function Resolve-DriverTargets {
     }
 
     $relativeCandidates = @(
-        'KswordARKDriver\x64\Release\KswordARK.sys',
-        'KswordARKDriver\x64\Debug\KswordARK.sys',
-        'Ksword5.1\x64\Release\KswordARK.sys',
-        'Ksword5.1\x64\Debug\KswordARK.sys',
-        'Ksword5.1\x64\Release\KswordARKDriver\KswordARK.sys',
-        'Ksword5.1\x64\Debug\KswordARKDriver\KswordARK.sys'
+        'drivers/ark\x64\Release\KswordARK.sys',
+        'drivers/ark\x64\Debug\KswordARK.sys',
+        'artifacts/bin\x64\Release\KswordARK.sys',
+        'artifacts/bin\x64\Debug\KswordARK.sys',
+        'artifacts/bin\x64\Release\KswordARKDriver\KswordARK.sys',
+        'artifacts/bin\x64\Debug\KswordARKDriver\KswordARK.sys'
     )
 
     return $relativeCandidates |
@@ -398,9 +398,9 @@ function Resolve-DriverTargets {
 }
 
 # Enable-TestSigningIfRequested：
-# - 输入：是否请求开启；
-# - 处理：执行 bcdedit /set testsigning on；
-# - 返回：无返回值。
+# - Input: Whether to request enabling;
+# - Processing: Execute 'bcdedit /set testsigning on'.
+# - Returns: Nothing.
 function Enable-TestSigningIfRequested {
     param(
         [Parameter(Mandatory = $true)]
@@ -412,21 +412,21 @@ function Enable-TestSigningIfRequested {
     }
 
     if (-not (Test-Admin)) {
-        throw '开启测试模式需要管理员 PowerShell。'
+        throw 'Enable test mode requires administrator PowerShell.'
     }
 
     & bcdedit /set testsigning on
     if ($LASTEXITCODE -ne 0) {
-        throw "bcdedit /set testsigning on 失败，退出码：$LASTEXITCODE"
+        throw "bcdedit /set testsigning on failed, exit code: $LASTEXITCODE"
     }
 
-    Write-Host '已设置 testsigning on；需要重启系统后生效。'
+    Write-Host 'Test signing has been enabled; a system restart is required for it to take effect.'
 }
 
 # Invoke-SignTool：
-# - 输入：signtool 路径、证书信息、待签名文件路径；
-# - 处理：使用文件型 PFX 对主程序、DLL 或驱动进行嵌入式签名；
-# - 返回：无返回值。
+# - Input: signtool path, certificate information, and paths of files to be signed;
+# - Processing: Perform embedded signing of the main executable, DLL, or driver using a file-based PFX.
+# - Returns: Nothing.
 function Invoke-SignTool {
     param(
         [Parameter(Mandatory = $true)]
@@ -439,7 +439,7 @@ function Invoke-SignTool {
         [string] $TargetPath
     )
 
-    Write-Host "签名目标：$TargetPath"
+    Write-Host "Sign target: $TargetPath"
     $signOutput = & $SignToolPath sign /v /fd SHA256 /f $CertificateInfo.PfxPath /p $CertificateInfo.Password $TargetPath 2>&1
     $signExitCode = $LASTEXITCODE
     $signOutput | ForEach-Object { Write-Host $_ }
@@ -447,29 +447,29 @@ function Invoke-SignTool {
         $joinedOutput = ($signOutput | Out-String).Trim()
         if ($joinedOutput -match 'ImportCertObject|0x80090011|NTE_NOT_FOUND|Access is denied|拒绝访问|找不到对象') {
             throw (
-                "signtool 无法临时导入 PFX 私钥，通常是当前 PowerShell 没有证书存储/密钥容器写权限。" +
-                "请用管理员 PowerShell 重新运行本脚本；当前目标：$TargetPath；退出码：$signExitCode")
+                "signtool cannot temporarily import the PFX private key, usually because the current PowerShell lacks write permissions to the certificate store/key container." +
+                "Please re-run this script with Administrator PowerShell; Current target: $TargetPath; Exit code: $signExitCode")
         }
-        throw "signtool sign 失败：$TargetPath，退出码：$signExitCode"
+        throw "signtool sign failed: $TargetPath, exit code: $signExitCode"
     }
 
     $verifyOutput = & $SignToolPath verify /pa /v $TargetPath 2>&1
     $verifyExitCode = $LASTEXITCODE
     $verifyOutput | ForEach-Object { Write-Host $_ }
     if ($verifyExitCode -ne 0) {
-        Write-Warning "signtool verify /pa 未通过：$TargetPath，退出码：$verifyExitCode。"
-        Write-Warning '这通常表示证书尚未导入本机信任区；签名已写入文件，但内核加载前仍需管理员导入 LocalMachine 信任区。'
+        Write-Warning "signtool verify /pa failed: $TargetPath, exit code: $verifyExitCode."
+        Write-Warning 'This usually indicates the certificate has not been imported into the local machine trust store; the signature has been written to the file, but an administrator must still import it into the LocalMachine trust store before the kernel loads.'
     }
 
     $signature = Get-AuthenticodeSignature -FilePath $TargetPath
-    Write-Host "签名状态：$($signature.Status)；签名者：$($signature.SignerCertificate.Subject)"
+    Write-Host "Signature status: $($signature.Status); Signer: $($signature.SignerCertificate.Subject)"
 }
 
 try {
     $repoRoot = Resolve-RepoRoot
     $isAdmin = Test-Admin
-    Write-Host "仓库根目录：$repoRoot"
-    Write-Host "管理员权限：$isAdmin"
+    Write-Host "Repository root directory: $repoRoot"
+    Write-Host "Administrator privileges: $isAdmin"
 
     Enable-TestSigningIfRequested -Requested ([bool]$EnableTestSigning)
 
@@ -484,7 +484,7 @@ try {
 
     $targets = @(Resolve-SignTargets -RepoRoot $repoRoot -ExplicitTargetPaths $TargetPath -ExplicitDriverPaths $DriverPath)
 if (-not $targets -or $targets.Count -eq 0) {
-        throw '未找到可签名的目标文件。请先编译驱动/主程序，或通过 -TargetPath/-DriverPath 指定路径。'
+        throw 'No signable target file found. Please compile the driver/main program first, or specify the path via -TargetPath/-DriverPath.'
     }
 
     foreach ($target in $targets) {
@@ -492,18 +492,18 @@ if (-not $targets -or $targets.Count -eq 0) {
     }
 
     Write-Host ''
-    Write-Host '完成。'
+    Write-Host 'Done.'
     if (-not $TargetPath) {
-        Write-Host '若加载仍返回 577，请确认：'
-        Write-Host '1. bcdedit /enum 中 testsigning 为 Yes，并且已经重启；'
-        Write-Host '2. 证书已在 LocalMachine\Root 与 LocalMachine\TrustedPublisher；'
-        Write-Host '3. 服务 ImagePath 指向的正是刚刚签名的 KswordARK.sys。'
+        Write-Host 'If loading still returns 577, please confirm:'
+        Write-Host '1. In bcdedit /enum, testsigning is Yes, and the system has already restarted;'
+        Write-Host '2. The certificate has been installed in LocalMachine\Root and LocalMachine\TrustedPublisher;'
+        Write-Host '3. The service ImagePath points exactly to the just-signed KswordARK.sys.'
     }
 }
 catch {
     if ($NonFatal) {
-        Write-Warning "KswordARK 自动测试签名失败，但已按 NonFatal 模式继续构建：$($_.Exception.Message)"
-        Write-Warning '如需生成可加载驱动，请使用管理员 PowerShell 手动运行：powershell -ExecutionPolicy Bypass -File scripts\Sign-KswordArkDriverTest.ps1 -EnableTestSigning'
+        Write-Warning "KswordARK automatic signature test failed, but continuing build in NonFatal mode: $($_.Exception.Message)"
+        Write-Warning 'To generate a loadable driver, please manually run with administrator PowerShell: powershell -ExecutionPolicy Bypass -File scripts\Sign-KswordArkDriverTest.ps1 -EnableTestSigning'
         exit 0
     }
 

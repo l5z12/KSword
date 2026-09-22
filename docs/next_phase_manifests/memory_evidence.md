@@ -20,12 +20,12 @@ Hard constraints preserved:
 
 ## Handler/backend names
 
-- WDF handler: `KswordARKMemoryIoctlScanKernelMemoryEvidence`
-  - File: `KswordARKDriver/src/features/memory/memory_ioctl.c`
+- WDF handler: `kswordArkMemoryIoctlScanKernelMemoryEvidence`
+  - File: `drivers/ark/src/features/memory/memory_ioctl.c`
   - Status: implemented but not registered.
-- Backend: `KswordARKDriverScanKernelMemoryEvidence`
-  - Declaration: `KswordARKDriver/include/ark/ark_memory_evidence.h`
-  - Implementation: `KswordARKDriver/src/features/memory/memory_kernel_evidence.c`
+- Backend: `kswordArkDriverScanKernelMemoryEvidence`
+  - Declaration: `drivers/ark/include/ark/ark_memory_evidence.h`
+  - Implementation: `drivers/ark/src/features/memory/memory_kernel_evidence.c`
 
 ## Protocol structures
 
@@ -81,7 +81,7 @@ Shared structs added in `shared/driver/KswordArkMemoryIoctl.h`:
 
 ## Implementation notes
 
-- Page permissions reuse the existing read-only path through `KswordARKKernelExecQueryPage`, which delegates to the current page-table backend.
+- Page permissions reuse the existing read-only path through `kswordArkKernelExecQueryPage`, which delegates to the current page-table backend.
 - Loaded module pages are scanned from `SystemModuleInformation` snapshots and PE section headers copied through safe image-read helpers.
 - Non-module executable rows are merged when contiguous and permission/risk/page-size compatible.
 - BigPool is queried through `SystemBigPoolInformation` (`0x42`) only; rows are bounded by `maxBigPoolRows` and overall `maxRows/maxBytes`.
@@ -97,14 +97,14 @@ Shared structs added in `shared/driver/KswordArkMemoryIoctl.h`:
 Do not add these in this session. Session 6 should add:
 
 1. Project files:
-   - Add `KswordARKDriver/src/features/memory/memory_kernel_evidence.c` to the driver `.vcxproj`.
+   - Add `drivers/ark/src/features/memory/memory_kernel_evidence.c` to the driver `.vcxproj`.
    - Add the same source to the matching `.vcxproj.filters` memory folder.
-   - Add `KswordARKDriver/include/ark/ark_memory_evidence.h` if the project explicitly lists headers.
+   - Add `drivers/ark/include/ark/ark_memory_evidence.h` if the project explicitly lists headers.
 2. Registry dispatch:
-   - Add forward declaration in `KswordARKDriver/src/dispatch/ioctl_registry.c`:
-     - `NTSTATUS KswordARKMemoryIoctlScanKernelMemoryEvidence(_In_ WDFDEVICE Device, _In_ WDFREQUEST Request, _In_ size_t InputBufferLength, _In_ size_t OutputBufferLength, _Out_ size_t* BytesReturned);`
+   - Add forward declaration in `drivers/ark/src/dispatch/ioctl_registry.c`:
+     - `NTSTATUS kswordArkMemoryIoctlScanKernelMemoryEvidence(_In_ WDFDEVICE Device, _In_ WDFREQUEST Request, _In_ size_t InputBufferLength, _In_ size_t OutputBufferLength, _Out_ size_t* BytesReturned);`
    - Add registry row:
-     - `{ IOCTL_KSWORD_ARK_SCAN_KERNEL_MEMORY_EVIDENCE, KswordARKMemoryIoctlScanKernelMemoryEvidence, "IOCTL_KSWORD_ARK_SCAN_KERNEL_MEMORY_EVIDENCE", KSWORD_ARK_IOCTL_CAPABILITY_NONE, KSWORD_ARK_IOCTL_FLAG_NONE }`
+     - `{ IOCTL_KSWORD_ARK_SCAN_KERNEL_MEMORY_EVIDENCE, kswordArkMemoryIoctlScanKernelMemoryEvidence, "IOCTL_KSWORD_ARK_SCAN_KERNEL_MEMORY_EVIDENCE", KSWORD_ARK_IOCTL_CAPABILITY_NONE, KSWORD_ARK_IOCTL_FLAG_NONE }`
 3. R3/client/UI follow-up:
    - Add ArkDriverClient wrapper and UI only in a later allowed phase.
    - Keep disk-vs-memory text diff in R3.
@@ -112,7 +112,7 @@ Do not add these in this session. Session 6 should add:
 ## Files changed in this phase
 
 - `shared/driver/KswordArkMemoryIoctl.h`
-- `KswordARKDriver/src/features/memory/memory_ioctl.c`
-- `KswordARKDriver/src/features/memory/memory_kernel_evidence.c`
-- `KswordARKDriver/include/ark/ark_memory_evidence.h`
+- `drivers/ark/src/features/memory/memory_ioctl.c`
+- `drivers/ark/src/features/memory/memory_kernel_evidence.c`
+- `drivers/ark/include/ark/ark_memory_evidence.h`
 - `docs/next_phase_manifests/memory_evidence.md`

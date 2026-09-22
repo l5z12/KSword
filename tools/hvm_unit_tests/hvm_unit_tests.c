@@ -1,15 +1,15 @@
 /*
- * hvm_unit_tests - KswordArkHvmControls.h 的宿主机单元测试
+ * hvm_unit_tests: Host-side unit tests for KswordArkHvmControls.h
  *
- * 这些逻辑在驱动里只有加载后才会被执行，而加载需要签名、需要一台没开 HVCI 的
- * 机器，出错的表现是蓝屏。它们本身却是纯算术——把它们抽进共享头之后，正确性
- * 可以在编译机上直接证明，不需要任何虚拟化环境。
+ * These logic blocks are only executed after the driver loads, which requires a signed driver and a machine
+ * without HVCI enabled; failure results in a BSOD. Since they are purely arithmetic, extracting them into a shared
+ * header allows correctness to be verified directly on the build machine without any virtualization environment.
  *
- * 测试用的是不变量而不只是手算值：手算值只能覆盖我算过的那几个点，而不变量
- * （同页同项、相邻页差 8 字节、结果不越出自映射区）能覆盖我推导时最容易错的
- * 那一步——符号扩展没掩掉。
+ * Tests use invariants rather than just manually calculated values: manual values only cover the specific points I
+ * calculated, while invariants (same page same item, 8-byte difference between adjacent pages, result within
+ * self-mapped region bounds) cover the step most prone to error during derivation—sign extension not being masked.
  *
- * 编译：
+ * Compile:
  *   cl /nologo /O2 /MT /W4 hvm_unit_tests.c /Fe:hvm_unit_tests.exe
  */
 
@@ -17,39 +17,39 @@
 
 #include "../../shared/driver/KswordArkHvmControls.h"
 
-static int g_checks = 0;
-static int g_failures = 0;
-static const char* g_group = "";
+static int gChecks = 0;
+static int gFailures = 0;
+static const char* gGroup = "";
 
 static void
-Group(const char* name)
+group(const char* name)
 {
-    g_group = name;
+    gGroup = name;
     printf("\n[%s]\n", name);
 }
 
 static void
-Check(int condition, const char* what)
+check(int condition, const char* what)
 {
-    g_checks += 1;
+    gChecks += 1;
     if (condition) {
         printf("  ok    %s\n", what);
     } else {
-        g_failures += 1;
+        gFailures += 1;
         printf("  FAIL  %s\n", what);
     }
 }
 
 static void
-CheckEqU64(unsigned long long actual,
+checkEqU64(unsigned long long actual,
            unsigned long long expected,
            const char* what)
 {
-    g_checks += 1;
+    gChecks += 1;
     if (actual == expected) {
         printf("  ok    %s\n", what);
     } else {
-        g_failures += 1;
+        gFailures += 1;
         printf("  FAIL  %s\n        expected 0x%016llX got 0x%016llX\n",
                what, expected, actual);
     }
@@ -58,86 +58,86 @@ CheckEqU64(unsigned long long actual,
 /* ------------------------------------------------------------------ */
 
 static void
-TestAdjustControls(void)
+testAdjustControls(void)
 {
     unsigned long long capability = 0ULL;
     unsigned long result = 0UL;
 
-    Group("VMX 控制位夹取");
+    group("VMX 控制位夹取");
 
     /*
-     * 能力 MSR：低 32 位 = 必须为 1，高 32 位 = 允许为 1。
-     * 构造一个"bit0 必须置位，bit0..bit3 允许置位"的能力面。
+     * Capability MSR: lower 32 bits = must be 1, upper 32 bits = allowed to be 1.
+     * Construct a capability mask where bit0 must be set and bit0..bit3 are allowed to be set.
      */
     capability = 0x0000000FULL << 32 | 0x00000001ULL;
 
-    /* 一个都不要，也必须拿回必须位。 */
+    /* Even if no bits are requested, the mandatory bits must still be retained. */
     result = KswordArkHvmAdjustControls(0UL, capability);
-    CheckEqU64(result, 0x1UL, "不请求任何位时仍保留 allowed-0 必须位");
+    checkEqU64(result, 0x1UL, "不请求任何位时仍保留 allowed-0 必须位");
 
-    /* 请求一个被允许的位。 */
+    /* Request an allowed bit. */
     result = KswordArkHvmAdjustControls(0x4UL, capability);
-    CheckEqU64(result, 0x5UL, "被允许的请求位保留，必须位一并保留");
+    checkEqU64(result, 0x5UL, "被允许的请求位保留，必须位一并保留");
 
-    /* 请求一个不被允许的位——这是嵌套下最常见的失败原因。 */
+    /* Requesting an unauthorized bit—the most common failure cause in nested virtualization. */
     result = KswordArkHvmAdjustControls(0x10UL, capability);
-    CheckEqU64(result, 0x1UL, "硬件不允许的请求位被剔除，不会带进 VMCS");
+    checkEqU64(result, 0x1UL, "硬件不允许的请求位被剔除，不会带进 VMCS");
 
     /*
-     * 嵌套典型能力面之一：外层不给 secondary controls。
-     * 我们请求 bit31（activate secondary controls），必须被剔除，
-     * 否则 VM entry 会直接失败且只返回一个错误码。
+     * One of the nested typical capability sets: the outer layer does not provide secondary controls.
+     * We request bit31 (activate secondary controls), which must be cleared;
+     * otherwise, VM entry fails immediately and returns only an error code.
      */
     capability = 0x7FFFFFFFULL << 32 | 0x00000016ULL;
     result = KswordArkHvmAdjustControls(0x80000000UL, capability);
-    Check((result & 0x80000000UL) == 0UL,
+    check((result & 0x80000000UL) == 0UL,
           "外层不暴露 secondary controls 时该位被剔除");
-    CheckEqU64(result & 0x16UL, 0x16UL, "同时必须位仍然完整保留");
+    checkEqU64(result & 0x16UL, 0x16UL, "同时必须位仍然完整保留");
 
-    /* 全允许的能力面下，请求什么就得到什么（加上必须位）。 */
+    /* Under a fully allowed capability mask, the request passes through as-is (plus mandatory bits). */
     capability = 0xFFFFFFFFULL << 32 | 0x00000000ULL;
     result = KswordArkHvmAdjustControls(0xDEADBEEFUL, capability);
-    CheckEqU64(result, 0xDEADBEEFUL, "全允许时请求原样通过");
+    checkEqU64(result, 0xDEADBEEFUL, "全允许时请求原样通过");
 
-    /* 全不允许的能力面下，结果必然为零。 */
+    /* When all capabilities are disallowed, the result must be zero. */
     capability = 0x00000000ULL << 32 | 0x00000000ULL;
     result = KswordArkHvmAdjustControls(0xFFFFFFFFUL, capability);
-    CheckEqU64(result, 0UL, "全不允许时结果为零");
+    checkEqU64(result, 0UL, "全不允许时结果为零");
 }
 
 /* ------------------------------------------------------------------ */
 
 static void
-TestMsrBitmap(void)
+testMsrBitmap(void)
 {
     unsigned long offset = 0UL;
     unsigned char mask = 0U;
     int covered = 0;
 
-    Group("MSR 位图寻址");
+    group("MSR 位图寻址");
 
-    /* 低段第 0 个 MSR 的读位：页首字节的 bit0。 */
+    /* bit0 of the read bitmap for the 0th MSR in the low segment: bit0 of the first page byte. */
     covered = KswordArkHvmMsrBitmapLocate(0UL, 0, &offset, &mask);
-    Check(covered != 0, "索引 0 在覆盖范围内");
-    CheckEqU64(offset, 0x000U, "低段读位图从页首开始");
-    CheckEqU64(mask, 0x01U, "索引 0 对应 bit0");
+    check(covered != 0, "索引 0 在覆盖范围内");
+    checkEqU64(offset, 0x000U, "低段读位图从页首开始");
+    checkEqU64(mask, 0x01U, "索引 0 对应 bit0");
 
-    /* 低段写位图起始于 0x800。 */
+    /* The low segment write bitmap starts at 0x800. */
     covered = KswordArkHvmMsrBitmapLocate(0UL, 1, &offset, &mask);
-    CheckEqU64(offset, 0x800U, "低段写位图从 0x800 开始");
+    checkEqU64(offset, 0x800U, "低段写位图从 0x800 开始");
 
     /*
-     * 高段必须先减去 0xC0000000 再定位。漏掉这一步的话，
-     * IA32_LSTAR (0xC0000082) 会落到低段第 0x82 个 MSR 上——
-     * 那个位置也是合法的，不会报错，只是拦错了对象。
+     * The high segment must be offset by subtracting 0xC0000000 first. Skipping this
+     * step causes IA32_LSTAR (0xC0000082) to map to the 0x82nd MSR in the low segment—a
+     * valid location that won't trigger an error but will intercept the wrong object.
      */
     covered = KswordArkHvmMsrBitmapLocate(0xC0000082UL, 0, &offset, &mask);
-    Check(covered != 0, "IA32_LSTAR 在覆盖范围内");
-    CheckEqU64(offset, 0x400U + (0x82U >> 3), "高段读位图先减基址再定位");
-    CheckEqU64(mask, (unsigned char)(1U << (0x82U & 7U)),
+    check(covered != 0, "IA32_LSTAR 在覆盖范围内");
+    checkEqU64(offset, 0x400U + (0x82U >> 3), "高段读位图先减基址再定位");
+    checkEqU64(mask, (unsigned char)(1U << (0x82U & 7U)),
                "IA32_LSTAR 的位掩码按相对索引算");
 
-    /* 同一个索引的读与写必须落在不同的区。 */
+    /* Read and write operations at the same index must fall into different regions. */
     {
         unsigned long readOffset = 0UL;
         unsigned long writeOffset = 0UL;
@@ -145,33 +145,33 @@ TestMsrBitmap(void)
 
         KswordArkHvmMsrBitmapLocate(0xC0000082UL, 0, &readOffset, &ignored);
         KswordArkHvmMsrBitmapLocate(0xC0000082UL, 1, &writeOffset, &ignored);
-        Check(readOffset != writeOffset, "同一 MSR 的读写位于不同区");
-        CheckEqU64(writeOffset - readOffset, 0x800U,
+        check(readOffset != writeOffset, "同一 MSR 的读写位于不同区");
+        checkEqU64(writeOffset - readOffset, 0x800U,
                    "读区与写区相距正好 0x800");
     }
 
-    /* 每一段的最后一个索引都必须仍落在页内。 */
+    /* The last index of each segment must still fall within the page. */
     covered = KswordArkHvmMsrBitmapLocate(
         KSWORD_ARK_HVM_MSR_LOW_LIMIT, 1, &offset, &mask);
-    Check(covered != 0, "低段末尾索引仍在覆盖范围内");
-    Check(offset < KSWORD_ARK_HVM_MSR_BITMAP_BYTES,
+    check(covered != 0, "低段末尾索引仍在覆盖范围内");
+    check(offset < KSWORD_ARK_HVM_MSR_BITMAP_BYTES,
           "低段末尾的写偏移不越出位图页");
-    CheckEqU64(offset, 0x800U + 0x3FFU, "低段末尾正好落在写区最后一字节");
+    checkEqU64(offset, 0x800U + 0x3FFU, "低段末尾正好落在写区最后一字节");
 
     covered = KswordArkHvmMsrBitmapLocate(
         KSWORD_ARK_HVM_MSR_HIGH_LIMIT, 1, &offset, &mask);
-    Check(covered != 0, "高段末尾索引仍在覆盖范围内");
-    CheckEqU64(offset, 0xC00U + 0x3FFU, "高段末尾正好落在页的最后一字节");
+    check(covered != 0, "高段末尾索引仍在覆盖范围内");
+    checkEqU64(offset, 0xC00U + 0x3FFU, "高段末尾正好落在页的最后一字节");
 
-    /* 范围外的索引必须被拒绝，而不是算出一个看似合理的偏移。 */
-    Check(KswordArkHvmMsrBitmapLocate(0x2000UL, 0, &offset, &mask) == 0,
+    /* Indices outside the range must be rejected, rather than calculating a seemingly reasonable offset. */
+    check(KswordArkHvmMsrBitmapLocate(0x2000UL, 0, &offset, &mask) == 0,
           "低段之上的索引被拒绝");
-    Check(KswordArkHvmMsrBitmapLocate(0xBFFFFFFFUL, 0, &offset, &mask) == 0,
+    check(KswordArkHvmMsrBitmapLocate(0xBFFFFFFFUL, 0, &offset, &mask) == 0,
           "高段之下的索引被拒绝");
-    Check(KswordArkHvmMsrBitmapLocate(0xC0002000UL, 0, &offset, &mask) == 0,
+    check(KswordArkHvmMsrBitmapLocate(0xC0002000UL, 0, &offset, &mask) == 0,
           "高段之上的索引被拒绝");
 
-    /* 遍历两段全部索引，确认没有任何一个越界。 */
+    /* Iterate through all indices in both segments to confirm no out-of-bounds access. */
     {
         unsigned long index = 0UL;
         int allInside = 1;
@@ -192,238 +192,238 @@ TestMsrBitmap(void)
                 break;
             }
         }
-        Check(allInside, "两段全部 16384 个索引的偏移都在页内");
+        check(allInside, "两段全部 16384 个索引的偏移都在页内");
     }
 }
 
 /* ------------------------------------------------------------------ */
 
 static void
-TestSelfMap(void)
+testSelfMap(void)
 {
-    /* 历史上固定的自映射槽位，用作一组已知值。 */
-    const unsigned long long base =
+    /* Historically fixed self-mapping slot, used as a set of known values. */
+    const unsigned long long kBase =
         KswordArkHvmSelfMapBaseFromIndex(0x1EDUL);
-    const unsigned long long kernelVa = 0xFFFFF80000000000ULL;
-    const unsigned long long userVa = 0x00007FF000000000ULL;
+    const unsigned long long kKernelVa = 0xFFFFF80000000000ULL;
+    const unsigned long long kUserVa = 0x00007FF000000000ULL;
 
-    Group("页表自映射寻址");
+    group("页表自映射寻址");
 
-    CheckEqU64(base, 0xFFFFF68000000000ULL,
+    checkEqU64(kBase, 0xFFFFF68000000000ULL,
                "槽位 0x1ED 推出的自映射基址与历史固定值一致");
 
     /*
-     * 这是整个公式里唯一容易错的地方：内核地址高 16 位全是 1，
-     * 不掩掉就会把结果推出自映射区。掩掉之后必须仍落在 [base, base+512GiB)。
+     * This is the only part of the formula prone to error: the upper 16 bits of the kernel address are all 1s; failing to mask them
+     * would push the result out of the self-mapping region. After masking, the result must still fall within [base, base+512GiB).
      */
     {
-        const unsigned long long entry =
-            KswordArkHvmSelfMapEntryAddress(base, kernelVa);
+        const unsigned long long kEntry =
+            KswordArkHvmSelfMapEntryAddress(kBase, kKernelVa);
 
         /*
-         * 逐步验算：va & 0x0000FFFFFFFFFFFF = 0xF8 << 40，
-         * >> 12 得 0xF8 << 28，<< 3 得 0xF8 << 31 = 0x7C00000000，
-         * 加基址 0xFFFFF68000000000 得 0xFFFFF6FC00000000。
+         * Step-by-step verification: va & 0x0000FFFFFFFFFFFF = 0xF8 << 40, >>
+         * 12 yields 0xF8 << 28, << 3 yields 0xF8 << 31 = 0x7C00000000, adding
+         * the base address 0xFFFFF68000000000 results in 0xFFFFF6FC00000000.
          */
-        CheckEqU64(entry, 0xFFFFF6FC00000000ULL,
+        checkEqU64(kEntry, 0xFFFFF6FC00000000ULL,
                    "内核地址的叶项地址与逐步验算一致");
         /*
-         * 区间判断一律写成 entry - base < 2^39。写成 entry < base + 2^39
-         * 会在高槽位上溢出回绕：槽位 511 的 base + 2^39 正好是 0。
+         * Interval checks must be written as entry - base < 2^39. Writing entry < base + 2^39
+         * causes wraparound overflow at high slots: base + 2^39 for slot 511 is exactly 0.
          */
-        Check(entry - base < (1ULL << 39),
+        check(kEntry - kBase < (1ULL << 39),
               "内核地址的叶项落在自映射区内");
     }
     {
-        const unsigned long long entry =
-            KswordArkHvmSelfMapEntryAddress(base, userVa);
+        const unsigned long long kEntry =
+            KswordArkHvmSelfMapEntryAddress(kBase, kUserVa);
 
-        Check(entry - base < (1ULL << 39),
+        check(kEntry - kBase < (1ULL << 39),
               "用户地址的叶项落在自映射区内");
     }
 
-    /* 同一页内的任何地址必须给出同一个叶项。 */
+    /* Any address within the same page must yield the same leaf entry. */
     {
-        const unsigned long long a =
-            KswordArkHvmSelfMapEntryAddress(base, kernelVa);
-        const unsigned long long b =
-            KswordArkHvmSelfMapEntryAddress(base, kernelVa + 0xFFFULL);
+        const unsigned long long kA =
+            KswordArkHvmSelfMapEntryAddress(kBase, kKernelVa);
+        const unsigned long long kB =
+            KswordArkHvmSelfMapEntryAddress(kBase, kKernelVa + 0xFFFULL);
 
-        CheckEqU64(b, a, "同一页内的地址映射到同一个叶项");
+        checkEqU64(kB, kA, "同一页内的地址映射到同一个叶项");
     }
 
-    /* 相邻页的叶项必须正好相差一个表项（8 字节）。 */
+    /* The leaf entries of adjacent pages must differ by exactly one entry (8 bytes). */
     {
-        const unsigned long long a =
-            KswordArkHvmSelfMapEntryAddress(base, kernelVa);
-        const unsigned long long b =
-            KswordArkHvmSelfMapEntryAddress(base, kernelVa + 0x1000ULL);
+        const unsigned long long kA =
+            KswordArkHvmSelfMapEntryAddress(kBase, kKernelVa);
+        const unsigned long long kB =
+            KswordArkHvmSelfMapEntryAddress(kBase, kKernelVa + 0x1000ULL);
 
-        CheckEqU64(b - a, 8ULL, "相邻页的叶项相差 8 字节");
+        checkEqU64(kB - kA, 8ULL, "相邻页的叶项相差 8 字节");
     }
 
-    /* 遍历全部 512 个槽位，确认没有一个会越出自身的自映射区。 */
+    /* Iterate through all 512 slots to confirm none exceed their self-mapping region. */
     {
         unsigned long slot = 0UL;
         int allInside = 1;
 
         for (slot = 0UL; slot < 512UL; ++slot) {
-            const unsigned long long slotBase =
+            const unsigned long long kSlotBase =
                 KswordArkHvmSelfMapBaseFromIndex(slot);
-            const unsigned long long entry =
-                KswordArkHvmSelfMapEntryAddress(slotBase, kernelVa);
+            const unsigned long long kEntry =
+                KswordArkHvmSelfMapEntryAddress(kSlotBase, kKernelVa);
 
-            if (entry - slotBase >= (1ULL << 39)) {
+            if (kEntry - kSlotBase >= (1ULL << 39)) {
                 allInside = 0;
                 break;
             }
         }
-        Check(allInside, "512 个候选槽位的叶项都落在各自的自映射区内");
+        check(allInside, "512 个候选槽位的叶项都落在各自的自映射区内");
     }
 }
 
 /* ------------------------------------------------------------------ */
 
 static void
-TestEptpValidation(void)
+testEptpValidation(void)
 {
-    /* 一台典型机器：支持 WB、四级 walk、A/D。 */
-    const unsigned long long caps =
+    /* Typical machine: supports WB, 4-level walk, and A/D. */
+    const unsigned long long kCaps =
         KSWORD_ARK_HVM_EPT_CAP_PAGE_WALK_4 |
         KSWORD_ARK_HVM_EPT_CAP_MEMORY_TYPE_WB |
         KSWORD_ARK_HVM_EPT_CAP_ACCESSED_DIRTY;
-    const unsigned long maxPa = 39UL;
-    /* WB + 四级 walk + 一个合法的页帧。 */
-    const unsigned long long goodEptp = 0x0000000012345000ULL | 6ULL | (3ULL << 3);
+    const unsigned long kMaxPa = 39UL;
+    /* WB + 4-level walk + a valid page frame. */
+    const unsigned long long kGoodEptp = 0x0000000012345000ULL | 6ULL | (3ULL << 3);
 
-    Group("EPTP 校验");
+    group("EPTP 校验");
 
-    Check(KswordArkHvmEptpIsValid(goodEptp, caps, maxPa),
+    check(KswordArkHvmEptpIsValid(kGoodEptp, kCaps, kMaxPa),
           "典型合法 EPTP 被接受");
 
     /*
-     * 全零项永远非法：页遍历级数字段为 0 意味着"一级"，架构不支持。
-     * 这条直接决定 EPTP list 里未使用的槽不能留空。
+     * All-zero entries are always invalid: a page traversal level field of 0 implies 'level 1', which the architecture does not support.
+     * This directly ensures that unused slots in the EPTP list cannot be left empty.
      */
-    Check(!KswordArkHvmEptpIsValid(0ULL, caps, maxPa),
+    check(!KswordArkHvmEptpIsValid(0ULL, kCaps, kMaxPa),
           "全零 EPTP 被拒绝——list 的空槽不能留零");
 
-    /* 内存类型必须是硬件报告支持的。 */
-    Check(!KswordArkHvmEptpIsValid(
-              (goodEptp & ~7ULL) | 5ULL, caps, maxPa),
+    /* Memory type must be supported by hardware. */
+    check(!KswordArkHvmEptpIsValid(
+              (kGoodEptp & ~7ULL) | 5ULL, kCaps, kMaxPa),
           "未定义的内存类型编码被拒绝");
-    Check(!KswordArkHvmEptpIsValid(
-              (goodEptp & ~7ULL) | 0ULL, caps, maxPa),
+    check(!KswordArkHvmEptpIsValid(
+              (kGoodEptp & ~7ULL) | 0ULL, kCaps, kMaxPa),
           "硬件未报告支持 UC 时 UC 被拒绝");
 
-    /* 页遍历级数必须正好是 3（四级）。 */
-    Check(!KswordArkHvmEptpIsValid(
-              (goodEptp & ~(7ULL << 3)) | (2ULL << 3), caps, maxPa),
+    /* Page traversal level must be exactly 3 (for 4-level paging). */
+    check(!KswordArkHvmEptpIsValid(
+              (kGoodEptp & ~(7ULL << 3)) | (2ULL << 3), kCaps, kMaxPa),
           "三级页遍历被拒绝");
 
-    /* 硬件不支持 A/D 时不得开启。 */
-    Check(!KswordArkHvmEptpIsValid(
-              goodEptp | KSWORD_ARK_HVM_EPTP_ACCESSED_DIRTY,
-              caps & ~KSWORD_ARK_HVM_EPT_CAP_ACCESSED_DIRTY,
-              maxPa),
+    /* Must not be enabled if hardware does not support A/D. */
+    check(!KswordArkHvmEptpIsValid(
+              kGoodEptp | KSWORD_ARK_HVM_EPTP_ACCESSED_DIRTY,
+              kCaps & ~KSWORD_ARK_HVM_EPT_CAP_ACCESSED_DIRTY,
+              kMaxPa),
           "硬件不支持时开启 accessed/dirty 被拒绝");
-    Check(KswordArkHvmEptpIsValid(
-              goodEptp | KSWORD_ARK_HVM_EPTP_ACCESSED_DIRTY, caps, maxPa),
+    check(KswordArkHvmEptpIsValid(
+              kGoodEptp | KSWORD_ARK_HVM_EPTP_ACCESSED_DIRTY, kCaps, kMaxPa),
           "硬件支持时开启 accessed/dirty 被接受");
 
-    /* 保留位必须为零。 */
-    Check(!KswordArkHvmEptpIsValid(goodEptp | (1ULL << 8), caps, maxPa),
+    /* Reserved bits must be zero. */
+    check(!KswordArkHvmEptpIsValid(kGoodEptp | (1ULL << 8), kCaps, kMaxPa),
           "低位保留域非零被拒绝");
 
-    /* 超出物理地址宽度的高位必须为零。 */
-    Check(!KswordArkHvmEptpIsValid(
-              goodEptp | (1ULL << 40), caps, maxPa),
+    /* High bits exceeding the physical address width must be zero. */
+    check(!KswordArkHvmEptpIsValid(
+              kGoodEptp | (1ULL << 40), kCaps, kMaxPa),
           "超出 MAXPHYADDR 的页帧位被拒绝");
-    Check(KswordArkHvmEptpIsValid(
-              goodEptp | (1ULL << 38), caps, maxPa),
+    check(KswordArkHvmEptpIsValid(
+              kGoodEptp | (1ULL << 38), kCaps, kMaxPa),
           "MAXPHYADDR 之内的高位页帧被接受");
 
-    /* 缺少四级 walk 能力时一律拒绝。 */
-    Check(!KswordArkHvmEptpIsValid(
-              goodEptp,
-              caps & ~KSWORD_ARK_HVM_EPT_CAP_PAGE_WALK_4,
-              maxPa),
+    /* Reject unconditionally if 4-level walk capability is missing. */
+    check(!KswordArkHvmEptpIsValid(
+              kGoodEptp,
+              kCaps & ~KSWORD_ARK_HVM_EPT_CAP_PAGE_WALK_4,
+              kMaxPa),
           "硬件不支持四级页遍历时被拒绝");
 }
 
 /* ------------------------------------------------------------------ */
 
 /*
- * EPT 层次索引分解。
+ * EPT hierarchy index decomposition.
  *
- * 这段算术在驱动里决定「收紧哪一个 2MiB 叶项」。算错不会 fault，只会安静地
- * 改掉另一块无关内存的权限——症状出现在离现场很远的地方。所以这里既验手算
- * 点，也验不变量：同一叶项内任意地址索引相同、跨叶项恰好进位一格。
+ * This arithmetic in the driver determines which 2MiB leaf entry to tighten. An error here will not cause a fault but will silently alter permissions
+ * for unrelated memory, with symptoms appearing far from the source. Therefore, this test verifies both manual calculation points and invariants: all
+ * addresses within the same leaf entry must yield the same index, and crossing to the next leaf entry must increment the index by exactly one.
  */
 static void
-TestEptIndices(void)
+testEptIndices(void)
 {
     unsigned long long address = 0ULL;
     unsigned long index = 0UL;
 
-    Group("EPT 层次索引分解");
+    group("EPT 层次索引分解");
 
-    /* 零地址落在每一级的 0 号槽。 */
-    Check(KswordArkHvmEptPml4Index(0ULL) == 0UL &&
+    /* Zero address falls in slot 0 at every level. */
+    check(KswordArkHvmEptPml4Index(0ULL) == 0UL &&
           KswordArkHvmEptPdptIndex(0ULL) == 0UL &&
           KswordArkHvmEptPdIndex(0ULL) == 0UL,
           "物理地址 0 落在三级 0 号槽");
 
-    /* 第二个 2MiB 叶项只推进 PD 索引。 */
+    /* The second 2MiB leaf entry advances only the PD index. */
     address = KSWORD_ARK_HVM_LARGE_PAGE_BYTES;
-    Check(KswordArkHvmEptPml4Index(address) == 0UL &&
+    check(KswordArkHvmEptPml4Index(address) == 0UL &&
           KswordArkHvmEptPdptIndex(address) == 0UL &&
           KswordArkHvmEptPdIndex(address) == 1UL,
           "跨一个 2MiB 只推进 PD 索引");
 
-    /* 一 GiB 边界推进 PDPT 并把 PD 归零。 */
+    /* Advance PDPT at 1 GiB boundary and zero out PD. */
     address = KSWORD_ARK_HVM_ONE_GIB;
-    Check(KswordArkHvmEptPml4Index(address) == 0UL &&
+    check(KswordArkHvmEptPml4Index(address) == 0UL &&
           KswordArkHvmEptPdptIndex(address) == 1UL &&
           KswordArkHvmEptPdIndex(address) == 0UL,
           "1 GiB 边界推进 PDPT 且 PD 归零");
 
-    /* 512 GiB 边界推进 PML4 并把下两级归零。 */
+    /* Advance the PML4 at the 512 GiB boundary and zero out the lower two levels. */
     address = KSWORD_ARK_HVM_ONE_512_GIB;
-    Check(KswordArkHvmEptPml4Index(address) == 1UL &&
+    check(KswordArkHvmEptPml4Index(address) == 1UL &&
           KswordArkHvmEptPdptIndex(address) == 0UL &&
           KswordArkHvmEptPdIndex(address) == 0UL,
           "512 GiB 边界推进 PML4 且下两级归零");
 
-    /* 每一级的最后一个槽都恰好是 511，不是 512。 */
+    /* The last slot at each level is exactly 511, not 512. */
     address = KSWORD_ARK_HVM_ONE_512_GIB - 1ULL;
-    Check(KswordArkHvmEptPdptIndex(address) == 511UL &&
+    check(KswordArkHvmEptPdptIndex(address) == 511UL &&
           KswordArkHvmEptPdIndex(address) == 511UL,
           "512 GiB 前最后一字节落在 511/511 槽");
 
     /*
-     * 不变量：一个 2MiB 叶项内部的任意偏移，三级索引必须完全相同。
-     * 这一条覆盖的是取模写错成取整（或反过来）的情形。
+     * Invariant: For any offset within a 2MiB leaf entry, the level-3 index must be identical.
+     * This covers the case where modulo was mistakenly written as integer division (or vice versa).
      */
     for (index = 0UL; index < 64UL; ++index) {
-        const unsigned long long base = 0x1C0000000ULL;
-        const unsigned long long probe =
-            base + (index * (KSWORD_ARK_HVM_LARGE_PAGE_BYTES / 64ULL));
+        const unsigned long long kBase = 0x1C0000000ULL;
+        const unsigned long long kProbe =
+            kBase + (index * (KSWORD_ARK_HVM_LARGE_PAGE_BYTES / 64ULL));
 
-        if (KswordArkHvmEptPml4Index(probe) !=
-                KswordArkHvmEptPml4Index(base) ||
-            KswordArkHvmEptPdptIndex(probe) !=
-                KswordArkHvmEptPdptIndex(base) ||
-            KswordArkHvmEptPdIndex(probe) !=
-                KswordArkHvmEptPdIndex(base)) {
+        if (KswordArkHvmEptPml4Index(kProbe) !=
+                KswordArkHvmEptPml4Index(kBase) ||
+            KswordArkHvmEptPdptIndex(kProbe) !=
+                KswordArkHvmEptPdptIndex(kBase) ||
+            KswordArkHvmEptPdIndex(kProbe) !=
+                KswordArkHvmEptPdIndex(kBase)) {
             break;
         }
     }
-    Check(index == 64UL, "同一 2MiB 叶项内所有偏移索引相同");
+    check(index == 64UL, "同一 2MiB 叶项内所有偏移索引相同");
 
-    /* 不变量：向下取整到叶项基址后，索引不变且基址已对齐。 */
+    /* Invariant: After flooring to the leaf base address, the index remains unchanged and the base address is aligned. */
     address = 0x1C012345ULL;
-    Check(KswordArkHvmEptLeafBase(address) ==
+    check(KswordArkHvmEptLeafBase(address) ==
               (address & ~(KSWORD_ARK_HVM_LARGE_PAGE_BYTES - 1ULL)) &&
           (KswordArkHvmEptLeafBase(address) %
               KSWORD_ARK_HVM_LARGE_PAGE_BYTES) == 0ULL &&
@@ -431,22 +431,22 @@ TestEptIndices(void)
               KswordArkHvmEptPdIndex(address),
           "取整到叶项基址后对齐且索引不变");
 
-    /* 已对齐的地址取整后不动。 */
-    Check(KswordArkHvmEptLeafBase(KSWORD_ARK_HVM_ONE_GIB) ==
+    /* Rounding an already-aligned address leaves it unchanged. */
+    check(KswordArkHvmEptLeafBase(KSWORD_ARK_HVM_ONE_GIB) ==
               KSWORD_ARK_HVM_ONE_GIB,
           "已对齐地址取整后不变");
 }
 
 /*
- * 域限制只能减权限。
+ * Domain restrictions can only reduce privileges.
  *
- * 这是 VMFUNC 安全性的全部依据：VMFUNC 不做 CPL 检查，任何 ring 3 线程都能切
- * 进域。只要域永远不可能比默认视图更宽松，切过去就拿不到新的访问权。
+ * This is the sole basis for VMFUNC security: VMFUNC performs no CPL checks, allowing any ring 3 thread to switch into a domain.
+ * As long as a domain can never be more permissive than the default view, switching into it grants no new access rights.
  */
 static void
-TestDomainRestriction(void)
+testDomainRestriction(void)
 {
-    const unsigned long long rwx =
+    const unsigned long long kRwx =
         KSWORD_ARK_HVM_EPT_READ |
         KSWORD_ARK_HVM_EPT_WRITE |
         KSWORD_ARK_HVM_EPT_EXECUTE;
@@ -455,60 +455,60 @@ TestDomainRestriction(void)
     unsigned long long twice = 0ULL;
     unsigned long bits = 0UL;
 
-    Group("域限制只减不增");
+    group("域限制只减不增");
 
-    /* 拿掉写权限后只剩读与执行。 */
+    /* After removing write permission, only read and execute remain. */
     leaf = KswordArkHvmEptApplyRestriction(
-        rwx, KSWORD_ARK_HVM_EPT_WRITE);
-    CheckEqU64(leaf,
+        kRwx, KSWORD_ARK_HVM_EPT_WRITE);
+    checkEqU64(leaf,
                KSWORD_ARK_HVM_EPT_READ | KSWORD_ARK_HVM_EPT_EXECUTE,
                "拿掉写权限后剩读与执行");
 
-    /* 幂等：同一限制施加两次与一次结果相同。 */
+    /* Idempotent: applying the same restriction twice yields the same result as applying it once. */
     once = KswordArkHvmEptApplyRestriction(
-        rwx, KSWORD_ARK_HVM_EPT_EXECUTE);
+        kRwx, KSWORD_ARK_HVM_EPT_EXECUTE);
     twice = KswordArkHvmEptApplyRestriction(
         once, KSWORD_ARK_HVM_EPT_EXECUTE);
-    CheckEqU64(twice, once, "同一限制重复施加是幂等的");
+    checkEqU64(twice, once, "同一限制重复施加是幂等的");
 
-    /* 保留位不被限制影响：suppress-#VE 与内存类型必须活下来。 */
+    /* Reserved bits are unaffected by restrictions: suppress-#VE and memory type must remain valid. */
     leaf = KswordArkHvmEptApplyRestriction(
-        rwx | (1ULL << 63) | (6ULL << 3),
+        kRwx | (1ULL << 63) | (6ULL << 3),
         KSWORD_ARK_HVM_EPT_WRITE);
-    Check((leaf & (1ULL << 63)) != 0ULL &&
+    check((leaf & (1ULL << 63)) != 0ULL &&
           ((leaf >> 3) & 7ULL) == 6ULL,
           "限制不影响 suppress-#VE 与内存类型");
 
     /*
-     * 核心不变量：穷举全部 8 种权限组合与 8 种移除集合，结果的权限位永远是
-     * 原权限位的子集。这一条直接对应「域不可能比默认视图更宽松」。
+     * Core invariant: Exhaustively testing all 8 permission combinations and 8 removal sets ensures the resulting permission bits are always
+     * a subset of the original permission bits. This directly corresponds to "a domain cannot be more permissive than the default view."
      */
     for (bits = 0UL; bits < 64UL; ++bits) {
-        const unsigned long long original = (unsigned long long)(bits & 7UL);
-        const unsigned long long removed =
+        const unsigned long long kOriginal = (unsigned long long)(bits & 7UL);
+        const unsigned long long kRemoved =
             (unsigned long long)((bits >> 3) & 7UL);
-        const unsigned long long result =
-            KswordArkHvmEptApplyRestriction(original, removed);
+        const unsigned long long kResult =
+            KswordArkHvmEptApplyRestriction(kOriginal, kRemoved);
 
-        if ((result & ~original) != 0ULL) {
+        if ((kResult & ~kOriginal) != 0ULL) {
             break;
         }
     }
-    Check(bits == 64UL, "任意组合下结果权限都是原权限的子集");
+    check(bits == 64UL, "任意组合下结果权限都是原权限的子集");
 }
 
 /* ------------------------------------------------------------------ */
 
 /*
- * 私有 EPT 层次的构造算术（P4.1）。
+ * Construction arithmetic for the private EPT hierarchy (P4.1).
  *
- * 私有层次就是把共享层次上少数几张表换成私有副本。换错地址不会 fault，
- * 只会安静地走到另一个页——所以这里逐条验"除地址外每一位都活下来"。
+ * The private layer replaces a few tables from the shared layer with private copies. An incorrect address swap won't fault
+ * but will silently redirect to another page; therefore, this test verifies that every bit except the address survives.
  */
 static void
-TestLocalEptArithmetic(void)
+testLocalEptArithmetic(void)
 {
-    const unsigned long long sharedLeaf =
+    const unsigned long long kSharedLeaf =
         0x0000000123456000ULL |
         KSWORD_ARK_HVM_EPT_READ |
         KSWORD_ARK_HVM_EPT_EXECUTE |
@@ -518,87 +518,87 @@ TestLocalEptArithmetic(void)
     unsigned long long pointer = 0ULL;
     unsigned long index = 0UL;
 
-    Group("私有 EPT 构造算术");
+    group("私有 EPT 构造算术");
 
-    /* 非叶项不带内存类型、不带大页位、不带 suppress-#VE，权限取并集。 */
+    /* Non-leaf entries have no memory type, no large page bit, no suppress-#VE; permissions are the union. */
     pointer = KswordArkHvmEptTablePointer(0x00000000ABCDE123ULL);
-    Check((pointer & KSWORD_ARK_HVM_EPT_PHYSICAL_MASK) == 0x00000000ABCDE000ULL,
+    check((pointer & KSWORD_ARK_HVM_EPT_PHYSICAL_MASK) == 0x00000000ABCDE000ULL,
           "非叶项保留页对齐后的物理地址");
-    Check((pointer & (KSWORD_ARK_HVM_EPT_READ |
+    check((pointer & (KSWORD_ARK_HVM_EPT_READ |
                       KSWORD_ARK_HVM_EPT_WRITE |
                       KSWORD_ARK_HVM_EPT_EXECUTE)) ==
               (KSWORD_ARK_HVM_EPT_READ |
                KSWORD_ARK_HVM_EPT_WRITE |
                KSWORD_ARK_HVM_EPT_EXECUTE),
           "非叶项三种权限齐备");
-    Check((pointer & (1ULL << 7)) == 0ULL &&
+    check((pointer & (1ULL << 7)) == 0ULL &&
           ((pointer >> 3) & 7ULL) == 0ULL &&
           (pointer & (1ULL << 63)) == 0ULL,
           "非叶项不携带大页位、内存类型与 suppress-#VE");
 
     /*
-     * rebase 是构造私有路径的唯一操作。核心不变量：物理地址被换掉，
-     * 其余每一位逐位存活——包括 suppress-#VE 与内存类型。
+     * rebase is the only operation that constructs a private path. Core invariant: The physical address
+     * is swapped, while every other bit survives bitwise—including suppress-#VE and memory type.
      */
-    rebased = KswordArkHvmEptRebaseEntry(sharedLeaf, 0x00000007FEDCB000ULL);
-    CheckEqU64(rebased & KSWORD_ARK_HVM_EPT_PHYSICAL_MASK,
+    rebased = KswordArkHvmEptRebaseEntry(kSharedLeaf, 0x00000007FEDCB000ULL);
+    checkEqU64(rebased & KSWORD_ARK_HVM_EPT_PHYSICAL_MASK,
                0x00000007FEDCB000ULL,
                "rebase 换掉了物理地址");
-    CheckEqU64(rebased & ~KSWORD_ARK_HVM_EPT_PHYSICAL_MASK,
-               sharedLeaf & ~KSWORD_ARK_HVM_EPT_PHYSICAL_MASK,
+    checkEqU64(rebased & ~KSWORD_ARK_HVM_EPT_PHYSICAL_MASK,
+               kSharedLeaf & ~KSWORD_ARK_HVM_EPT_PHYSICAL_MASK,
                "rebase 之外的每一位都逐位存活");
-    Check((rebased & (1ULL << 63)) != 0ULL &&
+    check((rebased & (1ULL << 63)) != 0ULL &&
           ((rebased >> 3) & 7ULL) == 6ULL,
           "rebase 保住了 suppress-#VE 与内存类型");
 
-    /* 用同一个 rebase 规则造私有 EPTP：新地址进去，控制位原样留下。 */
+    /* Generate a private EPTP using the same rebase rule: new addresses are inserted while control bits remain unchanged. */
     {
-        const unsigned long long sharedEptp =
+        const unsigned long long kSharedEptp =
             0x0000000200000000ULL | 6ULL | (3ULL << 3) | (1ULL << 6);
-        const unsigned long long privateEptp =
-            KswordArkHvmEptRebaseEntry(sharedEptp, 0x0000000300000000ULL);
+        const unsigned long long kPrivateEptp =
+            KswordArkHvmEptRebaseEntry(kSharedEptp, 0x0000000300000000ULL);
 
-        CheckEqU64(privateEptp & ~KSWORD_ARK_HVM_EPT_PHYSICAL_MASK,
-                   sharedEptp & ~KSWORD_ARK_HVM_EPT_PHYSICAL_MASK,
+        checkEqU64(kPrivateEptp & ~KSWORD_ARK_HVM_EPT_PHYSICAL_MASK,
+                   kSharedEptp & ~KSWORD_ARK_HVM_EPT_PHYSICAL_MASK,
                    "私有 EPTP 的内存类型/walk 长度/AD 位与共享的完全一致");
-        Check((privateEptp & KSWORD_ARK_HVM_EPT_PHYSICAL_MASK) !=
-                  (sharedEptp & KSWORD_ARK_HVM_EPT_PHYSICAL_MASK),
+        check((kPrivateEptp & KSWORD_ARK_HVM_EPT_PHYSICAL_MASK) !=
+                  (kSharedEptp & KSWORD_ARK_HVM_EPT_PHYSICAL_MASK),
               "私有 EPTP 的 EPTRTA 与共享的不同");
     }
 
-    /* 入口地址拆成"表基址 + 槽内偏移"，512 个槽全数往返。 */
+    /* Split the entry address into 'table base + slot offset'; iterate through all 512 slots. */
     for (index = 0UL; index < 512UL; ++index) {
-        const unsigned long long base = 0xFFFFF68000000000ULL;
-        const unsigned long long entry = base + (index * 8ULL);
+        const unsigned long long kBase = 0xFFFFF68000000000ULL;
+        const unsigned long long kEntry = kBase + (index * 8ULL);
 
-        if (KswordArkHvmEptEntryTableBase(entry) != base ||
-            KswordArkHvmEptEntryByteOffset(entry) != (index * 8ULL)) {
+        if (KswordArkHvmEptEntryTableBase(kEntry) != kBase ||
+            KswordArkHvmEptEntryByteOffset(kEntry) != (index * 8ULL)) {
             break;
         }
     }
-    Check(index == 512UL, "表内 512 个槽的基址/偏移拆分全部往返一致");
+    check(index == 512UL, "表内 512 个槽的基址/偏移拆分全部往返一致");
 
-    /* 四KiB 槽索引：叶内推进一页进一格，跨 2MiB 归零。 */
-    Check(KswordArkHvmEptPtIndex(0ULL) == 0UL &&
+    /* 4 KiB slot index: advance one slot per page within the leaf; reset to zero at each 2MiB boundary. */
+    check(KswordArkHvmEptPtIndex(0ULL) == 0UL &&
           KswordArkHvmEptPtIndex(KSWORD_ARK_HVM_PAGE_BYTES) == 1UL &&
           KswordArkHvmEptPtIndex(KSWORD_ARK_HVM_LARGE_PAGE_BYTES - 1ULL) == 511UL &&
           KswordArkHvmEptPtIndex(KSWORD_ARK_HVM_LARGE_PAGE_BYTES) == 0UL,
           "四KiB 槽索引在叶内推进、跨叶归零");
 
-    /* 页预算：每 CPU = 1 根 + PDPT 数 + PD 数 + 叶数。 */
-    CheckEqU64(KswordArkHvmEptLocalPageCost(1UL, 1UL, 1UL, 1UL),
+    /* Page budget: 1 root + number of PDPTs + number of PDs + number of leaves per CPU. */
+    checkEqU64(KswordArkHvmEptLocalPageCost(1UL, 1UL, 1UL, 1UL),
                4ULL,
                "单核单叶最小情形是 4 页");
-    CheckEqU64(KswordArkHvmEptLocalPageCost(128UL, 1UL, 1UL, 8UL),
+    checkEqU64(KswordArkHvmEptLocalPageCost(128UL, 1UL, 1UL, 8UL),
                128ULL * 11ULL,
                "128 核 8 叶共 1408 页");
 
-    /* 上限判据在边界上必须是"恰好放得下"而不是"差一个"。 */
-    Check(KswordArkHvmEptLocalFitsBudget(2048ULL, 2048ULL) == 1,
+    /* The upper bound criterion must be 'exactly fits' at the boundary, not 'one short'. */
+    check(KswordArkHvmEptLocalFitsBudget(2048ULL, 2048ULL) == 1,
           "恰好等于上限时接受");
-    Check(KswordArkHvmEptLocalFitsBudget(2049ULL, 2048ULL) == 0,
+    check(KswordArkHvmEptLocalFitsBudget(2049ULL, 2048ULL) == 0,
           "超出上限一页即拒绝");
-    Check(KswordArkHvmEptLocalFitsBudget(0ULL, 2048ULL) == 0,
+    check(KswordArkHvmEptLocalFitsBudget(0ULL, 2048ULL) == 0,
           "零页成本被拒绝：那说明叶集合是空的");
 }
 
@@ -606,7 +606,7 @@ TestLocalEptArithmetic(void)
 
 
 static void
-TestNestedEptComposition(void)
+testNestedEptComposition(void)
 {
     unsigned long long leaf = 0ULL;
     unsigned long p;
@@ -614,28 +614,28 @@ TestNestedEptComposition(void)
     unsigned long a;
     int all = 1;
 
-    Group("Nested EPT composition");
-    Check(KswordArkHvmNestedEptComposeLeaf(0x2468ABCULL, 0x37ULL,
+    group("Nested EPT composition");
+    check(KswordArkHvmNestedEptComposeLeaf(0x2468ABCULL, 0x37ULL,
           0x80000000ABCD5037ULL, 12UL, 1UL, &leaf) == 0UL,
           "nonidentity outer mapping resolves");
-    CheckEqU64(leaf, 0x80000000ABCD5037ULL,
+    checkEqU64(leaf, 0x80000000ABCD5037ULL,
                "L2 maps the replacement frame, not the L1 frame");
-    Check(KswordArkHvmNestedEptComposeLeaf(0x12345ABCULL, 0x35ULL,
+    check(KswordArkHvmNestedEptComposeLeaf(0x12345ABCULL, 0x35ULL,
           0x80000000400000B7ULL, 21UL, 4UL, &leaf) == 0UL,
           "large outer mapping resolves");
-    CheckEqU64(leaf, 0x8000000040145035ULL,
+    checkEqU64(leaf, 0x8000000040145035ULL,
                "2 MiB mapping retains the page offset and intersects permissions");
-    Check(KswordArkHvmNestedEptComposeLeaf(0x52345ABCULL, 0x37ULL,
+    check(KswordArkHvmNestedEptComposeLeaf(0x52345ABCULL, 0x37ULL,
           0x80000000800000B7ULL, 30UL, 2UL, &leaf) == 0UL,
           "1 GiB mapping resolves");
-    CheckEqU64(leaf, 0x8000000092345037ULL, "1 GiB offset is preserved");
-    Check(KswordArkHvmNestedEptComposeLeaf(0x1000ULL, 0x37ULL,
+    checkEqU64(leaf, 0x8000000092345037ULL, "1 GiB offset is preserved");
+    check(KswordArkHvmNestedEptComposeLeaf(0x1000ULL, 0x37ULL,
           0xFED00007ULL, 12UL, 2UL, &leaf) == 0UL &&
           (leaf & 0x38ULL) == 0ULL, "outer MMIO UC is never converted to WB");
-    Check(KswordArkHvmNestedEptComposeLeaf(0x1000ULL, 0x07ULL,
+    check(KswordArkHvmNestedEptComposeLeaf(0x1000ULL, 0x07ULL,
           0x12345037ULL, 12UL, 1UL, &leaf) == 0UL &&
           (leaf & 0x38ULL) == 0ULL, "inner MMIO UC is retained");
-    Check(KswordArkHvmNestedEptComposeLeaf(0x1000ULL, 0x77ULL,
+    check(KswordArkHvmNestedEptComposeLeaf(0x1000ULL, 0x77ULL,
           0x12345337ULL, 12UL, 1UL, &leaf) == 0UL &&
           (leaf & 0x340ULL) == 0x40ULL, "ignore PAT retained; A/D not preclaimed");
 
@@ -654,18 +654,18 @@ TestNestedEptComposition(void)
             }
         }
     }
-    Check(all, "448 permission combinations preserve ownership and never widen access");
-    Check(KswordArkHvmNestedEptComposeLeaf(0x1000ULL, 0x37ULL,
+    check(all, "448 permission combinations preserve ownership and never widen access");
+    check(KswordArkHvmNestedEptComposeLeaf(0x1000ULL, 0x37ULL,
           0x400010B7ULL, 21UL, 1UL, &leaf) == 3UL,
           "misaligned large frame refused");
-    Check(KswordArkHvmNestedEptComposeLeaf(0x1000ULL, 0x37ULL,
+    check(KswordArkHvmNestedEptComposeLeaf(0x1000ULL, 0x37ULL,
           0x123450B7ULL, 12UL, 1UL, &leaf) == 3UL,
           "large bit in 4 KiB leaf refused");
-    Check(KswordArkHvmNestedEptComposeLeaf(0x1000ULL, 0x37ULL,
+    check(KswordArkHvmNestedEptComposeLeaf(0x1000ULL, 0x37ULL,
           0x12345037ULL, 12UL, 0UL, &leaf) == 3UL, "zero access refused");
-    Check(KswordArkHvmNestedEptComposeLeaf(0x1000ULL, 0x37ULL,
+    check(KswordArkHvmNestedEptComposeLeaf(0x1000ULL, 0x37ULL,
           0x12345037ULL, 12UL, 8UL, &leaf) == 3UL, "unknown access refused");
-    Check(KswordArkHvmNestedEptComposeLeaf(0x1000ULL, 0x37ULL,
+    check(KswordArkHvmNestedEptComposeLeaf(0x1000ULL, 0x37ULL,
           0x12345017ULL, 12UL, 1UL, &leaf) == 3UL, "reserved memory type refused");
 }
 
@@ -675,16 +675,16 @@ main(void)
     printf("hvm_unit_tests - KswordArkHvmControls.h\n");
     printf("================================================\n");
 
-    TestAdjustControls();
-    TestMsrBitmap();
-    TestSelfMap();
-    TestEptpValidation();
-    TestEptIndices();
-    TestDomainRestriction();
-    TestLocalEptArithmetic();
-    TestNestedEptComposition();
+    testAdjustControls();
+    testMsrBitmap();
+    testSelfMap();
+    testEptpValidation();
+    testEptIndices();
+    testDomainRestriction();
+    testLocalEptArithmetic();
+    testNestedEptComposition();
 
     printf("\n================================================\n");
-    printf("%d 项检查，%d 项失败\n", g_checks, g_failures);
-    return g_failures == 0 ? 0 : 1;
+    printf("%d 项检查，%d 项失败\n", gChecks, gFailures);
+    return gFailures == 0 ? 0 : 1;
 }

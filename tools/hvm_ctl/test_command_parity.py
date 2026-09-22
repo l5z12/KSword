@@ -1,9 +1,9 @@
 """Check the actual CLI parser without mutating a driver.
 
-2026-09-19：这里原先还断言每条命令的文案在 GUI 语言包里有对应词条。那条断言
-的前提是命令目录被主程序消费，而主程序对 hvm_ctl 的依赖已经整条摘掉——目录
-和引擎现在只属于这个探针，它的文案不该再出现在发布物的语言包里。保留下来的
-是 CLI 解析器本身的回归：进制、参数位置、位宽与页对齐。
+2026-09-19: Previously, this asserted that the text for each command had a corresponding entry in the GUI language pack. That
+assertion relied on the command directory being consumed by the main program, but the main program has completely removed its
+dependency on hvm_ctl. The directory and engine now belong solely to this probe, so its text should no longer appear in the release
+language pack. What remains is a regression test for the CLI parser itself: radix, parameter position, bit width, and page alignment.
 """
 import argparse
 import json
@@ -25,7 +25,7 @@ def main():
     by_name = {c["name"]: c for c in catalog}
     assert len(by_name) == len(catalog), "Duplicate command name"
     for command in catalog:
-        # 目录文案只需自洽：非空即可，不再与任何语言包比对。
+        # Directory text only needs to be self-consistent: non-empty is sufficient; no longer compared against any language packs.
         for source in [command["title"], command["group"], command["description"],
                        *(a["name"] for a in command["arguments"])]:
             assert source, command["name"]

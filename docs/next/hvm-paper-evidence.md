@@ -177,8 +177,8 @@ hvm_ctl → 共享 HVM 命令引擎 → KswordARK IOCTL
 
 **不能据此写成“整个实验从未调用、修改 Hyper-V/VMware”。**
 实验编排使用 PowerShell Direct 和 VMware VNC；部署使用 vmrun 与 vmx86 服务控制。
-此外，`hvm_nested_ept.c` 的 `KswordARKHvmNestedEptPropagateAccessedDirty`
-会通过 `KswordARKHvmPhysWindowWriteQword` 把 A/D 位回写到 VMware 所拥有的 EPT12
+此外，`hvm_nested_ept.c` 的 `kswordArkHvmNestedEptPropagateAccessedDirty`
+会通过 `kswordArkHvmPhysWindowWriteQword` 把 A/D 位回写到 VMware 所拥有的 EPT12
 条目。它不是 VMM 代码 hook，但属于 VMM 管理数据的写入路径；本批未统计实际回写次数。
 “所有 VMM 内存始终未改动”既未测得，也不是当前实现可支持的绝对描述。
 
@@ -251,7 +251,7 @@ nonpaged pool 增长没有按驱动 tag 归因，不能认定是 KSword 泄漏�
 | SHA256 工具尝试 | 7 次 | 命令不存在，全部记 environment_error |
 
 数据：[linux-runs.csv](paper-data/20260915-pilot/derived/linux-runs.csv)、
-[逐次原始片段 JSON](paper-data/20260915-pilot/derived/linux-runs/)。
+[逐次原始片段 JSON](paper-data/20260915-pilot/derived/linux-runs)。
 MD5 包络包含 shell、串口和 `/proc/uptime` 读取开销；uptime 分辨率 10 ms。
 光驱首次读取与后续缓存读取分列。rootfs 位于 RAM，不计为磁盘写入性能。
 没有同条件的无 KSword TinyCore 基线，因此 **nested guest overhead 仍为空**。

@@ -4,11 +4,11 @@
 
 // ============================================================
 // KswordArkTrustIoctl.h
-// 作用：
-// - 定义 Phase-14 镜像信任与 Code Integrity 只读查询协议；
-// - 旧查询返回内核可观察的加载/缓存信任状态；
-// - image-signature 查询由 R0 直接读取 PE Security Directory 和证书表结构；
-// - 证书链、Catalog 和吊销状态不由本协议推断。
+// Purpose:
+// - Defines the Phase-14 image trust and Code Integrity read-only query protocol.
+// - Legacy query returns kernel-observable load/cache trust status.
+// - image-signature query reads the PE Security Directory and certificate table structures directly from R0.
+// - Certificate chains, Catalogs, and revocation status are not inferred by this protocol.
 // ============================================================
 
 #define KSWORD_ARK_TRUST_PROTOCOL_VERSION 1UL

@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <Filter Include="Resources">
+      <UniqueIdentifier>{CB35A4B1-B27D-5304-8FFF-D49B906DE5B0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps">
+      <UniqueIdentifier>{16A0375B-A57A-51AB-9A59-D0F81BD07F35}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\desktop">
+      <UniqueIdentifier>{FD46851C-F4EC-5D36-AAF9-8C414E5C6D63}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\desktop\Resource">
+      <UniqueIdentifier>{5FF7FF57-848E-5B92-BC42-912020CD3311}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\desktop\Resource\Logo">
+      <UniqueIdentifier>{78E64D06-71BC-5663-87A3-A091765E137C}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="generated">
+      <UniqueIdentifier>{AC25D6D7-3ED6-5733-9500-E8438894F3A4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="gui">
+      <UniqueIdentifier>{DAAB29C9-CD48-5866-A135-90C619C487FB}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="platform">
+      <UniqueIdentifier>{F12C73AA-1383-5A16-9211-E5CC06B64B5E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="scripts">
+      <UniqueIdentifier>{78F135D8-DF07-5A9A-AEE8-4837E4D1EF49}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="F27364739B6A229C3EA888E3C9DE85F9.png" />
+    <ResourceCompile Include="KswordSetup.rc" />
+    <ClCompile Include="Main.cpp" />
+    <ClCompile Include="SetupMain.cpp" />
+    <ClInclude Include="resource.h" />
+    <Image Include="Resources\app_logo.png">
+      <Filter>Resources</Filter>
+    </Image>
+    <Image Include="..\desktop\Resource\Logo\KswordLogo.ico">
+      <Filter>apps\desktop\Resource\Logo</Filter>
+    </Image>
+    <ClInclude Include="generated\PayloadResources.h">
+      <Filter>generated</Filter>
+    </ClInclude>
+    <ResourceCompile Include="generated\PayloadResources.rc">
+      <Filter>generated</Filter>
+    </ResourceCompile>
+    <ClCompile Include="gui\KDataView.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClInclude Include="gui\KDataView.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClCompile Include="gui\KDock.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClInclude Include="gui\KDock.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClCompile Include="gui\KIcon.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClInclude Include="gui\KIcon.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClCompile Include="gui\KImage.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClInclude Include="gui\KImage.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClCompile Include="gui\KLayeredWindow.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClInclude Include="gui\KLayeredWindow.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClCompile Include="gui\KLayout.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClInclude Include="gui\KLayout.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClCompile Include="gui\KNavigation.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClInclude Include="gui\KNavigation.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClCompile Include="gui\KOverlay.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClInclude Include="gui\KOverlay.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClCompile Include="gui\KTable.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="gui\KTheme.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClInclude Include="gui\KTheme.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClCompile Include="gui\KTitleBar.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClInclude Include="gui\KTitleBar.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClCompile Include="gui\KVisual.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClInclude Include="gui\KVisual.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClCompile Include="gui\KWidgetFactories.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="gui\KWidgets.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClInclude Include="gui\KWidgets.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClCompile Include="gui\KswordStyle.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClInclude Include="gui\KswordStyle.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClCompile Include="platform\Environment.cpp">
+      <Filter>platform</Filter>
+    </ClCompile>
+    <ClInclude Include="platform\Environment.h">
+      <Filter>platform</Filter>
+    </ClInclude>
+    <ClCompile Include="platform\KLog.cpp">
+      <Filter>platform</Filter>
+    </ClCompile>
+    <ClInclude Include="platform\KLog.h">
+      <Filter>platform</Filter>
+    </ClInclude>
+    <ClCompile Include="platform\Ksword.cpp">
+      <Filter>platform</Filter>
+    </ClCompile>
+    <ClInclude Include="platform\Ksword.h">
+      <Filter>platform</Filter>
+    </ClInclude>
+    <None Include="scripts\Generate-KswordSetupPayload.ps1">
+      <Filter>scripts</Filter>
+    </None>
+  </ItemGroup>
+</Project>

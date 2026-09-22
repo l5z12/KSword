@@ -1,19 +1,19 @@
 <#
 .SYNOPSIS
-    测试机失去响应时的现场判读。只读，不改任何状态。
+    On-site analysis when the test machine becomes unresponsive. Read-only; do not modify any state.
 
 .DESCRIPTION
-    必须以**管理员**运行，可以在另一个窗口跑，不会打扰正在执行的测试脚本。
+    Must run as **Administrator**. It can run in a separate window without interrupting the currently executing test script.
 
-    黑屏 + 无响应有三种完全不同的成因，处置方式相反，所以先判类型再动手：
+    Black screen + unresponsiveness has three completely different causes with opposite remediation steps, so determine the type before acting:
 
-      Paused-Critical  宿主磁盘满，Hyper-V 主动暂停了虚拟机。**不是崩溃。**
-                       腾出空间后 Resume-VM 即可原地恢复，不要回滚、不要断电。
-      Running + 无心跳  guest 内核挂死或正在写崩溃转储。转储可能要几分钟，
-                       **这期间断电会毁掉转储**。
-      Off / Saved      已经停了。
+      Paused-Critical: Host disk full; Hyper-V actively paused the VM. **This is not a crash.**
+                       After freeing space, Resume-VM restores it in place; do not rollback or power off.
+      Running + no heartbeat: guest kernel hang or writing crash dump. Dump
+                       **may take minutes; power loss during this period will corrupt the dump.
+      Off / Saved: Already stopped.
 
-    脚本只读取状态，任何恢复动作都由你确认后手动执行。
+    The script only reads status; any recovery actions are executed manually by you after confirmation.
 #>
 [CmdletBinding()]
 param(
@@ -27,39 +27,39 @@ $ErrorActionPreference = 'Stop'
 Import-Module Hyper-V -ErrorAction Stop
 
 $vm = Get-VM -Name $VMName -ErrorAction Stop
-Write-Host "=== 虚拟机 ===" -ForegroundColor Cyan
-Write-Host ("  状态      : {0}" -f $vm.State) -ForegroundColor $(
+Write-Host "=== Virtual Machine ===" -ForegroundColor Cyan
+Write-Host ("  Status      : {0}" -f $vm.State) -ForegroundColor $(
     if ("$($vm.State)" -match 'Critical') { 'Red' } elseif ($vm.State -eq 'Running') { 'Yellow' } else { 'White' })
 Write-Host ("  Status    : {0}" -f $vm.Status)
-Write-Host ("  运行时长  : {0}" -f $vm.Uptime)
-Write-Host ("  内存分配  : {0} MB" -f [math]::Round($vm.MemoryAssigned / 1MB))
-Write-Host ("  CPU 使用  : {0}%" -f $vm.CPUUsage)
+Write-Host ("  Runtime   : {0}" -f $vm.Uptime)
+Write-Host ("  Memory Allocation : {0} MB" -f [math]::Round($vm.MemoryAssigned / 1MB))
+Write-Host ("  CPU Usage: {0}%" -f $vm.CPUUsage)
 
-Write-Host "`n=== CPU 采样（判断是空转还是在干活）===" -ForegroundColor Cyan
+Write-Host "`n=== CPU Sampling (determining if idle or working) ===" -ForegroundColor Cyan
 $samples = @()
 for ($i = 0; $i -lt 5; $i++) {
     $samples += (Get-VM -Name $VMName).CPUUsage
     Start-Sleep -Milliseconds 800
 }
-Write-Host ("  五次采样: {0}" -f ($samples -join ', '))
+Write-Host ("  Five samples: {0}" -f ($samples -join ', '))
 if (($samples | Measure-Object -Maximum).Maximum -eq 0) {
-    Write-Host "  全零 —— 没有任何指令在执行" -ForegroundColor Red
+    Write-Host "  All zeros — no instructions are executing" -ForegroundColor Red
 } else {
-    Write-Host "  非零 —— 确实有代码在跑（写转储、或某个核在自旋）" -ForegroundColor Yellow
+    Write-Host "  Non-zero — code is indeed running (writing dumps, or a core is spinning)" -ForegroundColor Yellow
 }
 
-Write-Host "`n=== 集成服务 ===" -ForegroundColor Cyan
-# 不要用 -Name 过滤：不同版本/语言下组件名不一样，写死名字会报
-# "找不到具有给定名称的集成组件"，那是查询方式的错，不是虚拟机的状态。
+Write-Host "`n=== Integration Service ===" -ForegroundColor Cyan
+# Do not filter by -Name: component names vary across versions and languages; hardcoding names will cause errors.
+# 'No integration service found with the given name' indicates an error in the query method, not the VM's state.
 try {
     Get-VMIntegrationService -VMName $VMName -ErrorAction Stop |
         Select-Object Name, Enabled, PrimaryStatusDescription |
         Format-Table -AutoSize
-} catch { Write-Host "  查询失败：$($_.Exception.Message)" -ForegroundColor Yellow }
+} catch { Write-Host "  Query failed: $($_.Exception.Message)" -ForegroundColor Yellow }
 
-Write-Host "=== PowerShell Direct 探活（决定性判据）===" -ForegroundColor Cyan
-# 这是唯一能区分"guest 操作系统还活着，只是控制台黑屏"与"内核挂死"的检查。
-# 它走 VMBus，不依赖网络，也不依赖显示。
+Write-Host "=== PowerShell Direct Liveness Probe (Decisive Criterion) ===" -ForegroundColor Cyan
+# This is the only check that distinguishes between "the guest OS is alive but the console is black" and "the kernel has hung."
+# It uses VMBus, so it does not depend on the network or the display.
 $psDirect = 'UNKNOWN'
 try {
     $cred = New-Object System.Management.Automation.PSCredential(
@@ -74,75 +74,75 @@ try {
     } -ArgumentList $VMName, $GuestUser, $GuestPassword
     if (Wait-Job $job -Timeout $ProbeSeconds) {
         $r = Receive-Job $job -ErrorAction SilentlyContinue
-        if ($r) { $psDirect = 'ALIVE'; Write-Host ("  响应: {0}" -f $r) -ForegroundColor Green }
-        else    { $psDirect = 'ERROR'; Write-Host "  连上了但没有返回值" -ForegroundColor Yellow }
+        if ($r) { $psDirect = 'ALIVE'; Write-Host ("  Response: {0}" -f $r) -ForegroundColor Green }
+        else    { $psDirect = 'ERROR'; Write-Host "  Connected but no return value" -ForegroundColor Yellow }
     } else {
         $psDirect = 'TIMEOUT'
-        Write-Host ("  {0} 秒内无响应" -f $ProbeSeconds) -ForegroundColor Red
+        Write-Host ("  No response within {0} seconds" -f $ProbeSeconds) -ForegroundColor Red
     }
     Remove-Job $job -Force -ErrorAction SilentlyContinue
 } catch {
     $psDirect = 'ERROR'
-    Write-Host ("  探活失败：{0}" -f $_.Exception.Message) -ForegroundColor Yellow
+    Write-Host ("  Liveness probe failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
 }
 
-Write-Host "`n=== 宿主磁盘 ===" -ForegroundColor Cyan
+Write-Host "`n=== Host Disk ===" -ForegroundColor Cyan
 $root = [IO.Path]::GetPathRoot($vm.Path)
 Get-PSDrive -PSProvider FileSystem |
     Where-Object { $null -ne $_.Used } |
     Select-Object Name,
-        @{ n = '已用GB'; e = { [math]::Round($_.Used / 1GB, 1) } },
-        @{ n = '剩余GB'; e = { [math]::Round($_.Free / 1GB, 2) } } |
+        @{ n = 'Used GB'; e = { [math]::Round($_.Used / 1GB, 1) } },
+        @{ n = 'Remaining GB'; e = { [math]::Round($_.Free / 1GB, 2) } } |
     Format-Table -AutoSize
-Write-Host ("  虚拟机在 {0}" -f $root)
+Write-Host ("  Virtual machine is resident at {0}" -f $root)
 
-Write-Host "=== 检查点 ===" -ForegroundColor Cyan
+Write-Host "=== Checkpoint ===" -ForegroundColor Cyan
 Get-VMSnapshot -VMName $VMName | Sort-Object CreationTime |
     Format-Table Name, CreationTime -AutoSize
 
 # ---------------------------------------------------------------------------
-Write-Host "=== 判读 ===" -ForegroundColor Cyan
+Write-Host "=== Judgment ===" -ForegroundColor Cyan
 if ("$($vm.State)" -match 'Critical' -or "$($vm.Status)" -match 'Critical|critical') {
     Write-Host @"
-  【宿主磁盘满，不是崩溃】
-  Hyper-V 在动态 VHDX 无法继续增长时会主动暂停虚拟机。guest 内部什么也没发生。
+  [Host disk full, not a crash]
+  Hyper-V actively suspends the virtual machine when the dynamic VHDX cannot continue to grow. Nothing happens inside the guest.
 
-  处置（按顺序，不要回滚、不要断电）：
+  Remediation (in order, do not rollback, do not power off):
     1. .\scripts\Clear-KswordVmCheckpoints.ps1 -KeepLast 0 -Confirm
     2. Resume-VM -Name '$VMName'
-  恢复后 guest 从暂停处原地继续，之前的 resident 结果仍然有效。
+  After resumption, the guest continues from where it was paused, and the previous resident results remain valid.
 "@ -ForegroundColor Yellow
 }
 elseif ($vm.State -eq 'Running' -and $psDirect -eq 'ALIVE') {
     Write-Host @"
-  【guest 操作系统还活着】
-  PowerShell Direct 有响应，说明内核没有挂死 —— 黑屏只是控制台/显示的表象。
-  常见成因：VMLAUNCH 之后 guest 在 VMX non-root 里继续跑，但图形栈或
-  会话被打断；也可能只是 VMConnect 窗口本身需要重连。
+  [guest OS is still alive]
+  PowerShell Direct responds, indicating the kernel has not hung — the black screen is merely a symptom of the console/display.
+  Common causes: After VMLAUNCH, the guest continues running in VMX non-root mode, but the graphics stack or
+  The session was interrupted; it may also be that the VMConnect window itself needs to reconnect.
 
-  处置：
-    1. 直接读状态，不要回滚：
+  Remediation:
+    1. Read status directly, do not rollback:
        .\scripts\Invoke-KswordAutomatedAcceptance.ps1 -Stage status
-       每处理器行会告诉你 VMLAUNCH 到底成没成（看 GUEST_LAUNCHED 位）。
-    2. 关掉再重开 VMConnect 窗口看黑屏是否只是显示问题。
+       Each processor line tells you whether VMLAUNCH actually succeeded (check the GUEST_LAUNCHED bit).
+    2. Close and reopen the VMConnect window to check if the black screen is just a display issue.
 "@ -ForegroundColor Green
 }
 elseif ($vm.State -eq 'Running') {
     Write-Host @"
-  【仍在运行但可能已挂死或正在写转储】
-  部署脚本已开启内核转储（CrashDumpEnabled=2, AutoReboot=1）。如果是蓝屏，
-  guest 会先把转储写进 C:\Windows\MEMORY.DMP 再自动重启 —— 8 GiB 内存的
-  内核转储通常要几分钟，期间黑屏、无心跳都是正常的。
+  [Still running but may be hung or writing a dump]
+  Deployment script has enabled kernel dump (CrashDumpEnabled=2, AutoReboot=1). If a blue screen occurs,
+  guest will first write the dump to C:\Windows\MEMORY.DMP and then automatically reboot —— 8 GiB memory
+  Kernel dumps typically take a few minutes; black screen and no heartbeat are normal during this period.
 
-  **这期间断电会毁掉转储**，而那份转储是唯一能说明 VMLAUNCH 之后发生了什么的证据。
+  **Powering off during this period will corrupt the dump**, and that dump is the only evidence explaining what happened after VMLAUNCH.
 
-  处置：
-    1. 再等 5-10 分钟，重复跑本脚本看 Uptime 是否归零（归零 = 已重启，转储写好了）
-    2. 一直不动且 CPU 使用为 0，才考虑回滚：
+  Remediation:
+    1. Wait another 5-10 minutes, then rerun this script to check if Uptime has reset to zero (reset to zero = system has rebooted, dump has been written)
+    2. Only consider rollback if it remains stuck and CPU usage is 0:
        Restore-VMCheckpoint -VMName '$VMName' -Name '<before-resident-*>' -Confirm:`$false
-       注意回滚会丢掉转储。
+       Note: rolling back will discard dumps.
 "@ -ForegroundColor Yellow
 }
 else {
-    Write-Host ("  虚拟机处于 {0}，不在运行。" -f $vm.State)
+    Write-Host ("  The virtual machine is in {0} and not running." -f $vm.State)
 }

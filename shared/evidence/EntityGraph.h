@@ -1,30 +1,30 @@
 #pragma once
 
-// G 模块：实体关系与跨页调查。
+// G module: Entity relationships and cross-page investigation.
 //
-// 这一层只有关系模型与展开策略，没有任何 UI、布局或渲染概念。它的职责是：
-//   * G-01 每条边都带类型、方向、时间有效区间、证据引用和确定性，六类语义各自
-//     成立，绝不塌成一条"相关"边；缺证据的关系不许显示为确定。
-//   * G-02 节点身份来自 ObjectIdentity 的实例身份。不同启动周期、不同 PID 创建
-//     时间、地址复用的对象是不同节点；历史边不会自动套到当前对象。
-//   * G-03 三条最小可用调查链，无数据的环节显式落成"缺失"而不是被跳过。
-//   * G-04 初始只给目标 + 一跳；默认 200 节点 / 500 边，更多必须由调用方显式请求；
-//     计数区分"本次加载"和"总量"，总量不可知时就是 unknown。
-//   * G-05 缺 owner / 已卸载 / 来源未采集 / 实际不一致是四种独立情况，没有任何
-//     "无边就恶意"的规则，也没有任何恶意/风险评分字段。
-//   * G-06 图、列表、详情、导出引用同一套实体 id 与证据 id；离线展开只用已保存
-//     数据，遇到未保存的邻居落成"未保存"而不是发起查询。
-//   * G-08 图是证据视图不是分析真值：推断可展开到规则与来源，模型里没有 layout /
-//     size / color 之类会携带未定义风险含义的字段，同一数据换输入顺序后结论一致。
+// This layer contains only the relationship model and unwind strategy, with no UI, layout, or rendering concepts. Its responsibility is:
+//   * G-01: Every edge carries type, direction, time validity interval, evidence reference, and determinism. The six semantic categories
+//     remain distinct and never collapse into a single "related" edge; relationships lacking evidence must not be displayed as certain.
+//   * G-02 node identity derives from the instance identity of ObjectIdentity. Objects created in different boot cycles, at different
+//     PID creation times, or with address reuse are distinct nodes; historical edges do not automatically apply to current objects.
+//   * G-03: The three minimal viable investigation chains explicitly mark missing data as "missing" rather than skipping those steps.
+//   * G-04 initially provides only the target plus one hop; default is 200 nodes and 500 edges. More must be explicitly requested by the caller.
+//     Distinguish the count loaded this time from the total count; report unknown when the total is unavailable.
+//   * G-05: Missing owner, unloaded, source not collected, and actual inconsistency are four independent
+//     cases. There is no rule of "no edge implies malicious," nor any malicious/risk scoring field.
+//   * G-06: The graph, list, details, and export references share the same set of entity IDs and evidence IDs. Offline expansion
+//     uses only saved data; encountering an unsaved neighbor results in 'unsaved' status rather than initiating a query.
+//   * G-08: The graph represents the evidence view, not analytical truth. Inferences can be expanded to rules and sources. The model contains
+//     no fields like layout/size/color that carry undefined risk semantics, and conclusions remain consistent regardless of input order.
 //
-// 三条贯穿全模块的硬规则：
-//   * 缺失即缺失。没有采到、不支持、被拒绝、超时、正确的空集合是五个不同状态，
-//     一律保留原始错误码，绝不塌成"没有这一环"。
-//   * 默认不等于完整。默认构造的 GraphEdge 是 Unknown 类型、Unknown 确定性、
-//     Unknown 方向，会被 addEdge 直接拒收；默认构造的 EntityGraph 的 envelope 是
-//     NotCollected，SummarizeGraph 只能给出 NoEvidence。
-//   * 判据不越权。这一层不认识 rootkit，不打分，不产出"恶意/可疑"，只给出可回到
-//     源记录的事实。
+// Three hard rules that span the entire module:
+//   * Absence is absence. Not collected, unsupported, rejected, timeout, and correct empty set are five
+//     distinct states; always preserve the original error code, never collapse into 'missing this link'.
+//   * Default is not complete. A default-constructed GraphEdge is of Unknown type, Unknown
+//     certainty, and Unknown direction, and is directly rejected by addEdge; a default-constructed
+//     EntityGraph has an envelope of NotCollected, and summarizeGraph can only return NoEvidence.
+//   * The criteria do not exceed privileges. This layer does not recognize rootkits, does not assign scores, and
+//     does not produce "malicious/suspicious" labels; it only provides facts traceable back to the source record.
 
 #include "EvidenceEnvelope.h"
 #include "EvidenceJson.h"
@@ -40,270 +40,270 @@
 #include <utility>
 #include <vector>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 
 // ---------------------------------------------------------------------------
-// G-01：边的语义
+// G-01: Edge semantics
 // ---------------------------------------------------------------------------
 
-// EdgeKind 是**关系类型**，不是"相关度"。每一类都有独立的含义与独立的证据要求；
-// 这里刻意没有 Related / Associated 之类的兜底值 —— 拿不准的关系只能落到
-// CandidateOwner（归属存疑）或 TemporalNeighbor（只是时间上挨着），两者都不表达
-// 因果，也都不能升格成 Owns。
+// EdgeKind is a **relationship type**, not a "correlation degree". Each kind has independent semantics and independent evidence requirements.
+// Deliberately omitting catch-all values like Related or Associated here: uncertain
+// relationships must fall into CandidateOwner (ownership in doubt) or TemporalNeighbor
+// (temporal proximity only). Neither expresses causality, and neither can be elevated to Owns.
 enum class EdgeKind {
-    Unknown,           // 未指定 —— addEdge 拒收，不允许进图
-    Owns,              // 生命周期归属：进程→线程 / 进程→句柄 / 进程→连接
-    Loads,             // 加载映像：进程或内核→已加载模块
-    Maps,              // 地址空间映射：进程→被映射的文件或区域
-    Opens,             // 句柄→它打开的目标对象
-    CandidateOwner,    // 归属只有候选级证据 —— 语义上永远不可能是 Confirmed
-    TemporalNeighbor,  // 时间邻近。无方向，不表达因果（规范"不包含"里点名禁止）
-    DeviceOf,          // DeviceObject→它所属的 DriverObject
-    ImageOf,           // DriverObject→磁盘上的映像文件
-    ServiceOf,         // 磁盘映像→可证实的服务配置
-    TimelineEntry,     // 系统对象→时间线上的一条证据记录
+    kUnknown,           // Unspecified — addEdge rejects it; not allowed into the graph.
+    kOwns,              // Lifecycle ownership: Process→Thread / Process→Handle / Process→Connection.
+    kLoads,             // Load image: Process or kernel → Loaded module.
+    kMaps,              // Address space mapping: Process -> Mapped file or region
+    kOpens,             // Handle → the target object it opens.
+    kCandidateOwner,    // Ownership is at the candidate evidence level only; semantically it can never be Confirmed.
+    kTemporalNeighbor,  // Temporal neighbor. No direction, does not express causality (explicitly prohibited in the 'not included' specification).
+    kDeviceOf,          // DeviceObject → its owning DriverObject
+    kImageOf,           // DriverObject -> Image file on disk
+    kServiceOf,         // Disk image → verifiable service configuration
+    kTimelineEntry,     // System object → one evidence record on the timeline.
 };
 
-const char* EdgeKindName(EdgeKind kind) noexcept;
+const char* edgeKindName(EdgeKind kind) noexcept;
 
-// CandidateOwner 按定义就是"证据不足以确认归属"，因此它的确定性上限是 Candidate。
-bool EdgeKindAllowsConfirmed(EdgeKind kind) noexcept;
+// CandidateOwner is defined as 'insufficient evidence to confirm ownership', so its certainty upper bound is Candidate.
+bool edgeKindAllowsConfirmed(EdgeKind kind) noexcept;
 
-// TemporalNeighbor 是对称的：A 在 B 附近发生，等价于 B 在 A 附近发生。给它一个
-// 方向就等于把时间邻近画成了因果。
-bool EdgeKindIsSymmetric(EdgeKind kind) noexcept;
+// TemporalNeighbor is symmetric: A occurring near B is equivalent to B occurring near
+// A. Assigning it a direction incorrectly treats temporal proximity as causality.
+bool edgeKindIsSymmetric(EdgeKind kind) noexcept;
 
 enum class EdgeDirection {
-    Unknown,    // 方向未知 —— addEdge 拒收，不许被当成 FromTo 使用
-    FromTo,     // from 是主体，to 是客体
-    Symmetric,  // 无方向
+    kUnknown,    // Direction unknown — addEdge rejects it; it must not be used as FromTo.
+    kFromTo,     // Note: 'from' is the subject, 'to' is the object.
+    kSymmetric,  // Undirected
 };
 
-const char* EdgeDirectionName(EdgeDirection direction) noexcept;
+const char* edgeDirectionName(EdgeDirection direction) noexcept;
 
-// G-01：缺证据的关系不许显示为确定。Unknown 是默认值，表示"连候选都谈不上"。
+// G-01: Relationships lacking evidence must not be displayed as certain. Unknown is the default value, meaning "not even a candidate".
 enum class EdgeCertainty {
-    Unknown,
-    Candidate,
-    Confirmed,
+    kUnknown,
+    kCandidate,
+    kConfirmed,
 };
 
-const char* EdgeCertaintyName(EdgeCertainty certainty) noexcept;
+const char* edgeCertaintyName(EdgeCertainty certainty) noexcept;
 
 struct GraphEdge final {
-    std::string edgeId;          // 留空则由 DeriveEdgeId 确定性生成
-    EdgeKind kind = EdgeKind::Unknown;
-    EdgeDirection direction = EdgeDirection::Unknown;
+    std::string edgeId;          // If left empty, deriveEdgeId deterministically generates it.
+    EdgeKind kind = EdgeKind::kUnknown;
+    EdgeDirection direction = EdgeDirection::kUnknown;
     std::string fromNodeId;
     std::string toNodeId;
 
-    // 时间有效区间（UTC 100ns）。两端都 unset 表示"有效期未知"，那不是"一直有效"。
+    // Valid time interval (UTC 100ns). If both ends are unset, it means 'validity unknown', not 'always valid'.
     OptionalU64 validFrom100ns;
     OptionalU64 validTo100ns;
 
-    // G-01 / G-08：证据引用与推断规则。evidenceRefs 为空时确定性不得是 Confirmed。
+    // G-01 / G-08: Evidence references and inference rules. Certainty must not be Confirmed when evidenceRefs is empty.
     std::vector<std::string> evidenceRefs;
-    EdgeCertainty certainty = EdgeCertainty::Unknown;
-    std::string ruleId;              // 产生这条边的规则标识，UI 可展开
-    std::string ruleDescriptionKey;  // 规则说明的 i18n 键
-    std::string sourceGroup;         // 这条边来自哪个独立来源组
+    EdgeCertainty certainty = EdgeCertainty::kUnknown;
+    std::string ruleId;              // Rule ID that generated this edge; expandable in the UI.
+    std::string ruleDescriptionKey;  // i18n key for rule description
+    std::string sourceGroup;         // The independent source group this edge originates from.
 };
 
-// 确定性生成的边 id：类型 + 端点 + 有效区间 + 规则。同一关系在不同时间区间上是
-// 两条边，因此区间参与 id；这样导入顺序不同也得到同一套 id（G-08）。
-std::string DeriveEdgeId(const GraphEdge& edge);
+// Deterministically generated edge IDs: type + endpoints + validity interval + rule. The same relationship across different time intervals constitutes
+// two distinct edges, so the interval participates in the ID; this ensures the same set of IDs is obtained regardless of import order (G-08).
+std::string deriveEdgeId(const GraphEdge& edge);
 
-// 边的时间有效性。Unknown 不是"无效"，也不是"有效"。
+// Edge temporal validity. Unknown is neither 'invalid' nor 'valid'.
 enum class TemporalValidity {
-    Unknown,
-    Valid,
-    NotValid,
-    // 区间本身是坏的（validFrom > validTo）。这既不是"此刻无效"也不是"未知时刻"：
-    // 把它塌成 NotValid 会让一条坏区间的边在任何带时刻的筛选下永久隐身，而且没有
-    // 任何地方说得出"隐身是因为区间反了"。ScanBudget 的 AddressRange::reversed 是
-    // 同一件事的另一处对应物。
-    IntervalInvalid,
+    kUnknown,
+    kValid,
+    kNotValid,
+    // The interval itself is invalid (validFrom > validTo). This is neither "invalid at this moment" nor "unknown moment":
+    // Merging it into NotValid makes a bad-interval edge permanently invisible under
+    // any time-filter, with no way to say "invisible because the interval is reversed."
+    // ScanBudget's AddressRange::reversed is the same thing in another place.
+    kIntervalInvalid,
 };
 
-const char* TemporalValidityName(TemporalValidity validity) noexcept;
+const char* temporalValidityName(TemporalValidity validity) noexcept;
 
-TemporalValidity EdgeValidAt(const GraphEdge& edge, const OptionalU64& utc100ns) noexcept;
+TemporalValidity edgeValidAt(const GraphEdge& edge, const OptionalU64& utc100ns) noexcept;
 
-// G-01：按 kind / certainty 筛选。空向量 = 该维度不筛。
+// G-01: filter by kind/certainty. An empty vector means no filtering on that dimension.
 struct EdgeFilter final {
     std::vector<EdgeKind> kinds;
     std::vector<EdgeCertainty> certainties;
 
-    // 时间筛选。atUtc100ns 未设置时不按时间筛。
+    // Time filtering: if atUtc100ns is not set, do not filter by time.
     OptionalU64 atUtc100ns;
-    // 有效区间未知的边默认保留 —— "未知"不等于"无效"（G-05 的同一条原则）。
-    // 只有调用方明确要求时才排除，并且这件事必须出现在导出的限制说明里。
+    // Edges with unknown validity are retained by default — "unknown" is not equivalent to "invalid" (same principle as G-05).
+    // Exclude only when explicitly requested by the caller, and this must be stated in the exported constraints.
     bool excludeUnknownValidity = false;
 };
 
-bool EdgeMatchesFilter(const GraphEdge& edge, const EdgeFilter& filter) noexcept;
+bool edgeMatchesFilter(const GraphEdge& edge, const EdgeFilter& filter) noexcept;
 
 // ---------------------------------------------------------------------------
-// G-02：节点身份
+// G-02: Node identity
 // ---------------------------------------------------------------------------
 
-// ObjectKind 描述的是系统对象。时间线记录/证据记录不是系统对象，硬塞进 ObjectKind
-// 会让"进程"和"一条日志"用同一套匹配规则。因此再给一个正交的类别维度。
+// ObjectKind describes system objects. Timeline entries and evidence records are not system objects; forcing them into ObjectKind
+// would cause 'processes' and 'log entries' to share the same matching rules. Therefore, an orthogonal category dimension is added.
 enum class NodeCategory {
-    SystemObject,
-    TimelineEntry,
-    EvidenceRecord,
+    kSystemObject,
+    kTimelineEntry,
+    kEvidenceRecord,
 };
 
-const char* NodeCategoryName(NodeCategory category) noexcept;
+const char* nodeCategoryName(NodeCategory category) noexcept;
 
-// 节点生命周期。Unknown 是默认值 —— "不知道它还在不在"不等于"它还在"。
+// Node lifecycle. Unknown is the default value — 'not knowing if it still exists' is not the same as 'it still exists'.
 enum class NodeLifecycle {
-    Unknown,
-    Observed,  // 采集时刻确实观察到它在
-    Ended,     // 已退出 / 已卸载 / 连接已关闭
+    kUnknown,
+    kObserved,  // Note: It was indeed observed at the collection moment.
+    kEnded,     // Exited / unloaded / connection closed.
 };
 
-const char* NodeLifecycleName(NodeLifecycle lifecycle) noexcept;
+const char* nodeLifecycleName(NodeLifecycle lifecycle) noexcept;
 
-// NodeIdentity 直接承载 ObjectIdentity.h 的六类实例身份，按 kind 取用其中一个。
-// Device / Service 在 F-03 里没有生命周期身份结构，只能用 (bootId, name)，因此它们
-// 的强度恒为 Weak —— 这一点必须显式表达，不能假装它们和进程一样可靠。
+// NodeIdentity directly holds the six instance identities from ObjectIdentity.h, selecting one based on kind.
+// Devices and Services lack a lifecycle identity structure in F-03, so they must use (bootId, name); consequently,
+// their strength is always Weak—this must be explicitly stated and cannot be treated as reliable like processes.
 struct NodeIdentity final {
-    NodeCategory category = NodeCategory::SystemObject;
-    ObjectKind kind = ObjectKind::Unknown;
+    NodeCategory category = NodeCategory::kSystemObject;
+    ObjectKind kind = ObjectKind::kUnknown;
 
     ProcessInstanceId process;
     ThreadInstanceId thread;
-    DriverInstanceId driver;  // Driver 与 Module 共用
+    DriverInstanceId driver;  // Shared by Driver and Module
     FileIdentity file;
     HandleIdentity handle;
     ConnectionIdentity connection;
 
-    std::string bootId;      // Device / Service / 非系统对象用
-    std::string name;        // Device / Service 名，或记录 id
-    // instanceTag：调用方给的实例判别标签（例如"第 N 次观察"或采集会话序号）。
-    // G-02：地址会被复用，名字会被重用。身份**不够强**时，同名同址的两次观察必须
-    // 靠这个标签分开；否则两个不同的对象会被合并成一个节点。身份足够强（拿得到
-    // crossSessionKey）时它不参与主键，以免同一个对象被拆成两个节点。
+    std::string bootId;      // Device / Service / Non-system object.
+    std::string name;        // Device / Service name, or record ID.
+    // instanceTag: Instance discriminator tag provided by the caller (e.g., "Nth observation" or collection session ID).
+    // G-02: Addresses are reused, and names are recycled. When identity is **not strong enough**, two observations of the same name and
+    // address must be distinguished by this tag; otherwise, two distinct objects would be merged into a single node. When identity is strong
+    // enough (crossSessionKey is accessible), it is excluded from the primary key to prevent splitting a single object into two nodes.
     std::string instanceTag;
 
     IdentityStrength strength() const noexcept;
 
-    // 跨会话主键。身份不足返回空串（沿用 F-03 的约定）。
+    // Cross-session primary key. Returns an empty string if identity is insufficient (following the F-03 convention).
     std::string crossSessionKey() const;
 
-    // 图内唯一键。强身份用 crossSessionKey，弱身份把所有可得字段 + instanceTag
-    // 全部编进去 —— 宁可把同一个对象拆成两个节点，也不把两个对象合成一个。
+    // Unique key within the graph. Strong identity uses crossSessionKey; weak identity encodes all available
+    // fields plus instanceTag — better to split one object into two nodes than to merge two objects into one.
     std::string nodeKey() const;
 
-    // 用于导航与证据引用。navigable() 为假时不允许跳转（F-12 身份门槛）。
+    // Used for navigation and evidence references. Jumping is disallowed when navigable() is false (F-12 identity threshold).
     ObjectRef makeRef(const std::string& evidenceId, const std::string& displayText) const;
 };
 
-// 按 kind 分派到对应的 Match*。kind / category 不同一律 NoMatch；Device / Service
-// 因为没有生命周期身份，最强只能给 Candidate。
+// Dispatch to the corresponding Match* based on kind. If kind or category differs, return
+// NoMatch. Device/Service lack lifecycle identity, so the strongest match possible is Candidate.
 //
-// Device / Service / 记录这一支还有一道门槛：任一侧 strength() == Unusable，或者
-// (bootId, name, instanceTag) 三个字段在某一侧全空，一律 NoMatch。MatchResult 没有
-// "信息不足"这一档，Candidate 会被调用方当成"弱匹配"用作身份门槛；把"什么都没填"
-// 读成"可能是同一个"，正是 G-02 要防的把两个对象合成一个。
-MatchResult MatchNodeIdentity(const NodeIdentity& a, const NodeIdentity& b) noexcept;
+// For the Device / Service / Record branch, there is an additional threshold: if either side has `strength() == Unusable`, or
+// if the three fields `(bootId, name, instanceTag)` are all empty on either side, the result is NoMatch. MatchResult has no
+// "insufficient information" state; a Candidate is treated by the caller as a "weak match" for identity gating. Interpreting
+// "nothing filled in" as "could be the same" is exactly what G-02 aims to prevent: merging two distinct objects into one.
+MatchResult matchNodeIdentity(const NodeIdentity& a, const NodeIdentity& b) noexcept;
 
 struct GraphNode final {
-    // 留空则由 NodeIdentity::nodeKey() 生成。调用方给了就用调用方的（会话回放时
-    // 必须能原样还原保存下来的 id —— G-06 要求跨视图 id 一致）。
+    // If left empty, it is generated by NodeIdentity::nodeKey(). If the caller provides one, use the caller's
+    // (session replay must be able to restore the saved ID exactly as-is; G-06 requires cross-view ID consistency).
     std::string nodeId;
     NodeIdentity identity;
     std::string displayText;
-    std::string evidenceId;      // 产生该节点的 envelope；空 = 打不开原始证据
-    NodeLifecycle lifecycle = NodeLifecycle::Unknown;
+    std::string evidenceId;      // Envelope that generated this node; null = original evidence inaccessible
+    NodeLifecycle lifecycle = NodeLifecycle::kUnknown;
 
-    // G-05：这个节点"本该"由哪种关系连到 owner。填了才能区分"来源没采"和
-    // "采了但确实没有 owner"；不填时按"来源未采集"处理（默认不是良性结论）。
-    EdgeKind ownerRelation = EdgeKind::Unknown;
-    ObjectKind ownerKind = ObjectKind::Unknown;
+    // G-05: The relationship type that "should" connect this node to its owner. Filling this distinguishes between "source not collected"
+    // and "collected but no owner exists"; if not filled, it is treated as "source not collected" (defaulting to a non-benign conclusion).
+    EdgeKind ownerRelation = EdgeKind::kUnknown;
+    ObjectKind ownerKind = ObjectKind::kUnknown;
 
-    // G-05 第四类：其它模块（例如 X 的 cross-view）观察到的实际不一致。
-    // 这里只搬运事实与证据 id，不做任何风险判断。
+    // G-05 Class 4: Actual inconsistencies observed by other modules (e.g., X's cross-view).
+    // Only transport facts and evidence IDs; do not perform any risk assessment.
     bool inconsistencyObserved = false;
     std::vector<std::string> inconsistencyEvidenceIds;
 
-    // 该节点自身的采集结果。失败时保留原始错误码。
+    // The collection result for this node itself. Retains the original error code on failure.
     CollectionOutcome outcome;
 
-    bool objectNavigable() const noexcept;   // 身份够不够用来跳转对象页
-    bool evidenceOpenable() const noexcept;  // 能不能打开原始证据
+    bool objectNavigable() const noexcept;   // Whether the identity is sufficient to navigate object pages.
+    bool evidenceOpenable() const noexcept;  // Whether the original evidence can be opened.
 };
 
 enum class NodeAdmission {
-    AcceptedNew,
-    AcceptedMerged,                   // 同一 nodeId 再次出现，证据合并
-    AcceptedMergedLifecycleConflict,  // 合并时两侧生命周期矛盾，降级为 Unknown
-    RejectedNoIdentity,               // 连图内唯一键都构不出来
-    // G-02：同一个 nodeId 上出现了两份互相矛盾的身份（MatchNodeIdentity 判 NoMatch
-    // 且两侧 nodeKey 不同）。合并会把两个对象压成一个，静默丢弃会让第二次观察连账
-    // 都不进 —— 两者都禁止，因此这里拒收并让调用方看见冲突。
-    RejectedIdentityConflict,
+    kAcceptedNew,
+    kAcceptedMerged,                   // Same nodeId appears again; evidence is merged.
+    kAcceptedMergedLifecycleConflict,  // During merge, lifecycle conflict on both sides; downgrade to Unknown.
+    kRejectedNoIdentity,               // Unable to even construct a unique key within the graph.
+    // G-02: Two conflicting identities appear on the same `nodeId` (`matchNodeIdentity` returns `NoMatch` and the `nodeKey` on both
+    // sides differs). Merging would collapse the two objects into one, while silently discarding would prevent the second
+    // observation from being recorded—both are forbidden. Therefore, this is rejected, and the caller is made aware of the conflict.
+    kRejectedIdentityConflict,
 };
 
-const char* NodeAdmissionName(NodeAdmission admission) noexcept;
-bool NodeAdmissionAccepted(NodeAdmission admission) noexcept;
+const char* nodeAdmissionName(NodeAdmission admission) noexcept;
+bool nodeAdmissionAccepted(NodeAdmission admission) noexcept;
 
 enum class EdgeAdmission {
-    Accepted,
-    DemotedMissingEvidence,        // G-01：evidenceRefs 为空，Confirmed 降为 Candidate
-    DemotedCandidateOwnerKind,     // candidate-owner 语义上不可能确定
-    DemotedTemporalDirectionDropped,  // 时间邻近被给了方向，方向被丢弃
-    RejectedUnknownKind,
-    RejectedUnknownDirection,
-    RejectedMissingEndpoint,
-    RejectedDuplicateId,
-    RejectedInvalidInterval,       // validFrom > validTo：区间本身不成立
+    kAccepted,
+    kDemotedMissingEvidence,        // G-01: evidenceRefs is empty; Confirmed downgraded to Candidate.
+    kDemotedCandidateOwnerKind,     // candidate-owner cannot be determined under these semantics.
+    kDemotedTemporalDirectionDropped,  // Temporal proximity was given a direction, but the direction was dropped.
+    kRejectedUnknownKind,
+    kRejectedUnknownDirection,
+    kRejectedMissingEndpoint,
+    kRejectedDuplicateId,
+    kRejectedInvalidInterval,       // validFrom > validTo: The interval is inherently invalid.
 };
 
-const char* EdgeAdmissionName(EdgeAdmission admission) noexcept;
-bool EdgeAdmissionAccepted(EdgeAdmission admission) noexcept;
+const char* edgeAdmissionName(EdgeAdmission admission) noexcept;
+bool edgeAdmissionAccepted(EdgeAdmission admission) noexcept;
 
-// 边入图前的规范化。返回值说明被改动了什么；out 是实际会被存下来的边。
-// 单独暴露是为了让调用方在不建图的情况下也能复核判据（G-08 推断可展开）。
-EdgeAdmission NormalizeEdge(const GraphEdge& input, GraphEdge& out);
+// Normalization of an edge before it enters the graph. Return value indicates what was changed; out is the edge that will actually be stored.
+// Exposed separately to allow callers to verify criteria without building the graph (G-08 inference can be expanded).
+EdgeAdmission normalizeEdge(const GraphEdge& input, GraphEdge& out);
 
 // ---------------------------------------------------------------------------
-// G-03 / G-05：关系覆盖声明
+// G-03 / G-05: Relationship coverage declaration.
 // ---------------------------------------------------------------------------
 
-// "这一跳没有数据"和"这一跳没采"必须分开。图本身不知道调用方跑过哪些采集，所以
-// 调用方必须显式声明。没有声明 = NotCollected（默认绝不是"采过且是空的"）。
+// "No data on this hop" and "not collected on this hop" must be distinct. The graph does not know which collections the caller
+// has run; the caller must explicitly declare them. No declaration = NotCollected (the default is never "collected but empty").
 struct RelationCoverage final {
-    CollectionOutcome outcome;   // 默认 NotCollected
-    CoverageAccount coverage;    // F-06 账目；空账目不是完整覆盖
+    CollectionOutcome outcome;   // Default: NotCollected
+    CoverageAccount coverage;    // F-06 Account; an empty account does not represent full coverage.
     std::string evidenceId;
 };
 
-// 已声明的一条覆盖。导出与会话回放要能原样搬运这份声明（G-06）。
+// A declared coverage entry. This declaration must be transportable verbatim for export and session replay (G-06).
 struct RelationCoverageEntry final {
-    EdgeKind kind = EdgeKind::Unknown;
-    ObjectKind targetKind = ObjectKind::Unknown;
+    EdgeKind kind = EdgeKind::kUnknown;
+    ObjectKind targetKind = ObjectKind::kUnknown;
     RelationCoverage coverage;
 };
 
 // ---------------------------------------------------------------------------
-// 图
+// Graph
 // ---------------------------------------------------------------------------
 
-// G-06：离线展开策略。离线会话里 allowLiveQueries 恒为 false —— 遇到未保存的邻居
-// 只能记账，绝不能悄悄发起现场查询。
+// G-06: Offline expansion policy. In offline sessions, allowLiveQueries is always false;
+// encountering unsaved neighbors requires only bookkeeping, never silently initiating live queries.
 struct OfflineExpansionPolicy final {
     bool allowLiveQueries = false;
-    DataOrigin origin = DataOrigin::Session;
+    DataOrigin origin = DataOrigin::kSession;
 };
 
-// 未保存的邻居：边指向一个当前数据集里没有的节点。这是"没保存"，不是"不存在"。
+// Unsaved neighbor: an edge points to a node not currently in the dataset. This indicates 'not saved', not 'non-existent'.
 struct UnsavedNeighbor final {
     std::string edgeId;
     std::string missingNodeId;
-    EdgeKind relation = EdgeKind::Unknown;
+    EdgeKind relation = EdgeKind::kUnknown;
 };
 
 class EntityGraph final {
@@ -316,28 +316,28 @@ public:
     const GraphNode* findNode(const std::string& nodeId) const noexcept;
     const GraphEdge* findEdge(const std::string& edgeId) const noexcept;
 
-    // 内部索引。展开与链路遍历全部走它，避免任何 O(n^2) 扫描（G-04）。
+    // Internal index. All expansions and link traversals go through it to avoid any O(n^2) scans (G-04).
     bool nodeIndexOf(const std::string& nodeId, std::size_t& out) const noexcept;
     const std::vector<GraphNode>& nodes() const noexcept { return nodes_; }
     const std::vector<GraphEdge>& edges() const noexcept { return edges_; }
     std::size_t nodeCount() const noexcept { return nodes_.size(); }
     std::size_t edgeCount() const noexcept { return edges_.size(); }
 
-    // 与某节点相连的边下标，按 edgeId 升序。顺序与插入顺序无关（G-08）。
+    // Indices of edges connected to a node, sorted in ascending order by edgeId. The order is independent of insertion order (G-08).
     const std::vector<std::size_t>& incidentEdges(std::size_t nodeIndex) const;
 
-    // G-05：EdgeKind::Unknown 不是一种关系，只是"没填"。让它进覆盖表就等于给每个
-    // 没标注 ownerRelation 的节点发了一张"这一跳我们查全了"的证明，因此拒收并返回
-    // false。ObjectKind::Unknown 是合法的目标类别（时间线记录没有 ObjectKind）。
+    // G-05: EdgeKind::Unknown is not a relationship but represents "not filled." Allowing it into the coverage table would
+    // issue a "this hop is fully verified" proof to every node lacking an ownerRelation annotation; therefore, reject it
+    // and return false. ObjectKind::Unknown is a valid target category (timeline records do not have an ObjectKind).
     bool declareRelationCoverage(EdgeKind kind, ObjectKind targetKind, RelationCoverage coverage);
-    // 未声明时返回默认值：NotCollected。
+    // Returns the default value NotCollected if not declared.
     RelationCoverage relationCoverage(EdgeKind kind, ObjectKind targetKind) const;
-    // 已声明的全部覆盖，按 (kind, targetKind) 升序。导出与回放用。
+    // All declared coverages, sorted ascending by (kind, targetKind). For export and replay.
     std::vector<RelationCoverageEntry> declaredRelationCoverages() const;
 
-    // 建图期被 RejectedIdentityConflict 挡下的观察数。刻意不进 GraphConclusion，也
-    // 不进导出：它记的是**输入流**（哪一次观察先到），不是数据本身，"谁被拒"随到达
-    // 顺序变化，放进结论会破坏 G-08 的顺序无关性。
+    // Observations blocked by RejectedIdentityConflict during graph construction. Deliberately excluded from GraphConclusion
+    // and exports: it records the **input stream** (which observation arrived first), not the data itself. Since "who was
+    // rejected" varies with arrival order, including it in conclusions would violate G-08's order independence.
     std::uint64_t identityConflictCount() const noexcept { return identityConflicts_; }
 
     void setEnvelope(EvidenceEnvelope envelope) { envelope_ = std::move(envelope); }
@@ -353,11 +353,11 @@ private:
     std::vector<GraphEdge> edges_;
     std::unordered_map<std::string, std::size_t> nodeIndex_;
     std::unordered_map<std::string, std::size_t> edgeIndex_;
-    // 指向尚未入图的节点的边（未保存邻居）。节点补齐后自动接进邻接表。
+    // Edges pointing to nodes not yet in the graph (unsaved neighbors). Nodes are automatically added to the adjacency list once the graph is complete.
     std::unordered_map<std::string, std::vector<std::size_t>> pending_;
-    // 邻接表排序是惰性的：查询时才排一次，之后复用。这样建图是 O(E)，遍历是
-    // O(V+E)，不会出现按 nodeId 线性搜索的 O(n^2)（G-04）。
-    // 两个 mutable 仅服务于这次惰性排序，本类不保证线程安全。
+    // Sort adjacency lists lazily on the first query and reuse the result. Graph construction
+    // is O(E) and traversal is O(V+E), avoiding O(n^2) linear searches by nodeId (G-04).
+    // The two mutable members serve only this lazy sort; this class does not guarantee thread safety.
     mutable std::vector<std::vector<std::size_t>> adjacency_;
     mutable std::vector<char> adjacencySorted_;
     std::map<std::pair<EdgeKind, ObjectKind>, RelationCoverage> coverage_;
@@ -367,7 +367,7 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// G-04：有界展开
+// G-04: Bounded unwind
 // ---------------------------------------------------------------------------
 
 inline constexpr std::uint64_t kDefaultMaxNodes = 200;
@@ -384,19 +384,19 @@ struct ExpansionRequest final {
     std::vector<std::string> rootNodeIds;
     ExpansionLimits limits;
     EdgeFilter filter;
-    // G-04：默认上限之外的任何东西都必须由调用方显式请求继续。没有这一位时，
-    // 超过默认值的 limits / hops 会被夹回默认值并在结果里说明。
+    // G-04: Anything beyond the default limit must be explicitly requested by the caller. Without this
+    // flag, limits/hops exceeding the default are clamped to the default value and noted in the result.
     bool continueRequestedByUser = false;
 };
 
 struct ExpansionResult final {
-    std::vector<std::string> nodeIds;  // 按 nodeId 升序，与输入顺序无关
-    std::vector<std::string> edgeIds;  // 按 edgeId 升序
+    std::vector<std::string> nodeIds;  // Sorted by nodeId in ascending order; independent of input order.
+    std::vector<std::string> edgeIds;  // In ascending order by edgeId
 
-    // G-04：计数不许暗示已加载全部。loaded* 是本次真正装进来的；totalKnown 只有在
-    // **遍历确实走到头**时才有值，且"走到头"要同时满足：没有命中任何上限、没有未保
-    // 存邻居、并且装载数等于图里保存的全部节点与边。少最后一条就会出现"只走完一个
-    // 连通分量却宣称总量已知"——那是拿 loadedNodes 冒充总量的另一种写法。
+    // G-04: The count must not imply that everything is loaded. loaded* represents what was actually loaded this time; totalKnown is only valid when...
+    // The value is set only when **traversal truly reaches the end**, which requires simultaneously satisfying: no upper limit hit, no
+    // unsaved neighbors, and the loaded count equals all nodes and edges saved in the graph. Missing the last condition results in 'claiming
+    // the total is known after traversing only one connected component'—another way of using loadedNodes to impersonate the total.
     std::uint64_t loadedNodes = 0;
     std::uint64_t loadedEdges = 0;
     bool moreAvailable = false;
@@ -406,41 +406,41 @@ struct ExpansionResult final {
     bool nodeLimitHit = false;
     bool edgeLimitHit = false;
     bool hopLimitHit = false;
-    bool limitsClampedToDefault = false;  // 越过默认上限但没显式请求继续
+    bool limitsClampedToDefault = false;  // Exceeded the default upper limit but did not explicitly request to continue.
     bool hopsClampedToDefault = false;
 
-    // 被筛选条件排除的边数。这是用户的选择，不是覆盖缺口，因此不进 coverage。
+    // Number of edges excluded by filter conditions. This is a user choice, not a coverage gap, so it is not included in coverage.
     std::uint64_t filteredEdgeCount = 0;
 
-    // G-06：未保存的邻居。offline 策略下必须为"记账"而不是"查询"。
+    // G-06: Unsaved neighbors. Under the offline policy, this must be "accounting" rather than "querying".
     std::vector<UnsavedNeighbor> unsavedNeighbors;
-    // 本次展开发起过几次现场查询。ExpandGraph 里没有任何现场查询出口，因此它只会
-    // 保持默认的 0；函数末尾**不许**再写一次 0 —— 那样这个字段就恒等于 0，上层拿它
-    // 做的断言也就恒成立，等于什么都没验证。
+    // Number of times a live query was initiated during this expansion. Since expandGraph has no live query exit
+    // points, it will always remain at the default 0. Do not write 0 again at the end of the function; otherwise,
+    // this field will be constantly 0, making any assertions based on it trivially true and effectively unverified.
     std::uint64_t liveQueriesIssued = 0;
 
     CoverageAccount coverage;
-    std::vector<std::string> limitationKeys;  // 已排序去重的 i18n 键
+    std::vector<std::string> limitationKeys;  // Sorted and deduplicated i18n keys.
 };
 
-ExpansionResult ExpandGraph(const EntityGraph& graph, const ExpansionRequest& request);
+ExpansionResult expandGraph(const EntityGraph& graph, const ExpansionRequest& request);
 
 // ---------------------------------------------------------------------------
-// G-02：历史边定位到现场
+// G-02: Locate historical edge to live.
 // ---------------------------------------------------------------------------
 
 enum class EndpointRole {
-    From,
-    To,
+    kFrom,
+    kTo,
 };
 
-const char* EndpointRoleName(EndpointRole role) noexcept;
+const char* endpointRoleName(EndpointRole role) noexcept;
 
 struct HistoricalEdgeLiveRequest final {
     std::string edgeId;
-    EndpointRole endpoint = EndpointRole::To;
-    LiveResolution live;               // 调用方在现场查到的候选（可能 found=false）
-    NavigationPage page = NavigationPage::Unknown;
+    EndpointRole endpoint = EndpointRole::kTo;
+    LiveResolution live;               // Candidates found by the caller during live resolution (possibly with found=false).
+    NavigationPage page = NavigationPage::kUnknown;
     bool targetPageAvailable = false;
     bool objectPresentInPage = false;
     bool evidencePresentInSession = false;
@@ -449,76 +449,76 @@ struct HistoricalEdgeLiveRequest final {
 struct HistoricalEdgeLiveResult final {
     bool edgeFound = false;
     bool nodeFound = false;
-    bool liveResolverSupported = false;  // 目前只有进程有现场重解析契约
-    ObjectKind kind = ObjectKind::Unknown;
+    bool liveResolverSupported = false;  // Currently, only processes have live resolution contracts.
+    ObjectKind kind = ObjectKind::kUnknown;
     std::string savedNodeId;
-    // 只有身份 Allow 时才非空。身份不匹配时**绝不**填新对象的 id（G-02 核心）。
+    // Non-null only if identity is Allowed. When identity mismatches, **never** fill in the new object's ID (Core G-02).
     std::string liveNodeId;
-    LiveNavigationDecision identityDecision = LiveNavigationDecision::RejectIdentityUnverifiable;
+    LiveNavigationDecision identityDecision = LiveNavigationDecision::kRejectIdentityUnverifiable;
     bool navigationAttempted = false;
-    NavigationOutcome navigation = NavigationOutcome::IdentityUnusable;
+    NavigationOutcome navigation = NavigationOutcome::kIdentityUnusable;
     std::string reasonKey;
 };
 
-// 历史边不许自动套到当前对象：先用 ResolveProcessNavigation 做身份校验，只有
-// Allow 才继续 DecideNavigation；其余情况一律不发起导航，也不给现场 id。
-HistoricalEdgeLiveResult ResolveHistoricalEdgeToLive(const EntityGraph& graph,
+// Historical edges must not automatically resolve to current objects: first perform identity validation via resolveProcessNavigation;
+// only proceed to decideNavigation if allowed. Otherwise, do not initiate navigation and do not provide a context ID.
+HistoricalEdgeLiveResult resolveHistoricalEdgeToLive(const EntityGraph& graph,
                                                      const HistoricalEdgeLiveRequest& request);
 
 // ---------------------------------------------------------------------------
-// G-03：最小可用调查链
+// G-03: Minimum viable investigation chain
 // ---------------------------------------------------------------------------
 
 enum class ChainKind {
-    ProcessSubjects,       // Process → Thread / Module / Handle
-    DeviceToService,       // Device → DriverObject → Driver image → Service
-    ConnectionToTimeline,  // Connection → Process instance → Timeline
+    kProcessSubjects,       // Process → Thread / Module / Handle
+    kDeviceToService,       // Device → DriverObject → Driver image → Service
+    kConnectionToTimeline,  // Connection → Process instance → Timeline
 };
 
-const char* ChainKindName(ChainKind kind) noexcept;
+const char* chainKindName(ChainKind kind) noexcept;
 
-// 每一环的可用性。五种"缺失"互不等价，都保留原始采集结果。
+// Availability of each link. The five "missing" states are not equivalent; preserve the original collection results for each.
 enum class StepAvailability {
-    Present,                   // 这一环有对象
-    MissingNoData,             // 来源成功且账目正面证明覆盖完整，确实没有这一环
-    MissingCoverageIncomplete, // 来源只覆盖了一部分，"没有"无法确认
-    MissingNotCollected,       // 根本没采
-    MissingUnsupported,
-    MissingAccessDenied,
-    MissingCollectionFailed,   // 超时 / 其它错误，原始码在 outcome 里
-    MissingIdentityUnusable,   // 有记录但身份不足，不能当作确定的一跳
-    // 上一环就缺失，这一环连"从哪儿开始查"都没有。它和"这一环的来源没采"不是
-    // 一回事：来源可能采得好好的，只是没有起点。塌成 MissingNotCollected 会把
-    // 采集账目说反。
-    MissingPreviousStepMissing,
+    kPresent,                   // This link has an object.
+    kMissingNoData,             // Source successful and account positive proof covers the full scope; this link genuinely does not exist.
+    kMissingCoverageIncomplete, // Coverage is partial; absence cannot be confirmed.
+    kMissingNotCollected,       // Not collected
+    kMissingUnsupported,
+    kMissingAccessDenied,
+    kMissingCollectionFailed,   // Timeout or other error; the original code is in outcome.
+    kMissingIdentityUnusable,   // A record exists, but its identity cannot establish a definite hop.
+    // The preceding link is missing, leaving no starting point for this lookup. This differs
+    // from an uncollected source: collection may be complete but lack a starting point.
+    // Collapsing this into MissingNotCollected would misrepresent the collection ledger.
+    kMissingPreviousStepMissing,
 };
 
-const char* StepAvailabilityName(StepAvailability availability) noexcept;
-bool StepIsMissing(StepAvailability availability) noexcept;
+const char* stepAvailabilityName(StepAvailability availability) noexcept;
+bool stepIsMissing(StepAvailability availability) noexcept;
 
 struct ChainStep final {
     std::size_t index = 0;
-    std::string labelKey;                       // i18n 键，UI 负责翻译
-    NodeCategory expectedCategory = NodeCategory::SystemObject;
-    ObjectKind expectedKind = ObjectKind::Unknown;
-    EdgeKind relationFromPrevious = EdgeKind::Unknown;
-    StepAvailability availability = StepAvailability::MissingNotCollected;
-    CollectionOutcome outcome;                  // 保留原始错误码
+    std::string labelKey;                       // i18n key; UI handles translation
+    NodeCategory expectedCategory = NodeCategory::kSystemObject;
+    ObjectKind expectedKind = ObjectKind::kUnknown;
+    EdgeKind relationFromPrevious = EdgeKind::kUnknown;
+    StepAvailability availability = StepAvailability::kMissingNotCollected;
+    CollectionOutcome outcome;                  // Preserve original error code
     std::string evidenceId;
 
-    std::vector<std::string> nodeIds;           // 按 nodeId 升序
-    std::vector<std::string> edgeIds;           // 按 edgeId 升序
-    EdgeCertainty weakestEdgeCertainty = EdgeCertainty::Unknown;
-    bool truncated = false;                     // 命中 maxNodesPerStep
+    std::vector<std::string> nodeIds;           // Sorted by nodeId in ascending order.
+    std::vector<std::string> edgeIds;           // In ascending order by edgeId
+    EdgeCertainty weakestEdgeCertainty = EdgeCertainty::kUnknown;
+    bool truncated = false;                     // Hit maxNodesPerStep.
     std::uint64_t matchCount = 0;
 
-    // "这一环能不能跳到对象页"有两个完全不同的答案，必须分开给：any 是"至少一个能"，
-    // every 是"列出来的每一个都能"。UI 用 any 决定要不要给按钮，用 every 决定能不能
-    // 说这一环整体可导航。上一环缺失时两个都为假 —— 起点不成立的一跳不许可导航。
+    // There are two distinct answers to 'can this step jump to the object page', so they must be provided separately: 'any' means 'at least one
+    // can', while 'every' means 'every listed one can'. The UI uses 'any' to decide whether to show the button, and 'every' to determine if the
+    // entire step is navigable. If the previous step is missing, both are false—a jump from a non-existent starting point is not permitted.
     bool anyObjectNavigable = false;
     bool everyObjectNavigable = false;
-    // G-03 通过条件是"每一步可打开来源详情"，所以这一位是 every 语义：这一环里只要
-    // 有一个节点打不开原始证据，它就是假。用 any 会让 3 选 1 的环被判成满足。
+    // G-03 condition: 'source details openable at every step', so this bit has 'every' semantics: if any node in this ring
+    // cannot open the original evidence, the result is false. Using 'any' would incorrectly mark a 3-of-1 ring as satisfied.
     bool evidenceOpenable = false;
 };
 
@@ -528,139 +528,139 @@ struct ChainOptions final {
 };
 
 struct InvestigationChain final {
-    ChainKind kind = ChainKind::ProcessSubjects;
+    ChainKind kind = ChainKind::kProcessSubjects;
     std::string rootNodeId;
     bool rootFound = false;
     std::vector<ChainStep> steps;
 
     std::size_t missingStepCount() const noexcept;
-    // 所有环节都 Present 才算完整。默认构造的链绝不是"完整"。
+    // The chain is considered complete only if all steps are Present. A default-constructed chain is never 'complete'.
     bool complete() const noexcept;
-    // 每一步都能打开来源详情（G-03 的通过条件："不能只画出节点而不能导航"）。
+    // Every step can open source details (G-03 pass condition: "Cannot just draw nodes without navigation.").
     bool everyPresentStepOpensSource() const noexcept;
 };
 
-InvestigationChain BuildChain(const EntityGraph& graph,
+InvestigationChain buildChain(const EntityGraph& graph,
                               ChainKind kind,
                               const std::string& rootNodeId,
                               const ChainOptions& options);
 
 // ---------------------------------------------------------------------------
-// G-05：孤立与未知不等于异常
+// G-05: Isolated and unknown do not equal anomalies.
 // ---------------------------------------------------------------------------
 
-// 四种情况分开。默认值刻意是 SourceNotCollected 而不是 NotIsolated —— 一个什么都
-// 没填的报告不许读作"这个节点关系正常"。
+// The four cases are separated. The default value is deliberately SourceNotCollected rather than
+// NotIsolated—a report with nothing filled in must not be interpreted as 'this node relationship is normal'.
 //
-// 命名上刻意避开"cause"：这里描述的是**观察到的数据状态**（有没有边、来源采没采、
-// 对象在不在），不是对任何行为的因果或性质判定。四个取值里没有一个表达风险，也
-// 没有任何一条规则从"孤立"推出"异常"（G-05 通过条件）。
+// Naming deliberately avoids 'cause': this describes the **observed data state** (presence/absence of edges,
+// whether sources were collected, whether objects exist), not a causal or property judgment on any behavior.
+// None of the four values express risk, and no rule infers 'anomaly' from 'isolated' (G-05 via condition).
 enum class IsolationState {
-    NotIsolated,
-    OwnerMissing,           // 来源采全了、对象还在，就是没有 owner 边
-    ObjectUnloaded,         // 对象已退出 / 已卸载，没有当前关系是正常的
-    SourceNotCollected,     // 本该给出关系的来源没采 / 不支持 / 被拒 / 失败 / 不完整
-    ObservedInconsistency,  // 其它模块观察到的实际不一致
+    kNotIsolated,
+    kOwnerMissing,           // Source fully collected and object exists, but the owner edge is missing.
+    kObjectUnloaded,         // Object unloaded / no longer active; no current relationships is normal.
+    kSourceNotCollected,     // Source of relationship not collected / unsupported / rejected / failed / incomplete
+    kObservedInconsistency,  // Actual inconsistencies observed by other modules.
 };
 
-const char* IsolationStateName(IsolationState state) noexcept;
+const char* isolationStateName(IsolationState state) noexcept;
 
 struct IsolationReport final {
     std::string nodeId;
     bool nodeFound = false;
     bool isolated = false;
-    IsolationState state = IsolationState::SourceNotCollected;
+    IsolationState state = IsolationState::kSourceNotCollected;
     std::uint64_t edgeCountAfterFilter = 0;
     std::uint64_t edgeCountBeforeFilter = 0;
 
-    CollectionOutcome ownerLookupOutcome;   // owner 来源的原始采集结果
+    CollectionOutcome ownerLookupOutcome;   // ownerLookupOutcome: Original collection result from the owner.
     std::string evidenceId;
-    // G-05：孤立节点仍能查看原始证据。这一位为真时 UI 必须给出"打开原始证据"。
+    // G-05: Isolated nodes can still view raw evidence. When this bit is true, the UI must offer 'Open Raw Evidence'.
     bool rawEvidenceAvailable = false;
-    // 为假时说明"连原始证据都没有"，UI 必须显示这句话而不是灰掉一个按钮了事。
+    // If false, it indicates 'no raw evidence exists'; the UI must display this message instead of merely graying out a button.
     std::string rawEvidenceMissingKey;
     std::vector<std::string> inconsistencyEvidenceIds;
     std::string explanationKey;
 };
 
-IsolationReport ClassifyIsolation(const EntityGraph& graph,
+IsolationReport classifyIsolation(const EntityGraph& graph,
                                   const std::string& nodeId,
                                   const EdgeFilter& filter);
 
 // ---------------------------------------------------------------------------
-// G-06 / G-08：列表、详情、导出与结论
+// G-06 / G-08: Lists, details, exports, and conclusions.
 // ---------------------------------------------------------------------------
 
-// 列表视图的排序键。排序只影响**显示顺序**，不影响任何结论（G-08）。
+// Sort key for list view. Sorting affects only the display order, not any conclusions (G-08).
 enum class EntityListOrder {
-    ByNodeId,
-    ByDisplayText,
-    ByKind,
-    ByEdgeCountDescending,
+    kByNodeId,
+    kByDisplayText,
+    kByKind,
+    kByEdgeCountDescending,
 };
 
-const char* EntityListOrderName(EntityListOrder order) noexcept;
+const char* entityListOrderName(EntityListOrder order) noexcept;
 
 struct EntityListRow final {
-    std::string nodeId;       // 与图、详情、导出用的是同一个 id（G-06）
-    NodeCategory category = NodeCategory::SystemObject;
-    ObjectKind kind = ObjectKind::Unknown;
+    std::string nodeId;       // Uses the same ID (G-06) as the graph, details, and export.
+    NodeCategory category = NodeCategory::kSystemObject;
+    ObjectKind kind = ObjectKind::kUnknown;
     std::string displayText;
     std::string evidenceId;
-    IdentityStrength strength = IdentityStrength::Unusable;
-    NodeLifecycle lifecycle = NodeLifecycle::Unknown;
+    IdentityStrength strength = IdentityStrength::kUnusable;
+    NodeLifecycle lifecycle = NodeLifecycle::kUnknown;
     std::uint64_t edgeCount = 0;
     bool objectNavigable = false;
     bool evidenceOpenable = false;
 };
 
-// expansion.nodeIds 里指向图中已不存在的 id 会被跳过（视图与图不同步时会发生）。
-// 跳过的条数写进 outMissingNodeCount，绝不静默丢：行数与 loadedNodes 对不上时
-// 调用方必须能说出差在哪儿（G-04：计数不许暗示已加载全部）。
-std::vector<EntityListRow> BuildEntityList(const EntityGraph& graph,
+// IDs in expansion.nodeIds that point to non-existent nodes in the graph are skipped (this occurs when the view and graph are out of sync).
+// Write the count of skipped entries to outMissingNodeCount; never drop silently. If the row count does not match
+// loadedNodes, the caller must be able to explain the discrepancy (G-04: counts must not imply all nodes were loaded).
+std::vector<EntityListRow> buildEntityList(const EntityGraph& graph,
                                            const ExpansionResult& expansion,
                                            const EdgeFilter& filter,
                                            EntityListOrder order,
                                            std::uint64_t* outMissingNodeCount = nullptr);
 
-// 一条边的推断说明。G-08："所有推断可展开规则与来源"。
+// Inference note for an edge. G-08: "All expandable inference rules and sources."
 struct EdgeInferenceNote final {
     std::string edgeId;
-    EdgeKind kind = EdgeKind::Unknown;
-    EdgeCertainty certainty = EdgeCertainty::Unknown;
+    EdgeKind kind = EdgeKind::kUnknown;
+    EdgeCertainty certainty = EdgeCertainty::kUnknown;
     std::string ruleId;
     std::string ruleDescriptionKey;
-    std::vector<std::string> evidenceRefs;  // 已排序
-    // 为什么不是 Confirmed。已经是 Confirmed 时为空。
+    std::vector<std::string> evidenceRefs;  // Sorted.
+    // Reason this is not Confirmed. Empty when already Confirmed.
     std::string notConfirmedReasonKey;
 };
 
-EdgeInferenceNote DescribeEdgeInference(const GraphEdge& edge);
+EdgeInferenceNote describeEdgeInference(const GraphEdge& edge);
 
 struct NodeDetail final {
     std::string nodeId;
     bool nodeFound = false;
-    NodeCategory category = NodeCategory::SystemObject;
-    ObjectKind kind = ObjectKind::Unknown;
+    NodeCategory category = NodeCategory::kSystemObject;
+    ObjectKind kind = ObjectKind::kUnknown;
     std::string displayText;
     std::string evidenceId;
-    IdentityStrength strength = IdentityStrength::Unusable;
-    NodeLifecycle lifecycle = NodeLifecycle::Unknown;
-    std::vector<std::string> incomingEdgeIds;  // 已排序
+    IdentityStrength strength = IdentityStrength::kUnusable;
+    NodeLifecycle lifecycle = NodeLifecycle::kUnknown;
+    std::vector<std::string> incomingEdgeIds;  // Sorted
     std::vector<std::string> outgoingEdgeIds;
     std::vector<std::string> symmetricEdgeIds;
     std::vector<EdgeInferenceNote> inferences;
     IsolationReport isolation;
 };
 
-NodeDetail BuildNodeDetail(const EntityGraph& graph,
+NodeDetail buildNodeDetail(const EntityGraph& graph,
                            const std::string& nodeId,
                            const EdgeFilter& filter);
 
-// G-08：图层结论。字段全部来自证据与账目，没有任何风险/恶意维度。
-// 同一数据换输入顺序、换排序方式，这个结构必须逐字段相同。
+// G-08: Layer conclusion. All fields are derived from evidence and accounts, with no risk/malicious dimensions.
+// For the same data, changing the input order or sorting method must result in this structure being identical field-by-field.
 struct GraphConclusion final {
-    AnalysisConclusion conclusion = AnalysisConclusion::NoEvidence;
+    AnalysisConclusion conclusion = AnalysisConclusion::kNoEvidence;
 
     std::uint64_t nodeCount = 0;
     std::uint64_t edgeCountAfterFilter = 0;
@@ -680,32 +680,32 @@ struct GraphConclusion final {
     std::uint64_t nodesWithoutEvidenceCount = 0;
 
     CoverageAccount coverage;
-    std::vector<std::string> limitationKeys;  // 已排序去重
+    std::vector<std::string> limitationKeys;  // Sorted and deduplicated
 
     friend bool operator==(const GraphConclusion& a, const GraphConclusion& b);
     friend bool operator!=(const GraphConclusion& a, const GraphConclusion& b) { return !(a == b); }
 };
 
-GraphConclusion SummarizeGraph(const EntityGraph& graph, const EdgeFilter& filter);
+GraphConclusion summarizeGraph(const EntityGraph& graph, const EdgeFilter& filter);
 
-// 导出。节点按 nodeId、边按 edgeId 排序输出，因此与插入顺序无关（G-08）。
-// 所有 64 位量走 LosslessValue 的文本形式，没有浮点（F-08）。
+// Export: nodes are sorted by nodeId and edges by edgeId, so output is independent of insertion order (G-08).
+// All 64-bit values use the text form of LosslessValue; no floating-point (F-08).
 //
-// G-06：导出件必须能把同一张图重新开出来，因此它带的不只是"屏幕上看得见的东西"：
-//   * 每个节点写出完整的 ObjectIdentity 载荷（按 kind 取对应的实例身份）与
-//     ownerRelation / ownerKind —— 少了它们，重开的会话里身份强度、跨会话主键、
-//     可导航性、孤立判据全部退化，"身份与关系一致"结构性地无法满足。
-//   * 图级别写出 envelope、已声明的关系覆盖与离线策略 —— 少了它们，结论会从
-//     NoDifferenceObserved 掉回 NoEvidence，链路会从 Present 掉成缺失。
-// 身份载荷只写该 kind 用得到的那一份：nodeKey / crossSessionKey / strength /
-// MatchNodeIdentity 全部按 kind 分派，别的槽位里的字节在本模块里没有任何含义。
-JsonValue ExportGraph(const EntityGraph& graph,
+// G-06: The exporter must be able to reconstruct the same graph, so it carries more than just "what is visible on screen":
+//   * Each node writes a complete ObjectIdentity payload (instance identity per kind) along with ownerRelation and
+//     ownerKind. Without them, identity strength, cross-session primary keys, navigability, and isolation criteria
+//     degrade in reopened sessions, making structural compliance with "identity and relationship consistency" impossible.
+//   * Graph-level output of envelope, declared relationship coverage, and offline policies — without them, the
+//     conclusion would drop from NoDifferenceObserved to NoEvidence, and the link would become missing instead of Present.
+// Identity payloads write only the portion required for that kind: nodeKey, crossSessionKey, strength, and
+// matchNodeIdentity are all dispatched by kind; bytes in other slots have no meaning within this module.
+JsonValue exportGraph(const EntityGraph& graph,
                       const ExpansionResult& expansion,
                       const EdgeFilter& filter);
 
-// 导入的账目。解析失败不抛异常，也不给"半张图"当成功：每一条被拒的记录都计数。
+// Imported accounts. Parsing failures do not throw exceptions nor treat a 'partial graph' as success: every rejected record is counted.
 struct GraphImport final {
-    bool schemaRecognised = false;   // 认得出 schema 才谈得上导入
+    bool schemaRecognised = false;   // Import is only possible if the schema is recognized.
     EntityGraph graph;
 
     std::uint64_t nodesAccepted = 0;
@@ -715,14 +715,14 @@ struct GraphImport final {
     std::uint64_t coverageAccepted = 0;
     std::uint64_t coverageRejected = 0;
 
-    std::vector<std::string> limitationKeys;  // 已排序去重
+    std::vector<std::string> limitationKeys;  // Sorted and deduplicated
 };
 
-// ExportGraph 的逆。导入只用文档里写着的东西，任何缺失字段都保持该字段的默认值
-// （默认不等于完整：缺 envelope 就是 NotCollected，缺覆盖声明就是没采）。
-GraphImport ImportGraph(const JsonValue& document);
+// Inverse of exportGraph. Import uses only what is written in the document; any missing fields retain their default values
+// (default does not equal complete: missing envelope means NotCollected, missing coverage declaration means not collected).
+GraphImport importGraph(const JsonValue& document);
 
-// 导出使用的 schema 标识。v2 起节点带完整身份载荷、图带 envelope 与覆盖声明。
+// Exports the schema identifier used. Starting from v2, nodes carry full identity payloads, and the graph includes an envelope and override declarations.
 inline constexpr const char* kEntityGraphSchema = "ksword.entityGraph.v2";
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

@@ -1,10 +1,10 @@
-// Regression harness for file-property left-navigation Tab latency.
+// regression harness for file-property left-navigation Tab latency.
 //
 // The navigation click changes QTabWidget::currentIndex synchronously. The
 // expensive page builder must run on the next event-loop turn so the right
 // side can paint the selected placeholder before the real page is constructed.
 
-#include "../Ksword5.1/Ksword5.1/UI/UI_All.h"
+#include "../apps/desktop/ui/UiSupport.h"
 
 #include <QApplication>
 #include <QCoreApplication>

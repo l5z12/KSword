@@ -1,61 +1,61 @@
-// theme_token_audit 的回归样本，不参与编译。
+// regression sample for theme_token_audit; not compiled.
 //
-// 每个 Bad* 取自真实修过的缺陷，每个 Ok* 是必须放行的正确用法。
-// 违规所在行以 KSWORD_AUDIT_EXPECT 标记；--self-test 比对「报出的行号集合」
-// 与「带标记的行号集合」是否完全一致，多报少报都算失败。
+// Each Bad* case is derived from a real fixed defect, while each Ok* represents a correct usage that must be allowed.
+// The line containing the violation is marked with KSWORD_AUDIT_EXPECT; --self-test compares the set of reported line numbers
+// against the set of marked line numbers to ensure they match exactly. Any discrepancy (extra or missing lines) counts as a failure.
 
-void BadRichTextSpan()
+void badRichTextSpan()
 {
-    // HardwareDock 原样：CPU 详情单元格。
-    // 内联样式里的 padding-right:18px; 带分号，语句定界必须跳过字符串字面量，
-    // 否则语句会在 HTML 标签之前被截断，这条违规就检不出来。
-    const QString html = QStringLiteral(
+    // HardwareDock: CPU details cell as-is.
+    // Note: The inline style's padding-right:18px; includes a semicolon. Statement delimiters must skip string literals;
+    // otherwise, the statement would be truncated before the HTML tag, and this violation would go undetected.
+    const QString kHtml = QStringLiteral(
         "<td style=\"padding-right:18px;vertical-align:top;\">"
         "<span style=\"color:%1;font-size:13px;\">%2</span></td>")
-        .arg(KswordTheme::TextSecondaryHex())  // KSWORD_AUDIT_EXPECT
+        .arg(ksword_theme::textSecondaryHex())  // KSWORD_AUDIT_EXPECT
         .arg(labelText.toHtmlEscaped());
 }
 
-void BadQColorConstruct()
+void badQColorConstruct()
 {
-    // NotificationCardManager 原样。
-    return QColor(KswordTheme::PrimaryBlueHex);  // KSWORD_AUDIT_EXPECT
+    // NotificationCardManager as-is.
+    return QColor(ksword_theme::kPrimaryBlueHex);  // KSWORD_AUDIT_EXPECT
 }
 
-void BadQColorName()
+void badQColorName()
 {
-    // PluginHost 原样。
-    const QString value = QColor(KswordTheme::TextPrimaryHex()).name();  // KSWORD_AUDIT_EXPECT
+    // PluginHost remains unchanged.
+    const QString kValue = QColor(ksword_theme::textPrimaryHex()).name();  // KSWORD_AUDIT_EXPECT
 }
 
-void BadEnvironmentHandoff()
+void badEnvironmentHandoff()
 {
-    // 跨进程传参：插件进程没有本进程的样式表。
+    // Cross-process parameter passing: the plugin process does not have this process's stylesheet.
     environment.insert(
         QStringLiteral("KSWORD_PLUGIN_COLOR_SURFACE"),
-        KswordTheme::SurfaceHex());  // KSWORD_AUDIT_EXPECT
+        ksword_theme::surfaceHex());  // KSWORD_AUDIT_EXPECT
 }
 
-void BadPaintPath()
+void badPaintPath()
 {
-    // 绘制路径：QTextCharFormat 不解析样式表函数。
-    selection.format.setForeground(KswordTheme::OnAccentDynamicHex());  // KSWORD_AUDIT_EXPECT
+    // Rendering path: QTextCharFormat does not parse stylesheet functions.
+    selection.format.setForeground(ksword_theme::onAccentDynamicHex());  // KSWORD_AUDIT_EXPECT
 }
 
-void OkStyleSheet()
+void okStyleSheet()
 {
-    // 正常样式表用法，动态角色正是为此存在，必须放行。
+    // Normal stylesheet usage; dynamic roles exist precisely for this purpose and must be allowed.
     label->setStyleSheet(
         QStringLiteral("color:%1;background:%2;border:1px solid %3;")
-        .arg(KswordTheme::TextPrimaryHex())
-        .arg(KswordTheme::SurfaceHex())
-        .arg(KswordTheme::BorderHex()));
+        .arg(ksword_theme::textPrimaryHex())
+        .arg(ksword_theme::surfaceHex())
+        .arg(ksword_theme::borderHex()));
 }
 
-void OkStaticTokenInRichText()
+void okStaticTokenInRichText()
 {
-    // 富文本配静态 token，这是修复后的正确形态，必须放行。
-    const QString html = QStringLiteral("<span style=\"color:%1;\">%2</span>")
-        .arg(KswordTheme::TextSecondaryColorHex())
+    // Rich text with a static token; this is the corrected form after the fix and must be allowed.
+    const QString kHtml = QStringLiteral("<span style=\"color:%1;\">%2</span>")
+        .arg(ksword_theme::textSecondaryColorHex())
         .arg(bodyText.toHtmlEscaped());
 }

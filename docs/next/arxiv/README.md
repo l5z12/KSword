@@ -15,7 +15,7 @@
 - `table-provenance.json`：各数值表输入的 SHA256 和关键统计重算值。
 - `review-notes.md`：数据边界与作者审查入口。
 
-运行构建后，交付文件在仓库 `output/pdf/`：
+运行构建后，交付文件在仓库 `artifacts/pdf/`：
 
 - `ksword-live-interposition-v1.pdf`：完整预印本。
 - `ksword-arxiv-source-v1.zip`：只含编译所需 TeX、文献和图表源码的上传包。

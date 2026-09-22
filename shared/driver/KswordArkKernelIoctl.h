@@ -4,11 +4,11 @@
 
 // ============================================================
 // KswordArkKernelIoctl.h
-// 作用：
-// - 定义 R3 <-> R0 内核检查协议；
-// - 当前覆盖 SSDT/SSSDT 快照、Inline Hook、IAT/EAT Hook 与 DriverObject 查询；
-// - 只读地址不能单独作为操作凭据；修改请求必须带名称并由 R0 重新引用对象，
-//   再校验 DriverObject/DeviceObject/子对象三重身份。
+// Purpose:
+// - Define the R3 <-> R0 kernel inspection protocol;
+// - Currently covers SSDT/SSSDT snapshots, Inline Hook, IAT/EAT Hook, and DriverObject queries.
+// - Read-only addresses cannot serve as standalone credentials. Modification requests must include a name,
+//   be re-validated by R0, and verify the triple identity of DriverObject, DeviceObject, and child objects.
 // ============================================================
 
 #define KSWORD_ARK_IOCTL_FUNCTION_ENUM_SSDT 0x806
@@ -40,7 +40,7 @@
         METHOD_BUFFERED, \
         FILE_ANY_ACCESS)
 
-// 中文说明：查询 KswordARK 自身静态 IOCTL 注册表，只返回只读诊断元数据。
+// Note: Query KswordARK's own static IOCTL registry, returning only read-only diagnostic metadata.
 #define IOCTL_KSWORD_ARK_QUERY_IOCTL_REGISTRY \
     CTL_CODE( \
         KSWORD_ARK_IOCTL_DEVICE_TYPE, \
@@ -48,7 +48,7 @@
         METHOD_BUFFERED, \
         FILE_ANY_ACCESS)
 
-// 中文说明：按处理器只读遍历 KPRCB TimerTable，并返回 KTIMER/KDPC 快照。
+// Note: Iterates the KPRCB TimerTable read-only per processor and returns snapshots of KTIMER/KDPC.
 #define IOCTL_KSWORD_ARK_ENUM_TIMER_DPC \
     CTL_CODE( \
         KSWORD_ARK_IOCTL_DEVICE_TYPE, \
@@ -56,8 +56,8 @@
         METHOD_BUFFERED, \
         FILE_ANY_ACCESS)
 
-// 中文说明：启用/停止由 IoInitializeTimer 注册的设备 IoTimer。
-// R0 只调用 WDK 公开 IoStartTimer/IoStopTimer，不解引用私有 IO_TIMER 布局。
+// Note: Enable/stop the device IoTimer registered by IoInitializeTimer.
+// R0 only calls WDK-public IoStartTimer/IoStopTimer and does not dereference the private IO_TIMER layout.
 #define IOCTL_KSWORD_ARK_CONTROL_IO_TIMER \
     CTL_CODE( \
         KSWORD_ARK_IOCTL_DEVICE_TYPE, \
@@ -65,8 +65,8 @@
         METHOD_BUFFERED, \
         FILE_WRITE_ACCESS)
 
-// 实验性整机级动作：HalReturnToFirmware 不是线程/进程终止 API。
-// 当前只允许 HalRebootRoutine，并要求 UI 明确完成双重确认。
+// Experimental whole-machine action: HalReturnToFirmware is not a thread/process termination API.
+// Currently, only HalRebootRoutine is allowed, requiring explicit double confirmation from the UI.
 #define IOCTL_KSWORD_ARK_EXPERIMENTAL_RETURN_TO_FIRMWARE \
     CTL_CODE( \
         KSWORD_ARK_IOCTL_DEVICE_TYPE, \
@@ -202,8 +202,8 @@ typedef struct _KSWORD_ARK_QUERY_IOCTL_REGISTRY_RESPONSE
 #define KSWORD_ARK_PHYSICAL_MEMORY_LAYOUT_PROTOCOL_VERSION 1UL
 #define KSWORD_ARK_TIMER_DPC_PROTOCOL_VERSION 1UL
 
-// Timer/DPC request bounds and response state. 枚举只读取活动 KTIMER 链表，
-// maxEntries 为全局行预算，maxEntriesPerBucket 限制单个损坏链表的影响范围。
+// Timer/DPC request bounds and response state. The enumeration only reads the active KTIMER list; maxEntries
+// is the global row budget, and maxEntriesPerBucket limits the impact of a single corrupted list.
 #define KSWORD_ARK_TIMER_DPC_DEFAULT_MAX_ENTRIES 4096UL
 #define KSWORD_ARK_TIMER_DPC_MAX_ENTRIES 16384UL
 #define KSWORD_ARK_TIMER_DPC_DEFAULT_BUCKET_BUDGET 4096UL
@@ -238,22 +238,22 @@ typedef struct _KSWORD_ARK_QUERY_IOCTL_REGISTRY_RESPONSE
 #define KSWORD_ARK_KERNEL_SCAN_FLAG_INCLUDE_IMPORTS   0x00000010UL
 #define KSWORD_ARK_KERNEL_PATCH_FLAG_FORCE            0x00000001UL
 // Driver unload flags。
-// - CLEAR_DISPATCH_ON_NO_UNLOAD：目标没有 DriverUnload 时把 MajorFunction 替换为拒绝 IRP stub，并清 FastIo。
-// - CLEAR_DISPATCH_AFTER_UNLOAD：DriverUnload 返回后把 MajorFunction 替换为拒绝 IRP stub，并清 FastIo。
-// - CLEAR_UNLOAD_POINTER：清空 DriverObject->DriverUnload，避免重复入口被误调用。
-// - DELETE_DEVICE_OBJECTS_ON_NO_UNLOAD：目标没有 DriverUnload 时尝试删除 DeviceObject 链。
-// - DELETE_DEVICE_OBJECTS_ALWAYS：最高风险实验强拆；即使 DriverUnload 返回也尝试删除 DeviceObject 链。
-// - MAKE_TEMPORARY_OBJECT：调用 ObMakeTemporaryObject，配合引用释放触发对象回收。
-// - TARGET_MODULE_BASE_PRESENT：请求携带模块基址，R0 先按 DriverObject->DriverStart 反查目标。
-// - REMOVE_CALLBACKS_BY_MODULE_BASE：请求携带模块基址时，先批量移除该模块登记的可移除回调。
-// - ALLOW_DESTRUCTIVE_CLEANUP：显式允许持久 DriverObject 改写和高危后处理。
-// - DIRECT_UNLOAD_CALL：跳过 ZwUnloadDriver，仅调用 DriverObject->DriverUnload。
-// - DRIVER_OBJECT_TEARDOWN：执行 DriverObject 强拆模式；R0 固定按“封 dispatch、停线程、调 unload、拆设备”顺序执行。
-// - CLEAR_DISPATCH_BEFORE_UNLOAD：在调用 DriverUnload 前把 MajorFunction 替换为拒绝 IRP stub，并清 FastIo。
-// - TERMINATE_MODULE_THREADS：终止系统进程中入口位于目标驱动镜像内的线程，并等待它们退出。
-// - DETACH_DEVICE_STACKS：删除目标 DeviceObject 前解除其上下层设备栈关联。
-// 注意：CLEAR_* / DELETE_* / MAKE_TEMPORARY / REMOVE_CALLBACKS 均可能破坏目标驱动后续正常卸载；
-//      R0 会把缺少 ALLOW_DESTRUCTIVE_CLEANUP 的旧 FORCE_CLEANUP 请求降级为“仅调用 DriverUnload”。
+// - CLEAR_DISPATCH_ON_NO_UNLOAD: Replace MajorFunction with a rejection IRP stub and clear FastIo when the target lacks a DriverUnload routine.
+// - CLEAR_DISPATCH_AFTER_UNLOAD: Replace MajorFunction with a stub that rejects IRPs after DriverUnload returns, and clear FastIo.
+// - CLEAR_UNLOAD_POINTER: Clears DriverObject->DriverUnload to prevent the duplicate entry from being erroneously called.
+// - DELETE_DEVICE_OBJECTS_ON_NO_UNLOAD: Attempt to delete the DeviceObject chain when the target lacks a DriverUnload routine.
+// - DELETE_DEVICE_OBJECTS_ALWAYS: Highest-risk experimental forced removal; attempts to delete the DeviceObject chain even if DriverUnload returns.
+// - MAKE_TEMPORARY_OBJECT: Calls ObMakeTemporaryObject; combined with reference release, it triggers object reclamation.
+// - TARGET_MODULE_BASE_PRESENT: Request to carry the module base address; R0 first reverses the target using DriverObject->DriverStart.
+// - REMOVE_CALLBACKS_BY_MODULE_BASE: When requesting module base addresses, first batch-remove all removable callbacks registered for that module.
+// - ALLOW_DESTRUCTIVE_CLEANUP: Explicitly permits rewriting the persistent DriverObject and performing high-risk post-processing.
+// - DIRECT_UNLOAD_CALL: Skip ZwUnloadDriver and call DriverObject->DriverUnload directly.
+// - DRIVER_OBJECT_TEARDOWN: executes the DriverObject force-teardown mode; R0 strictly follows the sequence: "block dispatch, stop threads, call unload, teardown devices".
+// - CLEAR_DISPATCH_BEFORE_UNLOAD: Replace MajorFunction with a rejection IRP stub and clear FastIo before calling DriverUnload.
+// - TERMINATE_MODULE_THREADS: Terminate threads in system processes whose entry points reside in the target driver image, and wait for them to exit.
+// - DETACH_DEVICE_STACKS: Detach the target DeviceObject from its upper and lower device stack before deletion.
+// Note: CLEAR_*, DELETE_*, MAKE_TEMPORARY, and REMOVE_CALLBACKS may all disrupt the target driver's subsequent normal unloading.
+//      R0 downgrades old FORCE_CLEANUP requests lacking ALLOW_DESTRUCTIVE_CLEANUP to 'call DriverUnload only'.
 #define KSWORD_ARK_DRIVER_UNLOAD_FLAG_CLEAR_DISPATCH_ON_NO_UNLOAD      0x00000001UL
 #define KSWORD_ARK_DRIVER_UNLOAD_FLAG_CLEAR_DISPATCH_AFTER_UNLOAD      0x00000002UL
 #define KSWORD_ARK_DRIVER_UNLOAD_FLAG_CLEAR_UNLOAD_POINTER             0x00000004UL
@@ -281,7 +281,7 @@ typedef struct _KSWORD_ARK_QUERY_IOCTL_REGISTRY_RESPONSE
      KSWORD_ARK_DRIVER_UNLOAD_FLAG_CLEAR_DISPATCH_AFTER_UNLOAD | \
      KSWORD_ARK_DRIVER_UNLOAD_FLAG_CLEAR_UNLOAD_POINTER)
 
-// DriverObject 查询 flags。
+// DriverObject query flags.
 #define KSWORD_ARK_DRIVER_OBJECT_QUERY_FLAG_INCLUDE_MAJOR_FUNCTIONS 0x00000001UL
 #define KSWORD_ARK_DRIVER_OBJECT_QUERY_FLAG_INCLUDE_DEVICES         0x00000002UL
 #define KSWORD_ARK_DRIVER_OBJECT_QUERY_FLAG_INCLUDE_NAMES           0x00000004UL
@@ -347,11 +347,11 @@ typedef struct _KSWORD_ARK_QUERY_IOCTL_REGISTRY_RESPONSE
 #define KSWORD_ARK_DRIVER_INTEGRITY_RISK_DYNDATA_UNAVAILABLE   0x00040000UL
 #define KSWORD_ARK_DRIVER_INTEGRITY_RISK_TRUNCATED             0x00080000UL
 #define KSWORD_ARK_DRIVER_INTEGRITY_RISK_IDT_BASELINE_CHANGED  0x00100000UL
-// 本 CPU 的 IDTR 与多数派 CPU 不一致：典型的「只在当前核心上 lidt 换表」痕迹。
+// The IDTR of this CPU differs from the majority: typical evidence of 'loading a new IDT via lidt only on the current core'.
 #define KSWORD_ARK_DRIVER_INTEGRITY_RISK_IDT_TABLE_DIVERGED    0x00200000UL
-// 本 CPU 的 IDTR 与驱动启动期抓取的基线不一致：整张 IDT 被搬到了新地址。
+// The IDTR of this CPU is inconsistent with the baseline captured at driver startup: the entire IDT has been relocated to a new address.
 #define KSWORD_ARK_DRIVER_INTEGRITY_RISK_IDT_TABLE_RELOCATED   0x00400000UL
-// 目标指针虽落在某个已加载模块内，但不在该模块的可执行节里。
+// The target pointer resides within a loaded module but not in its executable section.
 #define KSWORD_ARK_DRIVER_INTEGRITY_RISK_TARGET_NON_EXEC       0x00800000UL
 
 // Driver Integrity response field flags.
@@ -373,8 +373,8 @@ typedef struct _KSWORD_ARK_QUERY_IOCTL_REGISTRY_RESPONSE
 #define KSWORD_ARK_DESCRIPTOR_BASELINE_FLAG_DIFFERS   0x00000002UL
 #define KSWORD_ARK_DESCRIPTOR_BASELINE_FLAG_SAME_TABLE 0x00000004UL
 
-// IDT/GDT 描述符通用标志。它们仅表示 R0 采集到的硬件位，
-// 不用于写回或重建描述符。
+// Common IDT/GDT descriptor flags. They represent only hardware bits
+// collected by R0 and are not used to write back or reconstruct descriptors.
 #define KSWORD_ARK_DESCRIPTOR_FLAG_PRESENT             0x00000001UL
 #define KSWORD_ARK_DESCRIPTOR_FLAG_GRANULARITY_PAGE    0x00000002UL
 #define KSWORD_ARK_DESCRIPTOR_FLAG_USER_SEGMENT        0x00000004UL
@@ -431,7 +431,7 @@ typedef struct _KSWORD_ARK_QUERY_IOCTL_REGISTRY_RESPONSE
 #define KSWORD_ARK_SSDT_ENTRY_FLAG_STUB_EXPORT         0x00000008UL
 #define KSWORD_ARK_SSDT_ENTRY_FLAG_TABLE_VALUE_CAPTURED 0x00000010UL
 
-// Kernel hook 行状态。
+// Kernel hook line status.
 #define KSWORD_ARK_KERNEL_HOOK_STATUS_UNKNOWN             0UL
 #define KSWORD_ARK_KERNEL_HOOK_STATUS_CLEAN               1UL
 #define KSWORD_ARK_KERNEL_HOOK_STATUS_SUSPICIOUS          2UL
@@ -452,7 +452,7 @@ typedef struct _KSWORD_ARK_QUERY_IOCTL_REGISTRY_RESPONSE
 #define KSWORD_ARK_KERNEL_HOOK_HASH_STATUS_UNAVAILABLE    0UL
 #define KSWORD_ARK_KERNEL_HOOK_HASH_STATUS_CURRENT_BYTES  1UL
 
-// Inline Hook 类型。
+// Inline Hook types.
 #define KSWORD_ARK_INLINE_HOOK_TYPE_NONE                  0UL
 #define KSWORD_ARK_INLINE_HOOK_TYPE_JMP_REL32             1UL
 #define KSWORD_ARK_INLINE_HOOK_TYPE_JMP_REL8              2UL
@@ -463,15 +463,15 @@ typedef struct _KSWORD_ARK_QUERY_IOCTL_REGISTRY_RESPONSE
 #define KSWORD_ARK_INLINE_HOOK_TYPE_INT3_PATCH            7UL
 #define KSWORD_ARK_INLINE_HOOK_TYPE_UNKNOWN_PATCH         8UL
 
-// Inline 修复模式。
+// Inline patch mode.
 #define KSWORD_ARK_INLINE_PATCH_MODE_NOP_BRANCH           1UL
 #define KSWORD_ARK_INLINE_PATCH_MODE_RESTORE_BYTES        2UL
 
-// IAT/EAT Hook 类型。
+// IAT/EAT Hook type.
 #define KSWORD_ARK_IAT_EAT_HOOK_CLASS_IAT                 1UL
 #define KSWORD_ARK_IAT_EAT_HOOK_CLASS_EAT                 2UL
 
-// DriverObject 查询状态。
+// DriverObject query status.
 #define KSWORD_ARK_DRIVER_OBJECT_QUERY_STATUS_UNAVAILABLE      0UL
 #define KSWORD_ARK_DRIVER_OBJECT_QUERY_STATUS_OK               1UL
 #define KSWORD_ARK_DRIVER_OBJECT_QUERY_STATUS_PARTIAL          2UL
@@ -481,7 +481,7 @@ typedef struct _KSWORD_ARK_QUERY_IOCTL_REGISTRY_RESPONSE
 #define KSWORD_ARK_DRIVER_OBJECT_QUERY_STATUS_BUFFER_TOO_SMALL 6UL
 #define KSWORD_ARK_DRIVER_OBJECT_QUERY_STATUS_QUERY_FAILED     7UL
 
-// Driver force-unload 状态。
+// Driver force-unload status.
 #define KSWORD_ARK_DRIVER_UNLOAD_STATUS_UNKNOWN            0UL
 #define KSWORD_ARK_DRIVER_UNLOAD_STATUS_UNLOADED           1UL
 #define KSWORD_ARK_DRIVER_UNLOAD_STATUS_UNLOAD_ROUTINE_MISSING 2UL
@@ -627,10 +627,10 @@ typedef struct _KSWORD_ARK_SCAN_KERNEL_HOOKS_REQUEST
 } KSWORD_ARK_SCAN_KERNEL_HOOKS_REQUEST;
 
 /*
- * Inline Hook 行兼容说明：
- * expectedBytes 是旧协议字段名，当前 R0 填入运行时观察基线，
- * 不代表磁盘干净/原始字节。R3 如需干净基线，应按 moduleBase
- * 与 functionAddress 计算 RVA 后从磁盘模块文件读取并自行比较。
+ * Inline Hook line compatibility note:
+ * expectedBytes is a legacy field name; R0 currently populates it with the runtime observation baseline,
+ * which does not represent clean/original disk bytes. If R3 requires a clean baseline, it must calculate
+ * the RVA based on moduleBase and functionAddress, then read and compare against the disk module file.
  */
 typedef struct _KSWORD_ARK_INLINE_HOOK_ENTRY
 {
@@ -756,13 +756,13 @@ typedef struct _KSWORD_ARK_DRIVER_DEVICE_ENTRY
     unsigned long long attachedDeviceObjectAddress;
     unsigned long long driverObjectAddress;
     wchar_t deviceName[KSWORD_ARK_DRIVER_DEVICE_NAME_CHARS];
-    // 中文说明：DEVICE_OBJECT.Timer 是 WDK 公开字段；这里只返回只读 PIO_TIMER 地址，
-    // 供 R3 构造旧版 SKT64 同等的 IoTimer 清单，不把该地址作为后续修改凭据。
+    // Note: DEVICE_OBJECT.Timer is a public WDK field; this returns only the read-only PIO_TIMER address to allow R3 to construct
+    // an IoTimer list equivalent to the legacy SKT64, without using this address as a credential for subsequent modifications.
     unsigned long long ioTimerAddress;
 } KSWORD_ARK_DRIVER_DEVICE_ENTRY;
 
-// v1 在 ioTimerAddress 加入前结束于 deviceName。R3 使用该常量兼容旧驱动，
-// v2 驱动通过 deviceEntrySize 明确告知完整行宽。
+// v1 ends at deviceName before ioTimerAddress was added. R3 uses this constant for compatibility
+// with older drivers; v2 drivers explicitly specify the full row width via deviceEntrySize.
 #define KSWORD_ARK_DRIVER_DEVICE_ENTRY_V1_SIZE \
     (sizeof(KSWORD_ARK_DRIVER_DEVICE_ENTRY) - sizeof(unsigned long long))
 
@@ -894,7 +894,7 @@ typedef struct _KSWORD_ARK_DRIVER_INTEGRITY_EVIDENCE
     unsigned long long kldrDllBase;
     unsigned long kldrSizeOfImage;
     unsigned long reserved2;
-    // v3 尾部：IDT/GDT 描述符结构化字段，v1/v2 客户端可按 entrySize 忽略。
+    // v3 tail: structured fields for IDT/GDT descriptors; v1/v2 clients can ignore based on entrySize.
     unsigned long descriptorSelector;
     unsigned long descriptorType;
     unsigned long descriptorDpl;
@@ -906,7 +906,7 @@ typedef struct _KSWORD_ARK_DRIVER_INTEGRITY_EVIDENCE
     unsigned long long descriptorLimit;
     unsigned long long descriptorRawLow;
     unsigned long long descriptorRawHigh;
-    // v4 尾部：驱动加载早期捕获的 IDT 只读基线；不适用于 GDT 行。
+    // v4 tail: IDT read-only baseline captured early during driver loading; not applicable to GDT entries.
     unsigned long baselineDescriptorFlags;
     unsigned long baselineGeneration;
     unsigned long long baselineDescriptorBase;
@@ -1040,7 +1040,7 @@ typedef struct _KSWORD_ARK_FORCE_UNLOAD_DRIVER_RESPONSE
     unsigned long version;
     unsigned long status;
     unsigned long flags;
-    unsigned long reserved; // requestedFlags：R3 原始请求 flags；R0 日志用于区分“未请求”和“preflight 降级”。
+    unsigned long reserved; // requestedFlags: R3 original request flags; R0 logs distinguish between 'not requested' and 'preflight downgrade'.
     long lastStatus;
     long waitStatus;
     unsigned long cleanupFlagsApplied;

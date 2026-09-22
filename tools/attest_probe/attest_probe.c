@@ -1,28 +1,28 @@
 /*
- * attest_probe —— 取回安全内核（VTL1）签名的运行时驱动清单并原样打印。
+ * attest_probe: Retrieve and print the runtime driver manifest signed by the secure kernel (VTL1) as-is.
  *
- * 为什么值得有这么个东西：在开着 VBS 的机器上我们拿不到 EPT（见
- * docs/next/VBS共存结论.md），但 VBS 本身白送了一个我们从没用过的判据面 ——
- * GetRuntimeAttestationReport 让一个**普通 VTL0 用户态进程**拿到一份由
- * 安全内核生成并签名的模块清单，**而且包含已经卸载的模块**。
- * 那是 EPT cross-view 也给不了的东西：EPT 只能看见此刻映射着的页。
+ * Why this is useful: On a machine with VBS enabled, we cannot access EPT, but VBS
+ * provides an additional source of evidence. GetRuntimeAttestationReport lets an
+ * **ordinary VTL0 user-mode process** obtain a module list generated and signed by
+ * the secure kernel, **including modules that have already been unloaded**.
+ * This is something EPT cross-view cannot provide: EPT can only see pages mapped at this exact moment.
  *
- * 本工具**只打印，不下判据**。差集判据要等这份原始数据看清楚之后再写 ——
- * 这条路的失败形态是假阳性告警，对一个 ARK 工具比漏报更难看。
+ * This tool **only prints, does not make judgments**. The difference-set criteria will be written after reviewing this raw data.
+ * The failure mode of this approach is false-positive alerts, which is more embarrassing for an ARK tool than missing detections.
  *
- * 三个已实测的坑，都在下面就地注明：
- *   1. 导出在 kernelbase.dll，**不在** kernel32（微软文档写的是 kernel32）；
- *   2. 尺寸查询返回 **FALSE + ERROR_INSUFFICIENT_BUFFER(122)**，
- *      按"FALSE 即失败"写会直接把这条路判死；
- *   3. RUNTIME_REPORT_PACKAGE_HEADER 因 UINT64 对齐实际 sizeof 是 40 而非
- *      字段和 36 —— 手算布局会差 4 字节。本文件一律用 sizeof/FIELD_OFFSET。
+ * Three proven pitfalls are noted locally below:
+ *   1. Exported in kernelbase.dll, **not** in kernel32 (Microsoft documentation incorrectly states kernel32);
+ *   2. Size query returns FALSE + ERROR_INSUFFICIENT_BUFFER(122); writing based
+ *      on 'FALSE means failure' would incorrectly treat this path as a hard failure.
+ *   3. RUNTIME_REPORT_PACKAGE_HEADER has an actual sizeof of 40 due to UINT64 alignment, not 36 as the sum of fields
+ *      suggests—manual layout calculation would be off by 4 bytes. This file consistently uses sizeof/FIELD_OFFSET.
  */
 
 #include <windows.h>
 #include <psapi.h>
 /*
- * mscat.h 链进来的 mssip.h 里有无名 union，在 /W4 /WX 下是 C4201 错误。
- * 那是 SDK 自己的头，只在这一处局部关掉，不动本工具的告警级别。
+ * mscat.h includes mssip.h, which contains an anonymous union, causing C4201 errors under /W4 /WX.
+ * That is the SDK's own header; disable warnings only locally here without changing the tool's global warning level.
  */
 #pragma warning(push)
 #pragma warning(disable: 4201)
@@ -36,37 +36,37 @@
 #pragma comment(lib, "wintrust.lib")
 
 /*
- * 用 GetProcAddress 而不是直接调用，有两个独立理由：
- *   * 声明被 NTDDI_WIN11_GE 门控，直接调要抬整个 SDK 目标版本；
- *   * 真正的导出在 kernelbase.dll，链接 kernel32.lib 找不到符号
- *     （官方文档的 req.dll/req.lib 两行都写的是 Kernel32 —— 实测是错的）。
+ * Use GetProcAddress instead of direct calls for two independent reasons:
+ *   * Guarded by NTDDI_WIN11_GE; calling directly would require raising the entire SDK target version.
+ *   * The actual export resides in kernelbase.dll; linking against kernel32.lib fails to resolve
+ *     the symbol (the official documentation incorrectly lists both req.dll and req.lib as Kernel32).
  */
 typedef BOOL (WINAPI *PFN_GET_RUNTIME_ATTESTATION_REPORT)(
-    UCHAR* Nonce,
-    UINT16 PackageVersion,
-    UINT64 ReportTypesBitmap,
-    PVOID ReportBuffer,
-    PUINT32 ReportBufferSize);
+    UCHAR* nonce,
+    UINT16 packageVersion,
+    UINT64 reportTypesBitmap,
+    PVOID reportBuffer,
+    PUINT32 reportBufferSize);
 
-static int g_json = 0;
-static int g_verdict = 0;
-
-/*
- * 变异测试用：把某个 VTL0 模块从参照面里抹掉，模拟"它对 VTL0 隐身"。
- * 注入点刻意放在**数据侧**（抹哈希与名字），判据代码一行不动 ——
- * 否则测的是测试桩不是判据。零命中这种结果没有证明力，
- * 必须先证明判据能命中，"本机基线为零"才是一句有内容的话。
- */
-static const char* g_hideName = NULL;
+static int gJson = 0;
+static int gVerdict = 0;
 
 /*
- * 反向判据的变异测试：把某个 VTL0 模块同时从"运行时报告"与"启动清单"两侧
- * 抹掉，模拟"它正加载着，但没有任何一份签名清单认识它"。
- * 同样只动数据，不动判据代码。
+ * Mutation testing: remove a VTL0 module from the reference set to simulate it being invisible to VTL0.
+ * The injection point is deliberately placed on the **data side** (erasing hashes and names) without modifying the
+ * criteria code by a single line; otherwise, we are testing the stub, not the criteria. A zero-hit result has no
+ * proof value; we must first prove the criteria can hit, so "local baseline is zero" becomes a meaningful statement.
  */
-static const char* g_orphanName = NULL;
+static const char* gHideName = NULL;
 
-static void PrintHashHex(const BYTE* data, size_t bytes, size_t maxBytes)
+/*
+ * Mutation testing for the negative criterion: remove a VTL0 module simultaneously from both the "runtime report"
+ * and the "boot manifest" to simulate a scenario where it is loaded but unrecognized by any signature manifest.
+ * Only modify data, not the decision logic.
+ */
+static const char* gOrphanName = NULL;
+
+static void printHashHex(const BYTE* data, size_t bytes, size_t maxBytes)
 {
     size_t i;
     size_t n = (bytes < maxBytes) ? bytes : maxBytes;
@@ -79,8 +79,8 @@ static void PrintHashHex(const BYTE* data, size_t bytes, size_t maxBytes)
     }
 }
 
-/* 把 CALG_* 摘要算法号翻译成人话；未知的原样给出编号。 */
-static const char* HashAlgName(UINT16 alg)
+/* Translate CALG_* hash algorithm IDs into human-readable names; unknown ones are given as their numeric IDs. */
+static const char* hashAlgName(UINT16 alg)
 {
     switch (alg) {
     case 0x8003: return "MD5";
@@ -94,12 +94,12 @@ static const char* HashAlgName(UINT16 alg)
 }
 
 /*
- * 摘要的**有效**长度由每条自己的 ImageHashAlgorithm 决定，不是
- * DRIVER_REPORT_DIGEST_MAX_SIZE。按最大长度打会把紧跟其后的
- * PublisherThumbprint 一起打出来 —— 实测 afd.sys 的"哈希"后半段
- * 恰好就是它的证书指纹，看上去像一个 64 字节摘要，其实是两个字段。
+ * The **valid** length of the digest is determined by each ImageHashAlgorithm, not by
+ * DRIVER_REPORT_DIGEST_MAX_SIZE. Using the maximum length would hash the subsequent
+ * PublisherThumbprint as well — in practice, the latter half of afd.sys's "hash" is exactly its
+ * certificate fingerprint, appearing as a 64-byte digest but actually representing two fields.
  */
-static UINT32 HashLen(UINT16 alg)
+static UINT32 hashLen(UINT16 alg)
 {
     switch (alg) {
     case 0x8003: return 16U;  /* MD5    */
@@ -111,11 +111,11 @@ static UINT32 HashLen(UINT16 alg)
     }
 }
 
-/* 证书指纹恒为 SHA1，20 字节。 */
+/* Certificate fingerprint is always SHA1, 20 bytes. */
 #define THUMBPRINT_LEN 20U
 
-/* JSON 字符串转义，只处理这份报告里可能出现的字符。 */
-static void PrintJsonString(const char* s, size_t maxLen)
+/* JSON string escaping: only handle characters that may appear in this report. */
+static void printJsonString(const char* s, size_t maxLen)
 {
     size_t i;
 
@@ -134,59 +134,59 @@ static void PrintJsonString(const char* s, size_t maxLen)
 }
 
 /*
- * VTL0 侧的参照面用 NtQuerySystemInformation(SystemModuleInformation) 而不是
- * psapi 的 EnumDeviceDrivers。理由是实测出来的：EnumDeviceDrivers 能给出正确的
- * **条数**，但配套的 GetDeviceDriverBaseName 在本机把 265 条名字**全部**返回成
- * "ntoskrnl.exe"。拿那个当参照面，差集里会凭空多出两百多条假阳性。
- * SystemModuleInformation 直接带 FullPathName，不依赖二次查询。
+ * On the VTL0 side, use NtQuerySystemInformation(SystemModuleInformation) instead of psapi's EnumDeviceDrivers
+ * as the reference surface. The reason is empirical: EnumDeviceDrivers provides correct results.
+ * **Count**, but the paired GetDeviceDriverBaseName on this machine returns all 265 names as "ntoskrnl.exe".
+ * Using that as the reference set causes over 200 false positives to appear out of nowhere in the difference set.
+ * SystemModuleInformation includes FullPathName directly, without requiring a secondary query.
  */
 #define SYSTEM_MODULE_INFORMATION_CLASS 11
 #define STATUS_INFO_LENGTH_MISMATCH_L   ((LONG)0xC0000004L)
 
-typedef struct _KSW_RTL_PROCESS_MODULE_INFORMATION {
-    HANDLE Section;
-    PVOID  MappedBase;
-    PVOID  ImageBase;
-    ULONG  ImageSize;
-    ULONG  Flags;
-    USHORT LoadOrderIndex;
-    USHORT InitOrderIndex;
-    USHORT LoadCount;
-    USHORT OffsetToFileName;
-    UCHAR  FullPathName[256];
-} KSW_RTL_PROCESS_MODULE_INFORMATION;
+typedef struct KswRtlProcessModuleInformation {
+    HANDLE section;
+    PVOID  mappedBase;
+    PVOID  imageBase;
+    ULONG  imageSize;
+    ULONG  flags;
+    USHORT loadOrderIndex;
+    USHORT initOrderIndex;
+    USHORT loadCount;
+    USHORT offsetToFileName;
+    UCHAR  fullPathName[256];
+} KswRtlProcessModuleInformation;
 
-typedef struct _KSW_RTL_PROCESS_MODULES {
-    ULONG NumberOfModules;
-    KSW_RTL_PROCESS_MODULE_INFORMATION Modules[1];
-} KSW_RTL_PROCESS_MODULES;
+typedef struct KswRtlProcessModules {
+    ULONG numberOfModules;
+    KswRtlProcessModuleInformation modules[1];
+} KswRtlProcessModules;
 
 typedef LONG (WINAPI *PFN_NT_QUERY_SYSTEM_INFORMATION)(
-    ULONG SystemInformationClass,
-    PVOID SystemInformation,
-    ULONG SystemInformationLength,
-    PULONG ReturnLength);
+    ULONG systemInformationClass,
+    PVOID systemInformation,
+    ULONG systemInformationLength,
+    PULONG returnLength);
 
 #define ATTEST_NAME_MAX 128
 
 /*
  * ---- TCG Log (WBCL) ----
  *
- * VTL1 的运行时报告里 IncludeBootDrivers=0，启动期驱动整批缺失。那一批在
- * 引导期被度量进 TPM，日志由 Windows 落在 %WINDIR%\Logs\MeasuredBoot\ 下，
- * **普通用户可读，不需要提权，也不需要机器上真有 TPM**（本机 Get-Tpm 查不到
- * 信息，日志照样在）。所以不走 TBS 的 Tbsi_Get_TCG_Log。
+ * VTL1 runtime reports IncludeBootDrivers=0, causing the entire batch of boot drivers to be missing. This batch was
+ * measured into the TPM during the boot phase, and the logs are written by Windows to %WINDIR%\Logs\MeasuredBoot\.
+ * **Readable by standard users without privilege escalation, and does not require a physical TPM on the machine** (even if
+ * `Get-Tpm` on this machine returns no info, logs are still generated). Therefore, it does not use TBS's `Tbsi_Get_TCG_Log`.
  *
- * 本机实测（Windows 11 26300，日志 95043 字节）：
- *   45 条顶层事件，恰好吃满整个文件；摘要表只有一种算法 SHA256(0x000B/32 字节)；
- *   EV_EVENT_TAG 里 9 条 SIPAEVENT_TRUSTBOUNDARY(0x40010001) 容器；
- *   其中嵌着 212 个 SIPAEVENT_LOADEDMODULE_AGGREGATION(0x40010003)：
- *   PCR12 106 个（只有摘要与大小）、PCR13 106 个（带路径/证书/内部名）。
- *   106 个模块里 74 个是 .sys。
+ * Local test (Windows 11 26300, log 95043 bytes):
+ *   45 top-level events exactly fill the entire file; the summary table uses only one algorithm: SHA256 (0x000B/32 bytes).
+ *   9 SIPAEVENT_TRUSTBOUNDARY (0x40010001) containers within EV_EVENT_TAG;
+ *   It contains 212 SIPAEVENT_LOADEDMODULE_AGGREGATION (0x40010003) entries:
+ *   PCR12: 106 entries (digest and size only); PCR13: 106 entries (with path/certificate/internal name).
+ *   106 modules contain 74 .sys files.
  *
- * **最关键的一条标定**：这 74 个 .sys 的 0x00070004 摘要与磁盘文件的
- * Authenticode PE image hash **74/74 逐字节一致，零例外**。也就是说
- * 启动清单、VTL1 运行时报告、我们自己对磁盘算的哈希，三者是同一套键空间。
+ * Most critical calibration: The 0x00070004 digests of these 74 .sys files match the Authenticode
+ * PE image hashes of the disk files byte-for-byte (74/74, zero exceptions). This means the boot
+ * manifest, VTL1 runtime reports, and our own disk-calculated hashes all share the same key space.
  */
 #define TCG_EV_EVENT_TAG            0x00000006UL
 #define SIPA_AGGREGATION_BIT        0x40000000UL
@@ -202,58 +202,58 @@ typedef LONG (WINAPI *PFN_NT_QUERY_SYSTEM_INFORMATION)(
 #define BOOT_MODULE_MAX 512
 
 typedef struct {
-    char   path[MAX_PATH];       /* NT 相对路径，形如 \WINDOWS\System32\drivers\x.sys */
+    char   path[MAX_PATH];       /* NT relative path, e.g., \WINDOWS\System32\drivers\x.sys */
     char   internalName[ATTEST_NAME_MAX];
     BYTE   hash[64];
     UINT32 hashLen;
-    UINT16 alg;                  /* CALG_*，本机恒为 0x800C(SHA256) */
+    UINT16 alg;                  /* CALG_*: Always 0x800C (SHA256) on the local machine. */
     BYTE   thumb[20];
     int    haveThumb;
-    int    matchedLoaded;        /* 这条启动模块在 VTL0 当前枚举里还在不在 */
-} BOOT_MODULE;
+    int    matchedLoaded;        /* Whether this boot module is still present in the current VTL0 enumeration. */
+} BootModule;
 
 typedef struct {
-    BOOT_MODULE items[BOOT_MODULE_MAX];
+    BootModule items[BOOT_MODULE_MAX];
     UINT32 count;
-    UINT32 dropped;              /* 超出容量被丢掉的条数 */
-    UINT32 containers;           /* 见到的 0x40010003 容器总数（含 PCR12 的简版）*/
-    int    truncated;            /* 解析中途越界，清单不完整 */
-    UINT32 algFallback;          /* 摘要算法不在 digestSizes 表里，用了内置长度 */
+    UINT32 dropped;              /* Count of entries dropped due to capacity overflow */
+    UINT32 containers;           /* Total number of containers observed: 0x40010003 (including the simplified version for PCR12).*/
+    int    truncated;            /* Out of bounds during parsing; manifest incomplete. */
+    UINT32 algFallback;          /* The digest algorithm is not in the digestSizes table, so the built-in length is used. */
     char   logPath[MAX_PATH];
-    int    staleWarning;         /* 日志比本次开机还早 */
-} BOOT_MODULE_SET;
+    int    staleWarning;         /* Log timestamp is earlier than the current boot time. */
+} BootModuleSet;
 
 /*
- * 比对用的一条名字。raw 是小写化后的原名，key 是再去掉 ".sys" 后的比对键。
- * 需要两个而不是一个：报告里的 InternalName 取自 PE 版本资源，同一台机器上
- * 有的带扩展名有的不带（qwavedrv.sys / ndis 混在一起），只按 raw 严格比对会
- * 凭空造出一批"只在一边"的条目 —— 那正是假阳性的来源。
+ * A name entry for comparison: 'raw' is the lowercase original name, and 'key' is the comparison key after removing '.sys'.
+ * Two entries are needed instead of one: the InternalName in the report comes from PE version resources, where
+ * some entries on the same machine include extensions while others do not (e.g., qwavedrv.sys mixed with ndis).
+ * Strictly matching only against raw would artificially create "one-sided" entries—the source of false positives.
  */
 typedef struct {
     char   raw[ATTEST_NAME_MAX];
     char   key[ATTEST_NAME_MAX];
-    char   path[MAX_PATH];   /* 仅 VTL0 侧：模块的 Win32 路径 */
+    char   path[MAX_PATH];   /* VTL0 side only: module's Win32 path. */
     BYTE   sha256[32];
     BYTE   sha1[20];
-    UINT32 sha256Len;        /* 0 = 没算出来 */
+    UINT32 sha256Len;        /* 0 = Calculation failed. */
     UINT32 sha1Len;
-    BYTE   reportHash[64];   /* 仅报告侧：ImageHash */
+    BYTE   reportHash[64];   /* Report side only: ImageHash */
     UINT32 reportHashLen;
     UINT16 reportAlg;
     int    unloaded;
-    int    matched;          /* 名字对上 */
-    int    hashMatched;      /* 哈希对上 */
-    int    orphan;           /* 变异测试：强制视为两份清单都不认识它 */
-} NAME_SLOT;
+    int    matched;          /* Name matches */
+    int    hashMatched;      /* Hash matches */
+    int    orphan;           /* Mutation testing: force treat as unknown to both attestation lists. */
+} NameSlot;
 
 /*
- * 用 catalog API 算 Authenticode PE image hash，而不是文件 flat hash。
- * 已实测标定：报告里的 ImageHash 与 AppLocker 给的
- * "SHA256 0xDECE1DEF…" 对 afd.sys 逐字节相同，而 flat SHA256 完全不同。
- * 换句话说安全内核记的是 **CI 用于签名验证的那个哈希**，
- * 它跳过 PE 校验和与证书表，所以对同一份签名镜像是稳定的。
+ * Compute the Authenticode PE image hash using the catalog API, not a flat file hash.
+ * Empirically calibrated: The ImageHash in the report matches byte-for-byte the "SHA256
+ * 0xDECE1DEF…" provided by AppLocker for afd.sys, whereas the flat SHA256 is completely different.
+ * In other words, the secure kernel stores the **hash used by CI for signature verification**; it
+ * skips the PE checksum and certificate table, so it remains stable for the same signed image.
  */
-static int HashFileAuthenticode(HCATADMIN hAdmin, const char* path,
+static int hashFileAuthenticode(HCATADMIN hAdmin, const char* path,
                                 BYTE* out, UINT32 outCapacity, UINT32* outLen)
 {
     HANDLE hFile = INVALID_HANDLE_VALUE;
@@ -273,8 +273,8 @@ static int HashFileAuthenticode(HCATADMIN hAdmin, const char* path,
     return ok;
 }
 
-/* 内核给的是 NT 路径，要转成 Win32 才能 CreateFile。 */
-static int BuildWin32Path(const char* full, char* out, size_t outSize)
+/* The kernel provides an NT path; it must be converted to a Win32 path for CreateFile. */
+static int buildWin32Path(const char* full, char* out, size_t outSize)
 {
     char winDir[MAX_PATH];
 
@@ -287,7 +287,7 @@ static int BuildWin32Path(const char* full, char* out, size_t outSize)
         return _snprintf_s(out, outSize, _TRUNCATE, "%s", full + 4) > 0;
     }
     if (full[0] == '\\') {
-        /* 形如 \Windows\System32\... —— 补上系统盘符。 */
+        /* Format like \Windows\System32\... — append the system drive letter. */
         if (GetWindowsDirectoryA(winDir, (UINT)sizeof(winDir)) == 0U) { return 0; }
         winDir[2] = '\0';
         return _snprintf_s(out, outSize, _TRUNCATE, "%s%s", winDir, full) > 0;
@@ -295,8 +295,8 @@ static int BuildWin32Path(const char* full, char* out, size_t outSize)
     return _snprintf_s(out, outSize, _TRUNCATE, "%s", full) > 0;
 }
 
-/* 小写化拷贝，始终以 NUL 结尾。源可能是定长非 NUL 结尾数组，故显式带上限。 */
-static void LowerCopy(char* dst, const char* src, size_t maxLen)
+/* Lowercase copy that always terminates with NUL. The source may be a fixed-length array without a NUL terminator, so an explicit limit is required. */
+static void lowerCopy(char* dst, const char* src, size_t maxLen)
 {
     size_t i;
 
@@ -307,7 +307,7 @@ static void LowerCopy(char* dst, const char* src, size_t maxLen)
     dst[i] = '\0';
 }
 
-static void StripSysExt(char* s)
+static void stripSysExt(char* s)
 {
     size_t n = strlen(s);
 
@@ -316,15 +316,15 @@ static void StripSysExt(char* s)
     }
 }
 
-/* raw -> key：小写化已经做过，这里只负责去扩展名。 */
-static void FillKeyFromRaw(NAME_SLOT* slot)
+/* raw -> key: Lowercasing is already done; this step only removes the extension. */
+static void fillKeyFromRaw(NameSlot* slot)
 {
     memcpy(slot->key, slot->raw, strlen(slot->raw) + 1U);
-    StripSysExt(slot->key);
+    stripSysExt(slot->key);
 }
 
-/* 有界读，越界即失败而不是读进相邻内存。 */
-static int TcgRead(const BYTE* b, size_t len, size_t* off, void* out, size_t n)
+/* Bounded read: fail on out-of-bounds instead of reading adjacent memory. */
+static int tcgRead(const BYTE* b, size_t len, size_t* off, void* out, size_t n)
 {
     if (*off > len || len - *off < n) { return 0; }
     memcpy(out, b + *off, n);
@@ -332,15 +332,15 @@ static int TcgRead(const BYTE* b, size_t len, size_t* off, void* out, size_t n)
     return 1;
 }
 
-static int TcgSkip(size_t len, size_t* off, size_t n)
+static int tcgSkip(size_t len, size_t* off, size_t n)
 {
     if (*off > len || len - *off < n) { return 0; }
     *off += n;
     return 1;
 }
 
-/* UTF-16LE → 本地 char，只为显示与比对基名，非 ASCII 用 '?' 顶掉。 */
-static void Utf16ToNarrow(const BYTE* src, UINT32 srcBytes, char* dst, size_t dstSize)
+/* Convert UTF-16LE to local char for display and basename comparison only; replace non-ASCII with '?'. */
+static void utf16ToNarrow(const BYTE* src, UINT32 srcBytes, char* dst, size_t dstSize)
 {
     size_t o = 0U;
     UINT32 i;
@@ -354,11 +354,11 @@ static void Utf16ToNarrow(const BYTE* src, UINT32 srcBytes, char* dst, size_t ds
 }
 
 /*
- * 走一层 SIPA 事件序列。聚合事件（ID 带 0x40000000）的数据又是一串 SIPA 事件，
- * 所以要递归；depth 限制是防畸形日志把栈走穿，不是业务需要。
+ * Walk one level of SIPA event sequence. Aggregated events (ID with 0x40000000) contain another string of SIPA events,
+ * so recursion is required; the depth limit prevents stack overflow from malformed logs, not a business requirement.
  */
-static void SipaWalk(const BYTE* b, size_t start, size_t end, int depth,
-                     BOOT_MODULE_SET* set)
+static void sipaWalk(const BYTE* b, size_t start, size_t end, int depth,
+                     BootModuleSet* set)
 {
     size_t o = start;
 
@@ -374,7 +374,7 @@ static void SipaWalk(const BYTE* b, size_t start, size_t end, int depth,
         if (len > end - body) { set->truncated = 1; return; }
 
         if (id == SIPAEVENT_LOADEDMODULE_AGG) {
-            BOOT_MODULE m;
+            BootModule m;
             size_t f = body;
             size_t fend = body + len;
 
@@ -391,9 +391,9 @@ static void SipaWalk(const BYTE* b, size_t start, size_t end, int depth,
                 if (flen > fend - (f + 8U)) { set->truncated = 1; break; }
 
                 if (fid == SIPAEVENT_MODULE_PATH) {
-                    Utf16ToNarrow(fd, flen, m.path, sizeof(m.path));
+                    utf16ToNarrow(fd, flen, m.path, sizeof(m.path));
                 } else if (fid == SIPAEVENT_MODULE_INTERNAL) {
-                    Utf16ToNarrow(fd, flen, m.internalName, sizeof(m.internalName));
+                    utf16ToNarrow(fd, flen, m.internalName, sizeof(m.internalName));
                 } else if (fid == SIPAEVENT_MODULE_HASH) {
                     if (flen != 0U && flen <= sizeof(m.hash)) {
                         memcpy(m.hash, fd, flen);
@@ -416,9 +416,9 @@ static void SipaWalk(const BYTE* b, size_t start, size_t end, int depth,
 
             if (m.hashLen != 0U) {
                 /*
-                 * PCR12 与 PCR13 度量同一批模块：PCR12 的容器只有摘要与大小，
-                 * PCR13 的才带路径与证书。按摘要去重，并让带路径的那份覆盖
-                 * 先到的简版 —— 否则清单里一半条目没有名字。
+                 * PCR12 and PCR13 measure the same set of modules: PCR12 containers hold only the hash and size,
+                 * while PCR13 includes the path and certificate. Deduplicate by hash, letting the version with the
+                 * path override the earlier minimal entry; otherwise, half the manifest entries would lack a name.
                  */
                 UINT32 k;
                 int merged = 0;
@@ -442,14 +442,14 @@ static void SipaWalk(const BYTE* b, size_t start, size_t end, int depth,
                 }
             }
         } else if ((id & SIPA_AGGREGATION_BIT) != 0U) {
-            SipaWalk(b, body, body + len, depth + 1, set);
+            sipaWalk(b, body, body + len, depth + 1, set);
         }
         o = body + len;
     }
 }
 
-/* 选本次开机那份日志：文件名是 <引导计数>-<恢复计数>.log，按数值取最大。 */
-static int FindLatestBootLog(char* out, size_t outSize)
+/* Select the log from the current boot: filename is <boot_count>-<recovery_count>.log, take the maximum by numeric value. */
+static int findLatestBootLog(char* out, size_t outSize)
 {
     char dir[MAX_PATH];
     char pattern[MAX_PATH];
@@ -488,12 +488,12 @@ static int FindLatestBootLog(char* out, size_t outSize)
 }
 
 /*
- * 读并解析启动度量日志。返回 1 表示拿到了模块清单。
+ * Read and parse the boot measurement log. Returns 1 if the module list is obtained.
  *
- * 摘要长度**必须**从首条 Spec ID Event 的 digestSizes 表里读，不能硬编码：
- * 换台机器可能同时度量 SHA1 与 SHA256，写死 32 会当场把偏移走飞。
+ * The digest length **must** be read from the digestSizes table in the first Spec ID Event, not hardcoded:
+ * Switching machines might measure both SHA1 and SHA256 simultaneously; hardcoding 32 will immediately cause the offset to go out of bounds.
  */
-static int LoadBootModules(BOOT_MODULE_SET* set)
+static int loadBootModules(BootModuleSet* set)
 {
     HANDLE hFile = INVALID_HANDLE_VALUE;
     LARGE_INTEGER fileSize;
@@ -509,7 +509,7 @@ static int LoadBootModules(BOOT_MODULE_SET* set)
     int ok = 0;
 
     memset(set, 0, sizeof(*set));
-    if (!FindLatestBootLog(set->logPath, sizeof(set->logPath))) { return 0; }
+    if (!findLatestBootLog(set->logPath, sizeof(set->logPath))) { return 0; }
 
     hFile = CreateFileA(set->logPath, GENERIC_READ,
                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -522,8 +522,8 @@ static int LoadBootModules(BOOT_MODULE_SET* set)
     }
 
     /*
-     * 日志属不属于本次开机要核对，不能默认。拿它当"启动期驱动的白名单"时，
-     * 一份上次开机的日志会让本次真正新增的启动驱动全部落进告警。
+     * Must verify whether the log belongs to the current boot; do not assume. When using it as a whitelist for drivers during the
+     * startup phase, a log from a previous boot would cause all genuinely new startup drivers in the current boot to trigger alerts.
      */
     {
         FILETIME ftWrite;
@@ -537,7 +537,7 @@ static int LoadBootModules(BOOT_MODULE_SET* set)
             now = ((ULONGLONG)ftNow.dwHighDateTime << 32) | ftNow.dwLowDateTime;
             wrote = ((ULONGLONG)ftWrite.dwHighDateTime << 32) | ftWrite.dwLowDateTime;
             bootAt = now - (GetTickCount64() * 10000ULL);
-            /* 容 60 秒：开机时刻是由 tick 反推的，本来就不精确。 */
+            /* Allows for 60 seconds: the boot time is derived backwards from ticks and is inherently imprecise. */
             if (wrote + 60ULL * 10000000ULL < bootAt) {
                 set->staleWarning = 1;
             }
@@ -554,42 +554,42 @@ static int LoadBootModules(BOOT_MODULE_SET* set)
     }
     CloseHandle(hFile);
 
-    /* 首条是 legacy TCG_PCClientPCREvent：PCR(4) 类型(4) SHA1 摘要(20) 长度(4)。 */
-    if (!TcgSkip(len, &off, 4U + 4U + 20U) ||
-        !TcgRead(b, len, &off, &eventSize, 4U)) {
+    /* The first entry is a legacy TCG_PCClientPCREvent: PCR(4), Type(4), SHA1 digest(20), Length(4). */
+    if (!tcgSkip(len, &off, 4U + 4U + 20U) ||
+        !tcgRead(b, len, &off, &eventSize, 4U)) {
         free(b);
         return 0;
     }
     {
-        /* Spec ID Event：签名(16) 平台类(4) 次(1) 主(1) 勘误(1) uintn(1) 算法数(4) */
+        /* Spec ID Event: Signature (16) Platform Class (4) Sub (1) Major (1) Revision (1) uintn (1) Algorithm Count (4) */
         size_t spec = off;
 
-        if (!TcgSkip(len, &spec, 16U + 4U + 1U + 1U + 1U + 1U) ||
-            !TcgRead(b, len, &spec, &algCount, 4U) ||
+        if (!tcgSkip(len, &spec, 16U + 4U + 1U + 1U + 1U + 1U) ||
+            !tcgRead(b, len, &spec, &algCount, 4U) ||
             algCount == 0U || algCount > 16U) {
             free(b);
             return 0;
         }
         for (i = 0U; i < algCount; ++i) {
-            if (!TcgRead(b, len, &spec, &algIds[i], 2U) ||
-                !TcgRead(b, len, &spec, &algSizes[i], 2U)) {
+            if (!tcgRead(b, len, &spec, &algIds[i], 2U) ||
+                !tcgRead(b, len, &spec, &algSizes[i], 2U)) {
                 free(b);
                 return 0;
             }
         }
     }
-    if (!TcgSkip(len, &off, eventSize)) { free(b); return 0; }
+    if (!tcgSkip(len, &off, eventSize)) { free(b); return 0; }
 
-    /* 其后全是 TCG_PCR_EVENT2。 */
+    /* The rest are all TCG_PCR_EVENT2. */
     while (off + 12U <= len) {
         UINT32 pcr = 0U;
         UINT32 type = 0U;
         UINT32 digestCount = 0U;
         UINT32 d;
 
-        if (!TcgRead(b, len, &off, &pcr, 4U) ||
-            !TcgRead(b, len, &off, &type, 4U) ||
-            !TcgRead(b, len, &off, &digestCount, 4U)) {
+        if (!tcgRead(b, len, &off, &pcr, 4U) ||
+            !tcgRead(b, len, &off, &type, 4U) ||
+            !tcgRead(b, len, &off, &digestCount, 4U)) {
             set->truncated = 1;
             break;
         }
@@ -599,16 +599,16 @@ static int LoadBootModules(BOOT_MODULE_SET* set)
             UINT16 dlen = 0U;
             UINT32 k;
 
-            if (!TcgRead(b, len, &off, &alg, 2U)) { set->truncated = 1; break; }
+            if (!tcgRead(b, len, &off, &alg, 2U)) { set->truncated = 1; break; }
             for (k = 0U; k < algCount; ++k) {
                 if (algIds[k] == alg) { dlen = algSizes[k]; break; }
             }
             if (dlen == 0U) {
                 /*
-                 * 规范要求出现过的算法都登记在 digestSizes 表里，但现实中有固件
-                 * 违规。查表失败就退回内置长度并记一笔，而不是整份日志作废 ——
-                 * 作废等于反向判据静默失效。退回过就记 truncated，让健康门把
-                 * 反向方向关掉，宁可不判也不要拿一份可疑的清单去报。
+                 * The specification requires all algorithms that appear to be registered in the digestSizes table, but in practice, some
+                 * firmware violates this. If the table lookup fails, we fall back to the built-in length and log a note, rather than discarding
+                 * the entire log—discarding would silently invalidate the reverse check. If a fallback occurs, we mark it as truncated to
+                 * disable the reverse direction in the health gate; it is better to skip the check than to report a suspicious list.
                  */
                 switch (alg) {
                 case 0x0004: dlen = 20U; break;  /* SHA1   */
@@ -621,10 +621,10 @@ static int LoadBootModules(BOOT_MODULE_SET* set)
                 set->algFallback++;
                 if (dlen == 0U) { set->truncated = 1; break; }
             }
-            if (!TcgSkip(len, &off, dlen)) { set->truncated = 1; break; }
+            if (!tcgSkip(len, &off, dlen)) { set->truncated = 1; break; }
         }
         if (set->truncated) { break; }
-        if (!TcgRead(b, len, &off, &eventSize, 4U)) { set->truncated = 1; break; }
+        if (!tcgRead(b, len, &off, &eventSize, 4U)) { set->truncated = 1; break; }
         if (eventSize > len - off) { set->truncated = 1; break; }
 
         if (type == TCG_EV_EVENT_TAG && eventSize >= 8U) {
@@ -634,7 +634,7 @@ static int LoadBootModules(BOOT_MODULE_SET* set)
             memcpy(&tagId, b + off, 4U);
             memcpy(&tagLen, b + off + 4U, 4U);
             if (tagId == SIPAEVENT_TRUSTBOUNDARY && tagLen <= eventSize - 8U) {
-                SipaWalk(b, off + 8U, off + 8U + tagLen, 1, set);
+                sipaWalk(b, off + 8U, off + 8U + tagLen, 1, set);
             }
         }
         off += eventSize;
@@ -658,19 +658,19 @@ int main(int argc, char** argv)
     const BYTE* authStart = NULL;
     UINT32 authOffset = 0U;
     UINT16 index = 0U;
-    NAME_SLOT* repNames = NULL;
+    NameSlot* repNames = NULL;
     int verdictHits = 0;
     int i;
 
     (void)SetConsoleOutputCP(CP_UTF8);
     for (i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--json") == 0) { g_json = 1; }
-        if (strcmp(argv[i], "--verdict") == 0) { g_verdict = 1; }
+        if (strcmp(argv[i], "--json") == 0) { gJson = 1; }
+        if (strcmp(argv[i], "--verdict") == 0) { gVerdict = 1; }
         if (strncmp(argv[i], "--selftest-hide=", 16) == 0) {
-            g_hideName = argv[i] + 16;
+            gHideName = argv[i] + 16;
         }
         if (strncmp(argv[i], "--selftest-orphan=", 18) == 0) {
-            g_orphanName = argv[i] + 18;
+            gOrphanName = argv[i] + 18;
         }
     }
 
@@ -689,14 +689,14 @@ int main(int argc, char** argv)
         return 2;
     }
 
-    /* nonce 只用于让签名绑定这一次请求，内容不需要保密。 */
+    /* nonce is only used to bind the signature to this request; its content does not need to be kept secret. */
     for (i = 0; i < RUNTIME_REPORT_NONCE_SIZE; ++i) {
         nonce[i] = (UCHAR)(rand() & 0xFF);
     }
 
     /*
-     * 坑 2：这次调用**成功**的表现就是返回 FALSE 且 GetLastError()==122。
-     * 把它当失败处理会在第一步就判死整条路。
+     * Pitfall 2: A successful call in this scenario returns FALSE with GetLastError() == 122.
+     * Treating it as a failure would cause the entire path to deadlock at the first step.
      */
     SetLastError(0);
     (void)fn(nonce, RUNTIME_REPORT_PACKAGE_VERSION_CURRENT,
@@ -734,8 +734,8 @@ int main(int argc, char** argv)
     }
 
     /*
-     * 坑 3：布局用 sizeof 累加，不要手算字段和。
-     * 认证段 = 包头 + nonce + 摘要头 + 签名，之后才是报告本体。
+     * Pitfall 3: Use sizeof accumulation for layout; do not manually sum field sizes.
+     * Auth section = header + nonce + digest header + signature, followed by the report body.
      */
     authOffset = (UINT32)sizeof(RUNTIME_REPORT_PACKAGE_HEADER) +
                  (UINT32)RUNTIME_REPORT_NONCE_SIZE +
@@ -757,14 +757,14 @@ int main(int argc, char** argv)
         return 8;
     }
 
-    if (g_json) {
+    if (gJson) {
         printf("{\"kind\":\"attest-drivers\",\"packageSize\":%u,"
                "\"signatureScheme\":%u,\"signatureSize\":%u,"
                "\"digestAlg\":\"%s\",\"numberOfDrivers\":%u,"
                "\"reportOverflowed\":%s,\"partialReport\":%s,"
                "\"includeBootDrivers\":%s,\"drivers\":[",
                pkg->PackageSize, pkg->SignatureScheme, pkg->SignatureSize,
-               HashAlgName(pkg->ReportDigestType), rep->NumberOfDrivers,
+               hashAlgName(pkg->ReportDigestType), rep->NumberOfDrivers,
                rep->Flags.ReportOverflowed ? "true" : "false",
                rep->Flags.PartialReport ? "true" : "false",
                rep->Flags.IncludeBootDrivers ? "true" : "false");
@@ -772,7 +772,7 @@ int main(int argc, char** argv)
         printf("\n=== 安全内核（VTL1）签名的运行时驱动报告 ===\n");
         printf("  包大小       : %u 字节\n", pkg->PackageSize);
         printf("  摘要算法     : %s (0x%04X)\n",
-               HashAlgName(pkg->ReportDigestType), pkg->ReportDigestType);
+               hashAlgName(pkg->ReportDigestType), pkg->ReportDigestType);
         printf("  签名方案     : %u %s   签名长度 %u 字节\n",
                pkg->SignatureScheme,
                pkg->SignatureScheme ==
@@ -801,8 +801,8 @@ int main(int argc, char** argv)
                "-----------------");
     }
 
-    repNames = (NAME_SLOT*)calloc(
-        rep->NumberOfDrivers ? rep->NumberOfDrivers : 1U, sizeof(NAME_SLOT));
+    repNames = (NameSlot*)calloc(
+        rep->NumberOfDrivers ? rep->NumberOfDrivers : 1U, sizeof(NameSlot));
     if (repNames == NULL) {
         fprintf(stderr, "分配名字表失败\n");
         free(buffer);
@@ -816,21 +816,21 @@ int main(int argc, char** argv)
         const BYTE* thumb = NULL;
         const char* oem = NULL;
 
-        /* InternalName 是定长 CHAR 数组，未必以 NUL 结尾。 */
+        /* InternalName is a fixed-length CHAR array and may not be NUL-terminated. */
         memcpy(name, e->InternalName, DRIVER_REPORT_NAME_MAX_LENGTH);
         name[DRIVER_REPORT_NAME_MAX_LENGTH] = '\0';
 
-        LowerCopy(repNames[index].raw, name, DRIVER_REPORT_NAME_MAX_LENGTH);
-        FillKeyFromRaw(&repNames[index]);
+        lowerCopy(repNames[index].raw, name, DRIVER_REPORT_NAME_MAX_LENGTH);
+        fillKeyFromRaw(&repNames[index]);
         repNames[index].unloaded = e->Flags.Unloaded ? 1 : 0;
         repNames[index].reportAlg = e->ImageHashAlgorithm;
 
-        /* 动态区偏移是**相对报告起点**的，不是相对包起点。 */
+        /* The dynamic region offset is relative to the report start, not the package start. */
         if (e->ImageHashOffset != 0U &&
             e->ImageHashOffset < pkg->TotalAuthenticatedReportsSize) {
             imageHash = authStart + e->ImageHashOffset;
-            if (HashLen(e->ImageHashAlgorithm) != 0U) {
-                repNames[index].reportHashLen = HashLen(e->ImageHashAlgorithm);
+            if (hashLen(e->ImageHashAlgorithm) != 0U) {
+                repNames[index].reportHashLen = hashLen(e->ImageHashAlgorithm);
                 memcpy(repNames[index].reportHash, imageHash,
                        repNames[index].reportHashLen);
             }
@@ -844,26 +844,26 @@ int main(int argc, char** argv)
             oem = (const char*)(authStart + e->OemNameOffset);
         }
 
-        if (g_json) {
+        if (gJson) {
             printf("%s{\"name\":", index ? "," : "");
-            PrintJsonString(name, DRIVER_REPORT_NAME_MAX_LENGTH);
+            printJsonString(name, DRIVER_REPORT_NAME_MAX_LENGTH);
             printf(",\"loadCount\":%u,\"unloaded\":%s,\"bootDriver\":%s,"
                    "\"hotPatch\":%s,\"imageHashAlg\":\"%s\",\"imageHash\":\"",
                    e->LoadCount,
                    e->Flags.Unloaded ? "true" : "false",
                    e->Flags.BootDriver ? "true" : "false",
                    e->Flags.HotPatch ? "true" : "false",
-                   HashAlgName(e->ImageHashAlgorithm));
-            if (imageHash != NULL && HashLen(e->ImageHashAlgorithm) != 0U) {
-                PrintHashHex(imageHash, HashLen(e->ImageHashAlgorithm),
-                             HashLen(e->ImageHashAlgorithm));
+                   hashAlgName(e->ImageHashAlgorithm));
+            if (imageHash != NULL && hashLen(e->ImageHashAlgorithm) != 0U) {
+                printHashHex(imageHash, hashLen(e->ImageHashAlgorithm),
+                             hashLen(e->ImageHashAlgorithm));
             }
             printf("\",\"publisherThumbprint\":\"");
             if (thumb != NULL) {
-                PrintHashHex(thumb, THUMBPRINT_LEN, THUMBPRINT_LEN);
+                printHashHex(thumb, THUMBPRINT_LEN, THUMBPRINT_LEN);
             }
             printf("\",\"oemName\":");
-            if (oem != NULL) { PrintJsonString(oem, e->OemNameSize); }
+            if (oem != NULL) { printJsonString(oem, e->OemNameSize); }
             else { printf("null"); }
             printf("}");
         } else {
@@ -872,15 +872,15 @@ int main(int argc, char** argv)
                    e->Flags.Unloaded   ? 'U' : '-',
                    e->Flags.BootDriver ? 'B' : '-',
                    e->Flags.HotPatch   ? 'H' : '-');
-            printf("%-6s ", HashAlgName(e->ImageHashAlgorithm));
-            if (imageHash != NULL && HashLen(e->ImageHashAlgorithm) != 0U) {
-                PrintHashHex(imageHash, HashLen(e->ImageHashAlgorithm), 8U);
+            printf("%-6s ", hashAlgName(e->ImageHashAlgorithm));
+            if (imageHash != NULL && hashLen(e->ImageHashAlgorithm) != 0U) {
+                printHashHex(imageHash, hashLen(e->ImageHashAlgorithm), 8U);
             } else {
                 printf("(无摘要)");
             }
             printf(" / ");
             if (thumb != NULL) {
-                PrintHashHex(thumb, THUMBPRINT_LEN, 8U);
+                printHashHex(thumb, THUMBPRINT_LEN, 8U);
             } else {
                 printf("(无指纹)");
             }
@@ -891,29 +891,29 @@ int main(int argc, char** argv)
         }
     }
 
-    if (g_json) {
+    if (gJson) {
         printf("],");
     } else {
         printf("\n  标志：U=已卸载  B=启动期驱动  H=可热补丁\n");
     }
 
     /*
-     * 并排比对：VTL1 签名的报告 vs VTL0 自己的枚举。
+     * Side-by-side comparison: VTL1-signed reports vs. VTL0's own enumeration.
      *
-     * **这里只列出两边的差，不下任何判据。** 两个方向各自都有已知的良性成因：
-     *   * 只在 VTL1 里 —— 已卸载模块，VTL0 当然枚举不到，这正是这条路的价值；
-     *   * 只在 VTL0 里 —— IncludeBootDrivers=0 意味着全部启动期驱动都不在报告里；
-     *     另有一批驱动的 InternalName 与磁盘基名本就不同。
-     * 这两类不先标定掉就写差集判据，产出的是假阳性告警。
+     * Here, only the difference between the two sides is listed, with no criteria applied. Both directions have known benign causes:
+     *   * Only in VTL1 — unloaded modules are naturally not enumerable from VTL0; this is precisely the value of this path.
+     *   * Only within VTL0 — IncludeBootDrivers=0 means all boot-time drivers are excluded from the report;
+     *     There is another batch of drivers whose InternalName differs from the disk base name.
+     * If these two categories are not calibrated first, the difference-set criterion will produce false-positive alerts.
      */
     {
-        enum { MAX_LOADED = 4096 };
+        enum { kMaxLoaded = 4096 };
         PFN_NT_QUERY_SYSTEM_INFORMATION ntq = NULL;
         HMODULE ntdll = NULL;
-        KSW_RTL_PROCESS_MODULES* sysmods = NULL;
+        KswRtlProcessModules* sysmods = NULL;
         ULONG sysmodsSize = 0U;
         LONG st = 0;
-        NAME_SLOT* loaded = NULL;
+        NameSlot* loaded = NULL;
         LPVOID* mods = NULL;
         DWORD needed = 0U;
         DWORD psapiCount = 0U;
@@ -925,24 +925,24 @@ int main(int argc, char** argv)
         UINT16 ri = 0U;
         UINT16 onlyReport = 0U;
         DWORD onlyLoaded = 0U;
-        DWORD nameMissHashHit = 0U;   /* 名字对不上、哈希对上 —— 同一份镜像换了个名 */
-        DWORD nameHitHashMiss = 0U;   /* 名字对上、哈希对不上 —— 磁盘上的文件已不是加载的那份 */
-        DWORD neitherReport = 0U;     /* 两维都对不上（报告侧）*/
-        DWORD neitherLoaded = 0U;     /* 两维都对不上（VTL0 侧）*/
-        DWORD noReportHash = 0U;      /* 报告里没带摘要 */
-        DWORD noFileHash = 0U;        /* 磁盘文件哈希算不出来 */
-        DWORD hitCount = 0U;          /* 正向判据命中数 */
-        BOOT_MODULE_SET* boot = NULL; /* TCG Log 里的启动期模块清单 */
+        DWORD nameMissHashHit = 0U;   /* Name mismatch but hash match — the same image with a different name. */
+        DWORD nameHitHashMiss = 0U;   /* Name matches but hash does not — the file on disk is no longer the one that was loaded. */
+        DWORD neitherReport = 0U;     /* Both dimensions do not match (report side).*/
+        DWORD neitherLoaded = 0U;     /* Both dimensions do not match (VTL0 side).*/
+        DWORD noReportHash = 0U;      /* No hash included in the report. */
+        DWORD noFileHash = 0U;        /* Disk file hash could not be calculated. */
+        DWORD hitCount = 0U;          /* Forward criterion hit count. */
+        BootModuleSet* boot = NULL; /* List of boot-time modules in the TCG Log */
         int haveBoot = 0;
-        DWORD bootReportHit = 0U;     /* 报告侧未匹配条目在启动清单里找到的 */
-        DWORD bootLoadedHit = 0U;     /* VTL0 侧两维未匹配条目在启动清单里找到的 */
-        DWORD reverseHits = 0U;       /* 三处都找不到的 VTL0 模块 —— 反向判据 */
-        int reverseUsable = 0;        /* 启动清单健康才允许反向判 */
+        DWORD bootReportHit = 0U;     /* Report side-mismatched entries found in the boot manifest. */
+        DWORD bootLoadedHit = 0U;     /* Two-dimensional unmatched entries on the VTL0 side found in the boot manifest. */
+        DWORD reverseHits = 0U;       /* VTL0 modules not found in all three locations — reverse criterion. */
+        int reverseUsable = 0;        /* Reverse check allowed only if the launch manifest is healthy */
 
-        /* psapi 只留作条数交叉核验，名字不采信（见文件上方注释）。 */
-        mods = (LPVOID*)calloc(MAX_LOADED, sizeof(LPVOID));
+        /* psapi is retained only for count cross-verification; names are not trusted (see comments above the file). */
+        mods = (LPVOID*)calloc(kMaxLoaded, sizeof(LPVOID));
         if (mods != NULL &&
-            EnumDeviceDrivers(mods, (DWORD)(MAX_LOADED * sizeof(LPVOID)), &needed)) {
+            EnumDeviceDrivers(mods, (DWORD)(kMaxLoaded * sizeof(LPVOID)), &needed)) {
             psapiCount = needed / (DWORD)sizeof(LPVOID);
         }
         free(mods);
@@ -955,8 +955,8 @@ int main(int argc, char** argv)
         }
         if (ntq != NULL) {
             /*
-             * 尺寸会在两次调用之间变化（有驱动正在加载/卸载），所以是重试循环
-             * 而不是"查一次尺寸再取一次"。多给 16KB 余量减少重试。
+             * Size may change between calls (drivers loading/unloading), so use a retry loop
+             * instead of "query size once then fetch". Add 16KB buffer to reduce retries.
              */
             ULONG want = 0U;
             int attempt;
@@ -966,7 +966,7 @@ int main(int argc, char** argv)
             for (attempt = 0; attempt < 8; ++attempt) {
                 free(sysmods);
                 sysmodsSize = want + 16U * 1024U;
-                sysmods = (KSW_RTL_PROCESS_MODULES*)calloc(1U, sysmodsSize);
+                sysmods = (KswRtlProcessModules*)calloc(1U, sysmodsSize);
                 if (sysmods == NULL) { break; }
                 st = ntq(SYSTEM_MODULE_INFORMATION_CLASS, sysmods, sysmodsSize, &want);
                 if (st != STATUS_INFO_LENGTH_MISMATCH_L) { break; }
@@ -978,37 +978,37 @@ int main(int argc, char** argv)
         }
 
         if (sysmods != NULL) {
-            count = sysmods->NumberOfModules;
-            if (count > (DWORD)MAX_LOADED) {
-                truncated = count - (DWORD)MAX_LOADED;
-                count = (DWORD)MAX_LOADED;
+            count = sysmods->numberOfModules;
+            if (count > (DWORD)kMaxLoaded) {
+                truncated = count - (DWORD)kMaxLoaded;
+                count = (DWORD)kMaxLoaded;
             }
         }
 
-        loaded = (NAME_SLOT*)calloc(count ? count : 1U, sizeof(NAME_SLOT));
+        loaded = (NameSlot*)calloc(count ? count : 1U, sizeof(NameSlot));
         if (loaded != NULL && sysmods != NULL) {
             for (di = 0U; di < count; ++di) {
-                const KSW_RTL_PROCESS_MODULE_INFORMATION* m = &sysmods->Modules[di];
-                const char* full = (const char*)m->FullPathName;
+                const KswRtlProcessModuleInformation* m = &sysmods->modules[di];
+                const char* full = (const char*)m->fullPathName;
                 const char* base = full;
 
-                /* OffsetToFileName 是内核给的基名偏移；越界就自己找分隔符。 */
-                if (m->OffsetToFileName < sizeof(m->FullPathName)) {
-                    base = full + m->OffsetToFileName;
+                /* OffsetToFileName is the base name offset provided by the kernel; if out of bounds, find the separator manually. */
+                if (m->offsetToFileName < sizeof(m->fullPathName)) {
+                    base = full + m->offsetToFileName;
                 } else {
                     const char* p = strrchr(full, '\\');
                     if (p != NULL) { base = p + 1; }
                 }
-                LowerCopy(loaded[di].raw, base,
-                          sizeof(m->FullPathName) - (size_t)(base - full));
-                FillKeyFromRaw(&loaded[di]);
-                (void)BuildWin32Path(full, loaded[di].path, sizeof(loaded[di].path));
+                lowerCopy(loaded[di].raw, base,
+                          sizeof(m->fullPathName) - (size_t)(base - full));
+                fillKeyFromRaw(&loaded[di]);
+                (void)buildWin32Path(full, loaded[di].path, sizeof(loaded[di].path));
             }
         }
 
         /*
-         * VTL0 侧的 Authenticode 哈希。两个 HCATADMIN 各建一次而不是每文件一次：
-         * 265 个模块 × 2 种算法 = 530 次哈希，逐次 AcquireContext 的开销比哈希本身还大。
+         * Authenticode hash on the VTL0 side. Create each HCATADMIN once rather than per file:
+         * 265 modules × 2 algorithms = 530 hash operations; the overhead of repeatedly calling AcquireContext exceeds the hash cost itself.
          */
         if (loaded != NULL && sysmods != NULL) {
             HCATADMIN hSha1 = NULL;
@@ -1018,12 +1018,12 @@ int main(int argc, char** argv)
             (void)CryptCATAdminAcquireContext2(&hSha256, NULL, L"SHA256", NULL, 0U);
             for (di = 0U; di < count; ++di) {
                 if (loaded[di].path[0] == '\0') { continue; }
-                if (!HashFileAuthenticode(hSha256, loaded[di].path,
+                if (!hashFileAuthenticode(hSha256, loaded[di].path,
                                           loaded[di].sha256, 32U,
                                           &loaded[di].sha256Len)) {
                     loaded[di].sha256Len = 0U;
                 }
-                if (!HashFileAuthenticode(hSha1, loaded[di].path,
+                if (!hashFileAuthenticode(hSha1, loaded[di].path,
                                           loaded[di].sha1, 20U,
                                           &loaded[di].sha1Len)) {
                     loaded[di].sha1Len = 0U;
@@ -1032,27 +1032,27 @@ int main(int argc, char** argv)
             if (hSha1   != NULL) { (void)CryptCATAdminReleaseContext(hSha1, 0U); }
             if (hSha256 != NULL) { (void)CryptCATAdminReleaseContext(hSha256, 0U); }
 
-            if (g_hideName != NULL) {
+            if (gHideName != NULL) {
                 DWORD hidden = 0U;
 
                 for (di = 0U; di < count; ++di) {
-                    if (_stricmp(loaded[di].raw, g_hideName) != 0) { continue; }
+                    if (_stricmp(loaded[di].raw, gHideName) != 0) { continue; }
                     loaded[di].sha1Len = 0U;
                     loaded[di].sha256Len = 0U;
                     loaded[di].key[0] = '\0';
                     hidden++;
                 }
-                if (!g_json) {
+                if (!gJson) {
                     printf("\n  *** 变异测试模式：已把 %lu 个名为 \"%s\" 的模块"
                            "从 VTL0 参照面抹掉 ***\n"
                            "      下面的结果**不是**本机真实状态。\n",
-                           hidden, g_hideName);
+                           hidden, gHideName);
                 }
             }
         }
         if (loaded != NULL && sysmods != NULL) {
 
-            /* 按 key 做双向标记；O(n*m)，n=193 m=265，不值得上哈希表。 */
+            /* Bidirectional marking by key; O(n*m) with n=193 and m=265, so using a hash table is not worthwhile. */
             for (di = 0U; di < count; ++di) {
                 if (loaded[di].key[0] == '\0') { continue; }
                 for (ri = 0U; ri < rep->NumberOfDrivers; ++ri) {
@@ -1074,9 +1074,9 @@ int main(int argc, char** argv)
             }
 
             /*
-             * 第二维匹配：Authenticode 哈希。名字维度已被数据判死
-             * （InternalName 是版本资源自由文本，且在 32 字节处截断），
-             * 哈希是唯一与名字无关的键。
+             * Second-dimension matching: Authenticode hash. The name dimension is
+             * already fixed by data (InternalName is free-form version resource text,
+             * truncated at 32 bytes); the hash is the only key independent of the name.
              */
             for (ri = 0U; ri < rep->NumberOfDrivers; ++ri) {
                 if (repNames[ri].reportHashLen == 0U) { continue; }
@@ -1105,8 +1105,8 @@ int main(int argc, char** argv)
                     if (repNames[ri].matched) { nameHitHashMiss++; }
                     else { neitherReport++; }
                     /*
-                     * 判据只看哈希、不看名字：名字对上不该救一个哈希对不上的条目
-                     * —— 隐藏驱动完全可以把 InternalName 写成某个合法驱动的名字。
+                     * The criterion checks only the hash, not the name: a matching name should not save an entry with
+                     * a mismatching hash—a hidden driver could set its InternalName to that of a legitimate driver.
                      */
                     if (!repNames[ri].unloaded) { hitCount++; }
                 }
@@ -1119,29 +1119,29 @@ int main(int argc, char** argv)
             }
 
             /*
-             * 第三个来源：TCG Log 的启动期模块清单，用来补上
-             * IncludeBootDrivers=0 缺掉的那一批。三份清单的摘要都是
-             * Authenticode PE image hash，所以可以直接按哈希并到一起。
+             * Third source: the TCG Log's boot-time module list, used to supplement the
+             * batch missing due to IncludeBootDrivers=0. Since the summaries of all three
+             * lists are Authenticode PE image hashes, they can be directly merged by hash.
              */
-            if (g_orphanName != NULL) {
+            if (gOrphanName != NULL) {
                 DWORD orphaned = 0U;
 
                 for (di = 0U; di < count; ++di) {
-                    if (_stricmp(loaded[di].raw, g_orphanName) != 0) { continue; }
+                    if (_stricmp(loaded[di].raw, gOrphanName) != 0) { continue; }
                     loaded[di].orphan = 1;
                     loaded[di].hashMatched = 0;
                     orphaned++;
                 }
-                if (!g_json) {
+                if (!gJson) {
                     printf("\n  *** 变异测试模式：已把 %lu 个名为 \"%s\" 的模块"
                            "从**两份签名清单**里同时抹掉 ***\n"
                            "      下面的结果**不是**本机真实状态。\n",
-                           orphaned, g_orphanName);
+                           orphaned, gOrphanName);
                 }
             }
 
-            boot = (BOOT_MODULE_SET*)calloc(1U, sizeof(BOOT_MODULE_SET));
-            haveBoot = (boot != NULL) && LoadBootModules(boot);
+            boot = (BootModuleSet*)calloc(1U, sizeof(BootModuleSet));
+            haveBoot = (boot != NULL) && loadBootModules(boot);
             if (haveBoot) {
                 for (ri = 0U; ri < rep->NumberOfDrivers; ++ri) {
                     UINT32 k;
@@ -1181,9 +1181,9 @@ int main(int argc, char** argv)
                         bootLoadedHit++;
                     }
                     /*
-                     * 反向判据的候选：这个模块此刻在 VTL0 里加载着，但它的镜像
-                     * 既不在 VTL1 运行时报告里，也不在启动度量清单里。
-                     * 磁盘哈希算不出来的不算候选 —— 那是我们看不见，不是它可疑。
+                     * Reverse criterion candidate: This module is currently loaded in VTL0, but its image
+                     * appears in neither the VTL1 runtime report nor the boot measurement manifest.
+                     * Items that cannot be hashed from disk are not candidates — we simply cannot see them, not that they are suspicious.
                      */
                     if (!loaded[di].hashMatched && !inBoot &&
                         (loaded[di].sha256Len != 0U || loaded[di].sha1Len != 0U)) {
@@ -1191,16 +1191,16 @@ int main(int argc, char** argv)
                     }
                 }
                 /*
-                 * 反向方向只有在启动清单**健康**时才算数。日志过期、解析越界、
-                 * 或超容量丢过条目，任何一条成立都会把"缺失"变成假阳性，
-                 * 那时宁可不判也不要报。
+                 * The reverse direction is only valid when the boot manifest is healthy. Any of the following—log
+                 * expiration, parsing out-of-bounds, or capacity overflow causing dropped entries—will turn a 'missing'
+                 * state into a false positive; in such cases, it is better not to judge than to report falsely.
                  */
                 reverseUsable = !boot->staleWarning && !boot->truncated &&
                                 boot->dropped == 0U && boot->algFallback == 0U;
             }
         }
 
-        if (g_json) {
+        if (gJson) {
             printf("\"loadedModules\":%lu,\"matchedBoth\":%lu,"
                    "\"matchedOnlyAfterStrippingSys\":%lu,"
                    "\"enumTruncated\":%lu,"
@@ -1225,7 +1225,7 @@ int main(int argc, char** argv)
                 for (ri = 0U; ri < rep->NumberOfDrivers; ++ri) {
                     if (repNames[ri].matched) { continue; }
                     printf("%s{\"name\":", emitted ? "," : "");
-                    PrintJsonString(repNames[ri].raw, ATTEST_NAME_MAX);
+                    printJsonString(repNames[ri].raw, ATTEST_NAME_MAX);
                     printf(",\"unloaded\":%s,\"hashMatched\":%s}",
                            repNames[ri].unloaded ? "true" : "false",
                            repNames[ri].hashMatched ? "true" : "false");
@@ -1236,7 +1236,7 @@ int main(int argc, char** argv)
                 for (di = 0U; di < count; ++di) {
                     if (loaded[di].matched) { continue; }
                     printf("%s", emitted ? "," : "");
-                    PrintJsonString(loaded[di].raw, ATTEST_NAME_MAX);
+                    printJsonString(loaded[di].raw, ATTEST_NAME_MAX);
                     emitted++;
                 }
                 printf("]");
@@ -1344,19 +1344,19 @@ int main(int argc, char** argv)
         }
 
         /*
-         * 第 3 步的判据。默认关闭，要 --verdict 才跑 —— 判据一旦上线，
-         * 它的失败形态是**假阳性告警**，对一个 ARK 工具比漏报更难看，
-         * 所以它必须是显式动作而不是顺带产物。
+         * Criterion for Step 3. Disabled by default; only runs with --verdict. Once deployed, its
+         * failure mode is a **false positive alert**. For an ARK tool, a false positive is worse
+         * than a false negative, so this must be an explicit action rather than a side effect.
          */
-        if (g_verdict) {
+        if (gVerdict) {
             if (loaded == NULL || sysmods == NULL) {
                 verdictHits = -1;
-                if (!g_json) {
+                if (!gJson) {
                     printf("\n[判据未运行] VTL0 参照面取不到，无法比对。\n");
                 }
             } else {
                 verdictHits = (int)hitCount + (reverseUsable ? (int)reverseHits : 0);
-                if (!g_json) {
+                if (!gJson) {
                     printf("\n=== 判据（--verdict）===\n");
                     printf("  【正向】报告里**未卸载**的条目，其 Authenticode 摘要在\n"
                            "          VTL0 当前全部已加载模块的磁盘文件里找不到。\n");
@@ -1378,10 +1378,10 @@ int main(int argc, char** argv)
                                noFileHash);
                     }
                     /*
-                     * 两个方向共有的一条假阳性来源，必须随判据一起显示：
-                     * 我们比的是**磁盘文件此刻**的哈希，而两份清单记的是模块
-                     * 被加载/被度量那一刻的镜像。Windows Update 换过文件但还没
-                     * 重启时，两者本来就不同 —— 那不是篡改。
+                     * A shared source of false positives in both directions must be displayed alongside the criteria:
+                     * We compare the hash of the disk file at this exact moment, whereas the two manifests record
+                     * the image at the moment the module was loaded/measured. If Windows Update has modified the
+                     * file but the system hasn't restarted yet, they will naturally differ—that is not tampering.
                      */
                     printf("  [注意] 比的是磁盘文件**此刻**的哈希，两份清单记的是"
                            "加载/度量当时的镜像。\n"
@@ -1393,7 +1393,7 @@ int main(int argc, char** argv)
                         if (repNames[ri].hashMatched) { continue; }
                         printf("  [正向命中] %-28.28s  ",
                                repNames[ri].raw[0] ? repNames[ri].raw : "(空名)");
-                        PrintHashHex(repNames[ri].reportHash,
+                        printHashHex(repNames[ri].reportHash,
                                      repNames[ri].reportHashLen,
                                      repNames[ri].reportHashLen);
                         printf("\n");
@@ -1419,7 +1419,7 @@ int main(int argc, char** argv)
                             printf("  [反向命中] %-28.28s  ",
                                    loaded[di].raw[0] ? loaded[di].raw : "(取名失败)");
                             if (loaded[di].sha256Len == 32U) {
-                                PrintHashHex(loaded[di].sha256, 32U, 32U);
+                                printHashHex(loaded[di].sha256, 32U, 32U);
                             }
                             printf("\n    %s\n", loaded[di].path);
                         }
@@ -1441,12 +1441,12 @@ int main(int argc, char** argv)
     free(buffer);
 
     /*
-     * 退出码分三档，刻意不与 2..9 的错误码重叠：
-     *   0  正常（未开判据，或判据零命中）
-     *   20 判据有命中 —— 需要人工核，不是"工具出错"
-     *   21 判据没跑成（VTL0 参照面取不到）—— **不等于干净**
+     * Exit codes are in three tiers, deliberately avoiding overlap with error codes 2..9:
+     *   0: Normal (criteria not enabled, or zero hits). 20: Criteria hit —
+     *   requires manual verification, not a "tool error". 21: Criteria did not
+     *   run (VTL0 reference surface unavailable) — **does not equal clean**.
      */
-    if (g_verdict && verdictHits < 0) { return 21; }
-    if (g_verdict && verdictHits > 0) { return 20; }
+    if (gVerdict && verdictHits < 0) { return 21; }
+    if (gVerdict && verdictHits > 0) { return 20; }
     return 0;
 }

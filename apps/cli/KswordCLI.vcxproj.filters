@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <Filter Include="shared">
+      <UniqueIdentifier>{79A19D9C-4FA9-5F16-B9B1-BE36362538C1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared\ark_client">
+      <UniqueIdentifier>{756733BB-C574-5DB9-8200-9B7E2477A8F4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared\platform">
+      <UniqueIdentifier>{5F8765E6-BB47-5CC6-B2A4-7937E9222134}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared\platform\string">
+      <UniqueIdentifier>{F97AEABF-93FB-5590-A1F2-72E7BEAD21DF}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="ArkDriverExtended.cpp" />
+    <ClInclude Include="ArkDriverExtended.h" />
+    <ClCompile Include="CliArguments.cpp" />
+    <ClInclude Include="CliArguments.h" />
+    <ClCompile Include="CliCallback.cpp" />
+    <ClCompile Include="CliDdma.cpp" />
+    <ClCompile Include="CliDevices.cpp" />
+    <ClCompile Include="CliDispatch.cpp" />
+    <ClCompile Include="CliDriver.cpp" />
+    <ClCompile Include="CliDynData.cpp" />
+    <ClCompile Include="CliFile.cpp" />
+    <ClCompile Include="CliHelp.cpp" />
+    <ClCompile Include="CliIo.cpp" />
+    <ClCompile Include="CliKernel.cpp" />
+    <ClCompile Include="CliLog.cpp" />
+    <ClCompile Include="CliMemory.cpp" />
+    <ClCompile Include="CliMutation.cpp" />
+    <ClCompile Include="CliNetwork.cpp" />
+    <ClCompile Include="CliNetworkAudit.cpp" />
+    <ClCompile Include="CliObjects.cpp" />
+    <ClCompile Include="CliOutput.cpp" />
+    <ClCompile Include="CliProcess.cpp" />
+    <ClCompile Include="CliRegistry.cpp" />
+    <ClCompile Include="CliRuntimeFields.cpp" />
+    <ClCompile Include="CliSecurity.cpp" />
+    <ClCompile Include="CliStorage.cpp" />
+    <ClInclude Include="CliSupport.h" />
+    <ClCompile Include="CliThread.cpp" />
+    <ClCompile Include="CliWindow.cpp" />
+    <ClCompile Include="KswordCLI.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverAudit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverAuditSupport.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverBlind.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverBugcheck.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverCallbackMonitor.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverCallbackTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverClient.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDebugOutput.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverDebugOutputTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDeviceAudit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverDriverControlTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverDynDataTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDynDataV4.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverError.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverFile.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverFileIrp.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverFileTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverFirmware.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverHvm.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverHvmTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverI8042Audit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverIoTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverIoctlRegistry.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverKernel.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverKernelBaseline.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverKernelTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverKeyboard.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverMemoryTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverMutationTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverNetworkAudit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverNetworkEvents.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverNetworkSupport.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverNetworkTraffic.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverNetworkTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverObjectAudit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverObjectTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverPiDdb.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverPlatformAudit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverPlatformTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverPower.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessControl.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessEnumeration.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessInjection.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessProtect.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessSecurity.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverProcessTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverRegistryTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverResponseSupport.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverSecurityAudit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverSecurityTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverStorageAudit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverStorageForensics.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverStorageTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverSystemTime.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverThreadControl.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverVirtualization.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverWin32kAudit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverWindowTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverWorkQueue.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\platform\string\String.cpp">
+      <Filter>shared\platform\string</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

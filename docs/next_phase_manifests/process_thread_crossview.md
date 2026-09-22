@@ -4,7 +4,7 @@
 
 This phase adds read-only R0 process and thread cross-view evidence collection
 for DKOM diagnostics. The handlers are implemented but intentionally not
-registered in `KswordARKDriver/src/dispatch/ioctl_registry.c`.
+registered in `drivers/ark/src/dispatch/ioctl_registry.c`.
 
 Hard constraints preserved:
 
@@ -41,23 +41,23 @@ transaction ids `0x832` through `0x835`.
 
 ### Process
 
-- WDF handler: `KswordARKProcessIoctlQueryCrossView`
-  - Implementation: `KswordARKDriver/src/features/process/process_crossview.c`
-  - Declaration: `KswordARKDriver/include/ark/ark_process.h`
+- WDF handler: `kswordArkProcessIoctlQueryCrossView`
+  - Implementation: `drivers/ark/src/features/process/process_crossview.c`
+  - Declaration: `drivers/ark/include/ark/ark_process.h`
   - Status: implemented but not registered.
-- Backend: `KswordARKDriverQueryProcessCrossView`
-  - Implementation: `KswordARKDriver/src/features/process/process_crossview.c`
-  - Declaration: `KswordARKDriver/include/ark/ark_process.h`
+- Backend: `kswordArkDriverQueryProcessCrossView`
+  - Implementation: `drivers/ark/src/features/process/process_crossview.c`
+  - Declaration: `drivers/ark/include/ark/ark_process.h`
 
 ### Thread
 
-- WDF handler: `KswordARKThreadIoctlQueryCrossView`
-  - Implementation: `KswordARKDriver/src/features/thread/thread_crossview.c`
-  - Declaration: `KswordARKDriver/include/ark/ark_thread_crossview.h`
+- WDF handler: `kswordArkThreadIoctlQueryCrossView`
+  - Implementation: `drivers/ark/src/features/thread/thread_crossview.c`
+  - Declaration: `drivers/ark/include/ark/ark_thread_crossview.h`
   - Status: implemented but not registered.
-- Backend: `KswordARKDriverQueryThreadCrossView`
-  - Implementation: `KswordARKDriver/src/features/thread/thread_crossview.c`
-  - Declaration: `KswordARKDriver/include/ark/ark_thread_crossview.h`
+- Backend: `kswordArkDriverQueryThreadCrossView`
+  - Implementation: `drivers/ark/src/features/thread/thread_crossview.c`
+  - Declaration: `drivers/ark/include/ark/ark_thread_crossview.h`
 
 ## Protocol structures
 
@@ -108,7 +108,7 @@ Common row fields include:
 
 ### Thread
 
-- Public walk: `PsGetNextProcess` plus `PsGetNextProcessThread`
+- Public walk: `PsGetNextProcess` plus `psGetNextProcessThread`
 - Process thread list: `EPROCESS.ThreadListHead` plus
   `ETHREAD.ThreadListEntry`
 - CID table: read-only `PspCidTable` walk filtered to thread objects
@@ -150,21 +150,21 @@ Anomaly bits:
 Do not add these in this session. Session 6 should add:
 
 1. Project files:
-   - Add `KswordARKDriver/src/features/process/process_crossview.c` to the
+   - Add `drivers/ark/src/features/process/process_crossview.c` to the
      driver `.vcxproj`.
-   - Add `KswordARKDriver/src/features/thread/thread_crossview.c` to the driver
+   - Add `drivers/ark/src/features/thread/thread_crossview.c` to the driver
      `.vcxproj`.
    - Add both sources to the matching `.vcxproj.filters` feature folders.
-   - Add `KswordARKDriver/include/ark/ark_thread_crossview.h` if headers are
+   - Add `drivers/ark/include/ark/ark_thread_crossview.h` if headers are
      explicitly listed.
 2. Registry dispatch:
-   - Add forward declarations in `KswordARKDriver/src/dispatch/ioctl_registry.c`
+   - Add forward declarations in `drivers/ark/src/dispatch/ioctl_registry.c`
      for:
-     - `KswordARKProcessIoctlQueryCrossView`
-     - `KswordARKThreadIoctlQueryCrossView`
+     - `kswordArkProcessIoctlQueryCrossView`
+     - `kswordArkThreadIoctlQueryCrossView`
    - Add registry rows:
-     - `{ IOCTL_KSWORD_ARK_QUERY_PROCESS_CROSSVIEW, KswordARKProcessIoctlQueryCrossView, "IOCTL_KSWORD_ARK_QUERY_PROCESS_CROSSVIEW", KSW_CAP_PROCESS_LIST_FIELDS | KSW_CAP_CID_TABLE_WALK, KSWORD_ARK_IOCTL_FLAG_NONE }`
-     - `{ IOCTL_KSWORD_ARK_QUERY_THREAD_CROSSVIEW, KswordARKThreadIoctlQueryCrossView, "IOCTL_KSWORD_ARK_QUERY_THREAD_CROSSVIEW", KSW_CAP_THREAD_LIST_FIELDS | KSW_CAP_CID_TABLE_WALK, KSWORD_ARK_IOCTL_FLAG_NONE }`
+     - `{ IOCTL_KSWORD_ARK_QUERY_PROCESS_CROSSVIEW, kswordArkProcessIoctlQueryCrossView, "IOCTL_KSWORD_ARK_QUERY_PROCESS_CROSSVIEW", KSW_CAP_PROCESS_LIST_FIELDS | KSW_CAP_CID_TABLE_WALK, KSWORD_ARK_IOCTL_FLAG_NONE }`
+     - `{ IOCTL_KSWORD_ARK_QUERY_THREAD_CROSSVIEW, kswordArkThreadIoctlQueryCrossView, "IOCTL_KSWORD_ARK_QUERY_THREAD_CROSSVIEW", KSW_CAP_THREAD_LIST_FIELDS | KSW_CAP_CID_TABLE_WALK, KSWORD_ARK_IOCTL_FLAG_NONE }`
 3. ArkDriverClient:
    - Add typed wrappers for the two query IOCTLs.
    - Add row decoding for process and thread cross-view responses.
@@ -181,10 +181,10 @@ Do not add these in this session. Session 6 should add:
 
 - `shared/driver/KswordArkProcessIoctl.h`
 - `shared/driver/KswordArkThreadIoctl.h`
-- `KswordARKDriver/include/ark/ark_process.h`
-- `KswordARKDriver/include/ark/ark_thread_crossview.h`
-- `KswordARKDriver/src/features/process/process_crossview.c`
-- `KswordARKDriver/src/features/process/process_crossview.h`
-- `KswordARKDriver/src/features/thread/thread_crossview.c`
-- `KswordARKDriver/src/features/thread/thread_crossview.h`
+- `drivers/ark/include/ark/ark_process.h`
+- `drivers/ark/include/ark/ark_thread_crossview.h`
+- `drivers/ark/src/features/process/process_crossview.c`
+- `drivers/ark/src/features/process/process_crossview.h`
+- `drivers/ark/src/features/thread/thread_crossview.c`
+- `drivers/ark/src/features/thread/thread_crossview.h`
 - `docs/next_phase_manifests/process_thread_crossview.md`

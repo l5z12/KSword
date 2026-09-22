@@ -7,8 +7,9 @@ metadata:
 
 # FileDock 文件元数据编辑
 
-主程序文件属性窗口位于 `Ksword5.1/Ksword5.1/FileDock/FileDock.cpp` 的
-`FileDetailDialog`。元数据编辑作为左侧导航中的懒加载页接入，不应在文件属性窗口首屏
+主程序文件属性窗口声明位于 `apps/desktop/file_dock/FileDetailDialog.h`，
+实现按职责放在同目录 `FileDetailDialog.*.cpp`；元数据页面、写入后端与事务分别见
+`MetadataEditor`、`MetadataBackend` 与 `Transactions`。元数据编辑作为左侧导航中的懒加载页接入，不应在文件属性窗口首屏
 同步打开句柄或访问可能阻塞的网络路径。
 
 ## Win32 基本信息写入

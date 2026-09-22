@@ -4,15 +4,15 @@
 
 // ============================================================
 // DdmaScratchPlan.cpp
-// 作用：从分区表求出未分配间隙，并按"谁会住在那里"给候选分级。
+// Purpose: Calculate unallocated gaps from the partition table and rank candidates based on 'who would live there'.
 // ============================================================
 
 namespace ksword::evidence
 {
     namespace
     {
-        // mergeOccupied：把已占用区间排序并合并重叠/相邻部分。
-        // 不合并就会在重叠分区（或重复上报）时算出一堆长度为负的假间隙。
+        // mergeOccupied: Sorts occupied ranges and merges overlapping or adjacent parts.
+        // Without merging, overlapping partitions (or duplicate reports) would calculate a bunch of negative-length fake gaps.
         std::vector<DdmaScratchOccupiedRange> mergeOccupied(
             const std::vector<DdmaScratchOccupiedRange>& occupied,
             const std::uint64_t diskSectorCount)
@@ -26,11 +26,11 @@ namespace ksword::evidence
                     continue;
                 }
                 DdmaScratchOccupiedRange clamped = range;
-                // 区间末端超出磁盘时按磁盘末端截断；溢出的加法要先判再算。
-                const std::uint64_t available = diskSectorCount - clamped.startSector;
-                if (clamped.sectorCount > available)
+                // Truncate at the disk end if the interval end exceeds the disk; check for overflow before adding.
+                const std::uint64_t kAvailable = diskSectorCount - clamped.startSector;
+                if (clamped.sectorCount > kAvailable)
                 {
-                    clamped.sectorCount = available;
+                    clamped.sectorCount = kAvailable;
                 }
                 ranges.push_back(clamped);
             }
@@ -55,13 +55,13 @@ namespace ksword::evidence
                     continue;
                 }
                 DdmaScratchOccupiedRange& last = merged.back();
-                const std::uint64_t lastEnd = last.startSector + last.sectorCount;
-                if (range.startSector <= lastEnd)
+                const std::uint64_t kLastEnd = last.startSector + last.sectorCount;
+                if (range.startSector <= kLastEnd)
                 {
-                    const std::uint64_t rangeEnd = range.startSector + range.sectorCount;
-                    if (rangeEnd > lastEnd)
+                    const std::uint64_t kRangeEnd = range.startSector + range.sectorCount;
+                    if (kRangeEnd > kLastEnd)
                     {
-                        last.sectorCount = rangeEnd - last.startSector;
+                        last.sectorCount = kRangeEnd - last.startSector;
                     }
                     continue;
                 }
@@ -70,52 +70,52 @@ namespace ksword::evidence
             return merged;
         }
 
-        // alignUp：把起点向上对齐到传输粒度，让一次 DMA 落在对齐边界上。
+        // alignUp: Aligns the start address upward to the transfer granularity so that a single DMA operation falls on an aligned boundary.
         std::uint64_t alignUp(const std::uint64_t value, const std::uint64_t alignment)
         {
             if (alignment <= 1ULL)
             {
                 return value;
             }
-            const std::uint64_t remainder = value % alignment;
-            if (remainder == 0ULL)
+            const std::uint64_t kRemainder = value % alignment;
+            if (kRemainder == 0ULL)
             {
                 return value;
             }
-            // 溢出保护：对齐后越过 64 位上限时原样返回，交给后续可用性判定拒掉。
-            const std::uint64_t delta = alignment - remainder;
-            if (value > (UINT64_MAX - delta))
+            // Overflow protection: if alignment causes the value to exceed the 64-bit limit, return the original value and let subsequent availability checks reject it.
+            const std::uint64_t kDelta = alignment - kRemainder;
+            if (value > (UINT64_MAX - kDelta))
             {
                 return value;
             }
-            return value + delta;
+            return value + kDelta;
         }
 
-        // classifyGap：按间隙与头尾保留区的关系定级。
+        // classifyGap: Classify based on the relationship between the gap and the head/tail reserved regions.
         DdmaScratchRisk classifyGap(
             const std::uint64_t gapStart,
-            const std::uint64_t gapEnd,          // 半开区间末端
+            const std::uint64_t gapEnd,          // Half-open interval end.
             const std::uint64_t headReservedEnd,
             const std::uint64_t tailReservedStart,
             const bool isTailGap)
         {
             if (gapStart < headReservedEnd)
             {
-                // 与头部保留区相交：引导器就嵌在这一段。
-                return DdmaScratchRisk::HeadReserved;
+                // Intersection with the head reserved region: the bootloader is embedded in this segment.
+                return DdmaScratchRisk::kHeadReserved;
             }
             if (gapEnd > tailReservedStart)
             {
-                // 与备份分区表相交：覆盖它会让分区表失去冗余。
-                return DdmaScratchRisk::TailReserved;
+                // Intersects with the backup partition table: overwriting it would cause the partition table to lose redundancy.
+                return DdmaScratchRisk::kTailReserved;
             }
-            return isTailGap ? DdmaScratchRisk::TailGap : DdmaScratchRisk::InteriorGap;
+            return isTailGap ? DdmaScratchRisk::kTailGap : DdmaScratchRisk::kInteriorGap;
         }
     }
 
     bool ddmaScratchRiskIsSelectable(const DdmaScratchRisk risk)
     {
-        return risk == DdmaScratchRisk::InteriorGap || risk == DdmaScratchRisk::TailGap;
+        return risk == DdmaScratchRisk::kInteriorGap || risk == DdmaScratchRisk::kTailGap;
     }
 
     std::vector<DdmaScratchCandidate> planDdmaScratchCandidates(
@@ -129,65 +129,65 @@ namespace ksword::evidence
             return candidates;
         }
 
-        const std::uint64_t required = static_cast<std::uint64_t>(requiredSectors);
-        const std::uint64_t headReservedEnd =
+        const std::uint64_t kRequired = static_cast<std::uint64_t>(requiredSectors);
+        const std::uint64_t kHeadReservedEnd =
             std::min<std::uint64_t>(kDdmaScratchHeadReservedSectors, diskSectorCount);
-        const std::uint64_t tailReservedStart =
+        const std::uint64_t kTailReservedStart =
             (diskSectorCount > kDdmaScratchTailReservedSectors)
                 ? (diskSectorCount - kDdmaScratchTailReservedSectors)
                 : 0ULL;
 
-        const std::vector<DdmaScratchOccupiedRange> merged =
+        const std::vector<DdmaScratchOccupiedRange> kMerged =
             mergeOccupied(occupied, diskSectorCount);
 
-        // 求补集：逐个已占用区间之间的空档，外加最后一个之后到磁盘末端。
+        // Compute the complement: gaps between each occupied range, plus the gap after the last one up to the end of the disk.
         std::uint64_t cursor = 0ULL;
-        std::vector<std::pair<std::uint64_t, std::uint64_t>> gaps; // (start, end) 半开
-        for (const DdmaScratchOccupiedRange& range : merged)
+        std::vector<std::pair<std::uint64_t, std::uint64_t>> gaps; // (start, end) half-open
+        for (const DdmaScratchOccupiedRange& range : kMerged)
         {
             if (range.startSector > cursor)
             {
                 gaps.emplace_back(cursor, range.startSector);
             }
-            const std::uint64_t end = range.startSector + range.sectorCount;
-            if (end > cursor)
+            const std::uint64_t kEnd = range.startSector + range.sectorCount;
+            if (kEnd > cursor)
             {
-                cursor = end;
+                cursor = kEnd;
             }
         }
-        const bool hasTailGap = (cursor < diskSectorCount);
-        if (hasTailGap)
+        const bool kHasTailGap = (cursor < diskSectorCount);
+        if (kHasTailGap)
         {
             gaps.emplace_back(cursor, diskSectorCount);
         }
 
         for (std::size_t index = 0U; index < gaps.size(); ++index)
         {
-            const std::uint64_t gapStart = gaps[index].first;
-            const std::uint64_t gapEnd = gaps[index].second;
-            const bool isTailGap = hasTailGap && (index + 1U == gaps.size());
+            const std::uint64_t kGapStart = gaps[index].first;
+            const std::uint64_t kGapEnd = gaps[index].second;
+            const bool kIsTailGap = kHasTailGap && (index + 1U == gaps.size());
 
             DdmaScratchCandidate candidate;
-            candidate.gapStartSector = gapStart;
-            candidate.gapSectorCount = gapEnd - gapStart;
+            candidate.gapStartSector = kGapStart;
+            candidate.gapSectorCount = kGapEnd - kGapStart;
             candidate.risk =
-                classifyGap(gapStart, gapEnd, headReservedEnd, tailReservedStart, isTailGap);
+                classifyGap(kGapStart, kGapEnd, kHeadReservedEnd, kTailReservedStart, kIsTailGap);
 
-            // 起点向上对齐到传输粒度；对齐会吃掉间隙开头的几个扇区，所以可用性
-            // 必须在对齐之后再判一次，不能拿原始间隙长度去比。
-            const std::uint64_t alignedStart = alignUp(gapStart, required);
-            candidate.startSector = alignedStart;
+            // Align the start upward to the transfer granularity; alignment consumes a few sectors at the beginning
+            // of the gap, so availability must be re-checked after alignment, not using the original gap length.
+            const std::uint64_t kAlignedStart = alignUp(kGapStart, kRequired);
+            candidate.startSector = kAlignedStart;
             candidate.sectorCount =
-                (alignedStart < gapEnd) ? (gapEnd - alignedStart) : 0ULL;
+                (kAlignedStart < kGapEnd) ? (kGapEnd - kAlignedStart) : 0ULL;
 
-            // 可用的条件：对齐后放得下一次完整传输，且整段不与尾部保留区相交。
-            // 头部相交的候选仍然标为可用——它确实能用，只是危险；把它判成不可用
-            // 会让"只有这一个候选"的机器上界面说不出任何原因。
-            const bool fits = (candidate.sectorCount >= required);
-            const bool clearsTail =
-                (alignedStart + required) <= tailReservedStart || tailReservedStart == 0ULL;
+            // Condition for availability: After alignment, a full transfer fits, and the entire range does not intersect with the tail reserved region.
+            // Candidates intersecting the head are still marked as usable—they are usable, just risky; marking them
+            // as unusable would leave machines with 'only this one candidate' unable to explain the reason in the UI.
+            const bool kFits = (candidate.sectorCount >= kRequired);
+            const bool kClearsTail =
+                (kAlignedStart + kRequired) <= kTailReservedStart || kTailReservedStart == 0ULL;
             candidate.usable =
-                fits && clearsTail && candidate.risk != DdmaScratchRisk::TailReserved;
+                kFits && kClearsTail && candidate.risk != DdmaScratchRisk::kTailReserved;
 
             candidates.push_back(candidate);
         }
@@ -196,8 +196,8 @@ namespace ksword::evidence
             candidates.begin(),
             candidates.end(),
             [](const DdmaScratchCandidate& left, const DdmaScratchCandidate& right) {
-                // 可用的排在不可用之前；其次风险由低到高；再次间隙由大到小；
-                // 最后按 LBA 由小到大，保证同一块盘每次给出同一个首选。
+                // Sort available entries before unavailable ones, then by increasing risk, then by decreasing gap size;
+                // Finally sort by LBA ascending to ensure the same preferred disk is selected each time for the same drive.
                 if (left.usable != right.usable)
                 {
                     return left.usable;

@@ -4,8 +4,8 @@
 // the action bar. Destroying the table therefore exercises the same QObject
 // child-destruction order used when a file-properties window is closed.
 
-#include "../Ksword5.1/Ksword5.1/UI/TableFreezeSupport.h"
-#include "../Ksword5.1/Ksword5.1/UI/VisibleTableWidget.h"
+#include "../apps/desktop/ui/TableFreezeSupport.h"
+#include "../apps/desktop/ui/VisibleTableWidget.h"
 
 #include <QApplication>
 #include <QFrame>

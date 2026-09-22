@@ -1,32 +1,32 @@
 <#
 .SYNOPSIS
-    把 KswordARK 驱动部署进 Hyper-V 测试机并查询 HVM 能力状态。
+    Deploy the KswordARK driver to a Hyper-V test VM and query the HVM capability status.
 
 .DESCRIPTION
-    必须以**管理员**运行（Hyper-V cmdlet 与 PowerShell Direct 都要求）。
+    Must run as **Administrator** (both Hyper-V cmdlets and PowerShell Direct require this).
 
-    顺序是刻意的：
+    Order is intentional:
 
-      1. 先确认 guest 的前提（testsigning / VMX 可见 / 无别的 hypervisor 抢 VT-x）——
-         前提不成立就**不加载驱动**，否则只会得到一个看不懂的失败。
-      2. 打开 guest 的内核转储（万一蓝屏，那份 dump 就是一份来源明确的真实样本，
-         正好给 C 模块用；不开的话蓝屏就只剩一个停止码）。
-      3. **加载前打检查点。** 这是 hypervisor 驱动，一个 VMXON 路径上的错误就是蓝屏。
-      4. 拷文件 → 建服务 → 启动 → 查设备 → 跑 hvm-status。
+      1. First verify the guest prerequisites (testsigning / VMX visible / no other hypervisor competing for VT-x) — if
+         prerequisites are not met, do not load the driver; otherwise, only an incomprehensible failure will be returned.
+      2) Open the guest kernel dump (in case of a BSOD, this dump is a real sample with a
+         clear source, suitable for the C module; without it, a BSOD leaves only a stop code).
+      3. **Take a checkpoint before loading.** This is a hypervisor driver; an error on the VMXON path causes a BSOD.
+      4. Copy files → Create service → Start → Check device → Run hvm-status.
 
-    每步都回读校验；前提检查不过就中止而不是硬着头皮往下走。
+    Verify by re-reading at every step; abort if preconditions fail rather than forcing execution forward.
 
-    脚本**不启动 HVM**（不 VMXON），只加载驱动并读取能力状态。VMXON 是单独一步，
-    确认能力报告正常之后再做。
+    The script **does not start HVM** (no VMXON); it only loads the driver and reads capability
+    status. VMXON is a separate step performed only after confirming the capability report is normal.
 
 .PARAMETER VMName
-    虚拟机名。
+    VM name.
 
 .PARAMETER GuestCredential
-    guest 内的管理员凭据。不传则交互提示。
+    Administrator credentials inside the guest. If not provided, prompts interactively.
 
 .PARAMETER SkipCheckpoint
-    跳过加载前的检查点。**不建议**，只在你刚打过检查点时用。
+    Skip pre-load checkpoints. **Not recommended**; use only if you just created a checkpoint.
 
 .EXAMPLE
     .\Deploy-KswordDriverToVm.ps1
@@ -35,12 +35,12 @@
 param(
     [string] $VMName = 'KSword-HVM-Target',
     [System.Management.Automation.PSCredential] $GuestCredential,
-    # 这台是一次性隔离测试机，按约定写死默认凭据，与同目录其它脚本保持一致，
-    # 省掉每次重新部署都要手工敲一遍密码。
+    # This is a one-time isolated test machine; default credentials are hardcoded by convention to remain consistent with other scripts in the same directory.
+    # Avoids having to manually re-enter the password every time the deployment is re-run.
     [string] $GuestUser     = 'felix',
     [string] $GuestPassword = 'password',
-    # 本脚本自己造的 before-driver-load-* 保留几个（含这次新建的那个）。
-    # 每个约 8 GiB 内存映像加一个差分盘，留多了会把系统盘吃光。
+    # This script retains a few before-driver-load-* checkpoints (including this newly created one).
+    # Each image is about 8 GiB with a differencing disk; keeping too many will exhaust the system drive.
     [int]    $KeepCheckpoints = 2,
     [switch] $SkipCheckpoint
 )
@@ -49,39 +49,39 @@ $ErrorActionPreference = 'Stop'
 Import-Module Hyper-V -ErrorAction Stop
 
 $repo    = Split-Path $PSScriptRoot -Parent
-$sysPath = Join-Path $repo 'Ksword5.1\x64\Release\KswordARK.sys'
-$cliPath = Join-Path $repo 'Ksword5.1\x64\Release\KswordCLI.exe'
+$sysPath = Join-Path $repo 'artifacts/bin\x64\Release\KswordARK.sys'
+$cliPath = Join-Path $repo 'artifacts/bin\x64\Release\KswordCLI.exe'
 $prbPath = Join-Path $repo 'tools\hvm_probe\hvm_probe.exe'
 
 foreach ($p in @($sysPath, $cliPath)) {
-    if (-not (Test-Path $p)) { throw "缺少产物：$p" }
+    if (-not (Test-Path $p)) { throw "Missing artifact: $p" }
 }
 
 # ---------------------------------------------------------------------------
-# 发车前先在宿主上确认 .sys 带签名。
+# Before deployment, verify on the host that the .sys file has a signature.
 #
-# guest 开着 testsigning 也**不等于**放行未签名驱动：内核仍然要求 .sys 至少带
-# 测试签名，缺了就是 `sc start` 返回 577。而 577 的文案说的是"数字签名无法验证"，
-# 看上去像证书信任问题，实际可能只是根本没签 —— 两者的修法完全不同。
+# Even if the guest has testsigning enabled, it **does not** allow unsigned drivers: the kernel still requires the .sys file to have at least
+# a test signature; without it, `sc start` returns 577. The message for 577 says the digital signature cannot be verified,
+# Looks like a certificate trust issue, but it might just be that the code wasn't signed at all—the remediation steps differ completely.
 #
-# 未签名的常见来源：用 /p:KswordArkSkipAutoVariantSign=true 构建。那个属性同时
-# 关掉了 vcxproj 里的测试签名与变体签名两个 target（两个 target 的 Condition 都
-# 同时检查 SkipAutoVariantSign 与 SkipAutoTestSign），所以"只是跳过变体签名"
-# 这个直觉是错的。
+# Common sources of unsigned builds: constructing with /p:KswordArkSkipAutoVariantSign=true. That property simultaneously
+# Disabled both the test signing and variant signing targets in the vcxproj (both targets have the same Condition).
+# Since both SkipAutoVariantSign and SkipAutoTestSign are checked, "just skipping variant signing" is not the case.
+# This intuition is incorrect.
 #
-# 这里只检查、不自动签名：签名要动证书，属于单独一步。
+# Check only, do not auto-sign: signing requires certificate handling and is a separate step.
 # ---------------------------------------------------------------------------
 $sysSig = Get-AuthenticodeSignature $sysPath
 if ($sysSig.Status -eq 'NotSigned') {
     throw @"
-$sysPath 未签名，送进 guest 只会得到 sc start 577。
-先补签（不改宿主安全配置）：
+$sysPath is unsigned, sending it to the guest will only result in sc start 577.
+First, complete the signature (without modifying host security configuration):
   .\scripts\Sign-KswordArkDriverTest.ps1 -DriverPath '$sysPath' -SkipMachineTrust
-该脚本末尾的 `signtool verify /pa` 退出码 1 是预期的 —— 那是宿主不信任自签根，
-与 guest 能否加载无关。只要看到 "Successfully signed" 即可。
+The exit code 1 from `signtool verify /pa` at the end of this script is expected — that's because the host does not trust the self-signed root,
+It is unrelated to whether the guest can load. As long as "Successfully signed" is seen.
 "@
 }
-Write-Host ("驱动签名（宿主侧）：{0} / {1}" -f $sysSig.Status, $sysSig.SignerCertificate.Subject) -ForegroundColor DarkGray
+Write-Host ("Driver signature (host side): {0} / {1}" -f $sysSig.Status, $sysSig.SignerCertificate.Subject) -ForegroundColor DarkGray
 
 function Show-Check {
     param([string] $Name, [bool] $Ok, [string] $Detail = '')
@@ -90,8 +90,8 @@ function Show-Check {
     return [bool]$Ok
 }
 
-# 把一个本地文件送进 guest。Copy-VMFile 需要来宾服务接口，不可用时退回
-# PowerShell Direct 传 base64（慢，但不依赖集成服务）。
+# Send a local file to the guest. Copy-VMFile requires the guest service interface; fall back if unavailable.
+# PowerShell Direct sends base64 (slow, but no dependency on integration services).
 function Send-ToGuest {
     param([string] $Local, [string] $Remote)
     try {
@@ -108,9 +108,9 @@ function Send-ToGuest {
 }
 
 $vm = Get-VM -Name $VMName -ErrorAction Stop
-if ($vm.State -ne 'Running') { throw "虚拟机不在运行状态（$($vm.State)）。先 Start-VM。" }
+if ($vm.State -ne 'Running') { throw "Virtual machine is not in Running state ($($vm.State)). Start-VM first." }
 if (-not (Get-VMProcessor -VMName $VMName).ExposeVirtualizationExtensions) {
-    throw '嵌套虚拟化没开 —— 关机后 Set-VMProcessor -ExposeVirtualizationExtensions $true'
+    throw 'Nested virtualization is not enabled —— after shutdown, run Set-VMProcessor -ExposeVirtualizationExtensions $true'
 }
 if (-not $GuestCredential) {
     $GuestCredential = New-Object System.Management.Automation.PSCredential(
@@ -118,9 +118,9 @@ if (-not $GuestCredential) {
 }
 
 # ---------------------------------------------------------------------------
-# 1. 前提检查：不成立就不加载
+# 1. Prerequisite check: Do not load if it fails.
 # ---------------------------------------------------------------------------
-Write-Host "`n--- 1. guest 前提检查 ---" -ForegroundColor Cyan
+Write-Host "`n--- 1. guest prerequisite check ---" -ForegroundColor Cyan
 $pre = Invoke-Command -VMName $VMName -Credential $GuestCredential -ScriptBlock {
     $cur = (& bcdedit.exe '/enum' '{current}' | Out-String)
     $dg  = Get-CimInstance -ClassName Win32_DeviceGuard `
@@ -128,11 +128,11 @@ $pre = Invoke-Command -VMName $VMName -Credential $GuestCredential -ScriptBlock 
     [ordered]@{
         TestSigning   = [bool]($cur -match '(?im)^\s*testsigning\s+Yes')
         HypervisorOff = [bool]($cur -match '(?im)^\s*hypervisorlaunchtype\s+Off')
-        # 把观测到的值也带回来。检查项的名字是 "hypervisorlaunchtype = Off"，
-        # 单看 [FAIL] 那一行会读成"它是 Off 而这算失败"，正好反了。
+        # Bring back the observed value. The check item name is "hypervisorlaunchtype = Off",
+        # Reading only the [FAIL] line would incorrectly imply 'it is Off and this counts as a failure', which is the exact opposite.
         HypervisorRaw = $(
             if ($cur -match '(?im)^\s*hypervisorlaunchtype\s+(\S+)') { $Matches[1] }
-            else { '(bcdedit 里没有这一行 —— 等于默认值 Auto)' })
+            else { '(This line is not in bcdedit — equivalent to the default value Auto)' })
         VbsStatus     = if ($dg) { [int]$dg.VirtualizationBasedSecurityStatus } else { -1 }
         Build         = (Get-CimInstance Win32_OperatingSystem).BuildNumber
     }
@@ -140,32 +140,32 @@ $pre = Invoke-Command -VMName $VMName -Credential $GuestCredential -ScriptBlock 
 $ok = $true
 $ok = (Show-Check 'testsigning = Yes'          $pre.TestSigning)          -and $ok
 $ok = (Show-Check 'hypervisorlaunchtype = Off' $pre.HypervisorOff `
-            "实际读到：$($pre.HypervisorRaw)")                            -and $ok
-$ok = (Show-Check 'VBS 已关闭'                  ($pre.VbsStatus -eq 0) "状态码 $($pre.VbsStatus)") -and $ok
+            "Actually read: $($pre.HypervisorRaw)")                            -and $ok
+$ok = (Show-Check 'VBS is disabled' ($pre.VbsStatus -eq 0) "Status code $($pre.VbsStatus)") -and $ok
 if (-not $ok) {
     $hint = ''
     if (-not $pre.HypervisorOff) {
-        # 这一项最常见的成因：guest 里被开了 Hyper-V/VBS/WSL2 之类的东西，
-        # 或者某次强制断电之后 BCD 回到了默认。它不是 Off 的话，我们的驱动
-        # 会在**两层 hypervisor 之下**跑，整轮读数都不可归因。
+        # Most common cause: Hyper-V/VBS/WSL2, etc., are enabled in the guest.
+        # Or BCD may have reverted to defaults after a forced power-off. If it is not Off, our driver
+        # It will run **under two layers of hypervisor**, so readings from the entire run cannot be attributed.
         $hint = @"
 
-hypervisorlaunchtype 现在是「$($pre.HypervisorRaw)」，需要 Off。
-在 guest 里（管理员）改回去，然后重启 guest：
+hypervisorlaunchtype is currently "$($pre.HypervisorRaw)", which needs to be Off.
+In the guest (as administrator), revert the changes, then restart the guest:
   bcdedit /set hypervisorlaunchtype off
-或者直接跑 .\scripts\Configure-KswordHyperVGuest.ps1（它会一并处理 testsigning 与 VBS）。
+Or directly run .\scripts\Configure-KswordHyperVGuest.ps1 (it will handle testsigning and VBS together).
 "@
     }
-    throw "前提不成立 —— 不加载驱动。$hint"
+    throw "Prerequisites not met — driver not loaded. $hint"
 }
 
-# VMX 是否真的可见：用探针，别用 HypervisorPresent（那读的是"上面有没有 hypervisor"）
+# Check if VMX is truly visible: use a probe instead of HypervisorPresent (which reads whether there is a hypervisor 'above').
 if (Test-Path $prbPath) {
-    Write-Host "`n  CPUID 探针（VMX 是否透传进来）："
+    Write-Host "`n  CPUID probe (whether VMX is passed through): "
     Send-ToGuest $prbPath 'C:\ksword\hvm_probe.exe'
-    # 探针用 SetConsoleOutputCP(CP_UTF8) 输出 UTF-8。直接 `& exe | Out-String`
-    # 会让 PowerShell 按 guest 的 OEM 代码页解码，中文全变成 σÅ»τö¿ 那种乱码 ——
-    # 看起来像编码坏了，其实是解码方式选错了。重定向到文件再按 UTF-8 读回。
+    # The probe outputs UTF-8 using SetConsoleOutputCP(CP_UTF8). Direct `& exe | Out-String`
+    # This causes PowerShell to decode using the guest's OEM code page, turning Chinese characters into mojibake like σÅ»τö¿
+    # Looks like encoding corruption, but is actually a wrong decoding method. Redirect to a file and read back using UTF-8.
     $probe = Invoke-Command -VMName $VMName -Credential $GuestCredential -ScriptBlock {
         $o = 'C:\ksword\probe_out.txt'
         Remove-Item $o -ErrorAction SilentlyContinue
@@ -174,66 +174,66 @@ if (Test-Path $prbPath) {
         if (Test-Path $o) {
             [IO.File]::ReadAllText($o, [Text.Encoding]::UTF8)
         } else {
-            "（无输出，退出码 $($p.ExitCode)）"
+            "(No output, exit code $($p.ExitCode))"
         }
     }
     $vmxOk = [bool]($probe -match 'VMX')
     ($probe -split "`n" | Where-Object { $_ -match '\[OK \]|\[NO \]' }) | ForEach-Object { Write-Host "   $_" }
     if ($probe -match '\[NO \].*ECX\[5\]') {
-        # 「看不到 VMX」有两个完全不同的成因，报错必须分开，否则会把人引到
-        # 宿主的嵌套虚拟化设置上白折腾一轮。
+        # There are two completely different causes for 'VMX not visible'; the error message must distinguish them, otherwise it will mislead users.
+        # Perform a round of troubleshooting on the host's nested virtualization settings.
         #
-        # 我们自己的常驻 hypervisor **按设计**会把 CPUID.1:ECX[5] 抹掉
-        # （hvm_exit.c 的 CPUID 处理：Nested.Enabled 为假时清 VMX 位）。
-        # 所以「VMX 看不见，但 eVMCS/嵌套特性叶又都读得到」这个组合不是
-        # 嵌套没开 —— 恰恰相反，那是上一轮的常驻还在跑。
+        # Our resident hypervisor **by design** clears CPUID.1:ECX[5].
+        # (hvm_exit.c CPUID handling: clears VMX bits when Nested.Enabled is false).
+        # Therefore, the combination of 'VMX cannot see it, but eVMCS/nested feature leaves are readable' is not
+        # that nested virtualization is disabled. On the contrary, the previous run's resident hypervisor is still running.
         $nestedLeavesOk = ($probe -match '\[OK \].*eVMCS') -or
                           ($probe -match '\[OK \].*0x4000000A')
         if ($nestedLeavesOk) {
             throw @'
-CPUID 看不到 VMX，但嵌套特性叶读得到 —— 这两条只有一种解释：
-**上一轮的常驻 hypervisor 还在跑，是它按设计抹掉了 VMX 位。**
+CPUID does not show VMX, but the nested feature leaf can be read back — these two observations have only one explanation:
+**The resident hypervisor from the previous round is still running; it cleared the VMX bit as designed.**
 
-先停掉它再部署：
+Stop it first before deploying:
   .\scripts\Invoke-KswordHvmControl.ps1 -Stage stop
 
-（常驻会活过发起它的进程，所以一轮跑到一半失败退出时它不会自己停。）
+(The resident hypervisor outlives the process that launched it, so if a round fails and exits midway, it will not stop itself.)
 '@
         }
-        throw 'CPUID 里看不到 VMX，且嵌套特性叶也读不到 —— 嵌套虚拟化没生效，不加载驱动。'
+        throw 'VMX not visible in CPUID, and nested feature leaf also unreadable -- nested virtualization not enabled, driver not loaded.'
     }
 }
 
 # ---------------------------------------------------------------------------
-# 2. 打开 guest 的内核转储
+# 2. Open the guest kernel dump.
 # ---------------------------------------------------------------------------
-Write-Host "`n--- 2. 打开 guest 内核转储 ---" -ForegroundColor Cyan
+Write-Host "`n--- 2. Open guest kernel dump ---" -ForegroundColor Cyan
 $dump = Invoke-Command -VMName $VMName -Credential $GuestCredential -ScriptBlock {
     $cc = 'HKLM:\SYSTEM\CurrentControlSet\Control\CrashControl'
-    # 2 = 内核内存转储。够 C 模块用，又比完整转储小得多。
+    # 2 = Kernel memory dump. Sufficient for C modules and much smaller than a full dump.
     Set-ItemProperty -Path $cc -Name CrashDumpEnabled -Value 2 -Type DWord
     Set-ItemProperty -Path $cc -Name AutoReboot       -Value 1 -Type DWord
     Set-ItemProperty -Path $cc -Name LogEvent         -Value 1 -Type DWord
     $now = Get-ItemProperty -Path $cc
     [ordered]@{ Enabled = [int]$now.CrashDumpEnabled; File = $now.DumpFile; Auto = [int]$now.AutoReboot }
 }
-Show-Check '内核转储已启用（CrashDumpEnabled=2）' ($dump.Enabled -eq 2) "-> $($dump.File)" | Out-Null
+Show-Check 'Kernel dump enabled (CrashDumpEnabled=2)' ($dump.Enabled -eq 2) "-> $($dump.File)" | Out-Null
 
 # ---------------------------------------------------------------------------
-# 3. 加载前检查点
+# 3. Pre-load checkpoint
 # ---------------------------------------------------------------------------
 if (-not $SkipCheckpoint) {
-    Write-Host "`n--- 3. 加载前检查点 ---" -ForegroundColor Cyan
+    Write-Host "`n--- 3. Pre-loading Checkpoint ---" -ForegroundColor Cyan
     <#
-      建之前先裁剪自己造的旧检查点。
+      Trim old checkpoints created by self before creating a new one.
 
-      这一段本来就该在这里，缺了它的代价 2026-09-08 付过一次：一晚上部署十来次
-      就攒下十个 before-driver-load-*，每个约 8 GiB 内存映像加一个差分盘，把系统盘
-      吃到 0，Hyper-V 把虚拟机置成 PausedCritical。表现是**部署命令挂住不返回**——
-      因为它在等一台已经被冻住的机器，而不是任何一步慢。
+      This section belongs here; the cost of omitting it was paid on 2026-09-08: deploying the driver ten times in one night accumulated
+      ten 'before-driver-load-*' snapshots, each consuming approximately 8 GiB of memory image plus a differencing disk, filling the
+      system disk to 0% and causing Hyper-V to pause the virtual machine in PausedCritical state. The symptom is **the deployment
+      command hangs without returning**—because it is waiting for a machine that is already frozen, not because any step is slow.
 
-      靠调用方记得加 -SkipCheckpoint 不算防线：忘了才是常态，而忘的代价是整台机器
-      停摆。Invoke-KswordHvmControl.ps1 早就在建之前裁剪，这里照同一套做。
+      Relying on the caller to remember adding -SkipCheckpoint is not a robust defense: forgetting is the norm, and the cost of forgetting is a
+      complete system hang. Invoke-KswordHvmControl.ps1 already performed this truncation before creation; this script follows the same approach.
     #>
     try {
         $mine = @(Get-VMSnapshot -VMName $VMName -ErrorAction Stop |
@@ -242,9 +242,9 @@ if (-not $SkipCheckpoint) {
         if ($mine.Count -ge $KeepCheckpoints) {
             foreach ($old in $mine[($KeepCheckpoints - 1)..($mine.Count - 1)]) {
                 Remove-VMSnapshot -VMName $VMName -Name $old.Name -Confirm:$false
-                Write-Host "  已修剪旧检查点 '$($old.Name)'" -ForegroundColor DarkGray
+                Write-Host "  Trimmed old checkpoint '$($old.Name)'" -ForegroundColor DarkGray
             }
-            # 合并是异步的：不等它做完，下一次 Checkpoint-VM 仍可能撞上空间不足。
+            # Merge is asynchronous: even if we don't wait for it to finish, the next Checkpoint-VM may still hit out-of-space.
             $deadline = (Get-Date).AddMinutes(15)
             while ((Get-Date) -lt $deadline -and
                    (Get-VM -Name $VMName).Status -match 'Merg|合并') {
@@ -252,36 +252,36 @@ if (-not $SkipCheckpoint) {
             }
         }
     } catch {
-        Write-Host "  检查点修剪失败（不影响部署）：$($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "  Checkpoint pruning failed (deployment unaffected): $($_.Exception.Message)" -ForegroundColor Yellow
     }
     $stamp = 'before-driver-load-' + (Get-Date -Format 'MMdd-HHmm')
     try {
         Checkpoint-VM -Name $VMName -SnapshotName $stamp
     } catch {
-        # 空间不足是可恢复的操作问题，与驱动无关。分开报，并给出清理命令。
+        # Insufficient space is a recoverable operational issue unrelated to the driver. Report separately and provide the cleanup command.
         if ("$($_.Exception.Message)" -match '0x80070070|磁盘空间不足|not enough space') {
-            throw "建检查点失败：磁盘空间不足，与驱动无关。清理：.\scripts\Clear-KswordVmCheckpoints.ps1 -Confirm"
+            throw "Failed to create checkpoint: insufficient disk space, unrelated to driver. Cleanup: .\scripts\Clear-KswordVmCheckpoints.ps1 -Confirm"
         }
         throw
     }
-    Write-Host "  已建 '$stamp'" -ForegroundColor Green
-    Write-Host "  回滚：Restore-VMCheckpoint -VMName '$VMName' -Name '$stamp' -Confirm:`$false"
+    Write-Host "  Created '$stamp'" -ForegroundColor Green
+    Write-Host "  Rollback: Restore-VMCheckpoint -VMName '$VMName' -Name '$stamp' -Confirm:`$false"
 } else {
-    Write-Host "`n--- 3. 已跳过检查点（-SkipCheckpoint）---" -ForegroundColor Yellow
+    Write-Host "`n--- 3. Checkpoint skipped (-SkipCheckpoint) ---" -ForegroundColor Yellow
 }
 
 # ---------------------------------------------------------------------------
-# 4. 送文件、建服务、启动
+# 4. Send files, create service, and start
 # ---------------------------------------------------------------------------
-Write-Host "`n--- 4. 部署并加载驱动 ---" -ForegroundColor Cyan
+Write-Host "`n--- 4. Deploy and load driver ---" -ForegroundColor Cyan
 
-# **先卸载再拷贝。** 顺序反过来会在重新部署时撞上
+# **Unload before copying.** Reversing this order causes redeployment to encounter
 # "The process cannot access the file ... because it is being used by another
-# process" —— 已加载的驱动映像是被内核持有的，只要服务还在跑就覆盖不了那个
-# .sys。首次部署时文件不存在，所以这个顺序问题只在第二次部署才暴露。
+# process" — The loaded driver image is held by the kernel; it cannot be overwritten as long as the service is running.
+# .sys. The file does not exist during the first deployment, so this ordering issue only manifests on the second deployment.
 $unload = Invoke-Command -VMName $VMName -Credential $GuestCredential -ScriptBlock {
     $before = (& sc.exe query KswordARK 2>&1 | Out-String)
-    $wasPresent = ($before -notmatch '1060')     # 1060 = 服务不存在
+    $wasPresent = ($before -notmatch '1060')     # 1060 = Service does not exist.
     if ($wasPresent) {
         & sc.exe stop   KswordARK 2>&1 | Out-Null
         & sc.exe delete KswordARK 2>&1 | Out-Null
@@ -294,42 +294,42 @@ $unload = Invoke-Command -VMName $VMName -Credential $GuestCredential -ScriptBlo
     }
 }
 if ($unload.WasPresent) {
-    Show-Check '旧驱动已卸载（拷贝前）' (-not $unload.StillThere) | Out-Null
+    Show-Check 'Old driver unloaded (before copy)' (-not $unload.StillThere) | Out-Null
     if ($unload.StillThere) {
-        throw '旧驱动仍在运行，无法覆盖 .sys。可能有句柄未释放；重启 guest 后再试。'
+        throw 'Old driver is still running, cannot overwrite .sys. There may be unreleased handles; restart the guest and try again.'
     }
 } else {
-    Write-Host "  [OK]   之前没有已注册的 KswordARK 服务" -ForegroundColor Green
+    Write-Host "  [OK]   No previously registered KswordARK service found" -ForegroundColor Green
 }
 
 Send-ToGuest $sysPath 'C:\Windows\System32\drivers\KswordARK.sys'
 Send-ToGuest $cliPath 'C:\ksword\KswordCLI.exe'
-Write-Host "  文件已送达"
+Write-Host "  File delivered"
 
-# 送达之后立刻比对哈希。
+# Immediately compare hashes upon delivery.
 #
-# 在这之前，整条脚本链里**没有任何一环**能保证 guest 跑的就是刚构建的那份
-# 驱动：Copy-VMFile 静默失败、退回 PowerShell Direct 分块传输时截断、或者
-# 旧服务其实没卸干净而映像仍被内核持有 —— 三种情况都会让下一轮读数落在
-# 一份不知道是哪个版本的驱动上。已经因此浪费过两轮归因。
+# Before this point, **no link** in the entire script chain can guarantee that the guest is running the just-built version.
+# Driver: Copy-VMFile silently fails, or PowerShell Direct chunked transfer truncates when falling back...
+# The old service was not fully unloaded while the image was still held by the kernel — all three scenarios cause the next reading to fall on
+# A driver of unknown version; this has already cost two rounds of attribution.
 #
-# 哈希打印出来还有第二个用处：在机记录里可以对着它确认"那一轮跑的是哪份"。
+# The printed hash has a second use: it allows verifying which version was run in that round against the machine record.
 $hostHash = (Get-FileHash $sysPath -Algorithm SHA256).Hash
 $guestHash = Invoke-Command -VMName $VMName -Credential $GuestCredential -ScriptBlock {
     (Get-FileHash 'C:\Windows\System32\drivers\KswordARK.sys' -Algorithm SHA256).Hash
 }
-Write-Host ("  宿主 SHA256 : {0}" -f $hostHash) -ForegroundColor DarkGray
+Write-Host ("  Host SHA256 : {0}" -f $hostHash) -ForegroundColor DarkGray
 Write-Host ("  guest SHA256: {0}" -f $guestHash) -ForegroundColor DarkGray
 if ($hostHash -ne $guestHash) {
     throw @"
-送进 guest 的驱动与宿主上的不是同一份 —— 本轮任何读数都不可归因，已中止。
-  宿主 : $hostHash
+The driver sent into the guest is not the same as the one on the host — any readback in this round is unattributable, aborted.
+  Host: $hostHash
   guest: $guestHash
-常见成因：旧服务未真正卸载（映像仍被内核持有，覆盖被静默丢弃）。
-处置：重启 guest 后重跑本脚本。
+Common causes: Old driver was not actually unloaded (image still held by kernel, overwrite silently discarded).
+Action: Restart the guest and rerun this script.
 "@
 }
-Write-Host "  [OK]   哈希一致，guest 上就是刚构建的那份" -ForegroundColor Green
+Write-Host "  [OK]   Hashes match, this is the freshly built version on the guest" -ForegroundColor Green
 
 $load = Invoke-Command -VMName $VMName -Credential $GuestCredential -ScriptBlock {
     $out = [ordered]@{}
@@ -337,7 +337,7 @@ $load = Invoke-Command -VMName $VMName -Credential $GuestCredential -ScriptBlock
     $out.SigStatus = "$($sig.Status)"
     $out.Signer    = "$($sig.SignerCertificate.Subject)"
 
-    # 已存在就先停再删，保证这次加载的是刚送进来的那个文件
+    # If it exists, stop then delete to ensure the loaded file is the one just delivered.
     & sc.exe stop   KswordARK 2>&1 | Out-Null
     & sc.exe delete KswordARK 2>&1 | Out-Null
     Start-Sleep -Seconds 1
@@ -354,11 +354,11 @@ $load = Invoke-Command -VMName $VMName -Credential $GuestCredential -ScriptBlock
     $out.Query = $q.Trim()
     $out.Running = [bool]($q -match 'RUNNING')
 
-    # 设备存在才说明 DriverEntry 真的跑完并建了符号链接。
-    # 必须用 CreateFileW：.NET 的 [IO.File]::Open 会在类型检查上直接拒绝设备对象
-    # （"FileStream was asked to open a device that was not a file"），那条报错
-    # 说明的是宿主脚本用错 API，与设备存不存在无关 —— 上一版就是这样报了一个
-    # 假的 FAIL。
+    # The device's existence confirms that DriverEntry completed and created the symbolic link.
+    # Must use CreateFileW: .NET's [IO.File]::Open directly rejects device objects during type checking.
+    # ("FileStream was asked to open a device that was not a file"), that error message
+    # Indicates the host script used the wrong API; this is unrelated to whether the device exists. The previous version reported this exact issue.
+    # Fake FAIL.
     $out.DeviceOpen = $false
     try {
         Add-Type -Language CSharp -TypeDefinition @'
@@ -382,44 +382,44 @@ public static class KswDev {
         $win32 = [KswDev]::Probe('\\.\KswordARKLog')
         $out.DeviceOpen = ($win32 -eq 0)
         if ($win32 -ne 0) {
-            # 2 = 设备名不存在；5 = 存在但拒绝访问。两者含义完全不同。
+            # 2 = device name does not exist; 5 = exists but access is denied. The two meanings are completely different.
             $out.DeviceError = "win32=$win32"
         }
     } catch { $out.DeviceError = "$($_.Exception.Message)" }
     $out
 }
 
-Write-Host ("  驱动签名 : {0} / {1}" -f $load.SigStatus, $load.Signer)
+Write-Host ("  Driver Signature: {0} / {1}" -f $load.SigStatus, $load.Signer)
 Write-Host ("  sc create: {0}" -f ($load.Create -replace '\s+', ' '))
 Write-Host ("  sc start : {0}" -f ($load.Start  -replace '\s+', ' '))
-$loaded = Show-Check '服务处于 RUNNING' $load.Running
-$dev    = Show-Check '设备 \\.\KswordARKLog 可打开' $load.DeviceOpen $load.DeviceError
+$loaded = Show-Check 'Service is RUNNING' $load.Running
+$dev    = Show-Check 'Device \\.\KswordARKLog can be opened' $load.DeviceOpen $load.DeviceError
 
 if (-not $loaded) {
-    Write-Host "`nsc query 原文：`n$($load.Query)" -ForegroundColor Yellow
-    throw '驱动没能进入 RUNNING —— 不要当成加载成功。上面的 sc start 输出是第一手线索。'
+    Write-Host "`nsc query Original text: `n$($load.Query)" -ForegroundColor Yellow
+    throw 'Driver failed to enter RUNNING state — do not treat this as a successful load. The output from the sc start command above is the primary clue.'
 }
 
 # ---------------------------------------------------------------------------
-# 5. 查询 HVM 能力状态（**不 VMXON**）
+# 5. Query HVM capability status (**do not VMXON**)
 # ---------------------------------------------------------------------------
-Write-Host "`n--- 5. HVM 能力状态（只读，不启动 HVM）---" -ForegroundColor Cyan
+Write-Host "`n--- 5. HVM capability status (read-only; does not start HVM)---" -ForegroundColor Cyan
 $status = Invoke-Command -VMName $VMName -Credential $GuestCredential -ScriptBlock {
     & 'C:\ksword\KswordCLI.exe' r0 hvm-status 2>&1 | Out-String
 }
 Write-Host $status
 
 Write-Host @"
-驱动已加载，HVM **尚未启动**（没有 VMXON）。
+Driver loaded, HVM **not yet started** (no VMXON).
 
-下一步是单独的一步，确认上面的能力报告正常之后再做：
-  * 从 Qt 主程序的内核页启动 HVM，或
-  * 用对应的 IOCTL 启动
+The next step is a separate step, to be performed only after confirming that the capabilities report above is normal:
+  * Launch HVM from the kernel page of the Qt main program, or
+  * Start using the corresponding IOCTL
 
-出了问题回滚：
+Rollback on error:
   Get-VMSnapshot -VMName '$VMName' | Select-Object Name,CreationTime
-  Restore-VMCheckpoint -VMName '$VMName' -Name '<检查点名>' -Confirm:`$false
+  Restore-VMCheckpoint -VMName '$VMName' -Name '<CheckpointName>' -Confirm:`$false
 
-蓝屏的话，转储在 guest 的 $($dump.File)，取出来：
-  Copy-VMFile 反向不可用，用 PowerShell Direct 读取，或在 guest 内共享出来。
+In case of a blue screen, the dump is in guest's $($dump.File), retrieve it:
+  Copy-VMFile reverse is unavailable; use PowerShell Direct to read, or share it out within the guest.
 "@ -ForegroundColor Yellow

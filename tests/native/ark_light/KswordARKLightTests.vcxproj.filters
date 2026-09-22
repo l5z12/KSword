@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <Filter Include="apps">
+      <UniqueIdentifier>{924A68A1-BDA0-5664-958F-F0C65ABF2E82}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\ark_light">
+      <UniqueIdentifier>{7AFC2F50-015A-533D-B26F-24763B987A7C}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\ark_light\core">
+      <UniqueIdentifier>{ADA5CF07-C3AE-52A8-A5C0-8792A03D4C80}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\ark_light\features">
+      <UniqueIdentifier>{F130EB7A-11D8-5B28-B39D-6258F7BDAA11}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\ark_light\features\file">
+      <UniqueIdentifier>{AF49CC87-5BD9-5933-9BAF-8C31D320B970}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\ark_light\features\memory">
+      <UniqueIdentifier>{EEE62E9A-64F2-5DFF-83AC-A6A43217835F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\ark_light\features\monitor">
+      <UniqueIdentifier>{BF9F882E-2CE3-504E-92E8-AE4A7971E406}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\ark_light\features\registry">
+      <UniqueIdentifier>{4ECDD25B-A068-576A-A47F-E8F404967F83}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\ark_light\features\sys_tools">
+      <UniqueIdentifier>{8CF3E4AD-7AE3-5B59-ADA9-D3A9FB7A9C75}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\ark_light\features\window">
+      <UniqueIdentifier>{1DF65894-3608-51DF-B23E-55FA42AE74B9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\ark_light\ui">
+      <UniqueIdentifier>{1477BFBD-913A-5CCA-9773-3A36425B2D79}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared">
+      <UniqueIdentifier>{036B2F4E-20A0-524C-83FE-367D23D036AA}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared\driver">
+      <UniqueIdentifier>{71D94B54-4448-5098-A3F4-E0C6ADF736B7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared\evidence">
+      <UniqueIdentifier>{9F43D0A8-4153-5DA7-9BBD-3B34A9187188}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="CrossViewTests.cpp" />
+    <ClCompile Include="DdmaPlanTests.cpp" />
+    <ClCompile Include="DmaProcessOpPlanTests.cpp" />
+    <ClCompile Include="DumpFactsTests.cpp" />
+    <ClCompile Include="EntityGraphTests.cpp" />
+    <ClCompile Include="EvidenceContractTests.cpp" />
+    <ClCompile Include="HookPatchComposeTests.cpp" />
+    <ClCompile Include="HvmEptSwitchTests.cpp" />
+    <ClCompile Include="HvmWatchTests.cpp" />
+    <ClCompile Include="ImageIntegrityTests.cpp" />
+    <ClCompile Include="InjectionSurveyTests.cpp" />
+    <ClCompile Include="KswordARKLightTests.cpp" />
+    <ClCompile Include="MemoryEvidenceTests.cpp" />
+    <ClCompile Include="MemoryTamperCrossViewTests.cpp" />
+    <ClCompile Include="NumericTextParseTests.cpp" />
+    <ClCompile Include="SecurityStateTests.cpp" />
+    <ClCompile Include="SnapshotCompareTests.cpp" />
+    <ClInclude Include="TestSupport.h" />
+    <ClCompile Include="TimelineTests.cpp" />
+    <ClCompile Include="WfpTests.cpp" />
+    <ClInclude Include="..\..\..\apps\ark_light\core\DriverLeasePolicy.h">
+      <Filter>apps\ark_light\core</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\apps\ark_light\core\EntityRef.cpp">
+      <Filter>apps\ark_light\core</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\apps\ark_light\core\EntityRef.h">
+      <Filter>apps\ark_light\core</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\apps\ark_light\core\WorkspaceConfig.cpp">
+      <Filter>apps\ark_light\core</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\apps\ark_light\core\WorkspaceConfig.h">
+      <Filter>apps\ark_light\core</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\apps\ark_light\features\file\PathNavigator.cpp">
+      <Filter>apps\ark_light\features\file</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\apps\ark_light\features\file\PathNavigator.h">
+      <Filter>apps\ark_light\features\file</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\apps\ark_light\features\memory\MemoryInspection.cpp">
+      <Filter>apps\ark_light\features\memory</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\apps\ark_light\features\memory\MemoryInspection.h">
+      <Filter>apps\ark_light\features\memory</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\apps\ark_light\features\memory\MemorySnapshot.cpp">
+      <Filter>apps\ark_light\features\memory</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\apps\ark_light\features\memory\MemorySnapshot.h">
+      <Filter>apps\ark_light\features\memory</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\apps\ark_light\features\memory\MemoryWritePlan.cpp">
+      <Filter>apps\ark_light\features\memory</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\apps\ark_light\features\memory\MemoryWritePlan.h">
+      <Filter>apps\ark_light\features\memory</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\apps\ark_light\features\monitor\EtwEventModel.cpp">
+      <Filter>apps\ark_light\features\monitor</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\apps\ark_light\features\monitor\EtwEventModel.h">
+      <Filter>apps\ark_light\features\monitor</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\apps\ark_light\features\registry\RegistrySearchModel.cpp">
+      <Filter>apps\ark_light\features\registry</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\apps\ark_light\features\registry\RegistrySearchModel.h">
+      <Filter>apps\ark_light\features\registry</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\apps\ark_light\features\sys_tools\IoctlDecoder.cpp">
+      <Filter>apps\ark_light\features\sys_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\apps\ark_light\features\sys_tools\IoctlDecoder.h">
+      <Filter>apps\ark_light\features\sys_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\apps\ark_light\features\window\Win32kTimerEvidenceModel.cpp">
+      <Filter>apps\ark_light\features\window</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\apps\ark_light\features\window\Win32kTimerEvidenceModel.h">
+      <Filter>apps\ark_light\features\window</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\apps\ark_light\ui\EvidenceSession.cpp">
+      <Filter>apps\ark_light\ui</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\apps\ark_light\ui\EvidenceSession.h">
+      <Filter>apps\ark_light\ui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\shared\driver\KswordArkHvmEptSwitch.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\CrossViewDiff.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\CrossViewDiff.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\DdmaScratchPlan.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\shared\evidence\DmaProcessOpPlan.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\shared\evidence\DumpFacts.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\DumpFacts.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\EntityGraph.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\EntityGraph.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\EvidenceEnvelope.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\EvidenceEnvelope.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\EvidenceJson.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\EvidenceJson.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\HookPatchCompose.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\HookPatchCompose.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\ImageDiff.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\ImageDiff.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\InjectionSurvey.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\InjectionSurvey.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\LiveNavigation.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\LiveNavigation.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\LosslessValue.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\LosslessValue.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\MemoryRegionEvidence.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\MemoryRegionEvidence.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\MemoryTamperCrossView.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\shared\evidence\ObjectIdentity.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\ObjectIdentity.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\PageTableWalk.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\PageTableWalk.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\PeImageMap.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\PeImageMap.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\ScanBudget.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\ScanBudget.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\SecurityState.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\SecurityState.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\SnapshotCompare.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\SnapshotCompare.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\TimelineCore.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\TimelineCore.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\shared\evidence\WfpAnalysis.cpp">
+      <Filter>shared\evidence</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\shared\evidence\WfpAnalysis.h">
+      <Filter>shared\evidence</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

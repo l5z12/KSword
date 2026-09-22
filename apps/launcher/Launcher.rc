@@ -1,0 +1,3 @@
+#include "resource.h"
+#define IDI_ICON1 101
+IDI_LAUNCHER ICON "..\\desktop\\Resource\\Logo\\KswordLogo.ico"

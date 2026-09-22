@@ -4,12 +4,12 @@
 
 // ============================================================
 // KswordArkKeyboardIoctl.h
-// 作用：
-// - 定义 R3 <-> R0 键盘热键/钩子枚举协议；
-// - 热键枚举面向 win32k RegisterHotKey 内部表；
-// - 钩子枚举面向 WH_KEYBOARD / WH_KEYBOARD_LL 链，仅返回诊断信息。
-// - 热键编辑/删除只接受枚举返回的完整快照，并在 USER 临界区内重新验证；
-// - 编辑只改变 modifiers、virtualKey 及换桶所需的 next 链接，其他对象字节必须不变。
+// Purpose:
+// - Defines the R3 <-> R0 keyboard hotkey/hook enumeration protocol.
+// - Hotkey enumeration targets the internal table of win32k RegisterHotKey.
+// - Hook enumeration targets WH_KEYBOARD / WH_KEYBOARD_LL chains and returns diagnostic information only.
+// - Hotkey edit/delete only accepts the complete snapshot returned by enumeration and re-validates within the USER critical section;
+// - Editing only modifies modifiers, virtualKey, and the next link required for bucket switching; all other object bytes must remain unchanged;
 // ============================================================
 
 #define KSWORD_ARK_KEYBOARD_PROTOCOL_VERSION 2UL
@@ -139,7 +139,7 @@ typedef struct _KSWORD_ARK_KEYBOARD_HOTKEY_ENTRY
     unsigned long long threadObject;
     unsigned long long windowObject;
     wchar_t detail[KSWORD_ARK_KEYBOARD_DETAIL_CHARS];
-    // v2 尾部扩展保持 v1 字段偏移不变，旧客户端仍可按 entrySize 跳过。
+    // v2 tail extension maintains v1 field offsets so legacy clients can still skip based on entrySize.
     unsigned long long windowHandle;
     unsigned long long destinationHandle;
     unsigned long long callbackAddress;

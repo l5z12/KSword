@@ -1,0 +1,110 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36414.22
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Ksword5.1", "apps\desktop\KswordDesktop.vcxproj", "{DB322F56-140F-4CBF-8CF4-2D89B3DD293E}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DwmZOrderAgent", "integrations\dwm_z_order\DwmZOrderAgent.vcxproj", "{CFEC311C-A4F4-46C6-8A41-7333EE5FB817}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "KswordUacDesk", "apps\uac_desktop\KswordUacDesk.vcxproj", "{C761D9C1-6F9F-4F54-9AF6-8DCB89524E8A}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Taskbar", "apps\taskbar\Taskbar.vcxproj", "{F695C34B-DEFC-4DA4-A7C8-7133C07A1BC3}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "KswordHUD", "apps\hud\KswordHUD.vcxproj", "{FD474EA8-79AC-46C1-952C-5F0222CBC178}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "APIMonitor_x64", "integrations\api_monitor\APIMonitor_x64.vcxproj", "{CEF9AD14-A819-4792-AA6B-009DB21334EE}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "KswordARKDriver", "drivers\ark\KswordARKDriver.vcxproj", "{E4B6A5CC-D9ED-FCA2-46D5-5035E8728524}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "KswordCLI", "apps\cli\KswordCLI.vcxproj", "{BDE77103-B963-40A8-A28E-0B9C26A5C5DD}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Launcher", "apps\launcher\Launcher.vcxproj", "{A0A55C8F-5A6B-4E16-9F51-02CB2D2EBB57}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "KswordSetup", "apps\setup\KswordSetup.vcxproj", "{9B7CB5ED-A00A-4E2F-9E07-1A5C2B75B3D1}"
+	ProjectSection(ProjectDependencies) = postProject
+		{DB322F56-140F-4CBF-8CF4-2D89B3DD293E} = {DB322F56-140F-4CBF-8CF4-2D89B3DD293E}
+		{F695C34B-DEFC-4DA4-A7C8-7133C07A1BC3} = {F695C34B-DEFC-4DA4-A7C8-7133C07A1BC3}
+		{FD474EA8-79AC-46C1-952C-5F0222CBC178} = {FD474EA8-79AC-46C1-952C-5F0222CBC178}
+		{CEF9AD14-A819-4792-AA6B-009DB21334EE} = {CEF9AD14-A819-4792-AA6B-009DB21334EE}
+		{E4B6A5CC-D9ED-FCA2-46D5-5035E8728524} = {E4B6A5CC-D9ED-FCA2-46D5-5035E8728524}
+		{BDE77103-B963-40A8-A28E-0B9C26A5C5DD} = {BDE77103-B963-40A8-A28E-0B9C26A5C5DD}
+		{A0A55C8F-5A6B-4E16-9F51-02CB2D2EBB57} = {A0A55C8F-5A6B-4E16-9F51-02CB2D2EBB57}
+		{44CC7D72-182E-4B28-9D88-531B09C77C41} = {44CC7D72-182E-4B28-9D88-531B09C77C41}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "KswordARKLight", "apps\ark_light\KswordARKLight.vcxproj", "{44CC7D72-182E-4B28-9D88-531B09C77C41}"
+	ProjectSection(ProjectDependencies) = postProject
+		{E4B6A5CC-D9ED-FCA2-46D5-5035E8728524} = {E4B6A5CC-D9ED-FCA2-46D5-5035E8728524}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "KswordCheatEnginePlugin", "integrations\cheat_engine_plugin\KswordCheatEnginePlugin.vcxproj", "{2BA78D7E-71C4-43C1-B75B-36BD96978D2E}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "KswordCheatEngineLauncher", "integrations\cheat_engine_launcher\KswordCheatEngineLauncher.vcxproj", "{9E6D1A65-D747-47ED-A8C7-6C637DE6C9E8}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CFEC311C-A4F4-46C6-8A41-7333EE5FB817}.Debug|x64.ActiveCfg = Debug|x64
+		{CFEC311C-A4F4-46C6-8A41-7333EE5FB817}.Debug|x64.Build.0 = Debug|x64
+		{CFEC311C-A4F4-46C6-8A41-7333EE5FB817}.Release|x64.ActiveCfg = Release|x64
+		{CFEC311C-A4F4-46C6-8A41-7333EE5FB817}.Release|x64.Build.0 = Release|x64
+		{DB322F56-140F-4CBF-8CF4-2D89B3DD293E}.Debug|x64.ActiveCfg = Debug|x64
+		{DB322F56-140F-4CBF-8CF4-2D89B3DD293E}.Debug|x64.Build.0 = Debug|x64
+		{DB322F56-140F-4CBF-8CF4-2D89B3DD293E}.Release|x64.ActiveCfg = Release|x64
+		{DB322F56-140F-4CBF-8CF4-2D89B3DD293E}.Release|x64.Build.0 = Release|x64
+		{C761D9C1-6F9F-4F54-9AF6-8DCB89524E8A}.Debug|x64.ActiveCfg = Debug|x64
+		{C761D9C1-6F9F-4F54-9AF6-8DCB89524E8A}.Debug|x64.Build.0 = Debug|x64
+		{C761D9C1-6F9F-4F54-9AF6-8DCB89524E8A}.Release|x64.ActiveCfg = Release|x64
+		{C761D9C1-6F9F-4F54-9AF6-8DCB89524E8A}.Release|x64.Build.0 = Release|x64
+		{F695C34B-DEFC-4DA4-A7C8-7133C07A1BC3}.Debug|x64.ActiveCfg = Debug|x64
+		{F695C34B-DEFC-4DA4-A7C8-7133C07A1BC3}.Debug|x64.Build.0 = Debug|x64
+		{F695C34B-DEFC-4DA4-A7C8-7133C07A1BC3}.Release|x64.ActiveCfg = Release|x64
+		{F695C34B-DEFC-4DA4-A7C8-7133C07A1BC3}.Release|x64.Build.0 = Release|x64
+		{FD474EA8-79AC-46C1-952C-5F0222CBC178}.Debug|x64.ActiveCfg = Debug|x64
+		{FD474EA8-79AC-46C1-952C-5F0222CBC178}.Debug|x64.Build.0 = Debug|x64
+		{FD474EA8-79AC-46C1-952C-5F0222CBC178}.Release|x64.ActiveCfg = Release|x64
+		{FD474EA8-79AC-46C1-952C-5F0222CBC178}.Release|x64.Build.0 = Release|x64
+		{CEF9AD14-A819-4792-AA6B-009DB21334EE}.Debug|x64.ActiveCfg = Debug|x64
+		{CEF9AD14-A819-4792-AA6B-009DB21334EE}.Debug|x64.Build.0 = Debug|x64
+		{CEF9AD14-A819-4792-AA6B-009DB21334EE}.Release|x64.ActiveCfg = Release|x64
+		{CEF9AD14-A819-4792-AA6B-009DB21334EE}.Release|x64.Build.0 = Release|x64
+		{E4B6A5CC-D9ED-FCA2-46D5-5035E8728524}.Debug|x64.ActiveCfg = Debug|x64
+		{E4B6A5CC-D9ED-FCA2-46D5-5035E8728524}.Debug|x64.Build.0 = Debug|x64
+		{E4B6A5CC-D9ED-FCA2-46D5-5035E8728524}.Release|x64.ActiveCfg = Release|x64
+		{E4B6A5CC-D9ED-FCA2-46D5-5035E8728524}.Release|x64.Build.0 = Release|x64
+		{BDE77103-B963-40A8-A28E-0B9C26A5C5DD}.Debug|x64.ActiveCfg = Debug|x64
+		{BDE77103-B963-40A8-A28E-0B9C26A5C5DD}.Debug|x64.Build.0 = Debug|x64
+		{BDE77103-B963-40A8-A28E-0B9C26A5C5DD}.Release|x64.ActiveCfg = Release|x64
+		{BDE77103-B963-40A8-A28E-0B9C26A5C5DD}.Release|x64.Build.0 = Release|x64
+		{A0A55C8F-5A6B-4E16-9F51-02CB2D2EBB57}.Debug|x64.ActiveCfg = Debug|x64
+		{A0A55C8F-5A6B-4E16-9F51-02CB2D2EBB57}.Debug|x64.Build.0 = Debug|x64
+		{A0A55C8F-5A6B-4E16-9F51-02CB2D2EBB57}.Release|x64.ActiveCfg = Release|x64
+		{A0A55C8F-5A6B-4E16-9F51-02CB2D2EBB57}.Release|x64.Build.0 = Release|x64
+		{9B7CB5ED-A00A-4E2F-9E07-1A5C2B75B3D1}.Debug|x64.ActiveCfg = Debug|x64
+		{9B7CB5ED-A00A-4E2F-9E07-1A5C2B75B3D1}.Debug|x64.Build.0 = Debug|x64
+		{9B7CB5ED-A00A-4E2F-9E07-1A5C2B75B3D1}.Release|x64.ActiveCfg = Release|x64
+		{9B7CB5ED-A00A-4E2F-9E07-1A5C2B75B3D1}.Release|x64.Build.0 = Release|x64
+		{44CC7D72-182E-4B28-9D88-531B09C77C41}.Debug|x64.ActiveCfg = Debug|x64
+		{44CC7D72-182E-4B28-9D88-531B09C77C41}.Debug|x64.Build.0 = Debug|x64
+		{44CC7D72-182E-4B28-9D88-531B09C77C41}.Release|x64.ActiveCfg = Release|x64
+		{44CC7D72-182E-4B28-9D88-531B09C77C41}.Release|x64.Build.0 = Release|x64
+		{2BA78D7E-71C4-43C1-B75B-36BD96978D2E}.Debug|x64.ActiveCfg = Debug|x64
+		{2BA78D7E-71C4-43C1-B75B-36BD96978D2E}.Debug|x64.Build.0 = Debug|x64
+		{2BA78D7E-71C4-43C1-B75B-36BD96978D2E}.Release|x64.ActiveCfg = Release|x64
+		{2BA78D7E-71C4-43C1-B75B-36BD96978D2E}.Release|x64.Build.0 = Release|x64
+		{9E6D1A65-D747-47ED-A8C7-6C637DE6C9E8}.Debug|x64.ActiveCfg = Debug|x64
+		{9E6D1A65-D747-47ED-A8C7-6C637DE6C9E8}.Debug|x64.Build.0 = Debug|x64
+		{9E6D1A65-D747-47ED-A8C7-6C637DE6C9E8}.Release|x64.ActiveCfg = Release|x64
+		{9E6D1A65-D747-47ED-A8C7-6C637DE6C9E8}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {D12C0D2A-A158-4EBB-A294-6FC85CD581CB}
+	EndGlobalSection
+EndGlobal

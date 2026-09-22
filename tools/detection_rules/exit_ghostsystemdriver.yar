@@ -1,6 +1,6 @@
 /*
-    EXIT / GhostSystemDriver 静态检测规则。
-    规则依赖多组行为字符串，不以单一样本哈希作为判定条件。
+    Static detection rules for EXIT / GhostSystemDriver.
+    The rules rely on several groups of behavioral strings rather than a single sample hash.
 */
 
 rule KSword_EXIT_Libcef_Proxy

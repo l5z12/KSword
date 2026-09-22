@@ -4,7 +4,7 @@
 
 This manifest records the staged DriverDock-facing R0 read-only integrity query for DriverObject, loader/module views, service metadata, and CPU kernel-entry evidence.
 
-The implementation is intentionally not wired into `KswordARKDriver/src/dispatch/ioctl_registry.c` in this session.
+The implementation is intentionally not wired into `drivers/ark/src/dispatch/ioctl_registry.c` in this session.
 
 ## New shared protocol
 
@@ -31,18 +31,18 @@ CPU rows also carry `processorGroup`, `processorNumber`, and `vector` for IDT ev
 
 ## Staged R0 handler
 
-- Handler: `KswordARKKernelIoctlQueryDriverIntegrity`
-- File: `KswordARKDriver/src/features/kernel/kernel_ioctl.c`
-- Backend: `KswordARKDriverQueryDriverIntegrity`
-- Public prototype: `KswordARKDriver/include/ark/ark_kernel.h`
+- Handler: `kswordArkKernelIoctlQueryDriverIntegrity`
+- File: `drivers/ark/src/features/kernel/kernel_ioctl.c`
+- Backend: `kswordArkDriverQueryDriverIntegrity`
+- Public prototype: `drivers/ark/include/ark/ark_kernel.h`
 
 The handler performs only WDF buffer retrieval, default request population, logging, and backend dispatch. It is not added to the IOCTL registry in this session.
 
 ## New source files
 
-- `KswordARKDriver/src/features/kernel/driver_integrity.h`
+- `drivers/ark/src/features/kernel/driver_integrity.h`
   - Shared internal builder and helper declarations.
-- `KswordARKDriver/src/features/kernel/driver_integrity.c`
+- `drivers/ark/src/features/kernel/driver_integrity.c`
   - SystemModuleInformation module evidence.
   - Dynamically resolved AuxKlib module evidence.
   - DriverObject `DriverStart`/`DriverSize`/`DriverSection` capture.
@@ -51,9 +51,9 @@ The handler performs only WDF buffer retrieval, default request population, logg
   - DeviceObject and AttachedDevice chain loop/cross-driver checks.
   - Services key read-only availability evidence.
   - Optional MmUnloadedDrivers and PiDDBCacheTable global-address evidence, with graceful unavailable rows when DynData is missing.
-- `KswordARKDriver/src/features/kernel/kernel_cpu_integrity.h`
+- `drivers/ark/src/features/kernel/kernel_cpu_integrity.h`
   - CPU integrity collector declaration.
-- `KswordARKDriver/src/features/kernel/kernel_cpu_integrity.c`
+- `drivers/ark/src/features/kernel/kernel_cpu_integrity.c`
   - Per-CPU read-only CR0/CR4/EFER/LSTAR/SYSENTER_EIP capture.
   - Per-CPU IDTR/GDTR capture.
   - Optional IDT handler owner attribution through the loaded module snapshot.
@@ -78,7 +78,7 @@ When the active DynData profile exposes `PsLoadedModuleList` and KLDR offsets, t
 ## Session 6 integration checklist
 
 1. Add `driver_integrity.c`, `driver_integrity.h`, `kernel_cpu_integrity.c`, and `kernel_cpu_integrity.h` to `KswordARKDriver.vcxproj` and `.vcxproj.filters`.
-2. Register `IOCTL_KSWORD_ARK_QUERY_DRIVER_INTEGRITY` in `KswordARKDriver/src/dispatch/ioctl_registry.c` with handler `KswordARKKernelIoctlQueryDriverIntegrity`.
+2. Register `IOCTL_KSWORD_ARK_QUERY_DRIVER_INTEGRITY` in `drivers/ark/src/dispatch/ioctl_registry.c` with handler `kswordArkKernelIoctlQueryDriverIntegrity`.
 3. Add ArkDriverClient wrappers and DriverDock UI model/rendering for evidence rows.
 4. Decide whether DynData vNext should add stable MmUnloadedDrivers and PiDDB entry schemas for full row enumeration.
 5. Add focused integration tests or manual validation steps after registration.

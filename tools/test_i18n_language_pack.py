@@ -8,6 +8,17 @@ import i18n_language_pack as i18n
 
 
 class I18nLanguagePackTests(unittest.TestCase):
+    def test_header_names_are_not_ui_strings(self) -> None:
+        source = ('#include "MainWindow.BackgroundSupport.h"\n'
+                  '  # include "界面/窗口.h"\n'
+                  '#include \\\n"AnotherHeader.h"\n'
+                  '#define LABEL "显示窗口"\n'
+                  'auto text = "MainWindow.BackgroundSupport.h";\n')
+        self.assertEqual(
+            [("显示窗口", 5), ("MainWindow.BackgroundSupport.h", 6)],
+            list(i18n.extract_cpp_literals(source)),
+        )
+
     def test_extracts_compiler_concatenated_literal(self) -> None:
         source = '''
 QString value = QStringLiteral(

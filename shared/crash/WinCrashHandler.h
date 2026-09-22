@@ -35,21 +35,21 @@ namespace ks
             const wchar_t* restartFailedText = nullptr;
         };
 
-        // InstallCrashHandler must be called at the beginning of main/wWinMain. It
+        // installCrashHandler must be called at the beginning of main/wWinMain. It
         // preloads DbgHelp and prepares all paths before a process failure can damage
         // the heap or loader state.
-        void InstallCrashHandler(const Configuration& configuration);
+        void installCrashHandler(const Configuration& configuration);
 
-        // UpdateCrashDialogText copies the supplied strings into fixed internal
+        // updateCrashDialogText copies the supplied strings into fixed internal
         // buffers. The caller may release its source strings after this call.
-        void UpdateCrashDialogText(const DialogText& text);
+        void updateCrashDialogText(const DialogText& text);
 
-        // WaitForCrashRestartTargetFromCommandLine consumes the internal wait-PID
+        // waitForCrashRestartTargetFromCommandLine consumes the internal wait-PID
         // argument. A true result means the current process is the direct child of
         // the same executable, and that predecessor was observed exiting within the
         // timeout. Callers may bypass the normal instance check only on true.
-        bool WaitForCrashRestartTargetFromCommandLine(DWORD timeoutMilliseconds = 30000);
+        bool waitForCrashRestartTargetFromCommandLine(DWORD timeoutMilliseconds = 30000);
 
-        bool CommandLineHasArgument(const wchar_t* argumentName);
+        bool commandLineHasArgument(const wchar_t* argumentName);
     }
 }

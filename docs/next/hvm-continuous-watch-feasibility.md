@@ -190,4 +190,4 @@ MTF 在别的例程上结束，然后同一条指令很快（而且一定会）�
 - 本仓库 `docs/next/EPT切换后端设计.md` 与 `docs/next/隐蔽Hook安全边界决策.md`：
   EPTP 切换后端在缺 MTF 的嵌套靶机上实测生效，以及「写叶 + MTF」与「切 EPTP」两种
   后端在安全边界上并无差别这一结论。
-- 完整规范摘录见 `docs/虚拟化规范要点.md`。
+- 完整规范摘录见 `docs/zh-CN/virtualization-reference.md`。

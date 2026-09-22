@@ -1,0 +1,1300 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build" ToolsVersion="17.0">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{DB322F56-140F-4CBF-8CF4-2D89B3DD293E}</ProjectGuid>
+    <Keyword>QtVS_v304</Keyword>
+    <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">10.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">10.0</WindowsTargetPlatformVersion>
+    <QtMsBuild Condition="'$(QtMsBuild)' == '' and '$(KSWORD_QT_MSBUILD)' != '' and Exists('$(KSWORD_QT_MSBUILD)\qt.targets')">$(KSWORD_QT_MSBUILD)</QtMsBuild>
+    <QtMsBuild Condition="'$(QtMsBuild)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\.deps\QtVsTools\msbuild\qt.targets')">$(MSBuildThisFileDirectory)..\..\.deps\QtVsTools\msbuild</QtMsBuild>
+    <QtMsBuild Condition="'$(QtMsBuild)' == '' or !Exists('$(QtMsBuild)\qt.targets')">$(MSBuildProjectDirectory)\QtMsBuild</QtMsBuild>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Condition="Exists('$(QtMsBuild)\qt_defaults.props')">
+    <Import Project="$(QtMsBuild)\qt_defaults.props" />
+  </ImportGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
+    <QtInstall Condition="'$(KSWORD_QT_DIR)' != ''">$(KSWORD_QT_DIR)</QtInstall>
+    <QtInstall Condition="'$(QtInstall)' == '' and '$(QTDIR)' != ''">$(QTDIR)</QtInstall>
+    <QtInstall Condition="'$(QtInstall)' == ''">Qt</QtInstall>
+    <QtModules>core;gui;network;widgets;svg</QtModules>
+    <QtBuildConfig>debug</QtBuildConfig>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
+    <QtInstall Condition="'$(KSWORD_QT_DIR)' != ''">$(KSWORD_QT_DIR)</QtInstall>
+    <QtInstall Condition="'$(QtInstall)' == '' and '$(QTDIR)' != ''">$(QTDIR)</QtInstall>
+    <QtInstall Condition="'$(QtInstall)' == ''">Qt</QtInstall>
+    <QtModules>core;gui;network;widgets;svg</QtModules>
+    <QtBuildConfig>release</QtBuildConfig>
+  </PropertyGroup>
+  <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
+    <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
+  </Target>
+  <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />
+  </ImportGroup>
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" Condition="Exists('$(QtMsBuild)\Qt.props')" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" Condition="Exists('$(QtMsBuild)\Qt.props')" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros">
+    <TargetName>Ksword5.1</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <ReferencePath>$(ReferencePath)</ReferencePath>
+    <LibraryPath>$(MSBuildProjectDirectory)\lib;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <ReferencePath>$(ReferencePath)</ReferencePath>
+    <LibraryPath>$(MSBuildProjectDirectory)\lib;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
+  </PropertyGroup>
+  <Import Project="$(MSBuildProjectDirectory)\..\..\build\msbuild\Ksword.Output.props" />
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <LanguageStandard>stdcpp23</LanguageStandard>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\third_party\zstd;$(MSBuildProjectDirectory)\..\..\third_party\zydis;$(QTDIR)\include;$(QTDIR)\include\QtCore;$(QTDIR)\include\QtGui;$(QTDIR)\include\QtWidgets;$(QTDIR)\include\QtNetwork;$(QTDIR)\include\QtSvg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;ZYDIS_STATIC_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Optimization>Disabled</Optimization>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(QTDIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>qtadvanceddockingd.lib;Ole32.lib;Shell32.lib;Advapi32.lib;Setupapi.lib;Crypt32.lib;ImageHlp.lib;Propsys.lib;Wintrust.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <LanguageStandard>stdcpp23</LanguageStandard>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\third_party\zstd;$(MSBuildProjectDirectory)\..\..\third_party\zydis;$(QTDIR)\include;$(QTDIR)\include\QtCore;$(QTDIR)\include\QtGui;$(QTDIR)\include\QtWidgets;$(QTDIR)\include\QtNetwork;$(QTDIR)\include\QtSvg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;ZYDIS_STATIC_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Optimization>MinSpace</Optimization>
+      <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <OmitFramePointers>true</OmitFramePointers>
+      <StringPooling>true</StringPooling>
+      <GlobalDataOptimization>true</GlobalDataOptimization>
+      <DebugInformationFormat>None</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(QTDIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>qtadvanceddocking.lib;Ole32.lib;Shell32.lib;Advapi32.lib;Setupapi.lib;Crypt32.lib;ImageHlp.lib;Propsys.lib;Wintrust.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
+      <UACUIAccess>false</UACUIAccess>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
+    <ClCompile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
+    <ClCompile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <LinkIncremental>false</LinkIncremental>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ResourceCompile Include="AppIcon.rc" />
+    <ClCompile Include="driver_dock\DriverDock.cpp" />
+    <ClCompile Include="driver_dock\DriverDock.Ui.cpp" />
+    <ClCompile Include="driver_dock\DriverDock.Operation.cpp" />
+    <ClCompile Include="driver_dock\DriverDock.ModuleDumpFile.cpp" />
+    <ClCompile Include="driver_dock\DriverDock.Communication.cpp" />
+    <ClCompile Include="driver_dock\DriverDock.DebugAndUtils.cpp" />
+    <ClCompile Include="driver_dock\DriverDock.Evidence.cpp" />
+    <ClCompile Include="driver_dock\DriverDock.Integrity.cpp" />
+    <ClCompile Include="driver_dock\DriverDock.Unloaded.cpp" />
+    <ClCompile Include="file_dock\FileDock.cpp" />
+    <ClCompile Include="file_dock\FileDock.HandleUsage.cpp" />
+    <ClCompile Include="file_dock\FileDock.IrpBuilder.cpp" />
+    <ClCompile Include="file_dock\FileHandleUsageScanner.cpp" />
+    <ClCompile Include="file_dock\FileMappedProcessWindow.cpp" />
+    <ClCompile Include="file_dock\FilePropertyPeAnalyzer.cpp" />
+    <ClCompile Include="file_dock\FilePropertyPeAnalyzer.Directories.cpp" />
+    <ClCompile Include="file_dock\FilePropertyPeAnalyzer.Tables.cpp" />
+    <ClCompile Include="file_dock\ManualFileSystemParser.cpp" />
+    <ClCompile Include="file_dock\NtfsRunListDecode.cpp" />
+    <ClCompile Include="file_dock\DriverFileSystemParser.cpp" />
+    <ClCompile Include="file_dock\IrpFileSystemParser.cpp" />
+    <ClCompile Include="scanner_dock\ScannerDock.cpp" />
+    <ClCompile Include="scanner_dock\ScannerDock.Table.cpp" />
+    <ClCompile Include="handle_dock\HandleDock.cpp" />
+    <ClCompile Include="handle_dock\HandleDock.Actions.cpp" />
+    <ClCompile Include="handle_dock\HandleDock.Detail.cpp" />
+    <ClCompile Include="handle_dock\HandleDock.DetailNative.cpp" />
+    <ClCompile Include="handle_dock\HandleDock.Filter.cpp" />
+    <ClCompile Include="handle_dock\HandleDock.Icon.cpp" />
+    <ClCompile Include="handle_dock\HandleDock.Native.cpp" />
+    <ClCompile Include="handle_dock\HandleFilterConfig.cpp" />
+    <ClCompile Include="handle_dock\HandleObjectTypeWorker.cpp" />
+    <ClCompile Include="..\..\shared\ui\KsPainterChart.cpp" />
+    <ClCompile Include="hardware_dock\HardwareDock.cpp" />
+    <ClCompile Include="hardware_dock\DiskMonitorPage.cpp" />
+    <ClCompile Include="hardware_dock\DiskMonitorStorageLeaseCoordinator.cpp" />
+    <ClCompile Include="hardware_dock\DiskMonitorStoragePanel.cpp" />
+    <ClCompile Include="hardware_dock\MemoryCompositionHistoryWidget.cpp" />
+    <ClCompile Include="hardware_dock\HardwarePowerPage.cpp" />
+    <ClCompile Include="hardware_dock\HardwareR0EvidencePage.cpp" />
+    <ClCompile Include="hardware_dock\HardwareDeviceManagerPage.cpp" />
+    <ClCompile Include="hardware_dock\HardwareOtherDevicesPage.cpp" />
+    <ClCompile Include="hardware_dock\HardwareHwidDispatchPage.cpp" />
+    <ClCompile Include="hardware_dock\HardwareI8042AuditPage.cpp" />
+    <ClCompile Include="framework\Log.cpp" />
+    <ClCompile Include="framework\LogDockWidget.cpp" />
+    <ClCompile Include="framework\NotificationCardManager.cpp" />
+    <ClCompile Include="framework\DestructiveActionConfirmation.cpp" />
+    <ClCompile Include="framework\Progress.cpp" />
+    <ClCompile Include="framework\ProgressDockWidget.cpp" />
+    <ClCompile Include="framework\CustomTitleBar.cpp" />
+    <ClCompile Include="framework\StartupSplash.cpp" />
+    <ClCompile Include="..\..\shared\platform\file\FileHandleTools.cpp" />
+    <ClCompile Include="..\..\shared\platform\file\FileMetadataTransaction.cpp" />
+    <ClCompile Include="..\..\shared\platform\file\PeAnalyzer.cpp" />
+    <ClCompile Include="..\..\shared\platform\scanner\AtomicFilePatch.cpp" />
+    <ClCompile Include="..\..\shared\platform\scanner\AttackPathDetector.cpp" />
+    <ClCompile Include="..\..\shared\platform\scanner\BinaryScanner.cpp" />
+    <ClCompile Include="..\..\shared\platform\scanner\ElfScanner.cpp" />
+    <ClCompile Include="..\..\shared\platform\scanner\Iso9660Scanner.cpp" />
+    <ClCompile Include="..\..\shared\platform\scanner\MachOScanner.cpp" />
+    <ClCompile Include="..\..\shared\platform\profile\ProfileJsonLoader.cpp" />
+    <ClCompile Include="kernel_dock\KernelDock.cpp" />
+    <ClCompile Include="kernel_dock\KernelKnowledgeCatalog.cpp" />
+    <ClCompile Include="kernel_dock\KernelKnowledgeTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelDock.CallbackIntercept.cpp" />
+    <ClCompile Include="kernel_dock\KernelDock.CallbackPromptManager.cpp" />
+    <ClCompile Include="kernel_dock\KernelDock.CallbackRuleSerializer.cpp" />
+    <ClCompile Include="kernel_dock\KernelDock.CallbackRuleValidator.cpp" />
+    <ClCompile Include="kernel_dock\KernelDock.CallbackEnum.cpp" />
+    <ClCompile Include="kernel_dock\KernelDock.CallbackRemove.cpp" />
+    <ClCompile Include="kernel_dock\KernelDock.ContextMenu.cpp" />
+    <ClCompile Include="kernel_dock\KernelDock.DriverStatus.cpp" />
+    <ClCompile Include="kernel_dock\KernelDock.DynData.cpp" />
+    <ClCompile Include="kernel_dock\KernelDock.KernelHooks.cpp" />
+    <ClCompile Include="kernel_dock\KernelCleanImageBaseline.cpp" />
+    <ClCompile Include="kernel_dock\KernelDock.Runtime.cpp" />
+    <ClCompile Include="kernel_dock\KernelDock.Ssdt.cpp" />
+    <ClCompile Include="kernel_dock\KernelDockCidTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelDescriptorTableTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelHvmTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelSlatIommuAuditTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelTextIntegrityTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelVbsPostureTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelPlatformAuditTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelHvmTab.Experimental.cpp" />
+    <ClCompile Include="kernel_dock\KernelHvmTab.Formatting.cpp" />
+    <ClCompile Include="kvm_dock\KvmDock.cpp" />
+    <ClCompile Include="kernel_dock\KernelIoctlDecoderTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelDockIpcTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelBaseNamedObjectsTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelBaseNamedObjectsWorker.cpp" />
+    <ClCompile Include="kernel_dock\KernelCommunicationEndpointTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelDeviceDriverObjectsTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelDriverDispatchEditorDialog.cpp" />
+    <ClCompile Include="kernel_dock\KernelDriverImageEditorDialog.cpp" />
+    <ClCompile Include="kernel_dock\KernelDeviceDriverObjectsWorker.cpp" />
+    <ClCompile Include="kernel_dock\KernelIoTimerTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelIoctlAuditTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelDockAtomWorker.cpp" />
+    <ClCompile Include="kernel_dock\KernelDockObjectNamespaceWorker.cpp" />
+    <ClCompile Include="kernel_dock\KernelDockQueryWorker.cpp" />
+    <ClCompile Include="kernel_dock\KernelDockSsdtWorker.cpp" />
+    <ClCompile Include="kernel_dock\KernelNamedPipeTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelNamedPipeWorker.cpp" />
+    <ClCompile Include="kernel_dock\KernelObjectDirectoryDeepTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelObjectDirectoryDeepWorker.cpp" />
+    <ClCompile Include="kernel_dock\KernelObjectTypeMatrixTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelSymbolicLinkTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelSymbolicLinkWorker.cpp" />
+    <ClCompile Include="kernel_dock\KernelThreadAuditTab.cpp" />
+    <ClCompile Include="kernel_dock\KernelThreadAuditTab.Snapshot.cpp" />
+    <ClCompile Include="MainWindow.cpp" />
+    <ClCompile Include="MainWindow.Kvm.cpp" />
+    <ClCompile Include="misc_dock\boot_editor\BootEditorTab.Actions.cpp" />
+    <ClCompile Include="misc_dock\ApplicationControlPage.cpp" />
+    <ClCompile Include="misc_dock\sound_source\SoundSourceDetector.cpp" />
+    <ClCompile Include="misc_dock\sound_source\SoundSourcePage.cpp" />
+    <ClCompile Include="misc_dock\render_benchmark\RenderBenchmarkPage.cpp" />
+    <ClCompile Include="misc_dock\desktop_drawing\DesktopDrawingRenderer.cpp" />
+    <ClCompile Include="misc_dock\desktop_drawing\DesktopDrawingPage.cpp" />
+    <ClCompile Include="misc_dock\system_time\SystemTimePage.cpp" />
+    <ClCompile Include="misc_dock\virtual_location\VirtualLocationBackend.cpp" />
+    <ClCompile Include="misc_dock\virtual_location\VirtualLocationPage.cpp" />
+    <ClCompile Include="misc_dock\disable_dse\DisableDseBackend.cpp" />
+    <ClCompile Include="misc_dock\disable_dse\DisableDsePage.cpp" />
+    <ClCompile Include="misc_dock\experimental\BugcheckGuardPage.cpp" />
+    <ClCompile Include="misc_dock\disk_editor\DiskEditorBackend.cpp" />
+    <ClCompile Include="misc_dock\disk_editor\DiskDeletedEntryForensics.cpp" />
+    <ClCompile Include="misc_dock\disk_editor\DiskFileSystemForensics.cpp" />
+    <ClCompile Include="misc_dock\disk_editor\DiskFileSystemForensicsPanel.cpp" />
+    <ClCompile Include="misc_dock\disk_editor\DiskRawApfsFileSystem.cpp" />
+    <ClCompile Include="misc_dock\disk_editor\DiskRawBtrfsFileSystem.cpp" />
+    <ClCompile Include="misc_dock\disk_editor\DiskRawExtFileSystem.cpp" />
+    <ClCompile Include="misc_dock\disk_editor\DiskRawFileSystemBrowser.cpp" />
+    <ClCompile Include="misc_dock\disk_editor\DiskRawWindowsFileSystem.cpp" />
+    <ClCompile Include="misc_dock\disk_editor\DiskRawHfsFileSystem.cpp" />
+    <ClCompile Include="misc_dock\disk_editor\DiskRawRefsFileSystem.cpp" />
+    <ClCompile Include="misc_dock\disk_editor\DiskRangeTools.cpp" />
+    <ClCompile Include="misc_dock\disk_editor\DiskStructureParser.cpp" />
+    <ClCompile Include="misc_dock\disk_editor\DiskEditorTab.cpp" />
+    <ClCompile Include="misc_dock\disk_editor\DiskMapWidget.cpp" />
+    <ClCompile Include="misc_dock\context_menu_cleaner\ContextMenuCleanerTab.cpp" />
+    <ClCompile Include="misc_dock\context_menu_cleaner\ContextMenuCleanerTab.Associations.cpp" />
+    <ClCompile Include="misc_dock\context_menu_cleaner\ContextMenuCleanerTab.Backup.cpp" />
+    <ClCompile Include="misc_dock\context_menu_cleaner\ContextMenuCleanerTab.Explorer.cpp" />
+    <ClCompile Include="misc_dock\context_menu_cleaner\ContextMenuCleanerTab.Helpers.cpp" />
+    <ClCompile Include="misc_dock\context_menu_cleaner\ContextMenuCleanerTab.Registry.cpp" />
+    <ClCompile Include="memory_dock\MemoryDock.cpp" />
+    <ClCompile Include="memory_dock\MemoryDock.DriverMemoryRw.cpp" />
+    <ClCompile Include="memory_dock\MemoryDock.DriverMemorySource.cpp" />
+    <ClCompile Include="memory_dock\MemoryDock.DriverMemoryView.cpp" />
+    <ClCompile Include="memory_dock\MemoryDock.KernelExecutableMemory.cpp" />
+    <ClCompile Include="memory_dock\MemoryDock.KernelMemoryEvidence.cpp" />
+    <ClCompile Include="memory_dock\MemoryDock.ProcessMemoryEvidence.cpp" />
+    <ClCompile Include="memory_dock\MemoryDock.ProcessPteTranslate.cpp" />
+    <ClCompile Include="memory_dock\MemoryDock.UiBuild.cpp" />
+    <ClCompile Include="memory_dock\MemoryDock.UiWireAndStatus.cpp" />
+    <ClCompile Include="memory_dock\MemoryDock.ProcessRegion.cpp" />
+    <ClCompile Include="memory_dock\MemoryDock.SearchParseAndFilter.cpp" />
+    <ClCompile Include="memory_dock\MemoryDock.SearchFlow.cpp" />
+    <ClCompile Include="memory_dock\SystemMemoryAuditPage.cpp" />
+    <ClCompile Include="memory_dock\MemoryAccessBackend.cpp" />
+    <ClCompile Include="memory_dock\DdmaPage.cpp" />
+    <ClCompile Include="memory_dock\TamperDetectionPage.cpp" />
+    <ClCompile Include="memory_dock\DmaProcessOpPage.cpp" />
+    <ClCompile Include="memory_dock\MemoryDock.ViewBreakpointUtil.cpp" />
+    <ClCompile Include="misc_dock\boot_editor\BootEditorTab.cpp" />
+    <ClCompile Include="misc_dock\MiscDock.cpp" />
+    <ClCompile Include="minidump_dock\DumpAnalyzer.cpp" />
+    <ClCompile Include="minidump_dock\DumpByteView.cpp" />
+    <ClCompile Include="minidump_dock\DumpBugCheckText.cpp" />
+    <ClCompile Include="minidump_dock\DumpContextRegisters.cpp" />
+    <ClCompile Include="minidump_dock\DumpMemoryReader.cpp" />
+    <ClCompile Include="minidump_dock\DumpMemoryView.cpp" />
+    <ClCompile Include="minidump_dock\DumpStackWalker.cpp" />
+    <ClCompile Include="minidump_dock\DumpSymbolIndex.cpp" />
+    <ClCompile Include="minidump_dock\KernelDumpParser.cpp" />
+    <ClCompile Include="minidump_dock\DumpPhysicalMemory.cpp" />
+    <ClCompile Include="minidump_dock\DumpAutoCheck.cpp" />
+    <ClCompile Include="minidump_dock\DumpSymbolResolver.cpp" />
+    <ClCompile Include="minidump_dock\DumpPoolTag.cpp" />
+    <ClCompile Include="minidump_dock\CrashHistory.cpp" />
+    <ClCompile Include="minidump_dock\DumpPageTable.cpp" />
+    <ClCompile Include="minidump_dock\DumpKernelModuleList.cpp" />
+    <ClCompile Include="minidump_dock\MinidumpCodeText.cpp" />
+    <ClCompile Include="minidump_dock\MinidumpDock.cpp" />
+    <ClCompile Include="minidump_dock\MinidumpDock.Tables.cpp" />
+    <ClCompile Include="minidump_dock\MinidumpParser.cpp" />
+    <ClCompile Include="minidump_dock\MinidumpParser.Streams.cpp" />
+    <ClCompile Include="monitor_dock\EtwArchiveCompression.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.cpp" />
+    <ClCompile Include="monitor_dock\MonitorPanelWidget.cpp" />
+    <ClCompile Include="monitor_dock\MonitorTextViewer.cpp" />
+    <ClCompile Include="monitor_dock\DirectKernelCallMonitorWidget.cpp" />
+    <ClCompile Include="monitor_dock\KernelCallbackMonitorWidget.cpp" />
+    <ClCompile Include="monitor_dock\ProcessTraceMonitorWidget.cpp" />
+    <ClCompile Include="monitor_dock\ProcessTraceMonitorWidget.Ui.cpp" />
+    <ClCompile Include="monitor_dock\ProcessTraceMonitorWidget.Actions.cpp" />
+    <ClCompile Include="monitor_dock\ProcessTraceMonitorWidget.Capture.cpp" />
+    <ClCompile Include="monitor_dock\ProcessTraceMonitorWidget.Export.cpp" />
+    <ClCompile Include="monitor_dock\ProcessTraceMonitorWidget.Runtime.cpp" />
+    <ClCompile Include="monitor_dock\ProcessTraceTimelineWidget.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.ArkRiskCenter.cpp" />
+    <ClCompile Include="network_dock\NetworkDock.cpp" />
+    <ClCompile Include="network_dock\NetworkDock.UiBuild.cpp" />
+    <ClCompile Include="network_dock\NetworkDock.UiConnections.cpp" />
+    <ClCompile Include="network_dock\NetworkDock.MonitorPipeline.cpp" />
+    <ClCompile Include="network_dock\NetworkDock.FilterAndProcessActions.cpp" />
+    <ClCompile Include="network_dock\NetworkDock.RateLimit.cpp" />
+    <ClCompile Include="network_dock\NetworkDock.ConnectionManage.cpp" />
+    <ClCompile Include="network_dock\NetworkDock.ManualRequest.cpp" />
+    <ClCompile Include="network_dock\NetworkDock.MultiThreadDownload.cpp" />
+    <ClCompile Include="network_dock\NetworkDock.MultiThreadDownload.Clipboard.cpp" />
+    <ClCompile Include="network_dock\NetworkDock.HttpsAnalyze.cpp" />
+    <ClCompile Include="network_dock\NetworkDock.HttpsProxyRecovery.cpp" />
+    <ClCompile Include="network_dock\NetworkDock.NetworkDiagnostics.cpp" />
+    <ClCompile Include="network_dock\NetworkDock.Nids.cpp" />
+    <ClCompile Include="network_dock\NetworkDock.DetailAndUtils.cpp" />
+    <ClCompile Include="network_dock\NetworkDock.InternalHelpers.cpp" />
+    <ClCompile Include="network_dock\NetworkFirewallPage.cpp" />
+    <ClCompile Include="network_dock\NetworkAuditPage.cpp" />
+    <ClCompile Include="network_dock\HttpsProxyService.cpp" />
+    <ClCompile Include="online_scan\SandboxUploadActions.cpp" />
+    <ClCompile Include="online_scan\OnlineScanSupport.cpp" />
+    <ClCompile Include="online_scan\ThreatBookScan.cpp" />
+    <ClCompile Include="online_scan\VirusTotalOnlineScan.cpp" />
+    <ClCompile Include="other_dock\OtherDock.DesktopCreate.cpp" />
+    <ClCompile Include="other_dock\OtherDock.Desktop.cpp" />
+    <ClCompile Include="other_dock\OtherDock.DesktopSwitch.cpp" />
+    <ClCompile Include="other_dock\OtherDock.WindowProtection.cpp" />
+    <ClCompile Include="other_dock\OtherDock.cpp" />
+    <ClCompile Include="other_dock\WindowCaptureProtection.cpp" />
+    <ClCompile Include="other_dock\WindowDwmControl.cpp" />
+    <ClCompile Include="other_dock\DwmZOrderClient.cpp" />
+    <ClCompile Include="other_dock\DwmAgentDeployment.cpp" />
+    <ClCompile Include="other_dock\DwmZOrderControl.cpp" />
+    <ClCompile Include="other_dock\WindowInputClient.cpp" />
+    <ClCompile Include="other_dock\WindowInputControl.cpp" />
+    <ClCompile Include="privilege_dock\PrivilegeDock.cpp" />
+    <ClCompile Include="registry_dock/RegistryDock.Themed.cpp" />
+    <ClCompile Include="registry_dock\RegistryOptimizationPage.cpp" />
+    <ClCompile Include="process_dock\ProcessDetailWindow.cpp" />
+    <ClCompile Include="process_dock\ProcessDetailWindow.BaseAndUi.cpp" />
+    <ClCompile Include="process_dock\ProcessDetailWindow.DllHijack.cpp" />
+    <ClCompile Include="process_dock\ProcessDetailWindow.InjectionTrace.cpp" />
+    <ClCompile Include="process_dock\ProcessDetailWindow.Module.cpp" />
+    <ClCompile Include="process_dock\ProcessDetailWindow.Hotkey.cpp" />
+    <ClCompile Include="process_dock\ProcessDetailWindow.PdbCatalog.cpp" />
+    <ClCompile Include="process_dock\ProcessDetailWindow.ActionAndUtil.cpp" />
+    <ClCompile Include="process_dock\ProcessDetailWindow.Privilege.cpp" />
+    <ClCompile Include="process_dock\ProcessDetailWindow.ExtendedActions.cpp" />
+    <ClCompile Include="process_dock\ProcessDetailWindow.AdvancedInfo.cpp" />
+    <ClCompile Include="PluginHost.cpp" />
+    <ClCompile Include="process_dock\ProcessCpuCapacityCell.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.Icon.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.ColumnChooser.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.CrossView.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.ThreadTab.cpp" />
+    <ClCompile Include="process_dock\ThreadAffinityMenu.cpp" />
+    <ClCompile Include="process_dock\ProcessMessageHookWindow.cpp" />
+    <ClCompile Include="process_dock\ThreadStackWindow.cpp" />
+    <ClCompile Include="process_dock\ProcessTools.cpp" />
+    <ClCompile Include="internationalization\LanguageManager.cpp" />
+    <ClCompile Include="settings_dock\AppearanceSettings.cpp" />
+    <ClCompile Include="settings_dock\SettingsDock.OnlineScan.cpp" />
+    <ClCompile Include="settings_dock\SettingsDock.Bugcheck.cpp" />
+    <ClCompile Include="settings_dock\SettingsDock.cpp" />
+    <ClCompile Include="service_dock\ServiceDock.cpp" />
+    <ClCompile Include="service_dock\ServiceDock.Actions.cpp" />
+    <ClCompile Include="service_dock\ServiceDock.Advanced.cpp" />
+    <ClCompile Include="service_dock\ServiceDock.Delete.cpp" />
+    <ClCompile Include="service_dock\ServiceDock.Enumerate.cpp" />
+    <ClCompile Include="service_dock\ServiceDock.Helpers.cpp" />
+    <ClCompile Include="service_dock\ServiceDock.Properties.Apply.cpp" />
+    <ClCompile Include="service_dock\ServiceDock.Properties.cpp" />
+    <ClCompile Include="service_dock\ServiceDock.Registry.cpp" />
+    <ClCompile Include="service_dock\ServiceDock.Ui.cpp" />
+    <ClCompile Include="startup_dock\StartupDock.cpp" />
+    <ClCompile Include="startup_dock\StartupDock.Detail.cpp" />
+    <ClCompile Include="startup_dock\StartupDock.Ui.cpp" />
+    <ClCompile Include="startup_dock\StartupDock.Winsock.cpp" />
+    <ClCompile Include="startup_dock\StartupDock.Wmi.cpp" />
+    <ClCompile Include="startup_dock\StartupDock.Hidden.cpp" />
+    <ClCompile Include="startup_dock\StartupDock.Actions.cpp" />
+    <ClCompile Include="startup_dock\StartupDock.Helpers.cpp" />
+    <ClCompile Include="startup_dock\StartupDock.RegistryCatalog.cpp" />
+    <ClCompile Include="startup_dock\StartupDock.Registry.cpp" />
+    <ClCompile Include="startup_dock\StartupDock.Services.cpp" />
+    <ClCompile Include="startup_dock\StartupDock.Tasks.cpp" />
+    <ClCompile Include="ui\CodeEditorWidget.cpp" />
+    <ClCompile Include="ui\EmbeddedRowDelegate.cpp" />
+    <ClCompile Include="ui\DetailLayoutHost.cpp" />
+    <ClCompile Include="ui\DetailLayoutRegistry.cpp" />
+    <ClCompile Include="ui\ReportStructuredView.cpp" />
+    <ClCompile Include="ui\KernelDisassemblyDialog.cpp" />
+    <ClCompile Include="..\..\third_party\zydis\Zydis.c">
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="ui\GlobalDialogTheme.cpp" />
+    <ClCompile Include="ui\GlobalUiBaseStyle.cpp" />
+    <ClCompile Include="ui\GlobalRefreshShortcut.cpp" />
+    <ClCompile Include="ui\GlobalUiSearch.cpp" />
+    <ClCompile Include="ui\DockTabInteraction.cpp" />
+    <ClCompile Include="ui\FlowLayout.cpp" />
+    <ClCompile Include="..\..\shared\evidence\HookPatchCompose.cpp" />
+    <ClCompile Include="ui\KvmEptLeafProbe.cpp" />
+    <ClCompile Include="ui\KvmWriteAccessGate.cpp" />
+    <ClCompile Include="ui\KvmHookWizard.cpp" />
+    <ClCompile Include="ui\KvmHookWizard.Patch.cpp" />
+    <ClCompile Include="ui\KvmHookWizard.Verify.cpp" />
+    <ClCompile Include="ui\KvmControl.cpp" />
+    <ClCompile Include="ui\KvmMemoryDialog.cpp" />
+    <ClCompile Include="ui\KvmViewDialog.cpp" />
+    <ClCompile Include="ui\KvmDomainDialog.cpp" />
+    <ClCompile Include="ui\KvmMsrPolicyDialog.cpp" />
+    <ClCompile Include="ui\KvmProcessDialog.cpp" />
+    <ClCompile Include="ui\KvmWatch.cpp" />
+    <ClCompile Include="ui\KvmWatchPanel.cpp" />
+    <ClCompile Include="ui\KvmWatchDialog.cpp" />
+    <ClCompile Include="ui\KvmEventDialog.cpp" />
+    <ClCompile Include="ui\KvmCrPolicyDialog.cpp" />
+    <ClCompile Include="ui\CommandExecutionPopup.cpp" />
+    <ClCompile Include="ui\WindowChrome.cpp" />
+    <ClCompile Include="ui\HexEditorWidget.cpp" />
+    <ClCompile Include="ui\HexEditorWidget.Selection.cpp" />
+    <ClCompile Include="ui\HexEditorWidget.Ui.cpp" />
+    <ClCompile Include="ui\HexEditorWidget.Tools.cpp" />
+    <ClCompile Include="ui\PerformanceNavCard.cpp" />
+    <ClCompile Include="ui\SmoothScrollSupport.cpp" />
+    <ClCompile Include="ui\SvgThemeIconManager.cpp" />
+    <ClCompile Include="ui\ThemeColorRemap.cpp" />
+    <ClCompile Include="ui\ThemeStatusRole.cpp" />
+    <ClCompile Include="ui\TableColumnAutoFit.cpp" />
+    <ClCompile Include="ui\TableFreezeSupport.cpp" />
+    <ClCompile Include="ui\TableHeaderSortingSupport.cpp" />
+    <ClCompile Include="ui\TableInteractionSupport.cpp" />
+    <ClCompile Include="ui\WindowPickerButton.cpp" />
+    <ClCompile Include="ui\TableSearchSupport.cpp" />
+    <ClCompile Include="ui\TextSearchReplaceSupport.cpp" />
+    <ClCompile Include="ui\TableSnapshotCompare.cpp" />
+    <ClCompile Include="ui\ThemedMessageBox.cpp" />
+    <ClCompile Include="ui\UiSupport.cpp" />
+    <ClCompile Include="welcome_dock\WelcomeDock.cpp" />
+    <ClCompile Include="monitor_dock\WinAPIDock.cpp" />
+    <ClCompile Include="monitor_dock\WinAPIDock.Actions.cpp" />
+    <ClCompile Include="monitor_dock\WinAPIDock.Pipe.cpp" />
+    <ClCompile Include="monitor_dock\WinAPIDock.Ui.cpp" />
+    <ClCompile Include="window_dock\WindowDock.cpp" />
+    <ClCompile Include="window_dock\WindowEventHookTab.cpp" />
+    <ClCompile Include="window_dock\WindowGlobalHotkeyTab.cpp" />
+    <ClCompile Include="window_dock\WindowGuiHandleTab.cpp" />
+    <ClCompile Include="window_dock\WindowTimerTab.cpp" />
+    <ClCompile Include="..\..\shared\platform\log\Log.cpp">
+      <ObjectFileName>$(IntDir)ksword_log.obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\platform\network\NetworkDiagnosticsTools.cpp" />
+    <ClCompile Include="..\..\shared\platform\network\NetworkDownloadTools.cpp" />
+    <ClCompile Include="..\..\shared\platform\network\NetworkFormatTools.cpp" />
+    <ClCompile Include="..\..\shared\platform\network\NetworkNids.cpp" />
+    <ClCompile Include="..\..\shared\platform\network\NetworkProcessEtwMonitor.cpp" />
+    <ClCompile Include="..\..\shared\platform\process\DllHijackDetector.cpp" />
+    <ClCompile Include="..\..\shared\platform\process\InjectionStackWalk.cpp" />
+    <ClCompile Include="..\..\shared\platform\process\InjectionTraceCollector.cpp" />
+    <ClCompile Include="..\..\shared\platform\process\ProcessCpuCoreEtwMonitor.cpp" />
+    <ClCompile Include="..\..\shared\platform\process\Process.cpp" />
+    <ClCompile Include="..\..\shared\platform\process\ProcessImageDeleteGuard.cpp" />
+    <ClCompile Include="..\..\shared\platform\service\Service.cpp" />
+    <ClCompile Include="..\..\shared\platform\startup\Startup.cpp" />
+    <ClCompile Include="..\..\shared\platform\startup\StartupHidden.cpp" />
+    <ClCompile Include="..\..\shared\platform\string\String.cpp" />
+    <QtRcc Include="DesktopResources.qrc" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="..\..\shared\crash\WinCrashHandler.cpp" />
+    <QtUic Include="welcome_dock\Welcome.ui" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverClient.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverWindowBand.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverNetworkTraffic.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverStorageForensics.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverError.cpp" />
+    <ClCompile Include="..\..\shared\evidence\EvidenceEnvelope.cpp" />
+    <ClCompile Include="..\..\shared\evidence\EvidenceJson.cpp" />
+    <ClCompile Include="..\..\shared\evidence\LiveNavigation.cpp" />
+    <ClCompile Include="..\..\shared\evidence\LosslessValue.cpp" />
+    <ClCompile Include="..\..\shared\evidence\ObjectIdentity.cpp" />
+    <ClCompile Include="..\..\shared\evidence\ScanBudget.cpp" />
+    <ClCompile Include="..\..\shared\evidence\CrossViewDiff.cpp" />
+    <ClCompile Include="..\..\shared\evidence\PeImageMap.cpp" />
+    <ClCompile Include="..\..\shared\evidence\ImageDiff.cpp" />
+    <ClCompile Include="..\..\shared\evidence\MemoryRegionEvidence.cpp" />
+    <ClCompile Include="..\..\shared\evidence\DdmaScratchPlan.cpp" />
+    <ClCompile Include="..\..\shared\evidence\MemoryTamperCrossView.cpp" />
+    <ClCompile Include="..\..\shared\evidence\DmaProcessOpPlan.cpp" />
+    <ClCompile Include="..\..\shared\evidence\InjectionSurvey.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverCapability.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDynData.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkRuntimeDynData.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverCapabilities.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcess.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessProtect.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverWorkQueue.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverHandle.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverAlpc.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverSection.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverInjectionScan.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverMemory.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDdma.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverFile.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverFileIrp.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverRegistry.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverBlind.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDispatch.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverImage.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverKernel.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverKernelBaseline.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverPiDdb.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverHvm.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverVirtualization.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverIoctlRegistry.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverKeyboard.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverCallback.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverCallbackMonitor.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverMutation.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverHwid.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverPower.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDebugOutput.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverBugcheck.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverSystemTime.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverResearch.cpp" />
+    <ClCompile Include="..\..\third_party\zstd\zstd.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="MainWindow.h" />
+    <QtMoc Include="framework\CustomTitleBar.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Framework.h" />
+    <ClInclude Include="Ksword.h" />
+    <ClInclude Include="PluginHost.h" />
+    <ClInclude Include="internationalization\LanguageManager.h" />
+    <ClInclude Include="file_dock\ManualFileSystemParser.h" />
+    <ClInclude Include="file_dock\NtfsRunListDecode.h" />
+    <ClInclude Include="file_dock\DriverFileSystemParser.h" />
+    <ClInclude Include="file_dock\IrpFileSystemParser.h" />
+    <ClInclude Include="file_dock\FileHandleUsageScanner.h" />
+    <ClInclude Include="file_dock\FileMappedProcessWindow.h" />
+    <ClInclude Include="file_dock\FilePropertyPeAnalyzer.h" />
+    <ClInclude Include="file_dock\FilePropertyPeAnalyzer.Internal.h" />
+    <ClInclude Include="framework\LogDockWidget.h" />
+    <ClInclude Include="framework\NotificationCardManager.h" />
+    <ClInclude Include="framework\DestructiveActionConfirmation.h" />
+    <ClInclude Include="framework\PrivilegeElevationPrompt.h" />
+    <ClInclude Include="framework\ProgressDockWidget.h" />
+    <ClInclude Include="framework\StartupSplash.h" />
+    <ClInclude Include="kernel_dock\KernelDockAtomWorker.h" />
+    <ClInclude Include="kernel_dock\KernelKnowledgeCatalog.h" />
+    <ClInclude Include="kernel_dock\KernelKnowledgeTab.h" />
+    <ClInclude Include="kernel_dock\KernelDock.CallbackIntercept.h" />
+    <ClInclude Include="kernel_dock\KernelBaseNamedObjectsTab.h" />
+    <ClInclude Include="kernel_dock\KernelBaseNamedObjectsWorker.h" />
+    <ClInclude Include="kernel_dock\KernelCommunicationEndpointTab.h" />
+    <ClInclude Include="kernel_dock\KernelDeviceDriverObjectsTab.h" />
+    <ClInclude Include="kernel_dock\KernelDriverDispatchEditorDialog.h" />
+    <ClInclude Include="kernel_dock\KernelDriverImageEditorDialog.h" />
+    <ClInclude Include="kernel_dock\KernelDeviceDriverObjectsWorker.h" />
+    <ClInclude Include="kernel_dock\KernelIoTimerTab.h" />
+    <ClInclude Include="kernel_dock\KernelIoctlAuditTab.h" />
+    <ClInclude Include="kernel_dock\KernelDockObjectNamespaceWorker.h" />
+    <ClInclude Include="kernel_dock\KernelDockQueryWorker.h" />
+    <ClInclude Include="kernel_dock\KernelDockSsdtWorker.h" />
+    <ClInclude Include="kernel_dock\KernelNamedPipeTab.h" />
+    <ClInclude Include="kernel_dock\KernelNamedPipeWorker.h" />
+    <ClInclude Include="kernel_dock\KernelDockCidTab.h" />
+    <ClInclude Include="kernel_dock\KernelDescriptorTableTab.h" />
+    <ClInclude Include="kernel_dock\KernelHvmTab.h" />
+    <ClInclude Include="kvm_dock\KvmDock.h" />
+    <ClInclude Include="kernel_dock\KernelSlatIommuAuditTab.h" />
+    <ClInclude Include="kernel_dock\KernelTextIntegrityTab.h" />
+    <ClInclude Include="kernel_dock\KernelVbsPostureTab.h" />
+    <ClInclude Include="kernel_dock\KernelPlatformAuditTab.h" />
+    <ClInclude Include="kernel_dock\KernelIoctlDecoderTab.h" />
+    <ClInclude Include="kernel_dock\KernelDockIpcTab.h" />
+    <ClInclude Include="kernel_dock\KernelObjectDirectoryDeepTab.h" />
+    <ClInclude Include="kernel_dock\KernelObjectDirectoryDeepWorker.h" />
+    <ClInclude Include="kernel_dock\KernelObjectTypeMatrixTab.h" />
+    <ClInclude Include="kernel_dock\KernelSymbolicLinkTab.h" />
+    <ClInclude Include="kernel_dock\KernelSymbolicLinkWorker.h" />
+    <ClInclude Include="kernel_dock\KernelThreadAuditTab.h" />
+    <ClInclude Include="..\..\shared\platform\Ksword.h" />
+    <ClInclude Include="..\..\shared\platform\file\File.h" />
+    <ClInclude Include="..\..\shared\platform\file\FileHandleTools.h" />
+    <ClInclude Include="..\..\shared\platform\file\FileMetadataTransaction.h" />
+    <ClInclude Include="..\..\shared\platform\file\PeAnalyzer.h" />
+    <ClInclude Include="..\..\shared\platform\scanner\AtomicFilePatch.h" />
+    <ClInclude Include="..\..\shared\platform\scanner\BinaryScanner.h" />
+    <ClInclude Include="..\..\shared\platform\scanner\Scanner.h" />
+    <ClInclude Include="..\..\shared\platform\scanner\ScannerInternal.h" />
+    <ClInclude Include="..\..\shared\platform\log\Log.h" />
+    <ClInclude Include="..\..\shared\platform\network\Network.h" />
+    <ClInclude Include="..\..\shared\platform\network\NetworkConnectionTools.h" />
+    <ClInclude Include="..\..\shared\platform\network\NetworkDiagnosticsTools.h" />
+    <ClInclude Include="..\..\shared\platform\network\NetworkDownloadTools.h" />
+    <ClInclude Include="..\..\shared\platform\network\NetworkFormatTools.h" />
+    <ClInclude Include="..\..\shared\platform\network\NetworkNids.h" />
+    <ClInclude Include="..\..\shared\platform\network\NetworkProcessEtwMonitor.h" />
+    <ClInclude Include="..\..\shared\platform\network\NetworkRequestTools.h" />
+    <ClInclude Include="..\..\shared\platform\process\DllHijackDetector.h" />
+    <ClInclude Include="..\..\shared\platform\DbgHelpSerialization.h" />
+    <ClInclude Include="..\..\shared\platform\process\InjectionStackWalk.h" />
+    <ClInclude Include="..\..\shared\platform\process\InjectionTraceCollector.h" />
+    <ClInclude Include="..\..\shared\platform\process\ProcessCpuUsageModel.h" />
+    <ClInclude Include="..\..\shared\platform\process\ProcessCpuCoreEtwMonitor.h" />
+    <ClInclude Include="..\..\shared\platform\process\Process.h" />
+    <ClInclude Include="..\..\shared\platform\process\ProcessImageDeleteGuard.h" />
+    <ClInclude Include="..\..\shared\platform\profile\ProfileJsonLoader.h" />
+    <ClInclude Include="..\..\shared\platform\service\Service.h" />
+    <ClInclude Include="..\..\shared\platform\startup\Startup.h" />
+    <ClInclude Include="..\..\shared\platform\startup\StartupInternal.h" />
+    <ClInclude Include="..\..\shared\platform\string\String.h" />
+    <ClInclude Include="Theme.h" />
+    <ClInclude Include="ui\FlatTableModel.h" />
+    <ClInclude Include="ui\DockTabInteraction.h" />
+    <ClInclude Include="ui\FlowLayout.h" />
+    <ClInclude Include="..\..\shared\evidence\HookPatchCompose.h" />
+    <ClInclude Include="ui\KvmEptLeafProbe.h" />
+    <ClInclude Include="ui\KvmWriteAccessGate.h" />
+    <ClInclude Include="ui\KvmHookPlan.h" />
+    <ClInclude Include="ui\KvmControl.h" />
+    <ClInclude Include="ui\EmbeddedRowDelegate.h" />
+    <ClInclude Include="ui\DetailLayoutHost.h" />
+    <ClInclude Include="ui\DetailLayoutRegistry.h" />
+    <ClInclude Include="ui\ReportStructuredView.h" />
+    <ClInclude Include="ui\SmoothScrollSupport.h" />
+    <ClInclude Include="ui\TableColumnAutoFit.h" />
+    <ClInclude Include="ui\TableFreezeSupport.h" />
+    <ClInclude Include="ui\TableHeaderSortingSupport.h" />
+    <ClInclude Include="ui\TableInteractionSupport.h" />
+    <ClInclude Include="ui\TableSearchSupport.h" />
+    <ClInclude Include="ui\TextSearchReplaceSupport.h" />
+    <ClInclude Include="ui\TableSnapshotCompare.h" />
+    <ClInclude Include="ui\VisibleTableWidget.h" />
+    <ClInclude Include="ui\UiSupport.h" />
+    <QtMoc Include="driver_dock\DriverDock.h" />
+    <ClInclude Include="driver_dock\DriverDock.Internal.h" />
+    <ClInclude Include="driver_dock\DriverDock.ModuleDumpFile.h" />
+    <QtMoc Include="file_dock\FileDock.h" />
+    <ClInclude Include="scanner_dock\ScannerDock.h" />
+    <QtMoc Include="handle_dock\HandleDock.h" />
+    <ClInclude Include="handle_dock\HandleFilterConfig.h" />
+    <ClInclude Include="handle_dock\HandleObjectTypeWorker.h" />
+    <QtMoc Include="hardware_dock\HardwareDock.h" />
+    <QtMoc Include="hardware_dock\DiskMonitorPage.h" />
+    <ClInclude Include="hardware_dock\DiskMonitorStorageLeaseCoordinator.h" />
+    <ClInclude Include="hardware_dock\DiskMonitorStoragePanel.h" />
+    <ClInclude Include="hardware_dock\MemoryCompositionHistoryWidget.h" />
+    <ClInclude Include="hardware_dock\HardwarePowerPage.h" />
+    <ClInclude Include="hardware_dock\HardwareR0EvidencePage.h" />
+    <ClInclude Include="hardware_dock\HardwareI8042AuditPage.h" />
+    <QtMoc Include="hardware_dock\HardwareDeviceManagerPage.h" />
+    <QtMoc Include="hardware_dock\HardwareOtherDevicesPage.h" />
+    <QtMoc Include="hardware_dock\HardwareHwidDispatchPage.h" />
+    <QtMoc Include="kernel_dock\KernelDock.h" />
+    <QtMoc Include="kernel_dock\KernelDock.CallbackPromptManager.h" />
+    <QtMoc Include="memory_dock\MemoryDock.h" />
+    <ClInclude Include="memory_dock\MemoryDock.Internal.h" />
+    <ClInclude Include="memory_dock\SystemMemoryAuditPage.h" />
+    <ClInclude Include="memory_dock\MemoryAccessBackend.h" />
+    <ClInclude Include="memory_dock\DdmaPage.h" />
+    <ClInclude Include="memory_dock\TamperDetectionPage.h" />
+    <ClInclude Include="memory_dock\DmaProcessOpPage.h" />
+    <QtMoc Include="misc_dock\boot_editor\BootEditorTab.h" />
+    <ClInclude Include="misc_dock\ApplicationControlPage.h" />
+    <ClInclude Include="misc_dock\sound_source\SoundSourceDetector.h" />
+    <QtMoc Include="misc_dock\sound_source\SoundSourcePage.h" />
+    <ClInclude Include="misc_dock\render_benchmark\RenderBenchmarkPage.h" />
+    <ClInclude Include="misc_dock\desktop_drawing\DesktopDrawingRenderer.h" />
+    <ClInclude Include="misc_dock\desktop_drawing\DesktopDrawingPage.h" />
+    <ClInclude Include="misc_dock\system_time\SystemTimePage.h" />
+    <ClInclude Include="misc_dock\virtual_location\VirtualLocationBackend.h" />
+    <ClInclude Include="misc_dock\virtual_location\VirtualLocationPage.h" />
+    <ClInclude Include="misc_dock\disable_dse\DisableDseBackend.h" />
+    <ClInclude Include="misc_dock\disable_dse\DisableDsePage.h" />
+    <ClInclude Include="misc_dock\experimental\BugcheckGuardPage.h" />
+    <ClInclude Include="misc_dock\context_menu_cleaner\ContextMenuCleanerTab.h" />
+    <ClInclude Include="misc_dock\context_menu_cleaner\ContextMenuCleanerTab.Internal.h" />
+    <ClInclude Include="misc_dock\disk_editor\DiskAdvancedModels.h" />
+    <ClInclude Include="misc_dock\disk_editor\DiskEditorBackend.h" />
+    <ClInclude Include="misc_dock\disk_editor\DiskEditorModels.h" />
+    <ClInclude Include="misc_dock\disk_editor\DiskRangeTools.h" />
+    <ClInclude Include="misc_dock\disk_editor\DiskStructureParser.h" />
+    <ClInclude Include="misc_dock\disk_editor\DiskEditorTab.h" />
+    <QtMoc Include="misc_dock\disk_editor\DiskMapWidget.h" />
+    <QtMoc Include="misc_dock\MiscDock.h" />
+    <ClInclude Include="minidump_dock\DumpAnalyzer.h" />
+    <ClInclude Include="minidump_dock\DumpByteView.h" />
+    <ClInclude Include="minidump_dock\DumpBugCheckText.h" />
+    <ClInclude Include="minidump_dock\DumpContextRegisters.h" />
+    <ClInclude Include="minidump_dock\DumpMemoryReader.h" />
+    <ClInclude Include="minidump_dock\DumpMemoryView.h" />
+    <ClInclude Include="minidump_dock\DumpStackWalker.h" />
+    <ClInclude Include="minidump_dock\DumpSymbolIndex.h" />
+    <ClInclude Include="minidump_dock\KernelDumpParser.h" />
+    <ClInclude Include="minidump_dock\DumpPhysicalMemory.h" />
+    <ClInclude Include="minidump_dock\DumpAutoCheck.h" />
+    <ClInclude Include="minidump_dock\DumpSymbolResolver.h" />
+    <ClInclude Include="minidump_dock\DumpPoolTag.h" />
+    <ClInclude Include="minidump_dock\CrashHistory.h" />
+    <ClInclude Include="minidump_dock\DumpPageTable.h" />
+    <ClInclude Include="minidump_dock\DumpKernelModuleList.h" />
+    <ClInclude Include="minidump_dock\MinidumpCodeText.h" />
+    <ClInclude Include="minidump_dock\MinidumpDock.h" />
+    <ClInclude Include="minidump_dock\MinidumpFormat.h" />
+    <ClInclude Include="minidump_dock\MinidumpParser.h" />
+    <ClInclude Include="minidump_dock\MinidumpParser.Internal.h" />
+    <ClInclude Include="monitor_dock\EtwArchiveCompression.h" />
+    <QtMoc Include="monitor_dock\MonitorDock.h" />
+    <ClInclude Include="monitor_dock\DirectKernelCallMonitorWidget.h" />
+    <ClInclude Include="monitor_dock\KernelCallbackMonitorWidget.h" />
+    <ClInclude Include="..\..\shared\ui\KsPainterChart.h" />
+    <ClInclude Include="monitor_dock\MonitorPanelWidget.h" />
+    <ClInclude Include="monitor_dock\MonitorTextViewer.h" />
+    <ClInclude Include="monitor_dock\ProcessTraceMonitorWidget.h" />
+    <ClInclude Include="monitor_dock\ProcessTraceTimelineWidget.h" />
+    <QtMoc Include="network_dock\NetworkDock.h" />
+    <ClInclude Include="network_dock\NetworkDock.InternalCommon.h" />
+    <ClInclude Include="network_dock\NetworkDock.InternalHelpers.h" />
+    <QtMoc Include="network_dock\NetworkFirewallPage.h" />
+    <ClInclude Include="network_dock\NetworkAuditPage.h" />
+    <ClInclude Include="network_dock\HttpsProxyService.h" />
+    <ClInclude Include="online_scan\SandboxUploadActions.h" />
+    <ClInclude Include="online_scan\OnlineScanSupport.h" />
+    <ClInclude Include="online_scan\ThreatBookScan.h" />
+    <ClInclude Include="online_scan\VirusTotalOnlineScan.h" />
+    <QtMoc Include="other_dock\OtherDock.h" />
+    <ClInclude Include="other_dock\WindowCaptureProtection.h" />
+    <ClInclude Include="other_dock\DwmZOrderClient.h" />
+    <ClInclude Include="other_dock\DwmAgentDeployment.h" />
+    <ClInclude Include="..\..\shared\window\DwmProcessIdentity.h" />
+    <ClInclude Include="other_dock\DwmZOrderControl.h" />
+    <ClInclude Include="other_dock\WindowInputClient.h" />
+    <ClInclude Include="other_dock\WindowInputControl.h" />
+    <ClInclude Include="..\..\shared\window\DwmZOrderProtocol.h" />
+    <ClInclude Include="..\..\shared\window\DwmRemoteLoader.h" />
+    <QtMoc Include="privilege_dock\PrivilegeDock.h" />
+    <QtMoc Include="registry_dock\RegistryDock.h" />
+    <ClInclude Include="kernel_dock\KernelCleanImageBaseline.h" />
+    <ClInclude Include="misc_dock\disk_editor\DiskDeletedEntryForensics.h" />
+    <ClInclude Include="misc_dock\disk_editor\DiskFileSystemForensics.h" />
+    <ClInclude Include="misc_dock\disk_editor\DiskFileSystemForensicsPanel.h" />
+    <ClInclude Include="misc_dock\disk_editor\DiskRawFileSystemBrowser.h" />
+    <ClInclude Include="misc_dock\disk_editor\DiskRawFileSystemInternal.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkSystemTimeIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkDriverDispatchIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkDriverImageEditorIoctl.h" />
+    <ClInclude Include="registry_dock\RegistryOptimizationPage.h" />
+    <QtMoc Include="process_dock\ProcessDetailWindow.h" />
+    <ClInclude Include="process_dock\ProcessDetailWindow.InternalCommon.h" />
+    <ClInclude Include="process_dock\ProcessAffinityUtils.h" />
+    <ClInclude Include="process_dock\ProcessAffinityPersistence.h" />
+    <ClInclude Include="process_dock\ProcessAffinityModel.h" />
+    <ClInclude Include="process_dock\ThreadAffinityMenu.h" />
+    <ClInclude Include="process_dock\ProcessCpuCapacityCell.h" />
+    <ClInclude Include="process_dock\ProcessMessageHookWindow.h" />
+    <ClInclude Include="process_dock\ThreadStackWindow.h" />
+    <QtMoc Include="process_dock\ProcessDock.h" />
+    <QtMoc Include="settings_dock\SettingsDock.h" />
+    <QtMoc Include="ui\CodeEditorWidget.h" />
+    <QtMoc Include="ui\WindowPickerButton.h" />
+    <QtMoc Include="ui\KernelDisassemblyDialog.h" />
+    <ClInclude Include="ui\GlobalDialogTheme.h" />
+    <ClInclude Include="ui\GlobalUiBaseStyle.h" />
+    <ClInclude Include="ui\GlobalRefreshShortcut.h" />
+    <QtMoc Include="ui\GlobalUiSearch.h" />
+    <QtMoc Include="ui\KvmMemoryDialog.h" />
+    <QtMoc Include="ui\KvmViewDialog.h" />
+    <QtMoc Include="ui\KvmHookWizard.h" />
+    <QtMoc Include="ui\KvmDomainDialog.h" />
+    <QtMoc Include="ui\KvmMsrPolicyDialog.h" />
+    <QtMoc Include="ui\KvmProcessDialog.h" />
+    <QtMoc Include="ui\KvmWatchDialog.h" />
+    <QtMoc Include="ui\KvmEventDialog.h" />
+    <QtMoc Include="ui\KvmCrPolicyDialog.h" />
+    <QtMoc Include="ui\CommandExecutionPopup.h" />
+    <ClInclude Include="ui\WindowChrome.h" />
+    <QtMoc Include="ui\HexEditorWidget.h" />
+    <ClInclude Include="ui\HexEditorWidget.Internal.h" />
+    <ClInclude Include="ui\PerformanceNavCard.h" />
+    <ClInclude Include="ui\SvgThemeIconManager.h" />
+    <ClInclude Include="ui\ThemeColorRemap.h" />
+    <ClInclude Include="ui\ThemeStatusRole.h" />
+    <ClInclude Include="ui\ThemedMessageBox.h" />
+    <ClInclude Include="settings_dock\AppearanceSettings.h" />
+    <QtMoc Include="service_dock\ServiceDock.h" />
+    <ClInclude Include="service_dock\ServiceDock.Internal.h" />
+    <QtMoc Include="startup_dock\StartupDock.h" />
+    <ClInclude Include="startup_dock\StartupDock.Internal.h" />
+    <ClInclude Include="process_dock\ProcessTools.h" />
+    <ClInclude Include="process_dock\ProcessHotkeyEnumerator.h" />
+    <ClInclude Include="ui\styles\UiStyleSheet.h" />
+    <ClInclude Include="monitor_dock\WinAPIDock.h" />
+    <ClInclude Include="monitor_dock\WinApiMonitorProtocol.h" />
+    <ClInclude Include="window_dock\WindowDock.h" />
+    <ClInclude Include="window_dock\WindowEventHookTab.h" />
+    <ClInclude Include="window_dock\WindowGlobalHotkeyTab.h" />
+    <ClInclude Include="window_dock\WindowGuiHandleTab.h" />
+    <ClInclude Include="window_dock\WindowTimerTab.h" />
+    <QtMoc Include="welcome_dock\WelcomeDock.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverClient.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkRuntimeDynData.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverError.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverEvidence.h" />
+    <ClInclude Include="..\..\shared\evidence\EvidenceEnvelope.h" />
+    <ClInclude Include="..\..\shared\evidence\EvidenceJson.h" />
+    <ClInclude Include="..\..\shared\evidence\LiveNavigation.h" />
+    <ClInclude Include="..\..\shared\evidence\LosslessValue.h" />
+    <ClInclude Include="..\..\shared\evidence\ObjectIdentity.h" />
+    <ClInclude Include="..\..\shared\evidence\ScanBudget.h" />
+    <ClInclude Include="..\..\shared\evidence\CrossViewDiff.h" />
+    <ClInclude Include="..\..\shared\evidence\PeImageMap.h" />
+    <ClInclude Include="..\..\shared\evidence\ImageDiff.h" />
+    <ClInclude Include="..\..\shared\evidence\MemoryRegionEvidence.h" />
+    <ClInclude Include="..\..\shared\evidence\InjectionSurvey.h" />
+    <ClInclude Include="..\..\shared\crash\WinCrashHandler.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverCapabilities.h" />
+    <ClInclude Include="..\..\third_party\zydis\Zydis.h" />
+    <ClInclude Include="..\..\third_party\zstd\zstd.h" />
+    <ClInclude Include="..\..\third_party\zstd\zstd_errors.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\tools\compress_qt_profile_json.py" />
+    <None Include="..\..\tools\i18n_language_pack.py" />
+    <None Include="..\..\LICENSE" />
+    <None Include="..\..\COMMUNITY_COVENANT.md" />
+    <None Include="..\..\third_party\zydis\LICENSE-Zycore.txt" />
+    <None Include="..\..\third_party\zydis\LICENSE-Zydis.txt" />
+    <None Include="..\..\third_party\zydis\NOTICE.md" />
+    <None Include="..\..\third_party\zstd\LICENSE.txt" />
+    <None Include="..\..\third_party\zstd\NOTICE.md" />
+    <None Include="..\..\third_party\SystemWideTransmission\LICENSE.txt" />
+    <None Include="..\..\third_party\SystemWideTransmission\NOTICE.md" />
+    <None Include="profiles\ark_dyndata_pack_v4.json" />
+    <None Include="..\..\shared\ark_client\ArkRuntimeDynDataCatalog.inc" />
+    <None Include="languages\en-US.json" />
+    <None Include="languages\zh-CN.json" />
+  </ItemGroup>
+  <Target Name="AuditKswordLanguagePacks" BeforeTargets="ClCompile" Condition="'$(KswordSkipI18nAudit)'!='true'">
+    <PropertyGroup>
+      <KswordI18nAuditScript>$(MSBuildProjectDirectory)\..\..\tools\i18n_language_pack.py</KswordI18nAuditScript>
+      <KswordI18nPythonExe Condition="'$(KswordI18nPythonExe)'==''">python</KswordI18nPythonExe>
+    </PropertyGroup>
+    <Exec Command="&quot;$(KswordI18nPythonExe)&quot; &quot;$(KswordI18nAuditScript)&quot; audit --source-root &quot;$(MSBuildProjectDirectory)&quot; --zh-pack &quot;$(MSBuildProjectDirectory)\languages\zh-CN.json&quot; --en-pack &quot;$(MSBuildProjectDirectory)\languages\en-US.json&quot;" />
+  </Target>
+  <!-- The dynamic token in theme.h returns palette(...) stylesheet roles, which only stylesheets can parse:
+       rich text, QColor, drawing paths, and cross-process parameters will silently discard it. The two token
+       types differ by only one word. The audit first self-tests the rule itself, then scans the source tree. -->
+  <Target Name="AuditKswordThemeTokens" BeforeTargets="ClCompile" Condition="'$(KswordSkipThemeTokenAudit)'!='true'">
+    <PropertyGroup>
+      <KswordThemeTokenAuditScript>$(MSBuildProjectDirectory)\..\..\tools\theme_token_audit.py</KswordThemeTokenAuditScript>
+      <KswordThemeTokenPythonExe Condition="'$(KswordThemeTokenPythonExe)'==''">python</KswordThemeTokenPythonExe>
+    </PropertyGroup>
+    <Exec Command="&quot;$(KswordThemeTokenPythonExe)&quot; &quot;$(KswordThemeTokenAuditScript)&quot; --self-test --theme-header &quot;$(MSBuildProjectDirectory)\theme.h&quot;" />
+    <Exec Command="&quot;$(KswordThemeTokenPythonExe)&quot; &quot;$(KswordThemeTokenAuditScript)&quot; --source-root &quot;$(MSBuildProjectDirectory)&quot;" />
+  </Target>
+  <Target Name="CopyKswordLanguagePacks" AfterTargets="Build">
+    <ItemGroup>
+      <KswordLanguagePack Include="$(MSBuildProjectDirectory)\languages\*.json" />
+    </ItemGroup>
+    <MakeDir Directories="$(TargetDir)languages\" Condition="'@(KswordLanguagePack)' != ''" />
+    <Copy SourceFiles="@(KswordLanguagePack)" DestinationFolder="$(TargetDir)languages\" SkipUnchangedFiles="true" Condition="'@(KswordLanguagePack)' != ''" />
+    <Warning Condition="'@(KswordLanguagePack)' == ''" Text="No KSword language packs were found under $(MSBuildProjectDirectory)\languages." />
+  </Target>
+  <!-- The Qt Advanced Docking System must share the same ABI as the MSVC/Qt runtime and be placed in the same directory as the executable to avoid picking up a MinGW-named DLL from the PATH. -->
+  <Target Name="CopyQtAdvancedDockingRuntime" AfterTargets="Build">
+    <PropertyGroup>
+      <QtAdvancedDockingRuntimeSource Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(MSBuildProjectDirectory)\lib\qtadvanceddockingd.dll</QtAdvancedDockingRuntimeSource>
+      <QtAdvancedDockingRuntimeSource Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(MSBuildProjectDirectory)\lib\qtadvanceddocking.dll</QtAdvancedDockingRuntimeSource>
+    </PropertyGroup>
+    <Error Condition="'$(QtAdvancedDockingRuntimeSource)'==''" Text="Qt Advanced Docking runtime is not configured for $(Configuration)|$(Platform)." />
+    <Error Condition="!Exists('$(QtAdvancedDockingRuntimeSource)')" Text="Qt Advanced Docking runtime was not found: $(QtAdvancedDockingRuntimeSource)" />
+    <Copy SourceFiles="$(QtAdvancedDockingRuntimeSource)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyKswordLicenseAndCovenant" AfterTargets="Build">
+    <PropertyGroup>
+      <KswordLicenseSource>$(MSBuildProjectDirectory)\..\..\LICENSE</KswordLicenseSource>
+      <KswordCommunityCovenantSource>$(MSBuildProjectDirectory)\..\..\COMMUNITY_COVENANT.md</KswordCommunityCovenantSource>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(KswordLicenseSource)')" Text="KSword license file was not found: $(KswordLicenseSource)" />
+    <Error Condition="!Exists('$(KswordCommunityCovenantSource)')" Text="KSword community covenant was not found: $(KswordCommunityCovenantSource)" />
+    <Copy SourceFiles="$(KswordLicenseSource)" DestinationFiles="$(TargetDir)LICENSE" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(KswordCommunityCovenantSource)" DestinationFiles="$(TargetDir)COMMUNITY_COVENANT.md" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyKswordZstdLicense" AfterTargets="Build">
+    <PropertyGroup>
+      <KswordZstdLicenseSource>$(MSBuildProjectDirectory)\..\..\third_party\zstd\LICENSE.txt</KswordZstdLicenseSource>
+      <KswordThirdPartyLicenseTargetDir>$(TargetDir)licenses\third_party\</KswordThirdPartyLicenseTargetDir>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(KswordZstdLicenseSource)')" Text="Zstandard license file was not found: $(KswordZstdLicenseSource)" />
+    <MakeDir Directories="$(KswordThirdPartyLicenseTargetDir)" />
+    <Copy SourceFiles="$(KswordZstdLicenseSource)" DestinationFiles="$(KswordThirdPartyLicenseTargetDir)zstd-LICENSE.txt" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyKswordSystemWideTransmissionNotice" AfterTargets="Build">
+    <PropertyGroup>
+      <KswordSystemWideTransmissionLicenseSource>$(MSBuildProjectDirectory)\..\..\third_party\SystemWideTransmission\LICENSE.txt</KswordSystemWideTransmissionLicenseSource>
+      <KswordSystemWideTransmissionNoticeSource>$(MSBuildProjectDirectory)\..\..\third_party\SystemWideTransmission\NOTICE.md</KswordSystemWideTransmissionNoticeSource>
+      <KswordThirdPartyLicenseTargetDir>$(TargetDir)licenses\third_party\</KswordThirdPartyLicenseTargetDir>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(KswordSystemWideTransmissionLicenseSource)')" Text="SystemWideTransmission license file was not found: $(KswordSystemWideTransmissionLicenseSource)" />
+    <Error Condition="!Exists('$(KswordSystemWideTransmissionNoticeSource)')" Text="SystemWideTransmission notice file was not found: $(KswordSystemWideTransmissionNoticeSource)" />
+    <MakeDir Directories="$(KswordThirdPartyLicenseTargetDir)" />
+    <Copy SourceFiles="$(KswordSystemWideTransmissionLicenseSource)" DestinationFiles="$(KswordThirdPartyLicenseTargetDir)system-wide-transmission-LICENSE.txt" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(KswordSystemWideTransmissionNoticeSource)" DestinationFiles="$(KswordThirdPartyLicenseTargetDir)system-wide-transmission-NOTICE.md" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyKswordZydisLicenses" AfterTargets="Build">
+    <PropertyGroup>
+      <KswordZydisLicenseSource>$(MSBuildProjectDirectory)\..\..\third_party\zydis\LICENSE-Zydis.txt</KswordZydisLicenseSource>
+      <KswordZycoreLicenseSource>$(MSBuildProjectDirectory)\..\..\third_party\zydis\LICENSE-Zycore.txt</KswordZycoreLicenseSource>
+      <KswordZydisNoticeSource>$(MSBuildProjectDirectory)\..\..\third_party\zydis\NOTICE.md</KswordZydisNoticeSource>
+      <KswordThirdPartyLicenseTargetDir>$(TargetDir)licenses\third_party\</KswordThirdPartyLicenseTargetDir>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(KswordZydisLicenseSource)')" Text="Zydis license file was not found: $(KswordZydisLicenseSource)" />
+    <Error Condition="!Exists('$(KswordZycoreLicenseSource)')" Text="Zycore license file was not found: $(KswordZycoreLicenseSource)" />
+    <Error Condition="!Exists('$(KswordZydisNoticeSource)')" Text="Zydis notice file was not found: $(KswordZydisNoticeSource)" />
+    <MakeDir Directories="$(KswordThirdPartyLicenseTargetDir)" />
+    <Copy SourceFiles="$(KswordZydisLicenseSource)" DestinationFiles="$(KswordThirdPartyLicenseTargetDir)zydis-LICENSE.txt" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(KswordZycoreLicenseSource)" DestinationFiles="$(KswordThirdPartyLicenseTargetDir)zycore-LICENSE.txt" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(KswordZydisNoticeSource)" DestinationFiles="$(KswordThirdPartyLicenseTargetDir)zydis-NOTICE.md" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyKswordArkDynDataProfilePack" AfterTargets="Build">
+    <!-- Release carries one v4 pack. Core field/EX projections are derived in memory by R3. -->
+    <PropertyGroup>
+      <KswordProfileCompressor>$(MSBuildProjectDirectory)\..\..\tools\compress_qt_profile_json.py</KswordProfileCompressor>
+      <KswordProfilePythonExe Condition="'$(KswordProfilePythonExe)'==''">python</KswordProfilePythonExe>
+      <KswordArkDynDataProfilePackV4Source>$(MSBuildProjectDirectory)\profiles\ark_dyndata_pack_v4.json</KswordArkDynDataProfilePackV4Source>
+      <KswordArkDynDataProfilePackTargetDir>$(TargetDir)profiles\</KswordArkDynDataProfilePackTargetDir>
+      <KswordStaleDynDataPackArchiveDir>$(TEMP)\Ksword5.1-old-offsets\$(MSBuildProjectName)-$(Configuration)-$(Platform)-$([System.DateTime]::Now.ToString('yyyyMMdd-HHmmss-fff'))\</KswordStaleDynDataPackArchiveDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <KswordStaleDynDataPack Include="$(KswordArkDynDataProfilePackTargetDir)ark_dyndata_pack_v1.json" Condition="Exists('$(KswordArkDynDataProfilePackTargetDir)ark_dyndata_pack_v1.json')" />
+      <KswordStaleDynDataPack Include="$(KswordArkDynDataProfilePackTargetDir)ark_dyndata_pack_v1.json.qz" Condition="Exists('$(KswordArkDynDataProfilePackTargetDir)ark_dyndata_pack_v1.json.qz')" />
+      <KswordStaleDynDataPack Include="$(KswordArkDynDataProfilePackTargetDir)ark_dyndata_pack_v2.json" Condition="Exists('$(KswordArkDynDataProfilePackTargetDir)ark_dyndata_pack_v2.json')" />
+      <KswordStaleDynDataPack Include="$(KswordArkDynDataProfilePackTargetDir)ark_dyndata_pack_v2.json.qz" Condition="Exists('$(KswordArkDynDataProfilePackTargetDir)ark_dyndata_pack_v2.json.qz')" />
+      <KswordStaleDynDataPack Include="$(KswordArkDynDataProfilePackTargetDir)ark_dyndata_pack_v3.json" Condition="Exists('$(KswordArkDynDataProfilePackTargetDir)ark_dyndata_pack_v3.json')" />
+      <KswordStaleDynDataPack Include="$(KswordArkDynDataProfilePackTargetDir)ark_dyndata_pack_v3.json.qz" Condition="Exists('$(KswordArkDynDataProfilePackTargetDir)ark_dyndata_pack_v3.json.qz')" />
+      <KswordStaleDynDataPack Include="$(KswordArkDynDataProfilePackTargetDir)ark_dyndata_pack_v4.json" Condition="Exists('$(KswordArkDynDataProfilePackTargetDir)ark_dyndata_pack_v4.json')" />
+    </ItemGroup>
+    <MakeDir Directories="$(KswordStaleDynDataPackArchiveDir)" Condition="'@(KswordStaleDynDataPack)'!=''" />
+    <Move SourceFiles="@(KswordStaleDynDataPack)" DestinationFolder="$(KswordStaleDynDataPackArchiveDir)" Condition="'@(KswordStaleDynDataPack)'!=''" />
+    <MakeDir Directories="$(KswordArkDynDataProfilePackTargetDir)" Condition="Exists('$(KswordArkDynDataProfilePackV4Source)')" />
+    <Exec Command="&quot;$(KswordProfilePythonExe)&quot; &quot;$(KswordProfileCompressor)&quot; --file &quot;$(KswordArkDynDataProfilePackV4Source)&quot; --out &quot;$(KswordArkDynDataProfilePackTargetDir)ark_dyndata_pack_v4.json.qz&quot;" Condition="Exists('$(KswordProfileCompressor)') And Exists('$(KswordArkDynDataProfilePackV4Source)')" />
+    <Warning Condition="!Exists('$(KswordProfileCompressor)')" Text="Profile compressor was not found; compressed profile packs were not generated: $(KswordProfileCompressor)" />
+    <Warning Condition="!Exists('$(KswordArkDynDataProfilePackV4Source)')" Text="KswordARK DynData v4 profile pack was not found: $(KswordArkDynDataProfilePackV4Source)" />
+  </Target>
+  <Target Name="CopyRegistryOptimizationProfile" AfterTargets="Build">
+    <!-- At runtime for system optimization pages, profiles\registry_optimization_items.json.qz is read first; source files are locally extracted assets and are already included in .gitignore. -->
+    <ItemGroup>
+      <KswordRegistryOptimizationAsset Include="$(MSBuildProjectDirectory)\profiles\registry_optimization_assets\**\*.*" />
+    </ItemGroup>
+    <PropertyGroup>
+      <KswordProfileCompressor>$(MSBuildProjectDirectory)\..\..\tools\compress_qt_profile_json.py</KswordProfileCompressor>
+      <KswordProfilePythonExe Condition="'$(KswordProfilePythonExe)'==''">python</KswordProfilePythonExe>
+      <KswordRegistryOptimizationProfileSource>$(MSBuildProjectDirectory)\profiles\registry_optimization_items.json</KswordRegistryOptimizationProfileSource>
+      <KswordRegistryOptimizationProfileTargetDir>$(TargetDir)profiles\</KswordRegistryOptimizationProfileTargetDir>
+      <KswordRegistryOptimizationAssetTargetDir>$(TargetDir)profiles\registry_optimization_assets\</KswordRegistryOptimizationAssetTargetDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(KswordRegistryOptimizationProfileTargetDir)" Condition="Exists('$(KswordRegistryOptimizationProfileSource)')" />
+    <Exec Command="&quot;$(KswordProfilePythonExe)&quot; &quot;$(KswordProfileCompressor)&quot; --file &quot;$(KswordRegistryOptimizationProfileSource)&quot; --out &quot;$(KswordRegistryOptimizationProfileTargetDir)registry_optimization_items.json.qz&quot;" Condition="Exists('$(KswordProfileCompressor)') And Exists('$(KswordRegistryOptimizationProfileSource)')" />
+    <Delete Files="$(KswordRegistryOptimizationProfileTargetDir)registry_optimization_items.json" Condition="Exists('$(KswordProfileCompressor)')" />
+    <MakeDir Directories="$(KswordRegistryOptimizationAssetTargetDir)" Condition="'@(KswordRegistryOptimizationAsset)' != ''" />
+    <Copy SourceFiles="@(KswordRegistryOptimizationAsset)" DestinationFiles="@(KswordRegistryOptimizationAsset->'$(KswordRegistryOptimizationAssetTargetDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" Condition="'@(KswordRegistryOptimizationAsset)' != ''" />
+    <Warning Condition="!Exists('$(KswordProfileCompressor)')" Text="Profile compressor was not found; registry optimization profile was not compressed: $(KswordProfileCompressor)" />
+    <Warning Condition="!Exists('$(KswordRegistryOptimizationProfileSource)')" Text="Registry optimization profile was not found; System Optimization tab will show an empty profile list: $(KswordRegistryOptimizationProfileSource)" />
+  </Target>
+  <Target Name="CopyKswordArkPdbDeepOffsetLibraries" AfterTargets="Build">
+    <!-- The deep PDB offset library supports future expansion for process/thread/object detail pages; at runtime, it prioritizes reading local .json.qz files and does not depend on the development machine's E: symbol cache. -->
+    <ItemGroup>
+      <KswordArkPdbDeepOffsetLibrary Include="$(MSBuildProjectDirectory)\profiles\pdb_deep_offsets\*.json" />
+    </ItemGroup>
+    <PropertyGroup>
+      <KswordProfileCompressor>$(MSBuildProjectDirectory)\..\..\tools\compress_qt_profile_json.py</KswordProfileCompressor>
+      <KswordProfilePythonExe Condition="'$(KswordProfilePythonExe)'==''">python</KswordProfilePythonExe>
+      <KswordArkPdbDeepOffsetTargetDir>$(TargetDir)profiles\pdb_deep_offsets\</KswordArkPdbDeepOffsetTargetDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(KswordArkPdbDeepOffsetTargetDir)" Condition="'@(KswordArkPdbDeepOffsetLibrary)' != ''" />
+    <Exec Command="&quot;$(KswordProfilePythonExe)&quot; &quot;$(KswordProfileCompressor)&quot; --dir &quot;$(MSBuildProjectDirectory)\profiles\pdb_deep_offsets&quot; --pattern &quot;*.json&quot; --out-dir &quot;$(KswordArkPdbDeepOffsetTargetDir).&quot;" Condition="Exists('$(KswordProfileCompressor)') And '@(KswordArkPdbDeepOffsetLibrary)' != ''" />
+    <Delete Files="@(KswordArkPdbDeepOffsetLibrary->'$(KswordArkPdbDeepOffsetTargetDir)%(Filename)%(Extension)')" Condition="Exists('$(KswordProfileCompressor)') And '@(KswordArkPdbDeepOffsetLibrary)' != ''" />
+    <Warning Condition="!Exists('$(KswordProfileCompressor)')" Text="Profile compressor was not found; PDB deep offset libraries were not compressed: $(KswordProfileCompressor)" />
+  </Target>
+  <Target Name="CopyTaskmgrHijackScript" AfterTargets="Build">
+    <PropertyGroup>
+      <TaskmgrHijackScriptSource>$(MSBuildProjectDirectory)\..\..\scripts\runtime\TaskmgrHijack.ps1</TaskmgrHijackScriptSource>
+    </PropertyGroup>
+    <Copy SourceFiles="$(TaskmgrHijackScriptSource)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" Condition="Exists('$(TaskmgrHijackScriptSource)')" />
+  </Target>
+  <Target Name="CopyKswordArkDriverArtifacts" AfterTargets="Build">
+    <PropertyGroup>
+      <KswordArkDriverOutputDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(KswordUnifiedReleaseOutputDir)</KswordArkDriverOutputDir>
+      <KswordArkDriverOutputDir Condition="'$(Configuration)|$(Platform)'!='Release|x64'">$(MSBuildProjectDirectory)\..\..\drivers\ark\x64\$(Configuration)\</KswordArkDriverOutputDir>
+      <KswordArkDriverSysSource>$(KswordArkDriverOutputDir)KswordARK.sys</KswordArkDriverSysSource>
+      <KswordArkDriverPdbSource>$(KswordArkDriverOutputDir)KswordARK.pdb</KswordArkDriverPdbSource>
+      <KswordArkDriverInfSource>$(KswordArkDriverOutputDir)KswordARKDriver.inf</KswordArkDriverInfSource>
+    </PropertyGroup>
+    <Copy SourceFiles="$(KswordArkDriverSysSource)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="false" Condition="'$(Configuration)|$(Platform)'!='Release|x64' And Exists('$(KswordArkDriverSysSource)')" />
+    <Copy SourceFiles="$(KswordArkDriverPdbSource)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="false" Condition="'$(Configuration)|$(Platform)'!='Release|x64' And Exists('$(KswordArkDriverPdbSource)')" />
+    <Copy SourceFiles="$(KswordArkDriverInfSource)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="false" Condition="'$(Configuration)|$(Platform)'!='Release|x64' And Exists('$(KswordArkDriverInfSource)')" />
+    <Warning Condition="!Exists('$(KswordArkDriverSysSource)')" Text="KswordARK driver binary was not found for output sync: $(KswordArkDriverSysSource)" />
+  </Target>
+  <!-- The unified Release directory must contain Qt runtime libraries and platform plugins; otherwise, the main program cannot start outside the development environment. -->
+  <Target Name="DeployQtRuntime" AfterTargets="Build" Condition="'$(Configuration)|$(Platform)'=='Release|x64' and Exists('$(TargetPath)')">
+    <PropertyGroup>
+      <KswordQtDeployExe Condition="'$(KswordQtDeployExe)'=='' and '$(KSWORD_QT_DIR)'!='' and Exists('$(KSWORD_QT_DIR)\bin\windeployqt.exe')">$(KSWORD_QT_DIR)\bin\windeployqt.exe</KswordQtDeployExe>
+      <KswordQtDeployExe Condition="'$(KswordQtDeployExe)'=='' and Exists('$(MSBuildProjectDirectory)\..\..\.deps\Qt\6.9.3\msvc2022_64\bin\windeployqt.exe')">$(MSBuildProjectDirectory)\..\..\.deps\Qt\6.9.3\msvc2022_64\bin\windeployqt.exe</KswordQtDeployExe>
+      <KswordQtDeployExe Condition="'$(KswordQtDeployExe)'=='' and '$(QtInstall)'!='' and Exists('$(QtInstall)\bin\windeployqt.exe')">$(QtInstall)\bin\windeployqt.exe</KswordQtDeployExe>
+      <KswordQtDeployExe Condition="'$(KswordQtDeployExe)'=='' and '$(QTDIR)'!='' and Exists('$(QTDIR)\bin\windeployqt.exe')">$(QTDIR)\bin\windeployqt.exe</KswordQtDeployExe>
+    </PropertyGroup>
+    <Message Importance="High" Text="Deploying Qt runtime and plugins to $(TargetDir)" Condition="Exists('$(KswordQtDeployExe)')" />
+    <Exec Command="&quot;$(KswordQtDeployExe)&quot; --release --force --compiler-runtime --no-opengl-sw --dir &quot;$(TargetDir).&quot; &quot;$(TargetPath)&quot;" Condition="Exists('$(KswordQtDeployExe)')" />
+    <Warning Condition="!Exists('$(KswordQtDeployExe)')" Text="windeployqt.exe was not found; the Release output may be missing Qt runtime DLLs and plugins." />
+  </Target>
+  <!-- Qt's official dynamic libraries are built with MSVC /MD. Even if Ksword5.1.exe itself uses /MT, the VC runtime DLLs must still be deployed alongside the Release output. -->
+  <Target Name="CopyVisualCppRuntimeRedist" AfterTargets="Build" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ItemGroup>
+      <KswordVisualCppRuntimeRedist Include="$(VCToolsRedistDir)x64\Microsoft.VC143.CRT\*.dll" Condition="'$(VCToolsRedistDir)' != ''" />
+      <KswordVisualCppRuntimeRedist Include="$(VCInstallDir)Redist\MSVC\*\x64\Microsoft.VC143.CRT\*.dll" Condition="'$(VCInstallDir)' != ''" />
+    </ItemGroup>
+    <Copy SourceFiles="@(KswordVisualCppRuntimeRedist)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" Condition="'@(KswordVisualCppRuntimeRedist)' != ''" />
+    <Warning Condition="'@(KswordVisualCppRuntimeRedist)' == ''" Text="VC++ runtime redist DLLs were not found under VCToolsRedistDir or VCInstallDir\Redist\MSVC; Qt DLLs may fail to load on machines without VC++ Redistributable installed." />
+  </Target>
+  <!-- After the Release main executable build, reuse the driver test signing certificate; a signing failure only triggers a warning to avoid blocking normal compilation. -->
+  <Target Name="KswordMainAutoTestSignAfterBuild" AfterTargets="Build" Condition="'$(Configuration)|$(Platform)'=='Release|x64' and Exists('$(TargetPath)') and '$(KswordArkSkipAutoTestSign)'!='true'">
+    <PropertyGroup>
+      <KswordArkSignScript>$(MSBuildProjectDirectory)\..\..\scripts\Sign-KswordArkDriverTest.ps1</KswordArkSignScript>
+      <KswordArkPowerShellExe Condition="'$(KswordArkPowerShellExe)'==''">powershell</KswordArkPowerShellExe>
+    </PropertyGroup>
+    <Message Importance="High" Text="Ksword5.1: attempting non-fatal test-sign for $(TargetPath). Set /p:KswordArkSkipAutoTestSign=true to skip." />
+    <Exec Command="&quot;$(KswordArkPowerShellExe)&quot; -ExecutionPolicy Bypass -File &quot;$(KswordArkSignScript)&quot; -TargetPath &quot;$(TargetPath)&quot; -NonFatal" ContinueOnError="WarnAndContinue" IgnoreStandardErrorWarningFormat="true" Condition="Exists('$(KswordArkSignScript)')" />
+    <Warning Condition="!Exists('$(KswordArkSignScript)')" Text="Ksword5.1 auto test-sign skipped because script was not found: $(KswordArkSignScript)" />
+  </Target>
+  <ItemGroup>
+    <ProjectReference Include="..\..\integrations\dwm_z_order\DwmZOrderAgent.vcxproj">
+      <Project>{CFEC311C-A4F4-46C6-8A41-7333EE5FB817}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+      <Private>false</Private>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ItemGroup><MASM Include="other_dock\DwmRemoteLoader.asm" /></ItemGroup>
+  <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />
+  <Target Name="CopyKswordDwmZOrderAgent" AfterTargets="Build">
+    <MSBuild Projects="$(MSBuildProjectDirectory)\..\..\integrations\dwm_z_order\DwmZOrderAgent.vcxproj"
+             Targets="GetTargetPath" Properties="Configuration=$(Configuration);Platform=$(Platform)">
+      <Output TaskParameter="TargetOutputs" ItemName="KswordDwmZOrderAgentTarget" />
+    </MSBuild>
+    <Copy SourceFiles="@(KswordDwmZOrderAgentTarget)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
+  <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
+    <Import Project="$(QtMsBuild)\qt.targets" Condition="Exists('$(QtMsBuild)\qt.targets')" />
+  </ImportGroup>
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+  <ItemGroup>
+    <ClCompile Include="ui\KvmGuestVmPanel.cpp"></ClCompile>
+    <ClInclude Include="ui\KvmGuestVmPanel.h" />
+  </ItemGroup>
+  <ItemGroup><ClInclude Include="..\..\shared\driver\KswordArkHvmRequest.h" /></ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverFirmware.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessControl.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessEnumeration.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessInjection.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessSecurity.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverThreadControl.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDeviceAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDynDataV4.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverI8042Audit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverNetworkAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverNetworkEvents.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverObjectAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverPlatformAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverSecurityAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverStorageAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverWin32kAudit.cpp" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverAuditSupport.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverCallbackTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverDebugOutputTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverDriverControlTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverDynDataTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverFileTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverHvmTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverIoTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverKernelTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverMemoryTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverMutationTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverNetworkSupport.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverNetworkTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverObjectTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverPlatformTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverProcessTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverRegistryTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverResponseSupport.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverSecurityTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverStorageTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverWindowTypes.h" />
+    <ClCompile Include="MainWindow.Appearance.cpp" />
+    <ClCompile Include="MainWindow.Background.cpp" />
+    <ClInclude Include="MainWindow.BackgroundSupport.h" />
+    <ClCompile Include="MainWindow.Bugcheck.cpp" />
+    <ClInclude Include="MainWindow.BugcheckSupport.h" />
+    <ClCompile Include="MainWindow.Commands.cpp" />
+    <ClCompile Include="MainWindow.Docking.cpp" />
+    <ClInclude Include="MainWindow.DockingSupport.h" />
+    <ClCompile Include="MainWindow.DockTabs.cpp" />
+    <ClInclude Include="MainWindow.DockTabsSupport.h" />
+    <ClCompile Include="MainWindow.DriverService.cpp" />
+    <ClCompile Include="MainWindow.DriverServiceBackend.cpp" />
+    <ClInclude Include="MainWindow.DriverServiceBackendSupport.h" />
+    <ClCompile Include="MainWindow.Menus.cpp" />
+    <ClCompile Include="MainWindow.NativeFrame.cpp" />
+    <ClInclude Include="MainWindow.NativeFrameSupport.h" />
+    <ClCompile Include="MainWindow.Navigation.cpp" />
+    <ClCompile Include="MainWindow.Privileges.cpp" />
+    <ClCompile Include="MainWindow.StyleSheet.cpp" />
+    <ClCompile Include="MainWindow.TitleBar.cpp" />
+    <ClInclude Include="MainWindow.DriverServiceConstants.h" />
+    <ClCompile Include="MainWindow.WidgetBehavior.cpp" />
+    <ClInclude Include="MainWindow.WidgetBehaviorSupport.h" />
+    <ClCompile Include="MainWindow.Win32Privileges.cpp" />
+    <ClInclude Include="MainWindow.Win32PrivilegesSupport.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="file_dock\FileDetailDialog.Analysis.cpp" />
+    <ClCompile Include="file_dock\FileDetailDialog.AuditFormatting.cpp" />
+    <ClCompile Include="file_dock\FileDetailDialog.General.cpp" />
+    <ClInclude Include="file_dock\FileDetailDialog.h" />
+    <ClCompile Include="file_dock\FileDetailDialog.HandleUsage.cpp" />
+    <ClCompile Include="file_dock\FileDetailDialog.Hashing.cpp" />
+    <ClCompile Include="file_dock\FileDetailDialog.Lifecycle.cpp" />
+    <ClCompile Include="file_dock\FileDetailDialog.MetadataAdvanced.cpp" />
+    <ClCompile Include="file_dock\FileDetailDialog.MetadataBackend.cpp" />
+    <ClCompile Include="file_dock\FileDetailDialog.MetadataEditor.cpp" />
+    <ClCompile Include="file_dock\FileDetailDialog.MetadataProperties.cpp" />
+    <ClCompile Include="file_dock\FileDetailDialog.MetadataStreams.cpp" />
+    <ClCompile Include="file_dock\FileDetailDialog.Pages.cpp" />
+    <ClCompile Include="file_dock\FileDetailDialog.Security.cpp" />
+    <ClCompile Include="file_dock\FileDetailDialog.Storage.cpp" />
+    <ClCompile Include="file_dock\FileDetailDialog.Transactions.cpp" />
+    <ClCompile Include="file_dock\FileDock.AuditSupport.cpp" />
+    <ClCompile Include="file_dock\FileDock.ContextMenu.cpp" />
+    <ClCompile Include="file_dock\FileDock.Deletion.cpp" />
+    <ClCompile Include="file_dock\FileDock.DeletionSupport.cpp" />
+    <ClCompile Include="file_dock\FileDock.IntegritySupport.cpp" />
+    <ClCompile Include="file_dock\FileDock.Models.cpp" />
+    <ClCompile Include="file_dock\FileDock.Navigation.cpp" />
+    <ClCompile Include="file_dock\FileDock.Oplocks.cpp" />
+    <ClCompile Include="file_dock\FileDock.PanelUi.cpp" />
+    <ClCompile Include="file_dock\FileDock.PathSupport.cpp" />
+    <ClCompile Include="file_dock\FileDock.Properties.cpp" />
+    <ClCompile Include="file_dock\FileDock.Recovery.cpp" />
+    <ClCompile Include="file_dock\FileDock.RecoverySupport.cpp" />
+    <ClCompile Include="file_dock\FileDock.Security.cpp" />
+    <ClCompile Include="file_dock\FileDock.SecuritySupport.cpp" />
+    <ClInclude Include="file_dock\FileDock.Support.h" />
+    <ClCompile Include="file_dock\FileDock.Transfer.cpp" />
+    <ClCompile Include="file_dock\FileDock.TransferSupport.cpp" />
+    <ClCompile Include="file_dock\FileDock.Unlock.cpp" />
+    <ClCompile Include="file_dock\FileDock.UnlockSupport.cpp" />
+    <ClCompile Include="file_dock\FileDock.ViewSupport.cpp" />
+    <ClCompile Include="file_dock\FileDock.WindowSupport.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="process_dock\ProcessActivityChartWidget.cpp" />
+    <ClInclude Include="process_dock\ProcessActivityChartWidget.h" />
+    <ClCompile Include="process_dock\ProcessActivityTimelineSlider.cpp" />
+    <ClInclude Include="process_dock\ProcessActivityTimelineSlider.h" />
+    <ClCompile Include="process_dock\ProcessDock.Acquisition.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.ActionDispatch.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.ActivityHistory.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.ActivitySupport.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.ColumnFormatting.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.Connections.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.ContextMenu.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.CreateProcess.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.CreateProcessUi.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.DetailNavigation.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.DisplayOrder.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.DriverActions.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.DriverControl.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.DriverDiagnostics.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.DriverEnumeration.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.Formatting.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.FriendlyGroups.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.HvmActions.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.HvmSupport.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.IdentitySupport.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.Layout.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.ProcessControl.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.Refresh.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.RefreshControls.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.Selection.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.StyleSupport.cpp" />
+    <ClInclude Include="process_dock\ProcessDock.Support.h" />
+    <ClCompile Include="process_dock\ProcessDock.TableData.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.TableModel.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.Telemetry.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.Termination.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.TerminationSupport.cpp" />
+    <ClCompile Include="process_dock\ProcessDock.ViewModes.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="monitor_dock\EtwFilterConfig.cpp" />
+    <ClInclude Include="monitor_dock\EtwFilterConfig.h" />
+    <ClCompile Include="monitor_dock\MonitorDock.ArchiveCodec.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.Connections.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.DecodeSupport.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.DetailViews.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.EtwArchive.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.EtwCapture.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.EtwDecoding.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.EtwDelivery.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.EtwDiscovery.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.EtwExport.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.EtwSession.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.EtwUi.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.EventFields.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.EventMeaning.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.FilterApply.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.FilterCompile.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.FilterImportExport.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.FilterMatching.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.FilterMetadata.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.FilterParsing.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.FilterStorage.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.FilterUi.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.Performance.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.PropertyDecoding.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.Schema.cpp" />
+    <ClInclude Include="monitor_dock\MonitorDock.Support.h" />
+    <ClCompile Include="monitor_dock\MonitorDock.ViewSupport.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.WindowsSupport.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.WmiCapture.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.WmiDiscovery.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.WmiExport.cpp" />
+    <ClCompile Include="monitor_dock\MonitorDock.WmiUi.cpp" />
+  </ItemGroup>
+</Project>

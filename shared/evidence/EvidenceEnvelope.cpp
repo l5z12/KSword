@@ -3,34 +3,34 @@
 #include <algorithm>
 #include <limits>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 
-const char* CollectionStatusName(CollectionStatus status) noexcept {
+const char* collectionStatusName(CollectionStatus status) noexcept {
     switch (status) {
-    case CollectionStatus::NotCollected: return "NotCollected";
-    case CollectionStatus::Success:      return "Success";
-    case CollectionStatus::Partial:      return "Partial";
-    case CollectionStatus::Unsupported:  return "Unsupported";
-    case CollectionStatus::AccessDenied: return "AccessDenied";
-    case CollectionStatus::Timeout:      return "Timeout";
-    case CollectionStatus::Error:        return "Error";
+    case CollectionStatus::kNotCollected: return "NotCollected";
+    case CollectionStatus::kSuccess:      return "Success";
+    case CollectionStatus::kPartial:      return "Partial";
+    case CollectionStatus::kUnsupported:  return "Unsupported";
+    case CollectionStatus::kAccessDenied: return "AccessDenied";
+    case CollectionStatus::kTimeout:      return "Timeout";
+    case CollectionStatus::kError:        return "Error";
     }
     return "NotCollected";
 }
 
-bool StatusCarriesObservation(CollectionStatus status) noexcept {
-    return status == CollectionStatus::Success || status == CollectionStatus::Partial;
+bool statusCarriesObservation(CollectionStatus status) noexcept {
+    return status == CollectionStatus::kSuccess || status == CollectionStatus::kPartial;
 }
 
 CollectionOutcome CollectionOutcome::success() noexcept {
     CollectionOutcome outcome;
-    outcome.status = CollectionStatus::Success;
+    outcome.status = CollectionStatus::kSuccess;
     return outcome;
 }
 
 CollectionOutcome CollectionOutcome::notCollected() noexcept {
     CollectionOutcome outcome;
-    outcome.status = CollectionStatus::NotCollected;
+    outcome.status = CollectionStatus::kNotCollected;
     return outcome;
 }
 
@@ -46,33 +46,33 @@ CollectionOutcome CollectionOutcome::failure(CollectionStatus status,
     return outcome;
 }
 
-const char* AnalysisConclusionName(AnalysisConclusion conclusion) noexcept {
+const char* analysisConclusionName(AnalysisConclusion conclusion) noexcept {
     switch (conclusion) {
-    case AnalysisConclusion::NoEvidence:           return "NoEvidence";
-    case AnalysisConclusion::NoDifferenceObserved: return "NoDifferenceObserved";
-    case AnalysisConclusion::DifferenceObserved:   return "DifferenceObserved";
-    case AnalysisConclusion::Indeterminate:        return "Indeterminate";
+    case AnalysisConclusion::kNoEvidence:           return "NoEvidence";
+    case AnalysisConclusion::kNoDifferenceObserved: return "NoDifferenceObserved";
+    case AnalysisConclusion::kDifferenceObserved:   return "DifferenceObserved";
+    case AnalysisConclusion::kIndeterminate:        return "Indeterminate";
     }
     return "NoEvidence";
 }
 
 namespace {
 
-// 账目计数是 u64 且来自不同的采集方，相加必须饱和，绝不回绕成一个更小的"已完成数"。
-std::uint64_t SaturatingAdd(std::uint64_t a, std::uint64_t b) noexcept {
+// Accounting counters are u64 and originate from different collectors; addition must saturate, never wrap around to a smaller 'completed count'.
+std::uint64_t saturatingAdd(std::uint64_t a, std::uint64_t b) noexcept {
     constexpr std::uint64_t kMax = (std::numeric_limits<std::uint64_t>::max)();
     return (a > kMax - b) ? kMax : (a + b);
 }
 
-// 范围口径是否成立：四个端点必须**同时**在场。
-// 只填了 begin 而没填 end 时，末尾边界根本无从校验，早先的实现会去读两个未设
-// OptionalU64 的 .value（都是 0），"0 < 0" 恒假，于是末端完全不被检查（F-06）。
-bool RangeStated(const CoverageAccount& coverage) noexcept {
+// Range validity check: all four endpoints must be present simultaneously.
+// When only begin is filled without end, the end boundary cannot be validated. The previous implementation would read the
+// .value of two unset OptionalU64 fields (both 0), making "0 < 0" always false, so the end boundary was never checked (F-06).
+bool rangeStated(const CoverageAccount& coverage) noexcept {
     return coverage.requestedBegin.present && coverage.requestedEnd.present &&
            coverage.processedBegin.present && coverage.processedEnd.present;
 }
 
-bool AnyRangeEndpoint(const CoverageAccount& coverage) noexcept {
+bool anyRangeEndpoint(const CoverageAccount& coverage) noexcept {
     return coverage.requestedBegin.present || coverage.requestedEnd.present ||
            coverage.processedBegin.present || coverage.processedEnd.present;
 }
@@ -80,27 +80,27 @@ bool AnyRangeEndpoint(const CoverageAccount& coverage) noexcept {
 } // namespace
 
 bool CoverageAccount::fullyCovered() const noexcept {
-    // 否定项：任意一条成立就不可能是完整覆盖。
-    // countsIncomplete 也在其中：某一项计数来源未知时，failed/skipped 里的 0 只是
-    // "没数到"，不是"没发生"，据此判完整覆盖就是拿未知冒充完整。
+    // Disqualifying conditions: If any is true, coverage cannot be complete.
+    // countsIncomplete is also included: when a count source is unknown, a 0 in failed/skipped means 'not counted'
+    // rather than 'did not occur'; treating this as full coverage would be passing off unknown as complete.
     if (limitHit || cancelled || countsIncomplete ||
         failed != 0U || skipped != 0U || truncated != 0U) {
         return false;
     }
 
-    // 正面证据 (a)：范围口径。四个端点齐全才认，且处理范围必须完全盖住请求范围。
+    // Positive evidence (a): Range scope. All four endpoints must be present, and the processed range must fully cover the requested range.
     bool rangeComplete = false;
-    if (RangeStated(*this)) {
+    if (rangeStated(*this)) {
         if (processedBegin.value > requestedBegin.value || processedEnd.value < requestedEnd.value) {
             return false;
         }
         rangeComplete = true;
-    } else if (AnyRangeEndpoint(*this)) {
-        // 端点残缺：说不清边界，宁可判不完整。
+    } else if (anyRangeEndpoint(*this)) {
+        // Endpoint incomplete: boundaries unclear; prefer marking as incomplete.
         return false;
     }
 
-    // 正面证据 (b)：数量口径。声称了总数就必须处理完。
+    // Positive evidence (b): Quantity scope. If a total is claimed, it must be fully processed.
     bool countComplete = false;
     if (totalKnown.present) {
         if (succeeded < totalKnown.value) {
@@ -109,82 +109,82 @@ bool CoverageAccount::fullyCovered() const noexcept {
         countComplete = true;
     }
 
-    // F-06：两条正面证据都没有 —— 例如默认构造的空账目 —— 是"覆盖未知"，
-    // 不是"100% 完整扫描"。任何忘记填账目的采集方都不该白得一个完整覆盖。
+    // F-06: If neither of the two positive evidences exists (e.g., a default-constructed empty account), it represents "unknown coverage,"
+    // not a "100% complete scan." Any collector that forgets to populate an account should not be granted a complete coverage status.
     return rangeComplete || countComplete;
 }
 
 std::string CoverageAccount::describeRemaining() const {
-    // F-06：停止原因优先。取消不是"命中上限"，两者在报告里不能混为一谈。
+    // F-06: Stop reason takes precedence. Cancellation is not a 'hit limit'; the two must not be conflated in reports.
     if (cancelled) {
         return std::string("cancelled");
     }
     if (limitHit) {
         return std::string("limit-hit:") +
-               (limit.present ? FormatU64(limit.value, U64Format::Decimal) : std::string("unknown"));
+               (limit.present ? formatU64(limit.value, U64Format::kDecimal) : std::string("unknown"));
     }
     if (countsIncomplete) {
-        // 至少有一项计数来源未知：数字只是下界。绝不能落到下面的 "remaining:N"
-        // 分支去报一个看似精确的剩余量。
+        // At least one count source is unknown: the number is only a lower bound. It must never fall
+        // through to the 'remaining:N' branch below to report a seemingly precise remaining amount.
         return std::string("counts-incomplete");
     }
     if (truncated != 0U) {
-        // 数量口径可能刚好"算平"，但截断本身就是没看全，必须先报出来，
-        // 否则会和 fullyCovered() 给出互相矛盾的两句话。
-        return std::string("truncated:") + FormatU64(truncated, U64Format::Decimal);
+        // The counts might mathematically balance out, but truncation means we haven't seen everything;
+        // this must be reported first, otherwise it contradicts what `fullyCovered()` states.
+        return std::string("truncated:") + formatU64(truncated, U64Format::kDecimal);
     }
     if (totalKnown.present) {
-        const std::uint64_t done =
-            SaturatingAdd(SaturatingAdd(succeeded, failed), SaturatingAdd(skipped, truncated));
-        if (done < totalKnown.value) {
-            return std::string("remaining:") + FormatU64(totalKnown.value - done, U64Format::Decimal);
+        const std::uint64_t kDone =
+            saturatingAdd(saturatingAdd(succeeded, failed), saturatingAdd(skipped, truncated));
+        if (kDone < totalKnown.value) {
+            return std::string("remaining:") + formatU64(totalKnown.value - kDone, U64Format::kDecimal);
         }
         if (failed != 0U || skipped != 0U) {
-            // 条数对上了但其中有失败/跳过：剩余量为 0 不等于看全了。
-            return std::string("incomplete:failed=") + FormatU64(failed, U64Format::Decimal) +
-                   ",skipped=" + FormatU64(skipped, U64Format::Decimal);
+            // The counts match but there are failures/skips: remaining amount is 0 does not equal having seen everything.
+            return std::string("incomplete:failed=") + formatU64(failed, U64Format::kDecimal) +
+                   ",skipped=" + formatU64(skipped, U64Format::kDecimal);
         }
         return std::string("remaining:0");
     }
-    if (RangeStated(*this)) {
-        const std::uint64_t head = processedBegin.value > requestedBegin.value
+    if (rangeStated(*this)) {
+        const std::uint64_t kHead = processedBegin.value > requestedBegin.value
                                        ? processedBegin.value - requestedBegin.value
                                        : 0ULL;
-        const std::uint64_t tail = requestedEnd.value > processedEnd.value
+        const std::uint64_t kTail = requestedEnd.value > processedEnd.value
                                        ? requestedEnd.value - processedEnd.value
                                        : 0ULL;
-        return std::string("remaining-range:") + FormatU64(SaturatingAdd(head, tail), U64Format::Decimal);
+        return std::string("remaining-range:") + formatU64(saturatingAdd(kHead, kTail), U64Format::kDecimal);
     }
     if (requestedEnd.present && processedEnd.present && requestedEnd.value > processedEnd.value) {
         return std::string("remaining-range:") +
-               FormatU64(requestedEnd.value - processedEnd.value, U64Format::Decimal);
+               formatU64(requestedEnd.value - processedEnd.value, U64Format::kDecimal);
     }
-    // F-06：总数未知就明确说未知，不能用已返回数量冒充总量。
+    // F-06: If the total is unknown, explicitly state unknown; do not use the returned count to impersonate the total.
     return std::string("remaining:unknown");
 }
 
-const char* SourceOriginName(SourceOrigin origin) noexcept {
+const char* sourceOriginName(SourceOrigin origin) noexcept {
     switch (origin) {
-    case SourceOrigin::Unknown:       return "Unknown";
-    case SourceOrigin::LiveKernel:    return "LiveKernel";
-    case SourceOrigin::LiveUserMode:  return "LiveUserMode";
-    case SourceOrigin::ExternalFile:  return "ExternalFile";
-    case SourceOrigin::OfflineSample: return "OfflineSample";
+    case SourceOrigin::kUnknown:       return "Unknown";
+    case SourceOrigin::kLiveKernel:    return "LiveKernel";
+    case SourceOrigin::kLiveUserMode:  return "LiveUserMode";
+    case SourceOrigin::kExternalFile:  return "ExternalFile";
+    case SourceOrigin::kOfflineSample: return "OfflineSample";
     }
     return "Unknown";
 }
 
-const char* CaptureModeName(CaptureMode mode) noexcept {
+const char* captureModeName(CaptureMode mode) noexcept {
     switch (mode) {
-    case CaptureMode::Unknown:   return "Unknown";
-    case CaptureMode::Snapshot:  return "Snapshot";
-    case CaptureMode::Streaming: return "Streaming";
-    case CaptureMode::Replay:    return "Replay";
+    case CaptureMode::kUnknown:   return "Unknown";
+    case CaptureMode::kSnapshot:  return "Snapshot";
+    case CaptureMode::kStreaming: return "Streaming";
+    case CaptureMode::kReplay:    return "Replay";
     }
     return "Unknown";
 }
 
-bool MonotonicComparable(const CaptureWindow& a, const CaptureWindow& b) noexcept {
+bool monotonicComparable(const CaptureWindow& a, const CaptureWindow& b) noexcept {
     if (a.bootId.empty() || b.bootId.empty()) {
         return false;
     }
@@ -194,63 +194,63 @@ bool MonotonicComparable(const CaptureWindow& a, const CaptureWindow& b) noexcep
     return a.machineId == b.machineId;
 }
 
-bool MonotonicDeltaNanos(const CaptureWindow& window,
+bool monotonicDeltaNanos(const CaptureWindow& window,
                          std::uint64_t earlierTicks,
                          std::uint64_t laterTicks,
                          std::int64_t& outNanos) noexcept {
     if (window.bootId.empty() || !window.monotonicFrequency.present) {
         return false;
     }
-    const std::uint64_t frequency = window.monotonicFrequency.value;
-    if (frequency == 0U) {
+    const std::uint64_t kFrequency = window.monotonicFrequency.value;
+    if (kFrequency == 0U) {
         return false;
     }
-    const bool forward = laterTicks >= earlierTicks;
-    const std::uint64_t delta = forward ? (laterTicks - earlierTicks) : (earlierTicks - laterTicks);
+    const bool kForward = laterTicks >= earlierTicks;
+    const std::uint64_t kDelta = kForward ? (laterTicks - earlierTicks) : (earlierTicks - laterTicks);
 
-    // delta / freq 秒 -> 纳秒，先整除再乘余数，避免 delta * 1e9 溢出。
+    // delta / freq converts seconds to nanoseconds; performs integer division first then multiplies the remainder to avoid overflow from delta * 1e9.
     constexpr std::uint64_t kNanosPerSecond = 1000000000ULL;
-    const std::uint64_t whole = delta / frequency;
-    const std::uint64_t remainder = delta % frequency;
+    const std::uint64_t kWhole = kDelta / kFrequency;
+    const std::uint64_t kRemainder = kDelta % kFrequency;
     constexpr std::uint64_t kMax = static_cast<std::uint64_t>((std::numeric_limits<std::int64_t>::max)());
-    if (whole > kMax / kNanosPerSecond) {
+    if (kWhole > kMax / kNanosPerSecond) {
         return false;
     }
-    const std::uint64_t nanos = whole * kNanosPerSecond + (remainder * kNanosPerSecond) / frequency;
-    if (nanos > kMax) {
+    const std::uint64_t kNanos = kWhole * kNanosPerSecond + (kRemainder * kNanosPerSecond) / kFrequency;
+    if (kNanos > kMax) {
         return false;
     }
-    outNanos = forward ? static_cast<std::int64_t>(nanos) : -static_cast<std::int64_t>(nanos);
+    outNanos = kForward ? static_cast<std::int64_t>(kNanos) : -static_cast<std::int64_t>(kNanos);
     return true;
 }
 
 AnalysisConclusion EvidenceEnvelope::deriveConclusion(bool differenceFound) const noexcept {
-    if (!StatusCarriesObservation(outcome.status)) {
-        // 采集失败/未采集/不支持：没有证据，不是"正常"。
-        return AnalysisConclusion::NoEvidence;
+    if (!statusCarriesObservation(outcome.status)) {
+        // Collection failed / not collected / unsupported: No evidence, not 'normal'.
+        return AnalysisConclusion::kNoEvidence;
     }
     if (differenceFound) {
-        return AnalysisConclusion::DifferenceObserved;
+        return AnalysisConclusion::kDifferenceObserved;
     }
-    if (outcome.status == CollectionStatus::Partial || !coverage.fullyCovered()) {
-        // 覆盖不足时"没看到差异"不能升级成"未发现差异"。
-        return AnalysisConclusion::Indeterminate;
+    if (outcome.status == CollectionStatus::kPartial || !coverage.fullyCovered()) {
+        // When coverage is insufficient, "no difference observed" cannot be upgraded to "no difference found."
+        return AnalysisConclusion::kIndeterminate;
     }
-    return AnalysisConclusion::NoDifferenceObserved;
+    return AnalysisConclusion::kNoDifferenceObserved;
 }
 
 std::size_t TrustStatement::originViewCount(SourceOrigin origin) const noexcept {
     switch (origin) {
-    case SourceOrigin::Unknown:       return unknownOriginViewCount;
-    case SourceOrigin::LiveKernel:    return liveKernelViewCount;
-    case SourceOrigin::LiveUserMode:  return liveUserModeViewCount;
-    case SourceOrigin::ExternalFile:  return externalFileViewCount;
-    case SourceOrigin::OfflineSample: return offlineSampleViewCount;
+    case SourceOrigin::kUnknown:       return unknownOriginViewCount;
+    case SourceOrigin::kLiveKernel:    return liveKernelViewCount;
+    case SourceOrigin::kLiveUserMode:  return liveUserModeViewCount;
+    case SourceOrigin::kExternalFile:  return externalFileViewCount;
+    case SourceOrigin::kOfflineSample: return offlineSampleViewCount;
     }
     return 0U;
 }
 
-TrustStatement BuildTrustStatement(const std::vector<EvidenceEnvelope>& envelopes) {
+TrustStatement buildTrustStatement(const std::vector<EvidenceEnvelope>& envelopes) {
     TrustStatement statement;
     statement.viewCount = envelopes.size();
 
@@ -260,27 +260,27 @@ TrustStatement BuildTrustStatement(const std::vector<EvidenceEnvelope>& envelope
     bool allLiveKernel = true;
 
     for (const EvidenceEnvelope& envelope : envelopes) {
-        // F-11：来源类别逐类计数，"这份结论有一半来自离线样本"必须能被看见。
+        // F-11: Count by source category; the conclusion 'half comes from offline samples' must be visible.
         switch (envelope.source.origin) {
-        case SourceOrigin::Unknown:       ++statement.unknownOriginViewCount; break;
-        case SourceOrigin::LiveKernel:    ++statement.liveKernelViewCount; break;
-        case SourceOrigin::LiveUserMode:  ++statement.liveUserModeViewCount; break;
-        case SourceOrigin::ExternalFile:  ++statement.externalFileViewCount; break;
-        case SourceOrigin::OfflineSample: ++statement.offlineSampleViewCount; break;
+        case SourceOrigin::kUnknown:       ++statement.unknownOriginViewCount; break;
+        case SourceOrigin::kLiveKernel:    ++statement.liveKernelViewCount; break;
+        case SourceOrigin::kLiveUserMode:  ++statement.liveUserModeViewCount; break;
+        case SourceOrigin::kExternalFile:  ++statement.externalFileViewCount; break;
+        case SourceOrigin::kOfflineSample: ++statement.offlineSampleViewCount; break;
         }
-        // X-01：同一个 sourceGroup 的多个视图只算一个独立来源。
+        // X-01: Multiple views from the same sourceGroup count as a single independent source.
         const std::string& group =
             envelope.source.sourceGroup.empty() ? envelope.source.collectorId : envelope.source.sourceGroup;
         if (std::find(groups.begin(), groups.end(), group) == groups.end()) {
             groups.push_back(group);
         }
         sawAny = true;
-        if (envelope.source.origin != SourceOrigin::LiveKernel) {
+        if (envelope.source.origin != SourceOrigin::kLiveKernel) {
             allLiveKernel = false;
         }
-        // Partial 本身就说明没覆盖全请求范围，即使账目字段还没填也算覆盖不完整。
-        if (envelope.outcome.status == CollectionStatus::Partial ||
-            !StatusCarriesObservation(envelope.outcome.status) ||
+        // Partial itself indicates the requested scope is not fully covered, even if the ledger fields are not yet filled.
+        if (envelope.outcome.status == CollectionStatus::kPartial ||
+            !statusCarriesObservation(envelope.outcome.status) ||
             !envelope.coverage.fullyCovered()) {
             statement.anyIncompleteCoverage = true;
         }
@@ -295,15 +295,15 @@ TrustStatement BuildTrustStatement(const std::vector<EvidenceEnvelope>& envelope
         (statement.externalFileViewCount != 0U ? 1U : 0U) +
         (statement.offlineSampleViewCount != 0U ? 1U : 0U);
 
-    // F-11：结论永远表述为限制，不表述为保证。
+    // F-11: Conclusions are always expressed as limitations, not guarantees.
     if (statement.allFromSameLiveKernel) {
         statement.limitationKeys.emplace_back("trust.limitation.sameLiveKernel");
     }
     if (statement.independentSourceGroupCount <= 1U && statement.viewCount > 1U) {
         statement.limitationKeys.emplace_back("trust.limitation.singleSourceGroup");
     }
-    // F-11：外部文件与离线样本描述的都不是"当前正在运行的内核"，混进结论时必须
-    // 单独声明 —— 否则读者会把一份半离线的判断当成对现场的判断。
+    // F-11: External files and offline samples do not describe the "currently running kernel". When mixed into conclusions, they
+    // must be explicitly declared separately; otherwise, readers may mistake a semi-offline assessment for an on-site judgment.
     if (statement.externalFileViewCount != 0U) {
         statement.limitationKeys.emplace_back("trust.limitation.externalFile");
     }
@@ -317,4 +317,4 @@ TrustStatement BuildTrustStatement(const std::vector<EvidenceEnvelope>& envelope
     return statement;
 }
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

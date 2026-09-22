@@ -6,7 +6,7 @@
 
 - 项目只使用标准 MSVC、仓库 Qt 与 QtMsBuild；不要切换 LLVM、`amd64\MSBuild.exe`、替代 TargetName，也不要因为一次链接器内部错误自动升级或降级 MSVC。
 - 当同一任务出现 `LNK1000`、`IMAGE::BuildImage` 或 `.iobj`，只执行一次 `Invoke-KSwordBuildCheck.ps1 -Action Rebuild -DisableWholeProgramOptimization`。该脚本在临时 props 中关闭 WPO/LTCG，结束后移除该 props，不会改动工程。
-- 通过条件必须同时是 `BUILD_RESULT=SUCCESS`、`EXIT_CODE=0`，以及非零 `Ksword5.1\x64\Release\Ksword5.1.exe`。WPO 禁用构建会使普通增量缓存失效；不要紧接着再跑普通 Build，只用 `-VerifyArtifactOnly` 做读回。
+- 通过条件必须同时是 `BUILD_RESULT=SUCCESS`、`EXIT_CODE=0`，以及非零 `artifacts/bin\x64\Release\Ksword5.1.exe`。WPO 禁用构建会使普通增量缓存失效；不要紧接着再跑普通 Build，只用 `-VerifyArtifactOnly` 做读回。
 - 只有这条构建局部恢复路径仍复现后，才考虑 VS servicing update 或并列 v143 工具集。
 
 ## 驱动 x64 WDK 后置验证

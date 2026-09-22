@@ -3,20 +3,20 @@
 #include <algorithm>
 #include <utility>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 namespace {
 
 // ---------------------------------------------------------------------------
-// 格式常量。全部写死在实现里，不从被解析的文件读，也不暴露给测试 ——
-// 测试必须自己按 DUMP_HEADER64 的公开布局写偏移，否则偏移写错测不出来（Q-01）。
+// Format constants. Hardcoded in the implementation; not read from parsed files and not exposed to tests. Tests must write
+// offsets according to the public layout of DUMP_HEADER64 themselves; otherwise, incorrect offsets cannot be detected (Q-01).
 // ---------------------------------------------------------------------------
 constexpr std::uint32_t kSignatureMdmp = 0x504D444DU;   // 'MDMP'
 constexpr std::uint32_t kSignaturePage = 0x45474150U;   // 'PAGE'
 constexpr std::uint32_t kValidDump64 = 0x34365544U;     // 'DU64'
 constexpr std::uint32_t kValidDump32 = 0x504D5544U;     // 'DUMP'
 
-// 转储写入器只填自己关心的字段，其余保持 'PAGE' 填充。读到填充值就等于
-// "这一格没被写过"，绝不能当成真实取值 —— C-03 点名的陷阱。
+// The dump writer only populates fields it cares about; the rest remain 'PAGE' filled. Reading a fill value
+// means 'this cell was never written' and must never be treated as a real value — a trap highlighted by C-03.
 constexpr std::uint32_t kPageFillDword = 0x45474150U;
 constexpr std::uint64_t kPageFillQword = 0x4547415045474150ULL;
 
@@ -25,7 +25,7 @@ constexpr std::size_t kKernelHeader64Bytes = 0x2000U;
 constexpr std::size_t kKernelHeader32Bytes = 0x1000U;
 constexpr std::size_t kSignatureBytes = 8U;
 
-// DUMP_HEADER64 字段偏移。
+// DUMP_HEADER64 field offsets.
 constexpr std::size_t kOffMajorVersion = 0x08U;
 constexpr std::size_t kOffMinorVersion = 0x0CU;
 constexpr std::size_t kOffDirectoryTableBase = 0x10U;
@@ -38,7 +38,7 @@ constexpr std::size_t kOffSystemTime = 0xFA8U;
 constexpr std::size_t kOffSystemUpTime = 0x1030U;
 constexpr std::size_t kOffWriterStatus = 0x1048U;
 
-// PE 机器类型。
+// PE machine type.
 constexpr std::uint32_t kMachineX86 = 0x014CU;
 constexpr std::uint32_t kMachineX64 = 0x8664U;
 constexpr std::uint32_t kMachineArm = 0x01C4U;
@@ -47,60 +47,60 @@ constexpr std::uint32_t kMachineArm64 = 0xAA64U;
 constexpr const char* kRecognitionDomain = "KSWORD_DUMPRECOGNITION";
 
 // ---------------------------------------------------------------------------
-// 小工具
+// Utility
 // ---------------------------------------------------------------------------
-constexpr bool IsAsciiUpper(unsigned char byte) noexcept { return byte >= 'A' && byte <= 'Z'; }
-constexpr bool IsAsciiLower(unsigned char byte) noexcept { return byte >= 'a' && byte <= 'z'; }
-constexpr bool IsAsciiDigit(unsigned char byte) noexcept { return byte >= '0' && byte <= '9'; }
+constexpr bool isAsciiUpper(unsigned char byte) noexcept { return byte >= 'A' && byte <= 'Z'; }
+constexpr bool isAsciiLower(unsigned char byte) noexcept { return byte >= 'a' && byte <= 'z'; }
+constexpr bool isAsciiDigit(unsigned char byte) noexcept { return byte >= '0' && byte <= '9'; }
 
-constexpr bool IsAsciiAlpha(unsigned char byte) noexcept {
-    return IsAsciiUpper(byte) || IsAsciiLower(byte);
+constexpr bool isAsciiAlpha(unsigned char byte) noexcept {
+    return isAsciiUpper(byte) || isAsciiLower(byte);
 }
 
-constexpr bool IsAsciiAlnum(unsigned char byte) noexcept {
-    return IsAsciiAlpha(byte) || IsAsciiDigit(byte);
+constexpr bool isAsciiAlnum(unsigned char byte) noexcept {
+    return isAsciiAlpha(byte) || isAsciiDigit(byte);
 }
 
-constexpr char AsciiLowerChar(char value) noexcept {
-    const auto byte = static_cast<unsigned char>(value);
-    return IsAsciiUpper(byte) ? static_cast<char>(byte - 'A' + 'a') : value;
+constexpr char asciiLowerChar(char value) noexcept {
+    const auto kByte = static_cast<unsigned char>(value);
+    return isAsciiUpper(kByte) ? static_cast<char>(kByte - 'A' + 'a') : value;
 }
 
-// 只折 ASCII 大小写。非 ASCII 字节原样保留：没有 locale 就不该猜别的字符集，
-// 折错了会把两个不同的模块名合成一个。
-std::string AsciiLower(std::string_view text) {
+// Only fold ASCII case. Non-ASCII bytes are preserved as-is: without a locale, guessing other character
+// sets is inappropriate, as incorrect folding would merge two distinct module names into one.
+std::string asciiLower(std::string_view text) {
     std::string result;
     result.reserve(text.size());
-    for (const char value : text) {
-        result.push_back(AsciiLowerChar(value));
+    for (const char kValue : text) {
+        result.push_back(asciiLowerChar(kValue));
     }
     return result;
 }
 
-// 下面两个不分配内存的比较函数专供 noexcept 判据用：判据里不许有可能抛
-// bad_alloc 的分配，否则 noexcept 会把一次内存不足变成 std::terminate。
-bool AsciiEqualsIgnoreCase(std::string_view a, std::string_view b) noexcept {
+// The following two comparison functions allocate no memory and are provided specifically for noexcept predicates: the predicate
+// must not allow allocations that could throw bad_alloc, otherwise noexcept would convert a memory shortage into std::terminate.
+bool asciiEqualsIgnoreCase(std::string_view a, std::string_view b) noexcept {
     if (a.size() != b.size()) {
         return false;
     }
     for (std::size_t index = 0; index < a.size(); ++index) {
-        if (AsciiLowerChar(a[index]) != AsciiLowerChar(b[index])) {
+        if (asciiLowerChar(a[index]) != asciiLowerChar(b[index])) {
             return false;
         }
     }
     return true;
 }
 
-// needle 必须已经是小写字面量。
-bool ContainsIgnoreCase(std::string_view haystack, std::string_view loweredNeedle) noexcept {
+// Note: needle must already be a lowercase literal.
+bool containsIgnoreCase(std::string_view haystack, std::string_view loweredNeedle) noexcept {
     if (loweredNeedle.empty() || haystack.size() < loweredNeedle.size()) {
         return false;
     }
-    const std::size_t last = haystack.size() - loweredNeedle.size();
-    for (std::size_t start = 0; start <= last; ++start) {
+    const std::size_t kLast = haystack.size() - loweredNeedle.size();
+    for (std::size_t start = 0; start <= kLast; ++start) {
         std::size_t offset = 0;
         while (offset < loweredNeedle.size() &&
-               AsciiLowerChar(haystack[start + offset]) == loweredNeedle[offset]) {
+               asciiLowerChar(haystack[start + offset]) == loweredNeedle[offset]) {
             ++offset;
         }
         if (offset == loweredNeedle.size()) {
@@ -110,17 +110,17 @@ bool ContainsIgnoreCase(std::string_view haystack, std::string_view loweredNeedl
     return false;
 }
 
-// 控制字符：C0 区与 DEL。
-constexpr bool IsControlByte(unsigned char byte) noexcept {
+// Control characters: C0 range and DEL.
+constexpr bool isControlByte(unsigned char byte) noexcept {
     return byte < 0x20U || byte == 0x7FU;
 }
 
-// 报告里允许保留的排版控制字符。
-constexpr bool IsLayoutControlByte(unsigned char byte) noexcept {
+// Allowed layout control characters in the report.
+constexpr bool isLayoutControlByte(unsigned char byte) noexcept {
     return byte == '\t' || byte == '\n' || byte == '\r';
 }
 
-std::string_view BaseNameOf(std::string_view path) noexcept {
+std::string_view baseNameOf(std::string_view path) noexcept {
     std::size_t begin = 0;
     for (std::size_t index = 0; index < path.size(); ++index) {
         if (path[index] == '\\' || path[index] == '/') {
@@ -133,9 +133,9 @@ std::string_view BaseNameOf(std::string_view path) noexcept {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// 字节读取
+// Byte read
 // ---------------------------------------------------------------------------
-bool ReadLittleEndianU32(std::span<const std::uint8_t> bytes,
+bool readLittleEndianU32(std::span<const std::uint8_t> bytes,
                          std::size_t offset,
                          std::uint32_t& out) noexcept {
     if (offset > bytes.size() || bytes.size() - offset < 4U) {
@@ -148,13 +148,13 @@ bool ReadLittleEndianU32(std::span<const std::uint8_t> bytes,
     return true;
 }
 
-bool ReadLittleEndianU64(std::span<const std::uint8_t> bytes,
+bool readLittleEndianU64(std::span<const std::uint8_t> bytes,
                          std::size_t offset,
                          std::uint64_t& out) noexcept {
     std::uint32_t low = 0;
     std::uint32_t high = 0;
-    if (!ReadLittleEndianU32(bytes, offset, low) ||
-        !ReadLittleEndianU32(bytes, offset + 4U, high)) {
+    if (!readLittleEndianU32(bytes, offset, low) ||
+        !readLittleEndianU32(bytes, offset + 4U, high)) {
         return false;
     }
     out = static_cast<std::uint64_t>(low) | (static_cast<std::uint64_t>(high) << 32U);
@@ -162,129 +162,129 @@ bool ReadLittleEndianU64(std::span<const std::uint8_t> bytes,
 }
 
 // ---------------------------------------------------------------------------
-// C-02 文件识别
+// C-02 File identification
 // ---------------------------------------------------------------------------
-const char* DumpKindName(DumpKind kind) noexcept {
+const char* dumpKindName(DumpKind kind) noexcept {
     switch (kind) {
-    case DumpKind::NotADump: return "NotADump";
-    case DumpKind::Unsupported: return "Unsupported";
-    case DumpKind::UserMinidump: return "UserMinidump";
-    case DumpKind::KernelSmall: return "KernelSmall";
-    case DumpKind::KernelMemory: return "KernelMemory";
+    case DumpKind::kNotADump: return "NotADump";
+    case DumpKind::kUnsupported: return "Unsupported";
+    case DumpKind::kUserMinidump: return "UserMinidump";
+    case DumpKind::kKernelSmall: return "KernelSmall";
+    case DumpKind::kKernelMemory: return "KernelMemory";
     }
     return "NotADump";
 }
 
-bool DumpKindCarriesKernelFacts(DumpKind kind) noexcept {
-    return kind == DumpKind::KernelSmall || kind == DumpKind::KernelMemory;
+bool dumpKindCarriesKernelFacts(DumpKind kind) noexcept {
+    return kind == DumpKind::kKernelSmall || kind == DumpKind::kKernelMemory;
 }
 
-const char* SignatureFamilyName(SignatureFamily family) noexcept {
+const char* signatureFamilyName(SignatureFamily family) noexcept {
     switch (family) {
-    case SignatureFamily::None: return "None";
-    case SignatureFamily::Mdmp: return "Mdmp";
-    case SignatureFamily::KernelPage64: return "KernelPage64";
-    case SignatureFamily::KernelPage32: return "KernelPage32";
+    case SignatureFamily::kNone: return "None";
+    case SignatureFamily::kMdmp: return "Mdmp";
+    case SignatureFamily::kKernelPage64: return "KernelPage64";
+    case SignatureFamily::kKernelPage32: return "KernelPage32";
     }
     return "None";
 }
 
-const char* RecognitionReasonName(RecognitionReason reason) noexcept {
+const char* recognitionReasonName(RecognitionReason reason) noexcept {
     switch (reason) {
-    case RecognitionReason::Recognized: return "Recognized";
-    case RecognitionReason::EmptyFile: return "EmptyFile";
-    case RecognitionReason::TooSmallForSignature: return "TooSmallForSignature";
-    case RecognitionReason::TruncatedHeader: return "TruncatedHeader";
-    case RecognitionReason::UnknownSignature: return "UnknownSignature";
-    case RecognitionReason::UnsupportedKernelBitness: return "UnsupportedKernelBitness";
-    case RecognitionReason::UnsupportedArchitecture: return "UnsupportedArchitecture";
-    case RecognitionReason::UnsupportedDumpType: return "UnsupportedDumpType";
+    case RecognitionReason::kRecognized: return "Recognized";
+    case RecognitionReason::kEmptyFile: return "EmptyFile";
+    case RecognitionReason::kTooSmallForSignature: return "TooSmallForSignature";
+    case RecognitionReason::kTruncatedHeader: return "TruncatedHeader";
+    case RecognitionReason::kUnknownSignature: return "UnknownSignature";
+    case RecognitionReason::kUnsupportedKernelBitness: return "UnsupportedKernelBitness";
+    case RecognitionReason::kUnsupportedArchitecture: return "UnsupportedArchitecture";
+    case RecognitionReason::kUnsupportedDumpType: return "UnsupportedDumpType";
     }
     return "UnknownSignature";
 }
 
-const char* TargetArchitectureName(TargetArchitecture architecture) noexcept {
+const char* targetArchitectureName(TargetArchitecture architecture) noexcept {
     switch (architecture) {
-    case TargetArchitecture::Unknown: return "Unknown";
-    case TargetArchitecture::X86: return "X86";
-    case TargetArchitecture::X64: return "X64";
-    case TargetArchitecture::Arm: return "Arm";
-    case TargetArchitecture::Arm64: return "Arm64";
-    case TargetArchitecture::Other: return "Other";
+    case TargetArchitecture::kUnknown: return "Unknown";
+    case TargetArchitecture::kX86: return "X86";
+    case TargetArchitecture::kX64: return "X64";
+    case TargetArchitecture::kArm: return "Arm";
+    case TargetArchitecture::kArm64: return "Arm64";
+    case TargetArchitecture::kOther: return "Other";
     }
     return "Unknown";
 }
 
 namespace {
 
-TargetArchitecture ArchitectureFromMachineType(std::uint32_t machineType) noexcept {
+TargetArchitecture architectureFromMachineType(std::uint32_t machineType) noexcept {
     switch (machineType) {
-    case kMachineX86: return TargetArchitecture::X86;
-    case kMachineX64: return TargetArchitecture::X64;
-    case kMachineArm: return TargetArchitecture::Arm;
-    case kMachineArm64: return TargetArchitecture::Arm64;
+    case kMachineX86: return TargetArchitecture::kX86;
+    case kMachineX64: return TargetArchitecture::kX64;
+    case kMachineArm: return TargetArchitecture::kArm;
+    case kMachineArm64: return TargetArchitecture::kArm64;
     default: break;
     }
-    // 'PAGE' 填充不是机器类型，是"没填过"。不许把它归到 Other 冒充一个取值。
+    // 'PAGE' fill is not a machine type; it means 'not set'. Do not map it to 'Other' to fake a valid value.
     if (machineType == kPageFillDword || machineType == 0U) {
-        return TargetArchitecture::Unknown;
+        return TargetArchitecture::kUnknown;
     }
-    return TargetArchitecture::Other;
+    return TargetArchitecture::kOther;
 }
 
-const char* RecognitionMessageKey(RecognitionReason reason) noexcept {
+const char* recognitionMessageKey(RecognitionReason reason) noexcept {
     switch (reason) {
-    case RecognitionReason::Recognized: return "dump.recognize.ok";
-    case RecognitionReason::EmptyFile: return "dump.recognize.empty_file";
-    case RecognitionReason::TooSmallForSignature: return "dump.recognize.too_small";
-    case RecognitionReason::TruncatedHeader: return "dump.recognize.truncated_header";
-    case RecognitionReason::UnknownSignature: return "dump.recognize.unknown_signature";
-    case RecognitionReason::UnsupportedKernelBitness: return "dump.recognize.kernel32_unsupported";
-    case RecognitionReason::UnsupportedArchitecture: return "dump.recognize.arch_unsupported";
-    case RecognitionReason::UnsupportedDumpType: return "dump.recognize.dumptype_unsupported";
+    case RecognitionReason::kRecognized: return "dump.recognize.ok";
+    case RecognitionReason::kEmptyFile: return "dump.recognize.empty_file";
+    case RecognitionReason::kTooSmallForSignature: return "dump.recognize.too_small";
+    case RecognitionReason::kTruncatedHeader: return "dump.recognize.truncated_header";
+    case RecognitionReason::kUnknownSignature: return "dump.recognize.unknown_signature";
+    case RecognitionReason::kUnsupportedKernelBitness: return "dump.recognize.kernel32_unsupported";
+    case RecognitionReason::kUnsupportedArchitecture: return "dump.recognize.arch_unsupported";
+    case RecognitionReason::kUnsupportedDumpType: return "dump.recognize.dumptype_unsupported";
     }
     return "dump.recognize.unknown_signature";
 }
 
-CollectionStatus RecognitionStatus(RecognitionReason reason) noexcept {
+CollectionStatus recognitionStatus(RecognitionReason reason) noexcept {
     switch (reason) {
-    case RecognitionReason::Recognized:
-        return CollectionStatus::Success;
-    case RecognitionReason::TruncatedHeader:
-        // 签名读到了、格式后半段没读到 —— 这是部分采集，不是"格式不支持"。
-        return CollectionStatus::Partial;
-    case RecognitionReason::UnsupportedKernelBitness:
-    case RecognitionReason::UnsupportedArchitecture:
-    case RecognitionReason::UnsupportedDumpType:
-        return CollectionStatus::Unsupported;
-    case RecognitionReason::EmptyFile:
-    case RecognitionReason::TooSmallForSignature:
-    case RecognitionReason::UnknownSignature:
-        return CollectionStatus::Error;
+    case RecognitionReason::kRecognized:
+        return CollectionStatus::kSuccess;
+    case RecognitionReason::kTruncatedHeader:
+        // Signature header read but format tail unread — this is partial collection, not 'unsupported format'.
+        return CollectionStatus::kPartial;
+    case RecognitionReason::kUnsupportedKernelBitness:
+    case RecognitionReason::kUnsupportedArchitecture:
+    case RecognitionReason::kUnsupportedDumpType:
+        return CollectionStatus::kUnsupported;
+    case RecognitionReason::kEmptyFile:
+    case RecognitionReason::kTooSmallForSignature:
+    case RecognitionReason::kUnknownSignature:
+        return CollectionStatus::kError;
     }
-    return CollectionStatus::Error;
+    return CollectionStatus::kError;
 }
 
-void FinishRecognition(DumpRecognition& recognition, RecognitionReason reason) {
+void finishRecognition(DumpRecognition& recognition, RecognitionReason reason) {
     recognition.reason = reason;
-    const CollectionStatus status = RecognitionStatus(reason);
-    if (status == CollectionStatus::Success) {
+    const CollectionStatus kStatus = recognitionStatus(reason);
+    if (kStatus == CollectionStatus::kSuccess) {
         recognition.outcome = CollectionOutcome::success();
-        recognition.outcome.message = RecognitionMessageKey(reason);
+        recognition.outcome.message = recognitionMessageKey(reason);
         return;
     }
-    recognition.outcome = CollectionOutcome::failure(status,
+    recognition.outcome = CollectionOutcome::failure(kStatus,
                                                      kRecognitionDomain,
                                                      static_cast<std::uint64_t>(reason),
-                                                     RecognitionMessageKey(reason));
+                                                     recognitionMessageKey(reason));
 }
 
 } // namespace
 
-// 刻意不是 noexcept：FinishRecognition 在每条失败路径上都要构造一个带 22 字节
-// domain 字符串的 CollectionOutcome，必然堆分配（MSVC 的 SSO 上限是 15 字节）。
-// 详见 DumpFacts.h 里这个函数的声明处。
-DumpRecognition RecognizeDump(std::span<const std::uint8_t> headBytes,
+// Intentionally not noexcept: finishRecognition must construct a CollectionOutcome containing a 22-byte domain
+// string on every failure path, which inevitably triggers heap allocation (MSVC's SSO limit is 15 bytes).
+// See the declaration of this function in DumpFacts.h.
+DumpRecognition recognizeDump(std::span<const std::uint8_t> headBytes,
                               const OptionalU64& totalFileSize) {
     DumpRecognition recognition;
     recognition.bytesProvided = OptionalU64::of(static_cast<std::uint64_t>(headBytes.size()));
@@ -292,163 +292,163 @@ DumpRecognition RecognizeDump(std::span<const std::uint8_t> headBytes,
                                ? totalFileSize
                                : OptionalU64::of(static_cast<std::uint64_t>(headBytes.size()));
 
-    const std::uint64_t declaredSize = recognition.fileSize.value;
+    const std::uint64_t kDeclaredSize = recognition.fileSize.value;
 
-    if (declaredSize == 0U) {
-        FinishRecognition(recognition, RecognitionReason::EmptyFile);
+    if (kDeclaredSize == 0U) {
+        finishRecognition(recognition, RecognitionReason::kEmptyFile);
         return recognition;
     }
 
     std::uint32_t signature = 0;
     std::uint32_t validDump = 0;
-    if (declaredSize < kSignatureBytes || headBytes.size() < kSignatureBytes ||
-        !ReadLittleEndianU32(headBytes, 0U, signature) ||
-        !ReadLittleEndianU32(headBytes, 4U, validDump)) {
-        // 文件本身太短，或调用方给的窗口太短。两者的区别由 bytesProvided 与
-        // fileSize 两个字段暴露，不塞进同一个 reason 里含糊过去。
-        FinishRecognition(recognition, RecognitionReason::TooSmallForSignature);
+    if (kDeclaredSize < kSignatureBytes || headBytes.size() < kSignatureBytes ||
+        !readLittleEndianU32(headBytes, 0U, signature) ||
+        !readLittleEndianU32(headBytes, 4U, validDump)) {
+        // The file itself is too short, or the window provided by the caller is too short. The distinction is
+        // exposed via the bytesProvided and fileSize fields rather than being obscured in a single reason.
+        finishRecognition(recognition, RecognitionReason::kTooSmallForSignature);
         return recognition;
     }
 
     recognition.rawSignature = OptionalU64::of(signature);
     recognition.rawValidDump = OptionalU64::of(validDump);
 
-    // 用户态 minidump 的判据只有一条：签名是 'MDMP'。红线 —— 一旦命中，
-    // 后面所有内核分支都不再考虑，绝不可能被识别成内核 dump。
+    // The criterion for user-mode minidumps is a single one: the signature must be 'MDMP'. This is a hard line —
+    // once matched, all subsequent kernel branches are ignored, and it can never be recognized as a kernel dump.
     if (signature == kSignatureMdmp) {
-        recognition.family = SignatureFamily::Mdmp;
+        recognition.family = SignatureFamily::kMdmp;
         recognition.headerBytesRequired =
             OptionalU64::of(static_cast<std::uint64_t>(kMinidumpHeaderBytes));
-        if (declaredSize < kMinidumpHeaderBytes || headBytes.size() < kMinidumpHeaderBytes) {
-            recognition.kind = DumpKind::Unsupported;
-            FinishRecognition(recognition, RecognitionReason::TruncatedHeader);
+        if (kDeclaredSize < kMinidumpHeaderBytes || headBytes.size() < kMinidumpHeaderBytes) {
+            recognition.kind = DumpKind::kUnsupported;
+            finishRecognition(recognition, RecognitionReason::kTruncatedHeader);
             return recognition;
         }
         recognition.parseAttempted = true;
-        recognition.kind = DumpKind::UserMinidump;
-        // 用户态 minidump 的目标架构在 SystemInfoStream 里，不在头里。
-        // 本函数只看头，因此架构是 Unknown —— 不猜，也不按扩展名补。
-        recognition.architecture = TargetArchitecture::Unknown;
-        FinishRecognition(recognition, RecognitionReason::Recognized);
+        recognition.kind = DumpKind::kUserMinidump;
+        // The target architecture for user-mode minidumps resides in SystemInfoStream, not the header.
+        // This function only inspects the header, so the architecture is Unknown—no guessing and no extension-based inference.
+        recognition.architecture = TargetArchitecture::kUnknown;
+        finishRecognition(recognition, RecognitionReason::kRecognized);
         return recognition;
     }
 
     if (signature != kSignaturePage) {
-        FinishRecognition(recognition, RecognitionReason::UnknownSignature);
+        finishRecognition(recognition, RecognitionReason::kUnknownSignature);
         return recognition;
     }
 
     if (validDump == kValidDump32) {
-        recognition.family = SignatureFamily::KernelPage32;
+        recognition.family = SignatureFamily::kKernelPage32;
         recognition.headerBytesRequired =
             OptionalU64::of(static_cast<std::uint64_t>(kKernelHeader32Bytes));
-        recognition.kind = DumpKind::Unsupported;
-        // 本轮只支持 x64 内核转储。明确拒绝，不去按 64 位布局硬读 32 位文件。
-        FinishRecognition(recognition, RecognitionReason::UnsupportedKernelBitness);
+        recognition.kind = DumpKind::kUnsupported;
+        // This round supports only x64 kernel dumps. Explicitly reject; do not forcibly read 32-bit files using 64-bit layout.
+        finishRecognition(recognition, RecognitionReason::kUnsupportedKernelBitness);
         return recognition;
     }
 
     if (validDump != kValidDump64) {
-        FinishRecognition(recognition, RecognitionReason::UnknownSignature);
+        finishRecognition(recognition, RecognitionReason::kUnknownSignature);
         return recognition;
     }
 
-    recognition.family = SignatureFamily::KernelPage64;
+    recognition.family = SignatureFamily::kKernelPage64;
     recognition.headerBytesRequired =
         OptionalU64::of(static_cast<std::uint64_t>(kKernelHeader64Bytes));
 
-    // 头被截断时仍尽量把机器类型读出来（它在 0x30，远早于 0x2000），
-    // 这样 UI 至少能说"是一份被截断的 x64 内核转储"，但 kind 不收敛。
+    // Try to read the machine type even if the header is truncated (it's at offset 0x30, far before 0x2000),
+    // so the UI can at least say "it's a truncated x64 kernel dump", though the kind remains inconclusive.
     std::uint32_t machineType = 0;
-    if (ReadLittleEndianU32(headBytes, kOffMachineImageType, machineType)) {
+    if (readLittleEndianU32(headBytes, kOffMachineImageType, machineType)) {
         recognition.parseAttempted = true;
         recognition.rawMachineType = OptionalU64::of(machineType);
-        recognition.architecture = ArchitectureFromMachineType(machineType);
+        recognition.architecture = architectureFromMachineType(machineType);
     }
 
-    if (declaredSize < kKernelHeader64Bytes || headBytes.size() < kKernelHeader64Bytes) {
-        recognition.kind = DumpKind::Unsupported;
-        FinishRecognition(recognition, RecognitionReason::TruncatedHeader);
+    if (kDeclaredSize < kKernelHeader64Bytes || headBytes.size() < kKernelHeader64Bytes) {
+        recognition.kind = DumpKind::kUnsupported;
+        finishRecognition(recognition, RecognitionReason::kTruncatedHeader);
         return recognition;
     }
 
-    if (recognition.architecture != TargetArchitecture::X64) {
-        recognition.kind = DumpKind::Unsupported;
-        FinishRecognition(recognition, RecognitionReason::UnsupportedArchitecture);
+    if (recognition.architecture != TargetArchitecture::kX64) {
+        recognition.kind = DumpKind::kUnsupported;
+        finishRecognition(recognition, RecognitionReason::kUnsupportedArchitecture);
         return recognition;
     }
 
     std::uint32_t dumpType = 0;
-    if (!ReadLittleEndianU32(headBytes, kOffDumpType, dumpType)) {
-        recognition.kind = DumpKind::Unsupported;
-        FinishRecognition(recognition, RecognitionReason::TruncatedHeader);
+    if (!readLittleEndianU32(headBytes, kOffDumpType, dumpType)) {
+        recognition.kind = DumpKind::kUnsupported;
+        finishRecognition(recognition, RecognitionReason::kTruncatedHeader);
         return recognition;
     }
     recognition.rawDumpType = OptionalU64::of(dumpType);
     recognition.parseAttempted = true;
 
     switch (dumpType) {
-    case 3U:  // 仅转储头
-    case 4U:  // triage / 小型内存转储
-        // 两者都不保证包含 IRP/锁/进程/pool，C-07 的上界一致，因此同归 KernelSmall；
-        // 原始 DumpType 在 rawDumpType 里无损保留，报告要区分时看那一格。
-        recognition.kind = DumpKind::KernelSmall;
+    case 3U:  // Dump header only
+    case 4U:  // Triage / small memory dump.
+        // Neither guarantees IRP/lock/process/pool data. Both have the same C-07 upper bound and therefore map to KernelSmall.
+        // The original DumpType is losslessly preserved in rawDumpType; check that specific field when the report needs to distinguish them.
+        recognition.kind = DumpKind::kKernelSmall;
         break;
-    case 1U:  // 完整内存
-    case 2U:  // 内核内存
-    case 5U:  // 活动内存（bitmap full）
-    case 6U:  // 活动内核内存（bitmap kernel）
-    case 7U:  // 自动内存
-        recognition.kind = DumpKind::KernelMemory;
+    case 1U:  // Full memory
+    case 2U:  // Kernel memory
+    case 5U:  // Active memory (bitmap full).
+    case 6U:  // Active kernel memory (bitmap kernel)
+    case 7U:  // Automatic memory
+        recognition.kind = DumpKind::kKernelMemory;
         break;
     default:
-        recognition.kind = DumpKind::Unsupported;
-        FinishRecognition(recognition, RecognitionReason::UnsupportedDumpType);
+        recognition.kind = DumpKind::kUnsupported;
+        finishRecognition(recognition, RecognitionReason::kUnsupportedDumpType);
         return recognition;
     }
 
-    FinishRecognition(recognition, RecognitionReason::Recognized);
+    finishRecognition(recognition, RecognitionReason::kRecognized);
     return recognition;
 }
 
-bool RecognitionIsDamagedRatherThanUnsupported(const DumpRecognition& recognition) noexcept {
+bool recognitionIsDamagedRatherThanUnsupported(const DumpRecognition& recognition) noexcept {
     switch (recognition.reason) {
-    case RecognitionReason::EmptyFile:
-    case RecognitionReason::TooSmallForSignature:
-    case RecognitionReason::TruncatedHeader:
+    case RecognitionReason::kEmptyFile:
+    case RecognitionReason::kTooSmallForSignature:
+    case RecognitionReason::kTruncatedHeader:
         return true;
-    case RecognitionReason::Recognized:
-    case RecognitionReason::UnknownSignature:
-    case RecognitionReason::UnsupportedKernelBitness:
-    case RecognitionReason::UnsupportedArchitecture:
-    case RecognitionReason::UnsupportedDumpType:
+    case RecognitionReason::kRecognized:
+    case RecognitionReason::kUnknownSignature:
+    case RecognitionReason::kUnsupportedKernelBitness:
+    case RecognitionReason::kUnsupportedArchitecture:
+    case RecognitionReason::kUnsupportedDumpType:
         return false;
     }
     return false;
 }
 
 // ---------------------------------------------------------------------------
-// C-03 崩溃事实
+// C-03 Crash facts
 // ---------------------------------------------------------------------------
-const char* DumpFieldAvailabilityName(DumpFieldAvailability availability) noexcept {
+const char* dumpFieldAvailabilityName(DumpFieldAvailability availability) noexcept {
     switch (availability) {
-    case DumpFieldAvailability::NotParsed: return "NotParsed";
-    case DumpFieldAvailability::NotRecorded: return "NotRecorded";
-    case DumpFieldAvailability::Present: return "Present";
+    case DumpFieldAvailability::kNotParsed: return "NotParsed";
+    case DumpFieldAvailability::kNotRecorded: return "NotRecorded";
+    case DumpFieldAvailability::kPresent: return "Present";
     }
     return "NotParsed";
 }
 
 DumpField DumpField::present(std::uint64_t v) noexcept {
     DumpField field;
-    field.availability = DumpFieldAvailability::Present;
+    field.availability = DumpFieldAvailability::kPresent;
     field.value = OptionalU64::of(v);
     return field;
 }
 
 DumpField DumpField::notRecorded() noexcept {
     DumpField field;
-    field.availability = DumpFieldAvailability::NotRecorded;
+    field.availability = DumpFieldAvailability::kNotRecorded;
     return field;
 }
 
@@ -457,18 +457,18 @@ DumpField DumpField::notParsed() noexcept {
 }
 
 bool DumpField::consistent() const noexcept {
-    return (availability == DumpFieldAvailability::Present) == value.present;
+    return (availability == DumpFieldAvailability::kPresent) == value.present;
 }
 
 namespace {
 
-// zeroIsUnrecorded 逐字段显式给定，不设默认值 —— "0 到底算不算真值"是每个字段
-// 自己的语义，统一处理必然错一半。
-DumpField ClassifyU32Field(std::span<const std::uint8_t> bytes,
+// zeroIsUnrecorded is explicitly provided per field with no default; whether "0" counts as a truthy
+// value is a field-specific semantic, and unified handling would inevitably misclassify half the cases.
+DumpField classifyU32Field(std::span<const std::uint8_t> bytes,
                            std::size_t offset,
                            bool zeroIsUnrecorded) {
     std::uint32_t raw = 0;
-    if (!ReadLittleEndianU32(bytes, offset, raw)) {
+    if (!readLittleEndianU32(bytes, offset, raw)) {
         return DumpField::notParsed();
     }
     if (raw == kPageFillDword) {
@@ -480,11 +480,11 @@ DumpField ClassifyU32Field(std::span<const std::uint8_t> bytes,
     return DumpField::present(raw);
 }
 
-DumpField ClassifyU64Field(std::span<const std::uint8_t> bytes,
+DumpField classifyU64Field(std::span<const std::uint8_t> bytes,
                            std::size_t offset,
                            bool zeroIsUnrecorded) {
     std::uint64_t raw = 0;
-    if (!ReadLittleEndianU64(bytes, offset, raw)) {
+    if (!readLittleEndianU64(bytes, offset, raw)) {
         return DumpField::notParsed();
     }
     if (raw == kPageFillQword) {
@@ -496,8 +496,8 @@ DumpField ClassifyU64Field(std::span<const std::uint8_t> bytes,
     return DumpField::present(raw);
 }
 
-// 所有字段的统一遍历点。新增字段必须同时加到这里，否则计数会静默漏项。
-std::array<const DumpField*, 12> AllFields(const BugCheckFacts& facts) noexcept {
+// Unified traversal point for all fields. New fields must be added here simultaneously, otherwise the count will silently miss items.
+std::array<const DumpField*, 12> allFields(const BugCheckFacts& facts) noexcept {
     return {&facts.code,
             &facts.parameters[0],
             &facts.parameters[1],
@@ -512,9 +512,9 @@ std::array<const DumpField*, 12> AllFields(const BugCheckFacts& facts) noexcept 
             &facts.directoryTableBase};
 }
 
-std::size_t CountFields(const BugCheckFacts& facts, DumpFieldAvailability wanted) noexcept {
+std::size_t countFields(const BugCheckFacts& facts, DumpFieldAvailability wanted) noexcept {
     std::size_t count = 0;
-    for (const DumpField* field : AllFields(facts)) {
+    for (const DumpField* field : allFields(facts)) {
         if (field->availability == wanted) {
             ++count;
         }
@@ -522,7 +522,7 @@ std::size_t CountFields(const BugCheckFacts& facts, DumpFieldAvailability wanted
     return count;
 }
 
-void SetAllFields(BugCheckFacts& facts, const DumpField& value) {
+void setAllFields(BugCheckFacts& facts, const DumpField& value) {
     facts.code = value;
     for (DumpField& parameter : facts.parameters) {
         parameter = value;
@@ -538,23 +538,23 @@ void SetAllFields(BugCheckFacts& facts, const DumpField& value) {
 
 } // namespace
 
-std::size_t BugCheckFacts::fieldCount() const noexcept { return AllFields(*this).size(); }
+std::size_t BugCheckFacts::fieldCount() const noexcept { return allFields(*this).size(); }
 
 std::size_t BugCheckFacts::presentFieldCount() const noexcept {
-    return CountFields(*this, DumpFieldAvailability::Present);
+    return countFields(*this, DumpFieldAvailability::kPresent);
 }
 
 std::size_t BugCheckFacts::notRecordedFieldCount() const noexcept {
-    return CountFields(*this, DumpFieldAvailability::NotRecorded);
+    return countFields(*this, DumpFieldAvailability::kNotRecorded);
 }
 
 std::size_t BugCheckFacts::notParsedFieldCount() const noexcept {
-    return CountFields(*this, DumpFieldAvailability::NotParsed);
+    return countFields(*this, DumpFieldAvailability::kNotParsed);
 }
 
 bool BugCheckFacts::hasAnyFact() const noexcept { return presentFieldCount() > 0U; }
 
-BugCheckFacts ExtractBugCheckFacts(const DumpRecognition& recognition,
+BugCheckFacts extractBugCheckFacts(const DumpRecognition& recognition,
                                    std::span<const std::uint8_t> headBytes) {
     BugCheckFacts facts;
     facts.dumpKind = recognition.kind;
@@ -565,60 +565,60 @@ BugCheckFacts ExtractBugCheckFacts(const DumpRecognition& recognition,
         static_cast<std::uint64_t>(headBytes.size()) < recognition.fileSize.value;
 
     switch (recognition.kind) {
-    case DumpKind::NotADump:
-        // 根本没跑解析。全部 NotParsed —— "不知道有没有"，不是"没有"。
-        SetAllFields(facts, DumpField::notParsed());
+    case DumpKind::kNotADump:
+        // Parsing was never executed. All fields are set to NotParsed — meaning 'unknown if present', not 'absent'.
+        setAllFields(facts, DumpField::notParsed());
         facts.outcome = CollectionOutcome::notCollected();
         facts.outcome.message = "dump.facts.not_a_dump";
         return facts;
-    case DumpKind::Unsupported:
-        SetAllFields(facts, DumpField::notParsed());
-        facts.outcome = CollectionOutcome::failure(CollectionStatus::Unsupported,
+    case DumpKind::kUnsupported:
+        setAllFields(facts, DumpField::notParsed());
+        facts.outcome = CollectionOutcome::failure(CollectionStatus::kUnsupported,
                                                    kRecognitionDomain,
                                                    static_cast<std::uint64_t>(recognition.reason),
                                                    "dump.facts.unsupported_format");
         return facts;
-    case DumpKind::UserMinidump:
-        // 用户态 minidump 的格式里就不存在 bugcheck 字段。这是 NotRecorded
-        // （知道没有），与 NotParsed（不知道有没有）是两件事。
-        SetAllFields(facts, DumpField::notRecorded());
-        facts.outcome = CollectionOutcome::failure(CollectionStatus::Unsupported,
+    case DumpKind::kUserMinidump:
+        // The user-mode minidump format does not contain a bugcheck field. This is 'NotRecorded'
+        // (known to be absent), which is distinct from 'NotParsed' (unknown presence).
+        setAllFields(facts, DumpField::notRecorded());
+        facts.outcome = CollectionOutcome::failure(CollectionStatus::kUnsupported,
                                                    kRecognitionDomain,
                                                    static_cast<std::uint64_t>(recognition.reason),
                                                    "dump.facts.user_minidump_has_no_bugcheck");
         return facts;
-    case DumpKind::KernelSmall:
-    case DumpKind::KernelMemory:
+    case DumpKind::kKernelSmall:
+    case DumpKind::kKernelMemory:
         break;
     }
 
-    // 停止码 0 在 Windows 里不存在；读到 0 说明这一格没被写入器填过。按缺失处理，
-    // 而不是报一个假的 0x0 —— 这正是 C-03 点名的陷阱的反面。
-    facts.code = ClassifyU32Field(headBytes, kOffBugCheckCode, true);
-    // 停止码参数 0 是完全合法的取值（很多停止码只用前一两个参数），
-    // 因此这里 zeroIsUnrecorded=false：真的是 0 就报 Present(0)。
+    // Note: Stop code 0 does not exist in Windows; reading 0 indicates this field was not filled by the writer.
+    // Handle it as missing rather than reporting a fake 0x0—this is the inverse of the trap highlighted in C-03.
+    facts.code = classifyU32Field(headBytes, kOffBugCheckCode, true);
+    // Stop code parameter 0 is a completely valid value (many stop codes use only the first one or two
+    // parameters). Therefore, zeroIsUnrecorded=false: if the value is truly 0, report it as Present(0).
     for (std::size_t index = 0; index < facts.parameters.size(); ++index) {
         facts.parameters[index] =
-            ClassifyU64Field(headBytes, kOffBugCheckParameters + index * 8U, false);
+            classifyU64Field(headBytes, kOffBugCheckParameters + index * 8U, false);
     }
-    facts.targetOsMajor = ClassifyU32Field(headBytes, kOffMajorVersion, true);
-    facts.targetOsBuild = ClassifyU32Field(headBytes, kOffMinorVersion, true);
-    facts.processorCount = ClassifyU32Field(headBytes, kOffNumberProcessors, true);
-    // FILETIME 0 是 1601 年，不是真实崩溃时间；uptime 0 同理说明没填。
-    facts.crashTimeUtc100ns = ClassifyU64Field(headBytes, kOffSystemTime, true);
-    facts.uptime100ns = ClassifyU64Field(headBytes, kOffSystemUpTime, true);
-    // 写入器状态 0 表示"写入正常"，是有意义的取值，绝不能当缺失。
-    facts.writerStatus = ClassifyU32Field(headBytes, kOffWriterStatus, false);
-    facts.directoryTableBase = ClassifyU64Field(headBytes, kOffDirectoryTableBase, true);
+    facts.targetOsMajor = classifyU32Field(headBytes, kOffMajorVersion, true);
+    facts.targetOsBuild = classifyU32Field(headBytes, kOffMinorVersion, true);
+    facts.processorCount = classifyU32Field(headBytes, kOffNumberProcessors, true);
+    // FILETIME 0 corresponds to 1601, not the actual crash time; uptime 0 similarly indicates the field is unset.
+    facts.crashTimeUtc100ns = classifyU64Field(headBytes, kOffSystemTime, true);
+    facts.uptime100ns = classifyU64Field(headBytes, kOffSystemUpTime, true);
+    // A writer status of 0 indicates "write normal"; this is a meaningful value and must never be treated as missing.
+    facts.writerStatus = classifyU32Field(headBytes, kOffWriterStatus, false);
+    facts.directoryTableBase = classifyU64Field(headBytes, kOffDirectoryTableBase, true);
 
-    const std::size_t notParsed = facts.notParsedFieldCount();
-    if (facts.presentFieldCount() == 0U && notParsed == facts.fieldCount()) {
-        facts.outcome = CollectionOutcome::failure(CollectionStatus::Error,
+    const std::size_t kNotParsed = facts.notParsedFieldCount();
+    if (facts.presentFieldCount() == 0U && kNotParsed == facts.fieldCount()) {
+        facts.outcome = CollectionOutcome::failure(CollectionStatus::kError,
                                                    kRecognitionDomain,
                                                    static_cast<std::uint64_t>(recognition.reason),
                                                    "dump.facts.nothing_readable");
-    } else if (notParsed > 0U) {
-        facts.outcome = CollectionOutcome::failure(CollectionStatus::Partial,
+    } else if (kNotParsed > 0U) {
+        facts.outcome = CollectionOutcome::failure(CollectionStatus::kPartial,
                                                    kRecognitionDomain,
                                                    static_cast<std::uint64_t>(recognition.reason),
                                                    "dump.facts.window_or_file_truncated");
@@ -630,148 +630,148 @@ BugCheckFacts ExtractBugCheckFacts(const DumpRecognition& recognition,
 }
 
 // ---------------------------------------------------------------------------
-// C-04 符号精确匹配
+// C-04 Symbol exact match
 // ---------------------------------------------------------------------------
-const char* SymbolMatchName(SymbolMatch match) noexcept {
+const char* symbolMatchName(SymbolMatch match) noexcept {
     switch (match) {
-    case SymbolMatch::NotAttempted: return "NotAttempted";
-    case SymbolMatch::Absent: return "Absent";
-    case SymbolMatch::WrongVersion: return "WrongVersion";
-    case SymbolMatch::Matched: return "Matched";
+    case SymbolMatch::kNotAttempted: return "NotAttempted";
+    case SymbolMatch::kAbsent: return "Absent";
+    case SymbolMatch::kWrongVersion: return "WrongVersion";
+    case SymbolMatch::kMatched: return "Matched";
     }
     return "NotAttempted";
 }
 
-const char* SymbolCacheSourceName(SymbolCacheSource source) noexcept {
+const char* symbolCacheSourceName(SymbolCacheSource source) noexcept {
     switch (source) {
-    case SymbolCacheSource::Unknown: return "Unknown";
-    case SymbolCacheSource::NotLoaded: return "NotLoaded";
-    case SymbolCacheSource::LocalDirectory: return "LocalDirectory";
-    case SymbolCacheSource::LocalCache: return "LocalCache";
-    case SymbolCacheSource::SymbolServer: return "SymbolServer";
-    case SymbolCacheSource::DumpEmbedded: return "DumpEmbedded";
+    case SymbolCacheSource::kUnknown: return "Unknown";
+    case SymbolCacheSource::kNotLoaded: return "NotLoaded";
+    case SymbolCacheSource::kLocalDirectory: return "LocalDirectory";
+    case SymbolCacheSource::kLocalCache: return "LocalCache";
+    case SymbolCacheSource::kSymbolServer: return "SymbolServer";
+    case SymbolCacheSource::kDumpEmbedded: return "DumpEmbedded";
     }
     return "Unknown";
 }
 
-const char* SymbolLoadAttemptName(SymbolLoadAttempt attempt) noexcept {
+const char* symbolLoadAttemptName(SymbolLoadAttempt attempt) noexcept {
     switch (attempt) {
-    case SymbolLoadAttempt::NotAttempted: return "NotAttempted";
-    case SymbolLoadAttempt::FileNotFound: return "FileNotFound";
-    case SymbolLoadAttempt::LoadFailed: return "LoadFailed";
-    case SymbolLoadAttempt::FileLoaded: return "FileLoaded";
+    case SymbolLoadAttempt::kNotAttempted: return "NotAttempted";
+    case SymbolLoadAttempt::kFileNotFound: return "FileNotFound";
+    case SymbolLoadAttempt::kLoadFailed: return "LoadFailed";
+    case SymbolLoadAttempt::kFileLoaded: return "FileLoaded";
     }
     return "NotAttempted";
 }
 
-bool SamePdbIdentity(const PdbIdentity& a, const PdbIdentity& b) noexcept {
-    // 任一侧没有标识就无从证明相同。两个空标识不算"相同"——
-    // 那是"默认即安全"的写法，会让没有 CodeView 记录的模块白拿到函数名。
+bool samePdbIdentity(const PdbIdentity& a, const PdbIdentity& b) noexcept {
+    // If either side lacks an identifier, identity cannot be proven. Two empty identifiers do not count as 'identical'—that
+    // 'default-to-safe' approach would incorrectly assign function names to modules without CodeView records.
     if (!a.present || !b.present) {
         return false;
     }
     return a.age == b.age && a.guid == b.guid;
 }
 
-SymbolMatch DeriveSymbolMatch(SymbolLoadAttempt attempt,
+SymbolMatch deriveSymbolMatch(SymbolLoadAttempt attempt,
                               const PdbIdentity& wanted,
                               const PdbIdentity& loaded) noexcept {
     switch (attempt) {
-    case SymbolLoadAttempt::NotAttempted:
-        return SymbolMatch::NotAttempted;
-    case SymbolLoadAttempt::FileNotFound:
-    case SymbolLoadAttempt::LoadFailed:
-        // 两者都落到 Absent（SymbolMatch 只有规范给的四个值），但区别由
-        // ModuleSymbolState::attempt 与 outcome 保留，报告可以分开说。
-        return SymbolMatch::Absent;
-    case SymbolLoadAttempt::FileLoaded:
+    case SymbolLoadAttempt::kNotAttempted:
+        return SymbolMatch::kNotAttempted;
+    case SymbolLoadAttempt::kFileNotFound:
+    case SymbolLoadAttempt::kLoadFailed:
+        // Both fall to Absent (SymbolMatch only has the four values specified), but the distinction is determined by
+        // ModuleSymbolState::attempt and outcome are retained; the report can describe them separately.
+        return SymbolMatch::kAbsent;
+    case SymbolLoadAttempt::kFileLoaded:
         break;
     }
-    if (SamePdbIdentity(wanted, loaded)) {
-        return SymbolMatch::Matched;
+    if (samePdbIdentity(wanted, loaded)) {
+        return SymbolMatch::kMatched;
     }
-    // 装进来了但版本对不上，或者根本无从证明版本一致（任一侧没有 GUID/Age）。
-    // 两种情况对"能不能给函数名/行号"的答案完全一样：不能。
-    return SymbolMatch::WrongVersion;
+    // Loaded but version mismatch, or unable to prove version consistency (either side lacks GUID/Age).
+    // Both cases yield the exact same answer regarding 'whether a function name/line number can be reported': no.
+    return SymbolMatch::kWrongVersion;
 }
 
-bool MayReportFunctionName(const ModuleSymbolState& state) noexcept {
-    return state.match == SymbolMatch::Matched;
+bool mayReportFunctionName(const ModuleSymbolState& state) noexcept {
+    return state.match == SymbolMatch::kMatched;
 }
 
-bool MayReportSourceLine(const ModuleSymbolState& state) noexcept {
-    return state.match == SymbolMatch::Matched;
+bool mayReportSourceLine(const ModuleSymbolState& state) noexcept {
+    return state.match == SymbolMatch::kMatched;
 }
 
-const char* SymbolAttributionName(SymbolAttribution attribution) noexcept {
+const char* symbolAttributionName(SymbolAttribution attribution) noexcept {
     switch (attribution) {
-    case SymbolAttribution::ModuleOnly: return "ModuleOnly";
-    case SymbolAttribution::ModulePlusOffset: return "ModulePlusOffset";
-    case SymbolAttribution::FunctionPlusOffset: return "FunctionPlusOffset";
-    case SymbolAttribution::FunctionAndSourceLine: return "FunctionAndSourceLine";
+    case SymbolAttribution::kModuleOnly: return "ModuleOnly";
+    case SymbolAttribution::kModulePlusOffset: return "ModulePlusOffset";
+    case SymbolAttribution::kFunctionPlusOffset: return "FunctionPlusOffset";
+    case SymbolAttribution::kFunctionAndSourceLine: return "FunctionAndSourceLine";
     }
     return "ModuleOnly";
 }
 
-SymbolAttribution AllowedAttribution(const ModuleSymbolState& state,
+SymbolAttribution allowedAttribution(const ModuleSymbolState& state,
                                      bool moduleBaseKnown) noexcept {
-    if (state.match == SymbolMatch::Matched) {
-        return SymbolAttribution::FunctionAndSourceLine;
+    if (state.match == SymbolMatch::kMatched) {
+        return SymbolAttribution::kFunctionAndSourceLine;
     }
-    // 错版 / 无符号 / 没试过：最多"模块+偏移"。没有基址连偏移都算不出来。
-    return moduleBaseKnown ? SymbolAttribution::ModulePlusOffset : SymbolAttribution::ModuleOnly;
+    // Erroneous version / No signature / Never tested: At most 'Module + Offset'. Without a base address, even the offset cannot be calculated.
+    return moduleBaseKnown ? SymbolAttribution::kModulePlusOffset : SymbolAttribution::kModuleOnly;
 }
 
-const char* SymbolServerDecisionName(SymbolServerDecision decision) noexcept {
+const char* symbolServerDecisionName(SymbolServerDecision decision) noexcept {
     switch (decision) {
-    case SymbolServerDecision::Allow: return "Allow";
-    case SymbolServerDecision::RejectNotEnabled: return "RejectNotEnabled";
-    case SymbolServerDecision::RejectNotCancellable: return "RejectNotCancellable";
-    case SymbolServerDecision::RejectNoTimeBudget: return "RejectNoTimeBudget";
+    case SymbolServerDecision::kAllow: return "Allow";
+    case SymbolServerDecision::kRejectNotEnabled: return "RejectNotEnabled";
+    case SymbolServerDecision::kRejectNotCancellable: return "RejectNotCancellable";
+    case SymbolServerDecision::kRejectNoTimeBudget: return "RejectNoTimeBudget";
     }
     return "RejectNotEnabled";
 }
 
-SymbolServerDecision DecideSymbolServerFetch(const SymbolServerPolicy& policy) noexcept {
+SymbolServerDecision decideSymbolServerFetch(const SymbolServerPolicy& policy) noexcept {
     if (!policy.userEnabled) {
-        return SymbolServerDecision::RejectNotEnabled;
+        return SymbolServerDecision::kRejectNotEnabled;
     }
     if (!policy.cancellable) {
-        return SymbolServerDecision::RejectNotCancellable;
+        return SymbolServerDecision::kRejectNotCancellable;
     }
-    // "有限时"必须是真的时间预算：只给字节/页数上限不算 —— 一个卡在
-    // connect() 上的符号服务器不会消耗任何字节。
+    // 'Finite time' must be a true time budget: limiting bytes or pages is
+    // insufficient, as a symbol server stuck in connect() consumes no bytes.
     if (!policy.budget.maxDurationNanos.present || policy.budget.maxDurationNanos.value == 0U) {
-        return SymbolServerDecision::RejectNoTimeBudget;
+        return SymbolServerDecision::kRejectNoTimeBudget;
     }
-    return SymbolServerDecision::Allow;
+    return SymbolServerDecision::kAllow;
 }
 
 // ---------------------------------------------------------------------------
-// C-05 栈与模块
+// C-05 Stack and modules
 // ---------------------------------------------------------------------------
-const char* UnwindStateName(UnwindState state) noexcept {
+const char* unwindStateName(UnwindState state) noexcept {
     switch (state) {
-    case UnwindState::TruncatedNoData: return "TruncatedNoData";
-    case UnwindState::TruncatedCorrupt: return "TruncatedCorrupt";
-    case UnwindState::Guessed: return "Guessed";
-    case UnwindState::Unwound: return "Unwound";
+    case UnwindState::kTruncatedNoData: return "TruncatedNoData";
+    case UnwindState::kTruncatedCorrupt: return "TruncatedCorrupt";
+    case UnwindState::kGuessed: return "Guessed";
+    case UnwindState::kUnwound: return "Unwound";
     }
     return "TruncatedNoData";
 }
 
-bool UnwindStateIsTerminal(UnwindState state) noexcept {
-    return state == UnwindState::TruncatedNoData || state == UnwindState::TruncatedCorrupt;
+bool unwindStateIsTerminal(UnwindState state) noexcept {
+    return state == UnwindState::kTruncatedNoData || state == UnwindState::kTruncatedCorrupt;
 }
 
-bool UnwindStateIsTrustworthy(UnwindState state) noexcept {
-    return state == UnwindState::Unwound;
+bool unwindStateIsTrustworthy(UnwindState state) noexcept {
+    return state == UnwindState::kUnwound;
 }
 
 std::size_t StackTrace::unwoundCount() const noexcept {
     std::size_t count = 0;
     for (const StackFrame& frame : frames) {
-        if (frame.unwindState == UnwindState::Unwound) {
+        if (frame.unwindState == UnwindState::kUnwound) {
             ++count;
         }
     }
@@ -781,7 +781,7 @@ std::size_t StackTrace::unwoundCount() const noexcept {
 std::size_t StackTrace::guessedCount() const noexcept {
     std::size_t count = 0;
     for (const StackFrame& frame : frames) {
-        if (frame.unwindState == UnwindState::Guessed) {
+        if (frame.unwindState == UnwindState::kGuessed) {
             ++count;
         }
     }
@@ -791,77 +791,77 @@ std::size_t StackTrace::guessedCount() const noexcept {
 std::size_t StackTrace::truncatedCount() const noexcept {
     std::size_t count = 0;
     for (const StackFrame& frame : frames) {
-        if (UnwindStateIsTerminal(frame.unwindState)) {
+        if (unwindStateIsTerminal(frame.unwindState)) {
             ++count;
         }
     }
     return count;
 }
 
-const char* StackValidationName(StackValidation validation) noexcept {
+const char* stackValidationName(StackValidation validation) noexcept {
     switch (validation) {
-    case StackValidation::Ok: return "Ok";
-    case StackValidation::FramesAfterTruncation: return "FramesAfterTruncation";
-    case StackValidation::FunctionNameWithoutMatchedSymbols:
+    case StackValidation::kOk: return "Ok";
+    case StackValidation::kFramesAfterTruncation: return "FramesAfterTruncation";
+    case StackValidation::kFunctionNameWithoutMatchedSymbols:
         return "FunctionNameWithoutMatchedSymbols";
-    case StackValidation::SourceLineWithoutMatchedSymbols:
+    case StackValidation::kSourceLineWithoutMatchedSymbols:
         return "SourceLineWithoutMatchedSymbols";
-    case StackValidation::CandidatesWithoutMatchedSymbols:
+    case StackValidation::kCandidatesWithoutMatchedSymbols:
         return "CandidatesWithoutMatchedSymbols";
-    case StackValidation::AmbiguityCollapsed: return "AmbiguityCollapsed";
-    case StackValidation::IncompleteArgumentsClaimedComplete:
+    case StackValidation::kAmbiguityCollapsed: return "AmbiguityCollapsed";
+    case StackValidation::kIncompleteArgumentsClaimedComplete:
         return "IncompleteArgumentsClaimedComplete";
     }
     return "Ok";
 }
 
-StackValidation ValidateStackTrace(const StackTrace& trace) noexcept {
+StackValidation validateStackTrace(const StackTrace& trace) noexcept {
     bool truncationSeen = false;
     for (const StackFrame& frame : trace.frames) {
-        // 边界先判：截断帧之后再出现任何一帧，就是把猜测帧拼到了展开结果后面。
+        // Boundary check first: Any frame appearing after truncation means the guessed frame was appended to the unwind result.
         if (truncationSeen) {
-            return StackValidation::FramesAfterTruncation;
+            return StackValidation::kFramesAfterTruncation;
         }
-        // 函数内偏移与函数名同罪：没解析出函数就没有"函数内偏移"这回事。
+        // Function offset and function name are treated equally: if the function cannot be resolved, the concept of 'offset within function' does not exist.
         if ((!frame.functionName.empty() || frame.functionOffset.present) &&
-            frame.symbolMatch != SymbolMatch::Matched) {
-            return StackValidation::FunctionNameWithoutMatchedSymbols;
+            frame.symbolMatch != SymbolMatch::kMatched) {
+            return StackValidation::kFunctionNameWithoutMatchedSymbols;
         }
         if ((!frame.sourceFile.empty() || frame.sourceLine.present) &&
-            frame.symbolMatch != SymbolMatch::Matched) {
-            return StackValidation::SourceLineWithoutMatchedSymbols;
+            frame.symbolMatch != SymbolMatch::kMatched) {
+            return StackValidation::kSourceLineWithoutMatchedSymbols;
         }
-        // 候选函数名同样会被渲染到 UI，只是从单数变复数。错版 PDB 解出来的名字
-        // 挂上"候选"两个字不会因此变成可用信息 —— C-04 的红线对复数一样有效。
-        if (!frame.candidateFunctions.empty() && frame.symbolMatch != SymbolMatch::Matched) {
-            return StackValidation::CandidatesWithoutMatchedSymbols;
+        // Candidate function names are also rendered in the UI, just pluralized. Names resolved from a mismatched PDB
+        // do not become valid information by appending "Candidate" — the C-04 red line applies equally to plural forms.
+        if (!frame.candidateFunctions.empty() && frame.symbolMatch != SymbolMatch::kMatched) {
+            return StackValidation::kCandidatesWithoutMatchedSymbols;
         }
         if (frame.attributionAmbiguous && frame.candidateFunctions.size() < 2U) {
-            // 标了歧义却只留一个候选 = 把歧义抹平成了确定答案。
-            return StackValidation::AmbiguityCollapsed;
+            // Marked as ambiguous but only one candidate remains = collapsing the ambiguity into a definite answer.
+            return StackValidation::kAmbiguityCollapsed;
         }
         if (frame.argsComplete) {
             for (const OptionalU64& argument : frame.availableArgs) {
                 if (!argument.present) {
-                    return StackValidation::IncompleteArgumentsClaimedComplete;
+                    return StackValidation::kIncompleteArgumentsClaimedComplete;
                 }
             }
         }
-        if (UnwindStateIsTerminal(frame.unwindState)) {
+        if (unwindStateIsTerminal(frame.unwindState)) {
             truncationSeen = true;
         }
     }
-    return StackValidation::Ok;
+    return StackValidation::kOk;
 }
 
 // ---------------------------------------------------------------------------
-// C-06 可疑模块解释
+// C-06 Suspicious module explanation
 // ---------------------------------------------------------------------------
-const char* ModuleEvidenceKindName(ModuleEvidenceKind kind) noexcept {
+const char* moduleEvidenceKindName(ModuleEvidenceKind kind) noexcept {
     switch (kind) {
-    case ModuleEvidenceKind::OnStack: return "OnStack";
-    case ModuleEvidenceKind::FaultingIpModule: return "FaultingIpModule";
-    case ModuleEvidenceKind::VerifierReported: return "VerifierReported";
+    case ModuleEvidenceKind::kOnStack: return "OnStack";
+    case ModuleEvidenceKind::kFaultingIpModule: return "FaultingIpModule";
+    case ModuleEvidenceKind::kVerifierReported: return "VerifierReported";
     }
     return "OnStack";
 }
@@ -870,93 +870,93 @@ std::size_t ModuleEvidenceGroup::evidenceCount() const noexcept {
     return onStack.size() + faultingIp.size() + verifier.size();
 }
 
-bool IsWellKnownSystemModuleName(std::string_view moduleName) noexcept {
-    // 名单写死在实现里，不从转储读。命中只降低"线索"资格，不是判决。
+bool isWellKnownSystemModuleName(std::string_view moduleName) noexcept {
+    // The list is hardcoded in the implementation, not read from the dump. A hit only reduces 'clue' eligibility, not the verdict.
     static constexpr std::string_view kNames[] = {
         "ntoskrnl.exe", "ntkrnlmp.exe", "ntkrnlpa.exe", "ntkrpamp.exe",
         "hal.dll",      "halmacpi.dll", "halacpi.dll",  "ntdll.dll",
         "win32k.sys",   "win32kbase.sys", "win32kfull.sys", "ci.dll",
         "kernel32.dll", "kernelbase.dll",
     };
-    const std::string_view base = BaseNameOf(moduleName);
-    for (const std::string_view candidate : kNames) {
-        if (AsciiEqualsIgnoreCase(base, candidate)) {
+    const std::string_view kBase = baseNameOf(moduleName);
+    for (const std::string_view kCandidate : kNames) {
+        if (asciiEqualsIgnoreCase(kBase, kCandidate)) {
             return true;
         }
     }
     return false;
 }
 
-const char* InvestigationLeadName(InvestigationLead lead) noexcept {
+const char* investigationLeadName(InvestigationLead lead) noexcept {
     switch (lead) {
-    case InvestigationLead::Undetermined: return "Undetermined";
-    case InvestigationLead::SystemModuleOnly: return "SystemModuleOnly";
-    case InvestigationLead::StackPresenceOnly: return "StackPresenceOnly";
-    case InvestigationLead::FaultingIpAttributed: return "FaultingIpAttributed";
-    case InvestigationLead::VerifierNamed: return "VerifierNamed";
+    case InvestigationLead::kUndetermined: return "Undetermined";
+    case InvestigationLead::kSystemModuleOnly: return "SystemModuleOnly";
+    case InvestigationLead::kStackPresenceOnly: return "StackPresenceOnly";
+    case InvestigationLead::kFaultingIpAttributed: return "FaultingIpAttributed";
+    case InvestigationLead::kVerifierNamed: return "VerifierNamed";
     }
     return "Undetermined";
 }
 
 namespace {
 
-// 故障 IP 证据的前提。正常情况下故障 IP 来自 trap frame / context record，
-// 那时 ipFromContextRecord 为真，与展开质量无关；反过来，如果这条证据是从某个
-// 展开帧上读出来的，那一帧必须真的被展开过（Unwound）。
-// 帧已经被判成 TruncatedCorrupt（数据自相矛盾）却仍据此点名一个第三方驱动，
-// 是拿自己都不信的数据下结论 —— C-06 要求这种情况写"无法确定"。
-bool FaultingIpEvidenceIsFounded(const ModuleEvidenceItem& item) noexcept {
-    return item.ipFromContextRecord || UnwindStateIsTrustworthy(item.frameUnwindState);
+// Prerequisite for Faulting IP evidence. Normally, the faulting IP comes from the trap
+// frame/context record, making ipFromContextRecord true regardless of unwind quality; conversely,
+// if this evidence is read from an unwind frame, that frame must have actually been unwound.
+// The frame has been marked as TruncatedCorrupt (self-contradictory data), yet a third-party driver is still implicated based on
+// this. Drawing conclusions from data you don't trust violates C-06, which requires stating "Unable to determine" in such cases.
+bool faultingIpEvidenceIsFounded(const ModuleEvidenceItem& item) noexcept {
+    return item.ipFromContextRecord || unwindStateIsTrustworthy(item.frameUnwindState);
 }
 
 } // namespace
 
-InvestigationLead ClassifyLead(const ModuleEvidenceGroup& group) noexcept {
-    // 连分组键都没有 = 这一组没有身份。GroupModuleEvidence 对一个空模块名就会产出
-    // 这样一组，而"某个连名字都没有的模块是可查线索"是没有意义的一句话。
+InvestigationLead classifyLead(const ModuleEvidenceGroup& group) noexcept {
+    // No group key = no identity for this group. groupModuleEvidence produces such a group for an
+    // empty module name, but stating that 'a module with no name is a searchable clue' is meaningless.
     if (group.moduleKey.empty()) {
-        return InvestigationLead::Undetermined;
+        return InvestigationLead::kUndetermined;
     }
-    // Verifier 是唯一"由系统自己点名"的证据，强度与前两类不同，先判。
+    // The verifier is the only evidence "named by the system itself"; its strength differs from the other two categories, so check it first.
     if (!group.verifier.empty()) {
-        return InvestigationLead::VerifierNamed;
+        return InvestigationLead::kVerifierNamed;
     }
     if (!group.faultingIp.empty()) {
-        // 故障 IP 落在 ntoskrnl/hal 里是延迟内存损坏的常态，不是根因。
+        // A fault IP within ntoskrnl/hal is typical of delayed memory corruption, not the root cause.
         if (group.isWellKnownSystemModule) {
-            return InvestigationLead::SystemModuleOnly;
+            return InvestigationLead::kSystemModuleOnly;
         }
         for (const ModuleEvidenceItem& item : group.faultingIp) {
-            if (FaultingIpEvidenceIsFounded(item)) {
-                return InvestigationLead::FaultingIpAttributed;
+            if (faultingIpEvidenceIsFounded(item)) {
+                return InvestigationLead::kFaultingIpAttributed;
             }
         }
-        // 故障 IP 证据自己站不住脚：不升级，但也不丢掉这一组 —— 继续按栈上证据判，
-        // 该是弱线索就是弱线索，该是无法确定就是无法确定。
+        // Fault IP evidence is insufficient on its own: do not upgrade it, but do not discard this group either. Continue
+        // evaluating based on stack evidence; treat it as a weak lead if it is weak, or indeterminate if it is indeterminate.
     }
     if (!group.onStack.empty()) {
         if (group.isWellKnownSystemModule) {
-            return InvestigationLead::SystemModuleOnly;
+            return InvestigationLead::kSystemModuleOnly;
         }
-        // 只出现在栈扫描猜测帧里的模块不构成线索：Guessed 不是展开结果，
-        // 栈上的残留返回地址可能来自很久以前的调用。
+        // Modules appearing only in stack-scan-guessed frames do not constitute a lead: Guessed is not an
+        // unwind result, and residual return addresses on the stack may originate from calls long ago.
         for (const ModuleEvidenceItem& item : group.onStack) {
-            if (UnwindStateIsTrustworthy(item.frameUnwindState)) {
-                return InvestigationLead::StackPresenceOnly;
+            if (unwindStateIsTrustworthy(item.frameUnwindState)) {
+                return InvestigationLead::kStackPresenceOnly;
             }
         }
-        return InvestigationLead::Undetermined;
+        return InvestigationLead::kUndetermined;
     }
-    return InvestigationLead::Undetermined;
+    return InvestigationLead::kUndetermined;
 }
 
-std::vector<ModuleEvidenceGroup> GroupModuleEvidence(std::vector<ModuleEvidenceItem> items) {
-    // O(n log n)：先算一次键，再按键排序下标，最后一趟合并。
-    // 不做两两比较 —— 上一轮实测在别的模块抓到过 O(n^2) 的 13/15 秒。
+std::vector<ModuleEvidenceGroup> groupModuleEvidence(std::vector<ModuleEvidenceItem> items) {
+    // O(n log n): Compute keys once, sort indices by keys, then merge in a final pass.
+    // No pairwise comparisons — the previous real-world test in another module caught an O(n^2) case taking 13/15 seconds.
     std::vector<std::pair<std::string, std::size_t>> keyed;
     keyed.reserve(items.size());
     for (std::size_t index = 0; index < items.size(); ++index) {
-        keyed.emplace_back(AsciiLower(items[index].moduleName), index);
+        keyed.emplace_back(asciiLower(items[index].moduleName), index);
     }
     std::stable_sort(keyed.begin(), keyed.end(),
                      [](const std::pair<std::string, std::size_t>& a,
@@ -970,21 +970,21 @@ std::vector<ModuleEvidenceGroup> GroupModuleEvidence(std::vector<ModuleEvidenceI
         if (groups.empty() || groups.back().moduleKey != key) {
             ModuleEvidenceGroup group;
             group.moduleKey = key;
-            // 展示名用首次出现时的原始写法，不做任何归一化。
+            // Display names use the original casing from their first occurrence; no normalization is applied.
             group.moduleName = items[keyed[position].second].moduleName;
-            group.isWellKnownSystemModule = IsWellKnownSystemModuleName(group.moduleName);
+            group.isWellKnownSystemModule = isWellKnownSystemModuleName(group.moduleName);
             groups.push_back(std::move(group));
         }
         ModuleEvidenceItem& item = items[keyed[position].second];
         ModuleEvidenceGroup& target = groups.back();
         switch (item.kind) {
-        case ModuleEvidenceKind::OnStack:
+        case ModuleEvidenceKind::kOnStack:
             target.onStack.push_back(std::move(item));
             break;
-        case ModuleEvidenceKind::FaultingIpModule:
+        case ModuleEvidenceKind::kFaultingIpModule:
             target.faultingIp.push_back(std::move(item));
             break;
-        case ModuleEvidenceKind::VerifierReported:
+        case ModuleEvidenceKind::kVerifierReported:
             target.verifier.push_back(std::move(item));
             break;
         }
@@ -992,23 +992,23 @@ std::vector<ModuleEvidenceGroup> GroupModuleEvidence(std::vector<ModuleEvidenceI
     return groups;
 }
 
-SuspectReport BuildSuspectReport(std::vector<ModuleEvidenceGroup> groups,
+SuspectReport buildSuspectReport(std::vector<ModuleEvidenceGroup> groups,
                                  const CollectionOutcome& stackOutcome) {
     SuspectReport report;
     report.leads.reserve(groups.size());
 
-    // 没有观测就没有结论。此时即使调用方塞了 group 进来，也一律降为 Undetermined ——
-    // "从没采到推出结论"是明确的红线。
-    const bool haveObservation = StatusCarriesObservation(stackOutcome.status);
+    // No observation means no conclusion. Even if the caller injects a group, it is uniformly downgraded
+    // to Undetermined: 'failing to gather data to derive a conclusion' is a definitive red line.
+    const bool kHaveObservation = statusCarriesObservation(stackOutcome.status);
     for (ModuleEvidenceGroup& group : groups) {
         SuspectLead lead;
-        lead.lead = haveObservation ? ClassifyLead(group) : InvestigationLead::Undetermined;
+        lead.lead = kHaveObservation ? classifyLead(group) : InvestigationLead::kUndetermined;
         lead.group = std::move(group);
         report.leads.push_back(std::move(lead));
     }
 
-    if (!haveObservation) {
-        report.conclusion = AnalysisConclusion::NoEvidence;
+    if (!kHaveObservation) {
+        report.conclusion = AnalysisConclusion::kNoEvidence;
         report.limitationKeys.emplace_back("dump.suspect.no_stack_observation");
         return report;
     }
@@ -1018,25 +1018,25 @@ SuspectReport BuildSuspectReport(std::vector<ModuleEvidenceGroup> groups,
     bool anyStackOnly = false;
     for (const SuspectLead& lead : report.leads) {
         switch (lead.lead) {
-        case InvestigationLead::VerifierNamed:
-        case InvestigationLead::FaultingIpAttributed:
+        case InvestigationLead::kVerifierNamed:
+        case InvestigationLead::kFaultingIpAttributed:
             anyActionable = true;
             break;
-        case InvestigationLead::SystemModuleOnly:
+        case InvestigationLead::kSystemModuleOnly:
             anySystemOnly = true;
             break;
-        case InvestigationLead::StackPresenceOnly:
+        case InvestigationLead::kStackPresenceOnly:
             anyStackOnly = true;
             break;
-        case InvestigationLead::Undetermined:
+        case InvestigationLead::kUndetermined:
             break;
         }
     }
 
-    // 本函数永不返回 NoDifferenceObserved：一份转储的前提就是确实崩了，
-    // "未发现差异"在这里没有意义，写出来只会被读成"这台机器没事"。
-    report.conclusion = anyActionable ? AnalysisConclusion::DifferenceObserved
-                                      : AnalysisConclusion::Indeterminate;
+    // This function never returns NoDifferenceObserved: a dump is only generated when a crash has occurred;
+    // 'No Difference Observed' is meaningless here and would be misinterpreted as 'the machine is fine'.
+    report.conclusion = anyActionable ? AnalysisConclusion::kDifferenceObserved
+                                      : AnalysisConclusion::kIndeterminate;
 
     if (report.leads.empty()) {
         report.limitationKeys.emplace_back("dump.suspect.no_module_evidence");
@@ -1050,152 +1050,152 @@ SuspectReport BuildSuspectReport(std::vector<ModuleEvidenceGroup> groups,
     if (anyStackOnly) {
         report.limitationKeys.emplace_back("dump.suspect.stack_presence_only");
     }
-    if (stackOutcome.status == CollectionStatus::Partial) {
+    if (stackOutcome.status == CollectionStatus::kPartial) {
         report.limitationKeys.emplace_back("dump.suspect.stack_partial");
     }
     return report;
 }
 
 // ---------------------------------------------------------------------------
-// C-07 缺失内存的边界
+// C-07 Missing memory boundary
 // ---------------------------------------------------------------------------
-const char* ContentCategoryName(ContentCategory category) noexcept {
+const char* contentCategoryName(ContentCategory category) noexcept {
     switch (category) {
-    case ContentCategory::IrpObjects: return "IrpObjects";
-    case ContentCategory::LockObjects: return "LockObjects";
-    case ContentCategory::FullProcessSpace: return "FullProcessSpace";
-    case ContentCategory::PoolMemory: return "PoolMemory";
-    case ContentCategory::KernelModuleList: return "KernelModuleList";
-    case ContentCategory::ThreadStacks: return "ThreadStacks";
-    case ContentCategory::PhysicalMemory: return "PhysicalMemory";
+    case ContentCategory::kIrpObjects: return "IrpObjects";
+    case ContentCategory::kLockObjects: return "LockObjects";
+    case ContentCategory::kFullProcessSpace: return "FullProcessSpace";
+    case ContentCategory::kPoolMemory: return "PoolMemory";
+    case ContentCategory::kKernelModuleList: return "KernelModuleList";
+    case ContentCategory::kThreadStacks: return "ThreadStacks";
+    case ContentCategory::kPhysicalMemory: return "PhysicalMemory";
     }
     return "IrpObjects";
 }
 
-const char* ContentPresenceName(ContentPresence presence) noexcept {
+const char* contentPresenceName(ContentPresence presence) noexcept {
     switch (presence) {
-    case ContentPresence::Unknown: return "Unknown";
-    case ContentPresence::NotIncluded: return "NotIncluded";
-    case ContentPresence::NotParsable: return "NotParsable";
-    case ContentPresence::Included: return "Included";
+    case ContentPresence::kUnknown: return "Unknown";
+    case ContentPresence::kNotIncluded: return "NotIncluded";
+    case ContentPresence::kNotParsable: return "NotParsable";
+    case ContentPresence::kIncluded: return "Included";
     }
     return "Unknown";
 }
 
 ContentPresence DumpContentAvailability::presenceOf(ContentCategory category) const noexcept {
-    const auto index = static_cast<std::size_t>(category);
-    if (index >= presence.size()) {
-        return ContentPresence::Unknown;
+    const auto kIndex = static_cast<std::size_t>(category);
+    if (kIndex >= presence.size()) {
+        return ContentPresence::kUnknown;
     }
-    return presence[index];
+    return presence[kIndex];
 }
 
 void DumpContentAvailability::set(ContentCategory category, ContentPresence value) noexcept {
-    const auto index = static_cast<std::size_t>(category);
-    if (index < presence.size()) {
-        presence[index] = value;
+    const auto kIndex = static_cast<std::size_t>(category);
+    if (kIndex < presence.size()) {
+        presence[kIndex] = value;
     }
 }
 
-DumpContentAvailability DeriveAvailabilityFromKind(DumpKind kind) noexcept {
-    DumpContentAvailability availability;  // 全 Unknown 起步
+DumpContentAvailability deriveAvailabilityFromKind(DumpKind kind) noexcept {
+    DumpContentAvailability availability;  // Start with all Unknown.
     switch (kind) {
-    case DumpKind::KernelSmall:
-        // small dump 格式上就不含这四类，可以确定地说"转储未包含"。
-        availability.set(ContentCategory::IrpObjects, ContentPresence::NotIncluded);
-        availability.set(ContentCategory::LockObjects, ContentPresence::NotIncluded);
-        availability.set(ContentCategory::FullProcessSpace, ContentPresence::NotIncluded);
-        availability.set(ContentCategory::PoolMemory, ContentPresence::NotIncluded);
-        availability.set(ContentCategory::PhysicalMemory, ContentPresence::NotIncluded);
-        // 模块表与崩溃线程栈"可能"在 triage 块里，但 DumpType=3（仅头）就没有。
-        // 由类型推不出来，因此留 Unknown，要靠实际解析确认 —— 绝不预先写 Included。
+    case DumpKind::kKernelSmall:
+        // The small dump format does not include these four categories, so it is certain that the dump does not contain them.
+        availability.set(ContentCategory::kIrpObjects, ContentPresence::kNotIncluded);
+        availability.set(ContentCategory::kLockObjects, ContentPresence::kNotIncluded);
+        availability.set(ContentCategory::kFullProcessSpace, ContentPresence::kNotIncluded);
+        availability.set(ContentCategory::kPoolMemory, ContentPresence::kNotIncluded);
+        availability.set(ContentCategory::kPhysicalMemory, ContentPresence::kNotIncluded);
+        // The module table and crash thread stack may be in the triage block, but if DumpType=3 (header only), they are absent.
+        // Cannot infer from the type, so leave as Unknown and confirm via actual parsing—never pre-write Included.
         break;
-    case DumpKind::KernelMemory:
-        // 完整/内核/活动内存转储之间差别很大（DumpType 1/2/5/6/7 已被合并到本类），
-        // 单靠 kind 推不出任何一项"确定包含"。全 Unknown 是唯一诚实的答案。
+    case DumpKind::kKernelMemory:
+        // Full, kernel, and active memory dumps differ significantly (DumpType 1/2/5/6/7 have been merged into this class);
+        // one cannot deduce any 'definitely included' item solely from the kind. All Unknown is the only honest answer.
         break;
-    case DumpKind::UserMinidump:
-        // 用户态转储里不存在内核对象。
-        availability.set(ContentCategory::IrpObjects, ContentPresence::NotIncluded);
-        availability.set(ContentCategory::LockObjects, ContentPresence::NotIncluded);
-        availability.set(ContentCategory::PoolMemory, ContentPresence::NotIncluded);
-        availability.set(ContentCategory::KernelModuleList, ContentPresence::NotIncluded);
-        availability.set(ContentCategory::PhysicalMemory, ContentPresence::NotIncluded);
-        // 完整进程空间取决于 MiniDumpWithFullMemory，线程栈取决于写入选项 —— Unknown。
+    case DumpKind::kUserMinidump:
+        // Kernel objects are not present in user-mode dumps.
+        availability.set(ContentCategory::kIrpObjects, ContentPresence::kNotIncluded);
+        availability.set(ContentCategory::kLockObjects, ContentPresence::kNotIncluded);
+        availability.set(ContentCategory::kPoolMemory, ContentPresence::kNotIncluded);
+        availability.set(ContentCategory::kKernelModuleList, ContentPresence::kNotIncluded);
+        availability.set(ContentCategory::kPhysicalMemory, ContentPresence::kNotIncluded);
+        // Full process space depends on MiniDumpWithFullMemory; thread stack depends on the write option — Unknown.
         break;
-    case DumpKind::NotADump:
-    case DumpKind::Unsupported:
-        // 什么都不知道。绝不能因为"没解析出来"就说"不包含"。
+    case DumpKind::kNotADump:
+    case DumpKind::kUnsupported:
+        // Unknown. Never claim "not present" just because parsing failed.
         break;
     }
     return availability;
 }
 
-const char* ContentQueryResultName(ContentQueryResult result) noexcept {
+const char* contentQueryResultName(ContentQueryResult result) noexcept {
     switch (result) {
-    case ContentQueryResult::Available: return "Available";
-    case ContentQueryResult::NotIncludedInDump: return "NotIncludedInDump";
-    case ContentQueryResult::NotParsableHere: return "NotParsableHere";
-    case ContentQueryResult::UnknownAvailability: return "UnknownAvailability";
+    case ContentQueryResult::kAvailable: return "Available";
+    case ContentQueryResult::kNotIncludedInDump: return "NotIncludedInDump";
+    case ContentQueryResult::kNotParsableHere: return "NotParsableHere";
+    case ContentQueryResult::kUnknownAvailability: return "UnknownAvailability";
     }
     return "UnknownAvailability";
 }
 
-ContentQueryResult QueryContent(const DumpContentAvailability& availability,
+ContentQueryResult queryContent(const DumpContentAvailability& availability,
                                ContentCategory category) noexcept {
     switch (availability.presenceOf(category)) {
-    case ContentPresence::Included: return ContentQueryResult::Available;
-    case ContentPresence::NotIncluded: return ContentQueryResult::NotIncludedInDump;
-    case ContentPresence::NotParsable: return ContentQueryResult::NotParsableHere;
-    case ContentPresence::Unknown: return ContentQueryResult::UnknownAvailability;
+    case ContentPresence::kIncluded: return ContentQueryResult::kAvailable;
+    case ContentPresence::kNotIncluded: return ContentQueryResult::kNotIncludedInDump;
+    case ContentPresence::kNotParsable: return ContentQueryResult::kNotParsableHere;
+    case ContentPresence::kUnknown: return ContentQueryResult::kUnknownAvailability;
     }
-    return ContentQueryResult::UnknownAvailability;
+    return ContentQueryResult::kUnknownAvailability;
 }
 
-bool SupplementDisclosed(const ExternalSupplement& supplement) noexcept {
+bool supplementDisclosed(const ExternalSupplement& supplement) noexcept {
     if (!supplement.used) {
-        return true;  // 没用外部数据，没什么要声明的
+        return true;  // No external data used, nothing to declare.
     }
     return !supplement.disclosureKey.empty() && !supplement.source.collectorId.empty() &&
-           supplement.source.origin == SourceOrigin::ExternalFile;
+           supplement.source.origin == SourceOrigin::kExternalFile;
 }
 
 // ---------------------------------------------------------------------------
-// C-08 超时、取消与隔离
+// C-08: Timeout, cancellation, and isolation.
 // ---------------------------------------------------------------------------
-const char* HelperStateName(HelperState state) noexcept {
+const char* helperStateName(HelperState state) noexcept {
     switch (state) {
-    case HelperState::NotStarted: return "NotStarted";
-    case HelperState::Starting: return "Starting";
-    case HelperState::Ready: return "Ready";
-    case HelperState::Busy: return "Busy";
-    case HelperState::Stalled: return "Stalled";
-    case HelperState::Disconnected: return "Disconnected";
-    case HelperState::Cancelling: return "Cancelling";
-    case HelperState::Exited: return "Exited";
-    case HelperState::Failed: return "Failed";
+    case HelperState::kNotStarted: return "NotStarted";
+    case HelperState::kStarting: return "Starting";
+    case HelperState::kReady: return "Ready";
+    case HelperState::kBusy: return "Busy";
+    case HelperState::kStalled: return "Stalled";
+    case HelperState::kDisconnected: return "Disconnected";
+    case HelperState::kCancelling: return "Cancelling";
+    case HelperState::kExited: return "Exited";
+    case HelperState::kFailed: return "Failed";
     }
     return "NotStarted";
 }
 
-bool HelperStateIsTerminal(HelperState state) noexcept {
-    return state == HelperState::Exited || state == HelperState::Failed;
+bool helperStateIsTerminal(HelperState state) noexcept {
+    return state == HelperState::kExited || state == HelperState::kFailed;
 }
 
-bool HelperStateSettled(HelperState state) noexcept {
-    // 白名单式判定，不写成 "!= 这几个"：以后往 HelperState 里加一个状态时，
-    // 默认必须落到"未结算"那一边，而不是白拿一个"已结算"。
+bool helperStateSettled(HelperState state) noexcept {
+    // Use a whitelist-style check rather than '!= these values': when adding a new state to HelperState in
+    // the future, the default must fall into the 'unsettled' category, not incorrectly become 'settled'.
     switch (state) {
-    case HelperState::Ready:
-    case HelperState::Exited:
+    case HelperState::kReady:
+    case HelperState::kExited:
         return true;
-    case HelperState::NotStarted:
-    case HelperState::Starting:
-    case HelperState::Busy:
-    case HelperState::Stalled:
-    case HelperState::Disconnected:
-    case HelperState::Cancelling:
-    case HelperState::Failed:
+    case HelperState::kNotStarted:
+    case HelperState::kStarting:
+    case HelperState::kBusy:
+    case HelperState::kStalled:
+    case HelperState::kDisconnected:
+    case HelperState::kCancelling:
+    case HelperState::kFailed:
         return false;
     }
     return false;
@@ -1203,52 +1203,52 @@ bool HelperStateSettled(HelperState state) noexcept {
 
 namespace {
 
-// helper 没结算时，报告要说清楚是哪一种"没结算"。
-const char* HelperUnsettledKey(HelperState state) noexcept {
+// Note: When the helper is unsettled, the report must specify which type of 'unsettled' state it is.
+const char* helperUnsettledKey(HelperState state) noexcept {
     switch (state) {
-    case HelperState::NotStarted: return "dump.helper.not_started";
-    case HelperState::Starting:
-    case HelperState::Busy: return "dump.helper.still_running";
-    case HelperState::Cancelling: return "dump.helper.cancelling";
-    case HelperState::Stalled: return "dump.helper.stalled";
-    case HelperState::Disconnected: return "dump.helper.disconnected";
-    case HelperState::Failed: return "dump.helper.failed";
-    case HelperState::Ready:
-    case HelperState::Exited: break;
+    case HelperState::kNotStarted: return "dump.helper.not_started";
+    case HelperState::kStarting:
+    case HelperState::kBusy: return "dump.helper.still_running";
+    case HelperState::kCancelling: return "dump.helper.cancelling";
+    case HelperState::kStalled: return "dump.helper.stalled";
+    case HelperState::kDisconnected: return "dump.helper.disconnected";
+    case HelperState::kFailed: return "dump.helper.failed";
+    case HelperState::kReady:
+    case HelperState::kExited: break;
     }
     return "dump.helper.not_settled";
 }
 
 } // namespace
 
-const char* TerminateDecisionName(TerminateDecision decision) noexcept {
+const char* terminateDecisionName(TerminateDecision decision) noexcept {
     switch (decision) {
-    case TerminateDecision::Allow: return "Allow";
-    case TerminateDecision::RejectNotOwned: return "RejectNotOwned";
-    case TerminateDecision::RejectOwnerMismatch: return "RejectOwnerMismatch";
-    case TerminateDecision::RejectNoHelperIdentity: return "RejectNoHelperIdentity";
+    case TerminateDecision::kAllow: return "Allow";
+    case TerminateDecision::kRejectNotOwned: return "RejectNotOwned";
+    case TerminateDecision::kRejectOwnerMismatch: return "RejectOwnerMismatch";
+    case TerminateDecision::kRejectNoHelperIdentity: return "RejectNoHelperIdentity";
     }
     return "RejectNotOwned";
 }
 
-TerminateDecision DecideHelperTermination(const HelperOwnership& helper,
+TerminateDecision decideHelperTermination(const HelperOwnership& helper,
                                           std::string_view requestingModuleId) noexcept {
-    // 顺序固定：先看"是不是我起的"，再看 owner 对不对，最后看有没有确切目标。
+    // Fixed order: first check if 'started by this module', then verify owner, finally check for a specific target.
     if (!helper.startedByThisModule) {
-        return TerminateDecision::RejectNotOwned;
+        return TerminateDecision::kRejectNotOwned;
     }
     if (helper.ownerModuleId.empty() || requestingModuleId.empty() ||
         helper.ownerModuleId != requestingModuleId) {
-        return TerminateDecision::RejectOwnerMismatch;
+        return TerminateDecision::kRejectOwnerMismatch;
     }
     if (helper.helperId.empty()) {
-        // 连实例 id 都没有就"按 pid 杀" —— pid 会复用，可能打到别人的调试器。
-        return TerminateDecision::RejectNoHelperIdentity;
+        // Killing by PID without an instance ID — PIDs are reused and may terminate someone else's debugger.
+        return TerminateDecision::kRejectNoHelperIdentity;
     }
-    return TerminateDecision::Allow;
+    return TerminateDecision::kAllow;
 }
 
-InterruptedResult BuildInterruptedResult(BudgetStop stop,
+InterruptedResult buildInterruptedResult(BudgetStop stop,
                                          HelperState helperState,
                                          const ScanBudget& budget,
                                          CoverageAccount coverage,
@@ -1257,145 +1257,145 @@ InterruptedResult BuildInterruptedResult(BudgetStop stop,
     result.stop = stop;
     result.helperState = helperState;
     result.coverage = std::move(coverage);
-    ApplyStopToCoverage(stop, budget, result.coverage);
-    result.outcome = OutcomeForStop(stop);
+    applyStopToCoverage(stop, budget, result.coverage);
+    result.outcome = outcomeForStop(stop);
     result.partialResultsRetained = haveAnyResult;
 
-    if (stop != BudgetStop::Continue) {
+    if (stop != BudgetStop::kContinue) {
         result.interruptionKeys.emplace_back(std::string("dump.interrupt.") +
-                                             BudgetStopName(stop));
+                                             budgetStopName(stop));
     }
 
     switch (helperState) {
-    case HelperState::Stalled:
-        result.outcome.status = CollectionStatus::Timeout;
+    case HelperState::kStalled:
+        result.outcome.status = CollectionStatus::kTimeout;
         result.outcome.message = "dump.helper.stalled";
         result.interruptionKeys.emplace_back("dump.helper.stalled");
         break;
-    case HelperState::Disconnected:
-        result.outcome.status = CollectionStatus::Error;
+    case HelperState::kDisconnected:
+        result.outcome.status = CollectionStatus::kError;
         result.outcome.message = "dump.helper.disconnected";
         result.interruptionKeys.emplace_back("dump.helper.disconnected");
         break;
-    case HelperState::Failed:
-        result.outcome.status = CollectionStatus::Error;
+    case HelperState::kFailed:
+        result.outcome.status = CollectionStatus::kError;
         result.outcome.message = "dump.helper.failed";
         result.interruptionKeys.emplace_back("dump.helper.failed");
         break;
-    case HelperState::Cancelling:
-        // 仍在收尾，不许伪报"已清理"。
+    case HelperState::kCancelling:
+        // Still finalizing; do not falsely report 'cleaned'.
         result.interruptionKeys.emplace_back("dump.helper.cancelling");
         break;
-    case HelperState::NotStarted:
-        // 从来没起来过：这一轮的 0 条结果不是"这里确实什么都没有"，
-        // 而是"根本没人去看过"。
+    case HelperState::kNotStarted:
+        // Never started: The 0 results in this round do not mean "there
+        // is truly nothing here," but rather "no one ever checked."
         result.interruptionKeys.emplace_back("dump.helper.not_started");
         break;
-    case HelperState::Starting:
-    case HelperState::Busy:
-        // 还在跑：现在手上的结果集合天生不完整。
+    case HelperState::kStarting:
+    case HelperState::kBusy:
+        // Still running: the current result set is inherently incomplete.
         result.interruptionKeys.emplace_back("dump.helper.still_running");
         break;
-    case HelperState::Ready:
-    case HelperState::Exited:
+    case HelperState::kReady:
+    case HelperState::kExited:
         break;
     }
 
     if (!haveAnyResult) {
-        // 一次"什么都没采到"的中断绝不能报 Partial：StatusCarriesObservation
-        // 会放行，下游据此推出正向结论。
+        // A 'nothing collected' interruption must never report Partial: statusCarriesObservation
+        // allows it through, enabling downstream components to derive a positive conclusion.
         switch (stop) {
-        case BudgetStop::Continue:
-            // 没被中断且确实一条都没有 —— 这是"正确的空集合"，保持 Success。
+        case BudgetStop::kContinue:
+            // Not interrupted and truly empty — this is a "correct empty set"; keep Success.
             break;
-        case BudgetStop::Cancelled:
-            if (result.outcome.status == CollectionStatus::Partial) {
-                result.outcome.status = CollectionStatus::NotCollected;
+        case BudgetStop::kCancelled:
+            if (result.outcome.status == CollectionStatus::kPartial) {
+                result.outcome.status = CollectionStatus::kNotCollected;
                 result.outcome.message = "dump.interrupt.cancelled_before_any_result";
             }
             break;
-        case BudgetStop::TimeExhausted:
-            if (result.outcome.status == CollectionStatus::Partial) {
-                result.outcome.status = CollectionStatus::Timeout;
+        case BudgetStop::kTimeExhausted:
+            if (result.outcome.status == CollectionStatus::kPartial) {
+                result.outcome.status = CollectionStatus::kTimeout;
                 result.outcome.message = "dump.interrupt.timeout_before_any_result";
             }
             break;
-        case BudgetStop::BytesExhausted:
-        case BudgetStop::PagesExhausted:
-        case BudgetStop::ItemsExhausted:
-            if (result.outcome.status == CollectionStatus::Partial) {
-                result.outcome.status = CollectionStatus::Error;
+        case BudgetStop::kBytesExhausted:
+        case BudgetStop::kPagesExhausted:
+        case BudgetStop::kItemsExhausted:
+            if (result.outcome.status == CollectionStatus::kPartial) {
+                result.outcome.status = CollectionStatus::kError;
                 result.outcome.message = "dump.interrupt.budget_before_any_result";
             }
             break;
         }
-        if (stop != BudgetStop::Continue) {
+        if (stop != BudgetStop::kContinue) {
             result.interruptionKeys.emplace_back("dump.interrupt.no_partial_results");
         }
     }
 
-    // helperState 是与 stop 无关的第二维。stop==Continue 只说明"预算没用完"，
-    // 它对 helper 到底跑没跑一无所知：NotStarted / Starting / Busy / Cancelling
-    // 四种状态下报 Success，下游 StatusCarriesObservation 会放行，
-    // deriveConclusion 就会给出"未发现差异"—— 从没采到推出正常，C-08 的红线。
-    // 这里只降级、不升级：已经落到 Timeout/Error/NotCollected 的更严重结论保持不动。
-    if (!HelperStateSettled(helperState)) {
-        if (result.outcome.status == CollectionStatus::Success) {
-            result.outcome.status = haveAnyResult ? CollectionStatus::Partial
-                                                  : CollectionStatus::NotCollected;
-            result.outcome.message = HelperUnsettledKey(helperState);
-        } else if (result.outcome.status == CollectionStatus::Partial && !haveAnyResult) {
-            result.outcome.status = CollectionStatus::NotCollected;
-            result.outcome.message = HelperUnsettledKey(helperState);
+    // helperState represents a second dimension independent of stop. stop==Continue only indicates that the budget was not
+    // exhausted; it provides no information on whether the helper actually ran. Reporting Success in any of the NotStarted,
+    // Starting, Busy, or Cancelling states allows downstream statusCarriesObservation to pass, causing deriveConclusion to
+    // output "No differences found"—a transition from "never collected" to "normal," violating the C-08 red line.
+    // Only downgrade, never upgrade: more severe conclusions already set to Timeout/Error/NotCollected remain unchanged.
+    if (!helperStateSettled(helperState)) {
+        if (result.outcome.status == CollectionStatus::kSuccess) {
+            result.outcome.status = haveAnyResult ? CollectionStatus::kPartial
+                                                  : CollectionStatus::kNotCollected;
+            result.outcome.message = helperUnsettledKey(helperState);
+        } else if (result.outcome.status == CollectionStatus::kPartial && !haveAnyResult) {
+            result.outcome.status = CollectionStatus::kNotCollected;
+            result.outcome.message = helperUnsettledKey(helperState);
         }
     }
     return result;
 }
 
 // ---------------------------------------------------------------------------
-// C-09 不可信路径与输出
+// C-09: Untrusted paths and output.
 // ---------------------------------------------------------------------------
-std::string EscapeForReport(std::string_view untrusted) {
+std::string escapeForReport(std::string_view untrusted) {
     std::string out;
     out.reserve(untrusted.size() + untrusted.size() / 4U + 8U);
-    for (const char raw : untrusted) {
-        const auto byte = static_cast<unsigned char>(raw);
-        if (IsControlByte(byte)) {
-            // 模块名/路径/符号名里出现换行、制表、NUL 本身就是异常输入：
-            // 一律换成 U+FFFD 的十进制数字引用（纯 ASCII 输出，不破坏报告结构）。
+    for (const char kRaw : untrusted) {
+        const auto kByte = static_cast<unsigned char>(kRaw);
+        if (isControlByte(kByte)) {
+            // Newlines, tabs, or NUL characters in module names, paths, or symbol names are inherently anomalous inputs:
+            // Always replace with the decimal numeric reference for U+FFFD (pure ASCII output, preserving report structure).
             out += "&#65533;";
             continue;
         }
-        switch (byte) {
+        switch (kByte) {
         case '&': out += "&amp;"; break;
         case '<': out += "&lt;"; break;
         case '>': out += "&gt;"; break;
         case '"': out += "&quot;"; break;
         case '\'': out += "&#39;"; break;
         default:
-            // >= 0x80 的字节原样透传，不破坏 UTF-8 序列。
-            out.push_back(raw);
+            // Bytes >= 0x80 are passed through transparently without breaking UTF-8 sequences.
+            out.push_back(kRaw);
             break;
         }
     }
     return out;
 }
 
-std::string SanitizeForPlainTextField(std::string_view untrusted) {
+std::string sanitizeForPlainTextField(std::string_view untrusted) {
     std::string out;
     out.reserve(untrusted.size());
-    for (const char raw : untrusted) {
-        const auto byte = static_cast<unsigned char>(raw);
-        // 纯文本报告按制表分列、按换行分行，因此字段内的控制字符会打乱重核者
-        // 看到的结构。这不是注入，但同样会误导，一律换成 '?'。
-        out.push_back(IsControlByte(byte) ? '?' : raw);
+    for (const char kRaw : untrusted) {
+        const auto kByte = static_cast<unsigned char>(kRaw);
+        // Plain-text reports use tabs for columns and newlines for rows, so control characters within fields can disrupt the
+        // structure seen by reviewers. This is not an injection, but it is equally misleading; replace all such characters with '?'.
+        out.push_back(isControlByte(kByte) ? '?' : kRaw);
     }
     return out;
 }
 
 namespace {
 
-// 白名单是**完整命令**，不是前缀，也不带任何可拼接的参数位。
+// The whitelist requires **full commands**, not prefixes, and excludes any appendable parameters.
 constexpr std::string_view kAllowedCommands[] = {
     ".bugcheck",
     "lm",
@@ -1407,7 +1407,7 @@ constexpr std::string_view kAllowedCommands[] = {
 constexpr std::size_t kMaxCommandBytes = 64U;
 constexpr std::size_t kMaxPathBytes = 32767U;
 
-bool IsShellMetacharacter(unsigned char byte) noexcept {
+bool isShellMetacharacter(unsigned char byte) noexcept {
     switch (byte) {
     case ';': case '|': case '&': case '<': case '>': case '$': case '`':
     case '"': case '\'': case '\\': case '(': case ')': case '{': case '}':
@@ -1420,126 +1420,126 @@ bool IsShellMetacharacter(unsigned char byte) noexcept {
 
 } // namespace
 
-std::span<const std::string_view> AllowedAnalysisCommands() noexcept {
+std::span<const std::string_view> allowedAnalysisCommands() noexcept {
     return std::span<const std::string_view>(kAllowedCommands,
                                              sizeof(kAllowedCommands) / sizeof(kAllowedCommands[0]));
 }
 
-bool IsSafeAnalysisCommand(std::string_view command) noexcept {
-    for (const std::string_view allowed : kAllowedCommands) {
-        if (command == allowed) {
+bool isSafeAnalysisCommand(std::string_view command) noexcept {
+    for (const std::string_view kAllowed : kAllowedCommands) {
+        if (command == kAllowed) {
             return true;
         }
     }
     return false;
 }
 
-const char* CommandRejectionName(CommandRejection rejection) noexcept {
+const char* commandRejectionName(CommandRejection rejection) noexcept {
     switch (rejection) {
-    case CommandRejection::Accepted: return "Accepted";
-    case CommandRejection::Empty: return "Empty";
-    case CommandRejection::TooLong: return "TooLong";
-    case CommandRejection::ContainsControlCharacter: return "ContainsControlCharacter";
-    case CommandRejection::ContainsShellMetacharacter: return "ContainsShellMetacharacter";
-    case CommandRejection::NotInWhitelist: return "NotInWhitelist";
+    case CommandRejection::kAccepted: return "Accepted";
+    case CommandRejection::kEmpty: return "Empty";
+    case CommandRejection::kTooLong: return "TooLong";
+    case CommandRejection::kContainsControlCharacter: return "ContainsControlCharacter";
+    case CommandRejection::kContainsShellMetacharacter: return "ContainsShellMetacharacter";
+    case CommandRejection::kNotInWhitelist: return "NotInWhitelist";
     }
     return "NotInWhitelist";
 }
 
-CommandRejection ClassifyCommandRequest(std::string_view request) noexcept {
+CommandRejection classifyCommandRequest(std::string_view request) noexcept {
     if (request.empty()) {
-        return CommandRejection::Empty;
+        return CommandRejection::kEmpty;
     }
     if (request.size() > kMaxCommandBytes) {
-        return CommandRejection::TooLong;
+        return CommandRejection::kTooLong;
     }
-    for (const char raw : request) {
-        if (IsControlByte(static_cast<unsigned char>(raw))) {
-            return CommandRejection::ContainsControlCharacter;
+    for (const char kRaw : request) {
+        if (isControlByte(static_cast<unsigned char>(kRaw))) {
+            return CommandRejection::kContainsControlCharacter;
         }
     }
-    for (const char raw : request) {
-        if (IsShellMetacharacter(static_cast<unsigned char>(raw))) {
-            return CommandRejection::ContainsShellMetacharacter;
+    for (const char kRaw : request) {
+        if (isShellMetacharacter(static_cast<unsigned char>(kRaw))) {
+            return CommandRejection::kContainsShellMetacharacter;
         }
     }
-    if (!IsSafeAnalysisCommand(request)) {
-        return CommandRejection::NotInWhitelist;
+    if (!isSafeAnalysisCommand(request)) {
+        return CommandRejection::kNotInWhitelist;
     }
-    return CommandRejection::Accepted;
+    return CommandRejection::kAccepted;
 }
 
-const char* PathRiskName(PathRisk risk) noexcept {
+const char* pathRiskName(PathRisk risk) noexcept {
     switch (risk) {
-    case PathRisk::Ok: return "Ok";
-    case PathRisk::Empty: return "Empty";
-    case PathRisk::TooLong: return "TooLong";
-    case PathRisk::ControlCharacter: return "ControlCharacter";
-    case PathRisk::WildCard: return "WildCard";
-    case PathRisk::ParentTraversal: return "ParentTraversal";
-    case PathRisk::AlternateDataStream: return "AlternateDataStream";
-    case PathRisk::DeviceName: return "DeviceName";
-    case PathRisk::TrailingDotOrSpace: return "TrailingDotOrSpace";
-    case PathRisk::UncOrRemote: return "UncOrRemote";
+    case PathRisk::kOk: return "Ok";
+    case PathRisk::kEmpty: return "Empty";
+    case PathRisk::kTooLong: return "TooLong";
+    case PathRisk::kControlCharacter: return "ControlCharacter";
+    case PathRisk::kWildCard: return "WildCard";
+    case PathRisk::kParentTraversal: return "ParentTraversal";
+    case PathRisk::kAlternateDataStream: return "AlternateDataStream";
+    case PathRisk::kDeviceName: return "DeviceName";
+    case PathRisk::kTrailingDotOrSpace: return "TrailingDotOrSpace";
+    case PathRisk::kUncOrRemote: return "UncOrRemote";
     }
     return "Empty";
 }
 
 namespace {
 
-bool IsReservedDeviceBase(std::string_view segment) noexcept {
+bool isReservedDeviceBase(std::string_view segment) noexcept {
     static constexpr std::string_view kDevices[] = {
         "con", "prn", "aux", "nul",
         "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
         "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
     };
-    // 设备名判定只看第一个 '.' 之前的部分："nul.dmp" 一样落在 NUL 设备上。
-    const std::size_t dot = segment.find('.');
-    const std::string_view base =
-        dot == std::string_view::npos ? segment : segment.substr(0, dot);
-    for (const std::string_view device : kDevices) {
-        if (AsciiEqualsIgnoreCase(base, device)) {
+    // Device name determination considers only the part before the first '.': "nul.dmp" is treated as belonging to the NUL device.
+    const std::size_t kDot = segment.find('.');
+    const std::string_view kBase =
+        kDot == std::string_view::npos ? segment : segment.substr(0, kDot);
+    for (const std::string_view kDevice : kDevices) {
+        if (asciiEqualsIgnoreCase(kBase, kDevice)) {
             return true;
         }
     }
     return false;
 }
 
-constexpr bool IsPathSeparator(char value) noexcept { return value == '\\' || value == '/'; }
+constexpr bool isPathSeparator(char value) noexcept { return value == '\\' || value == '/'; }
 
-// Win32 的三种 "\\x\" 前缀语义完全不同，不能一把梭：
-//   \\.\     DOS 设备命名空间（\\.\PhysicalDrive0、\\.\pipe\x）。不是文件，直接拒。
-//            CreateFile 对 //./ 与 \\.\ 一视同仁，因此两种分隔符都认。
-//   \\?\     长路径前缀。它是打开超过 MAX_PATH 的转储文件的唯一写法，必须剥掉再判定，
-//            否则里面的 '?' 会被通配符扫描误伤。这个前缀只有反斜杠形式有效
-//            （它的作用正是关掉路径规范化），"//?/" 不是它 —— 那条路径里的 '?'
-//            该被当成通配符就当成通配符，失败方向是安全的。
-//   \\?\UNC\ 长路径写法的 UNC，剥掉之后仍然是远程路径。
+// The three Win32 "\\x\" prefix semantics are completely different and cannot be handled uniformly:
+//   \\.\ DOS device namespace (\\.\PhysicalDrive0, \\.\pipe\x). Not a file; reject directly.
+//            CreateFile treats //./ and \\.\ equivalently, so both separators are recognized.
+//   \\?\ is the long path prefix. It is the only way to open dump files exceeding MAX_PATH. This prefix must be
+//            stripped before evaluation; otherwise, the '?' inside will be incorrectly treated as a wildcard during scanning.
+//            This prefix is only valid in the backslash form (its purpose is to disable path normalization). "//?/" is not
+//            this prefix—in that path, the '?' should be treated as a wildcard, and the failure direction is safe.
+//   Long-path UNC format \\?\UNC\: after stripping the prefix, it remains a remote path.
 struct PathPrefixInfo final {
     std::size_t skip = 0;
     bool deviceNamespace = false;
     bool uncFromPrefix = false;
 };
 
-PathPrefixInfo ClassifyPathPrefix(std::string_view path) noexcept {
+PathPrefixInfo classifyPathPrefix(std::string_view path) noexcept {
     PathPrefixInfo info;
-    if (path.size() >= 4U && IsPathSeparator(path[0]) && IsPathSeparator(path[1]) &&
-        path[2] == '.' && IsPathSeparator(path[3])) {
+    if (path.size() >= 4U && isPathSeparator(path[0]) && isPathSeparator(path[1]) &&
+        path[2] == '.' && isPathSeparator(path[3])) {
         info.deviceNamespace = true;
         return info;
     }
     if (path.size() >= 4U && path[0] == '\\' && path[1] == '\\' && path[2] == '?' &&
         path[3] == '\\') {
         info.skip = 4U;
-        const std::string_view rest = path.substr(4U);
-        // \\?\GLOBALROOT\Device\HarddiskVolume1\... 绕回设备命名空间，一样拒。
-        if (rest.size() >= 10U && AsciiEqualsIgnoreCase(rest.substr(0U, 10U), "globalroot") &&
-            (rest.size() == 10U || IsPathSeparator(rest[10U]))) {
+        const std::string_view kRest = path.substr(4U);
+        // \\?\GLOBALROOT\Device\HarddiskVolume1\... wraps back to the device namespace; reject it as well.
+        if (kRest.size() >= 10U && asciiEqualsIgnoreCase(kRest.substr(0U, 10U), "globalroot") &&
+            (kRest.size() == 10U || isPathSeparator(kRest[10U]))) {
             info.deviceNamespace = true;
             return info;
         }
-        if (rest.size() >= 4U && AsciiEqualsIgnoreCase(rest.substr(0U, 3U), "unc") &&
-            IsPathSeparator(rest[3U])) {
+        if (kRest.size() >= 4U && asciiEqualsIgnoreCase(kRest.substr(0U, 3U), "unc") &&
+            isPathSeparator(kRest[3U])) {
             info.skip = 8U;
             info.uncFromPrefix = true;
         }
@@ -1547,146 +1547,146 @@ PathPrefixInfo ClassifyPathPrefix(std::string_view path) noexcept {
     return info;
 }
 
-// Windows 打开文件时会把每一段结尾的 '.' 与 ' ' 剥掉。留着它们，"被判定的字符串"
-// 与"真正被打开的文件"就不是同一个 —— 判定本身失去意义。"." 与 ".." 是路径语法的
-// 一部分，不算这一类（".." 由上面的 ParentTraversal 单独接住）。
-bool SegmentHasTrailingDotOrSpace(std::string_view segment) noexcept {
+// Windows strips trailing '.' and ' ' from each path segment when opening a file. Keeping them means the
+// "determined string" and the "actually opened file" are not the same, rendering the determination meaningless. '.'
+// and '..' are part of path syntax and are not in this category ('..' is handled separately by ParentTraversal).
+bool segmentHasTrailingDotOrSpace(std::string_view segment) noexcept {
     if (segment.empty() || segment == "." || segment == "..") {
         return false;
     }
-    const char last = segment.back();
-    return last == '.' || last == ' ';
+    const char kLast = segment.back();
+    return kLast == '.' || kLast == ' ';
 }
 
 } // namespace
 
-PathRisk ClassifyDumpPath(std::string_view path) noexcept {
-    // 判定顺序固定，报告与测试都依赖它。
+PathRisk classifyDumpPath(std::string_view path) noexcept {
+    // Validation order is fixed; both reporting and testing depend on it.
     if (path.empty()) {
-        return PathRisk::Empty;
+        return PathRisk::kEmpty;
     }
     if (path.size() > kMaxPathBytes) {
-        return PathRisk::TooLong;
+        return PathRisk::kTooLong;
     }
-    for (const char raw : path) {
-        if (IsControlByte(static_cast<unsigned char>(raw))) {
-            return PathRisk::ControlCharacter;
+    for (const char kRaw : path) {
+        if (isControlByte(static_cast<unsigned char>(kRaw))) {
+            return PathRisk::kControlCharacter;
         }
     }
 
-    // 前缀先剥。设备命名空间在这里就被挡下：它既不是远程路径也不是文件，
-    // 之前会一路走到最后被当成 UncOrRemote —— UI 问错问题（"这是远程路径，确认？"），
-    // 用户确认之后还真把裸盘/命名管道交给了解析器。
-    const PathPrefixInfo prefix = ClassifyPathPrefix(path);
-    if (prefix.deviceNamespace) {
-        return PathRisk::DeviceName;
+    // Strip the prefix first. Device namespaces are blocked here: they are neither remote paths nor files. Previously,
+    // they would proceed to the end and be treated as UncOrRemote. The UI would ask the wrong question ('Is this a remote
+    // path, confirm?'), and after user confirmation, it would actually pass raw disks or named pipes to the parser.
+    const PathPrefixInfo kPrefix = classifyPathPrefix(path);
+    if (kPrefix.deviceNamespace) {
+        return PathRisk::kDeviceName;
     }
-    const std::string_view body = path.substr(prefix.skip);
-    if (body.empty()) {
-        // 只有一个前缀、后面什么都没有：没有任何东西可打开。
-        return PathRisk::Empty;
+    const std::string_view kBody = path.substr(kPrefix.skip);
+    if (kBody.empty()) {
+        // Only a prefix exists with nothing following: there is nothing to open.
+        return PathRisk::kEmpty;
     }
 
-    for (const char raw : body) {
-        if (raw == '*' || raw == '?') {
-            return PathRisk::WildCard;
+    for (const char kRaw : kBody) {
+        if (kRaw == '*' || kRaw == '?') {
+            return PathRisk::kWildCard;
         }
     }
 
-    // 分段扫描：".." 段、段尾的 '.'/' '、设备名段。分隔符两种都认。
+    // Segmented scan: ".." segments, '.'/' ' at segment ends, and device name segments. Both types of delimiters are recognized.
     std::size_t segmentBegin = 0;
     bool sawDeviceSegment = false;
-    for (std::size_t index = 0; index <= body.size(); ++index) {
-        const bool atEnd = index == body.size();
-        if (!atEnd && !IsPathSeparator(body[index])) {
+    for (std::size_t index = 0; index <= kBody.size(); ++index) {
+        const bool kAtEnd = index == kBody.size();
+        if (!kAtEnd && !isPathSeparator(kBody[index])) {
             continue;
         }
-        const std::string_view segment = body.substr(segmentBegin, index - segmentBegin);
-        if (segment == "..") {
-            return PathRisk::ParentTraversal;
+        const std::string_view kSegment = kBody.substr(segmentBegin, index - segmentBegin);
+        if (kSegment == "..") {
+            return PathRisk::kParentTraversal;
         }
-        if (SegmentHasTrailingDotOrSpace(segment)) {
-            return PathRisk::TrailingDotOrSpace;
+        if (segmentHasTrailingDotOrSpace(kSegment)) {
+            return PathRisk::kTrailingDotOrSpace;
         }
-        if (!segment.empty() && IsReservedDeviceBase(segment)) {
+        if (!kSegment.empty() && isReservedDeviceBase(kSegment)) {
             sawDeviceSegment = true;
         }
         segmentBegin = index + 1;
     }
 
-    // 冒号：只有 "X:" 形式的驱动器号合法，其余一律当备用数据流。
-    for (std::size_t index = 0; index < body.size(); ++index) {
-        if (body[index] != ':') {
+    // Colon: Only drive letters in the "X:" format are valid; all others are treated as alternate data streams.
+    for (std::size_t index = 0; index < kBody.size(); ++index) {
+        if (kBody[index] != ':') {
             continue;
         }
-        const bool driveColon =
-            index == 1U && IsAsciiAlpha(static_cast<unsigned char>(body[0]));
-        if (!driveColon) {
-            return PathRisk::AlternateDataStream;
+        const bool kDriveColon =
+            index == 1U && isAsciiAlpha(static_cast<unsigned char>(kBody[0]));
+        if (!kDriveColon) {
+            return PathRisk::kAlternateDataStream;
         }
     }
 
     if (sawDeviceSegment) {
-        return PathRisk::DeviceName;
+        return PathRisk::kDeviceName;
     }
 
-    const bool unc = prefix.uncFromPrefix ||
-                     (body.size() >= 2U && ((body[0] == '\\' && body[1] == '\\') ||
-                                            (body[0] == '/' && body[1] == '/')));
-    if (unc) {
-        return PathRisk::UncOrRemote;
+    const bool kUnc = kPrefix.uncFromPrefix ||
+                     (kBody.size() >= 2U && ((kBody[0] == '\\' && kBody[1] == '\\') ||
+                                            (kBody[0] == '/' && kBody[1] == '/')));
+    if (kUnc) {
+        return PathRisk::kUncOrRemote;
     }
-    return PathRisk::Ok;
+    return PathRisk::kOk;
 }
 
-bool PathAcceptableForOpen(PathRisk risk) noexcept {
-    return risk == PathRisk::Ok || risk == PathRisk::UncOrRemote;
+bool pathAcceptableForOpen(PathRisk risk) noexcept {
+    return risk == PathRisk::kOk || risk == PathRisk::kUncOrRemote;
 }
 
-bool PathNeedsExplicitConfirmation(PathRisk risk) noexcept {
-    return risk == PathRisk::UncOrRemote;
+bool pathNeedsExplicitConfirmation(PathRisk risk) noexcept {
+    return risk == PathRisk::kUncOrRemote;
 }
 
-const char* ReportOutputRiskName(ReportOutputRisk risk) noexcept {
+const char* reportOutputRiskName(ReportOutputRisk risk) noexcept {
     switch (risk) {
-    case ReportOutputRisk::Ok: return "Ok";
-    case ReportOutputRisk::RawControlCharacter: return "RawControlCharacter";
-    case ReportOutputRisk::ExternalLink: return "ExternalLink";
-    case ReportOutputRisk::ExternalResourceTag: return "ExternalResourceTag";
-    case ReportOutputRisk::DebuggerMarkupLink: return "DebuggerMarkupLink";
-    case ReportOutputRisk::ScriptOrEventHandler: return "ScriptOrEventHandler";
+    case ReportOutputRisk::kOk: return "Ok";
+    case ReportOutputRisk::kRawControlCharacter: return "RawControlCharacter";
+    case ReportOutputRisk::kExternalLink: return "ExternalLink";
+    case ReportOutputRisk::kExternalResourceTag: return "ExternalResourceTag";
+    case ReportOutputRisk::kDebuggerMarkupLink: return "DebuggerMarkupLink";
+    case ReportOutputRisk::kScriptOrEventHandler: return "ScriptOrEventHandler";
     }
     return "Ok";
 }
 
 namespace {
 
-int RiskSeverity(ReportOutputRisk risk) noexcept {
+int riskSeverity(ReportOutputRisk risk) noexcept {
     switch (risk) {
-    case ReportOutputRisk::Ok: return 0;
-    case ReportOutputRisk::ExternalLink: return 1;
-    case ReportOutputRisk::ExternalResourceTag: return 2;
-    case ReportOutputRisk::DebuggerMarkupLink: return 3;
-    case ReportOutputRisk::ScriptOrEventHandler: return 4;
-    case ReportOutputRisk::RawControlCharacter: return 5;
+    case ReportOutputRisk::kOk: return 0;
+    case ReportOutputRisk::kExternalLink: return 1;
+    case ReportOutputRisk::kExternalResourceTag: return 2;
+    case ReportOutputRisk::kDebuggerMarkupLink: return 3;
+    case ReportOutputRisk::kScriptOrEventHandler: return 4;
+    case ReportOutputRisk::kRawControlCharacter: return 5;
     }
     return 0;
 }
 
-// 事件处理器属性：形如 " onclick=" / " onerror ="。大小写在比较时现折，不建临时串。
-bool HasEventHandlerAttribute(std::string_view attributes) noexcept {
+// Event handler attributes: Format like " onclick=" or " onerror =". Case-insensitive comparison without creating temporary strings.
+bool hasEventHandlerAttribute(std::string_view attributes) noexcept {
     for (std::size_t index = 0; index + 2U < attributes.size(); ++index) {
-        const char previous = index == 0U ? ' ' : attributes[index - 1U];
-        const bool boundary = previous == ' ' || previous == '\t' || previous == '\n' ||
-                              previous == '\r' || previous == '/';
-        if (!boundary || AsciiLowerChar(attributes[index]) != 'o' ||
-            AsciiLowerChar(attributes[index + 1U]) != 'n') {
+        const char kPrevious = index == 0U ? ' ' : attributes[index - 1U];
+        const bool kBoundary = kPrevious == ' ' || kPrevious == '\t' || kPrevious == '\n' ||
+                              kPrevious == '\r' || kPrevious == '/';
+        if (!kBoundary || asciiLowerChar(attributes[index]) != 'o' ||
+            asciiLowerChar(attributes[index + 1U]) != 'n') {
             continue;
         }
         std::size_t cursor = index + 2U;
         std::size_t letters = 0;
         while (cursor < attributes.size() &&
-               IsAsciiAlpha(static_cast<unsigned char>(attributes[cursor]))) {
+               isAsciiAlpha(static_cast<unsigned char>(attributes[cursor]))) {
             ++cursor;
             ++letters;
         }
@@ -1701,16 +1701,16 @@ bool HasEventHandlerAttribute(std::string_view attributes) noexcept {
 }
 
 // ---------------------------------------------------------------------------
-// 字符引用折叠。浏览器在把属性值当 URL 解析**之前**先解字符引用，所以
-// `&#106;avascript:` 对它来说就是 `javascript:`；只比字面量等于没比。
+// Character reference folding. Browsers resolve character references before parsing attribute values as URLs,
+// so `&#106;avascript:` becomes `javascript:` to them; comparing it is no different than comparing the literal.
 //
-// 这里不折出一个新字符串：本判据在 noexcept 路径上，分配一次就可能把一次内存不足
-// 变成 std::terminate（见文件开头那一节）。改成"按需逐字符解码后比对"，零分配。
+// Do not extract a new string here: this predicate runs on a noexcept path, where a single allocation could turn an out-of-memory condition
+// into std::terminate (see the section at the file's start). Instead, decode and compare character-by-character on demand for zero allocation.
 //
-// 只折属性区，绝不折整个片段：把 `&lt;` 折回 '<' 会把一段**已经转义好的**安全文本
-// 重新拼成标签，那才是真的误报。
+// Only unescape the attribute region, never the entire fragment: unescaping `&lt;` back to '<'
+// would reassemble a **already-escaped** safe text into a tag, which is the real false positive.
 // ---------------------------------------------------------------------------
-constexpr char kNonAsciiSentinel = '\x01';  // 判据里的 needle 全是可打印 ASCII，撞不上
+constexpr char kNonAsciiSentinel = '\x01';  // The needle in the criterion consists entirely of printable ASCII, so it won't collide.
 
 struct NamedEntity final {
     std::string_view name;
@@ -1728,9 +1728,9 @@ struct DecodedByte final {
     std::size_t consumed = 1U;
 };
 
-// 从 text[pos] 解出一个字符。命中字符引用就解码，否则原样返回这一个字节。
-// 分号可有可无：浏览器在属性值里对数字引用同样宽容，判据这一侧宁可多认一种写法。
-DecodedByte DecodeEntityAt(std::string_view text, std::size_t pos) noexcept {
+// Decodes a character from text[pos]. If it hits a character reference, decode it; otherwise, return this single byte as-is.
+// Semicolons are optional: browsers are equally tolerant of numeric references in attribute values; this side prefers to accept one more variant.
+DecodedByte decodeEntityAt(std::string_view text, std::size_t pos) noexcept {
     DecodedByte decoded;
     decoded.value = text[pos];
     if (text[pos] != '&' || pos + 1U >= text.size()) {
@@ -1747,14 +1747,14 @@ DecodedByte DecodeEntityAt(std::string_view text, std::size_t pos) noexcept {
         std::uint32_t code = 0;
         std::size_t digits = 0;
         while (cursor < text.size() && digits < 8U) {
-            const auto byte = static_cast<unsigned char>(text[cursor]);
+            const auto kByte = static_cast<unsigned char>(text[cursor]);
             std::uint32_t digit = 0;
-            if (IsAsciiDigit(byte)) {
-                digit = static_cast<std::uint32_t>(byte - '0');
-            } else if (base == 16U && byte >= 'a' && byte <= 'f') {
-                digit = static_cast<std::uint32_t>(byte - 'a') + 10U;
-            } else if (base == 16U && byte >= 'A' && byte <= 'F') {
-                digit = static_cast<std::uint32_t>(byte - 'A') + 10U;
+            if (isAsciiDigit(kByte)) {
+                digit = static_cast<std::uint32_t>(kByte - '0');
+            } else if (base == 16U && kByte >= 'a' && kByte <= 'f') {
+                digit = static_cast<std::uint32_t>(kByte - 'a') + 10U;
+            } else if (base == 16U && kByte >= 'A' && kByte <= 'F') {
+                digit = static_cast<std::uint32_t>(kByte - 'A') + 10U;
             } else {
                 break;
             }
@@ -1763,7 +1763,7 @@ DecodedByte DecodeEntityAt(std::string_view text, std::size_t pos) noexcept {
             ++digits;
         }
         if (digits == 0U) {
-            return decoded;  // "&#" 后面没有数字：这就是三个普通字节
+            return decoded;  // No digits after "&#": these are just three ordinary bytes.
         }
         if (cursor < text.size() && text[cursor] == ';') {
             ++cursor;
@@ -1775,15 +1775,15 @@ DecodedByte DecodeEntityAt(std::string_view text, std::size_t pos) noexcept {
 
     std::size_t nameEnd = cursor;
     while (nameEnd < text.size() && (nameEnd - cursor) < 12U &&
-           IsAsciiAlpha(static_cast<unsigned char>(text[nameEnd]))) {
+           isAsciiAlpha(static_cast<unsigned char>(text[nameEnd]))) {
         ++nameEnd;
     }
-    const std::string_view name = text.substr(cursor, nameEnd - cursor);
-    if (name.empty()) {
+    const std::string_view kName = text.substr(cursor, nameEnd - cursor);
+    if (kName.empty()) {
         return decoded;
     }
     for (const NamedEntity& entity : kNamedEntities) {
-        if (!AsciiEqualsIgnoreCase(name, entity.name)) {
+        if (!asciiEqualsIgnoreCase(kName, entity.name)) {
             continue;
         }
         std::size_t end = nameEnd;
@@ -1797,8 +1797,8 @@ DecodedByte DecodeEntityAt(std::string_view text, std::size_t pos) noexcept {
     return decoded;
 }
 
-// 在"折叠后的" text 里找 loweredNeedle。needle 必须已经是小写字面量。
-bool ContainsFoldedIgnoreCase(std::string_view text, std::string_view loweredNeedle) noexcept {
+// Search for loweredNeedle in the "folded" text. The needle must already be a lowercase literal.
+bool containsFoldedIgnoreCase(std::string_view text, std::string_view loweredNeedle) noexcept {
     if (loweredNeedle.empty() || text.empty()) {
         return false;
     }
@@ -1806,11 +1806,11 @@ bool ContainsFoldedIgnoreCase(std::string_view text, std::string_view loweredNee
         std::size_t cursor = start;
         std::size_t matched = 0;
         while (matched < loweredNeedle.size() && cursor < text.size()) {
-            const DecodedByte decoded = DecodeEntityAt(text, cursor);
-            if (AsciiLowerChar(decoded.value) != loweredNeedle[matched]) {
+            const DecodedByte kDecoded = decodeEntityAt(text, cursor);
+            if (asciiLowerChar(kDecoded.value) != loweredNeedle[matched]) {
                 break;
             }
-            cursor += decoded.consumed;
+            cursor += kDecoded.consumed;
             ++matched;
         }
         if (matched == loweredNeedle.size()) {
@@ -1820,73 +1820,73 @@ bool ContainsFoldedIgnoreCase(std::string_view text, std::string_view loweredNee
     return false;
 }
 
-bool MentionsAnyOf(std::string_view attributes,
+bool mentionsAnyOf(std::string_view attributes,
                    std::span<const std::string_view> loweredNames) noexcept {
-    for (const std::string_view name : loweredNames) {
-        if (ContainsIgnoreCase(attributes, name)) {
+    for (const std::string_view kName : loweredNames) {
+        if (containsIgnoreCase(attributes, kName)) {
             return true;
         }
     }
     return false;
 }
 
-bool ContainsAnyFolded(std::string_view attributes,
+bool containsAnyFolded(std::string_view attributes,
                        std::span<const std::string_view> loweredNeedles) noexcept {
-    for (const std::string_view needle : loweredNeedles) {
-        if (ContainsFoldedIgnoreCase(attributes, needle)) {
+    for (const std::string_view kNeedle : loweredNeedles) {
+        if (containsFoldedIgnoreCase(attributes, kNeedle)) {
             return true;
         }
     }
     return false;
 }
 
-// 指向报告外面的写法。url( 与 @import 是 CSS 的两种取资源语法 —— 它们出现在 style
-// 属性或 <style> 里同样会发请求，跟 http:// 没有区别。
+// References to external resources. url( and @import are two CSS syntaxes for fetching resources
+// — they trigger requests when appearing in style attributes or <style> tags, just like http://.
 constexpr std::string_view kExternalTargetNeedles[] = {
     "http://", "https://", "ftp://", "file:", "//", "url(", "@import",
 };
 
-// 危险协议：点一下（或者根本不用点）就执行脚本。data: 一并算上 —— 本模块的报告
-// 永远不会正当地生成 data: URI，而 data:text/html 在浏览器里就是一段可执行文档。
+// Dangerous protocols: execute scripts with a single click (or even without clicking). Include data: as well—the reports
+// generated by this module will never legitimately produce data: URIs, and data:text/html is an executable document in a browser.
 constexpr std::string_view kDangerousSchemeNeedles[] = {
     "javascript:", "vbscript:", "data:",
 };
 
-// 打开报告就**自动**发请求的属性，不需要用户点。style 在列：
-// <div style="background:url(https://evil/beacon.png)"> 是一次无声的外连。
+// Attributes that automatically trigger requests upon opening the report, without requiring user clicks. 'style' is included:
+// <div style="background:url(https://evil/beacon.png)"> represents a silent external connection.
 constexpr std::string_view kAutoFetchAttributes[] = {
     "src", "srcset", "background", "poster", "data", "style", "lowsrc",
 };
 
-// 需要用户点一下 / 提交表单才走出去的属性。
+// Attributes that require a user click or form submission to navigate away.
 constexpr std::string_view kLinkAttributes[] = {
     "href", "action", "formaction", "cite", "content", "ping",
 };
 
-bool AttributesAutoFetchExternal(std::string_view attributes) noexcept {
-    return MentionsAnyOf(attributes, kAutoFetchAttributes) &&
-           ContainsAnyFolded(attributes, kExternalTargetNeedles);
+bool attributesAutoFetchExternal(std::string_view attributes) noexcept {
+    return mentionsAnyOf(attributes, kAutoFetchAttributes) &&
+           containsAnyFolded(attributes, kExternalTargetNeedles);
 }
 
-bool AttributesReferenceExternal(std::string_view attributes) noexcept {
-    return MentionsAnyOf(attributes, kLinkAttributes) &&
-           ContainsAnyFolded(attributes, kExternalTargetNeedles);
+bool attributesReferenceExternal(std::string_view attributes) noexcept {
+    return mentionsAnyOf(attributes, kLinkAttributes) &&
+           containsAnyFolded(attributes, kExternalTargetNeedles);
 }
 
-bool AttributesUseDangerousScheme(std::string_view attributes) noexcept {
-    // 这一条不设属性名门槛：危险协议出现在属性区的任何位置都不该被写进报告。
-    return ContainsAnyFolded(attributes, kDangerousSchemeNeedles);
+bool attributesUseDangerousScheme(std::string_view attributes) noexcept {
+    // This rule has no attribute name threshold: dangerous protocols appearing anywhere in the attribute section must not be written to the report.
+    return containsAnyFolded(attributes, kDangerousSchemeNeedles);
 }
 
-bool IsExternalResourceTagName(std::string_view name) noexcept {
+bool isExternalResourceTagName(std::string_view name) noexcept {
     static constexpr std::string_view kTags[] = {
         "img", "iframe", "object", "embed", "video", "audio", "source", "link", "base", "meta",
-        // <style> 里的 @import / url() 与 <img src> 一样是自动外连，只是写在标签内容里，
-        // 属性区看不到 —— 因此按标签名接住。
+        // @import / url() in <style> and <img src> are both automatic external connections; the former
+        // is embedded in tag content and invisible in the attribute section, so handle by tag name.
         "style",
     };
-    for (const std::string_view tag : kTags) {
-        if (AsciiEqualsIgnoreCase(name, tag)) {
+    for (const std::string_view kTag : kTags) {
+        if (asciiEqualsIgnoreCase(name, kTag)) {
             return true;
         }
     }
@@ -1895,24 +1895,24 @@ bool IsExternalResourceTagName(std::string_view name) noexcept {
 
 } // namespace
 
-ReportOutputRisk ClassifyReportFragment(std::string_view fragment) noexcept {
-    // 控制字符先判并立即返回：它说明有一条外来文本根本没过转义出口。
-    for (const char raw : fragment) {
-        const auto byte = static_cast<unsigned char>(raw);
-        if (IsControlByte(byte) && !IsLayoutControlByte(byte)) {
-            return ReportOutputRisk::RawControlCharacter;
+ReportOutputRisk classifyReportFragment(std::string_view fragment) noexcept {
+    // Check control characters first and return immediately: this indicates an external text stream never passed through the escape exit.
+    for (const char kRaw : fragment) {
+        const auto kByte = static_cast<unsigned char>(kRaw);
+        if (isControlByte(kByte) && !isLayoutControlByte(kByte)) {
+            return ReportOutputRisk::kRawControlCharacter;
         }
     }
 
-    ReportOutputRisk worst = ReportOutputRisk::Ok;
-    const auto consider = [&worst](ReportOutputRisk candidate) noexcept {
-        if (RiskSeverity(candidate) > RiskSeverity(worst)) {
+    ReportOutputRisk worst = ReportOutputRisk::kOk;
+    const auto kConsider = [&worst](ReportOutputRisk candidate) noexcept {
+        if (riskSeverity(candidate) > riskSeverity(worst)) {
             worst = candidate;
         }
     };
 
-    // 一趟扫描：每碰到一个 '<' 就把标签名与属性区取出来判一次，
-    // 然后跳到 '>' 之后。总代价 O(n)，不做回溯。
+    // Single pass: each time a '<' is encountered, extract the tag name and attribute
+    // region to check, then jump to after the '>'. Total cost O(n), no backtracking.
     std::size_t index = 0;
     while (index < fragment.size()) {
         if (fragment[index] != '<') {
@@ -1923,57 +1923,57 @@ ReportOutputRisk ClassifyReportFragment(std::string_view fragment) noexcept {
         if (cursor < fragment.size() && fragment[cursor] == '/') {
             ++cursor;
         }
-        const std::size_t nameBegin = cursor;
+        const std::size_t kNameBegin = cursor;
         while (cursor < fragment.size() &&
-               IsAsciiAlnum(static_cast<unsigned char>(fragment[cursor]))) {
+               isAsciiAlnum(static_cast<unsigned char>(fragment[cursor]))) {
             ++cursor;
         }
-        const std::string_view name = fragment.substr(nameBegin, cursor - nameBegin);
-        const std::size_t close = fragment.find('>', cursor);
-        const std::size_t attributesEnd = close == std::string_view::npos ? fragment.size() : close;
-        const std::string_view attributes = fragment.substr(cursor, attributesEnd - cursor);
+        const std::string_view kName = fragment.substr(kNameBegin, cursor - kNameBegin);
+        const std::size_t kClose = fragment.find('>', cursor);
+        const std::size_t kAttributesEnd = kClose == std::string_view::npos ? fragment.size() : kClose;
+        const std::string_view kAttributes = fragment.substr(cursor, kAttributesEnd - cursor);
 
-        if (AsciiEqualsIgnoreCase(name, "script") ||
-            AttributesUseDangerousScheme(attributes) ||
-            HasEventHandlerAttribute(attributes)) {
-            consider(ReportOutputRisk::ScriptOrEventHandler);
+        if (asciiEqualsIgnoreCase(kName, "script") ||
+            attributesUseDangerousScheme(kAttributes) ||
+            hasEventHandlerAttribute(kAttributes)) {
+            kConsider(ReportOutputRisk::kScriptOrEventHandler);
         }
-        // DML：调试器标记语言的 <exec cmd="..."> / <link cmd="...">。
-        // 它让报告读者一点就把任意命令喂回调试器，比外链更危险。
-        if (AsciiEqualsIgnoreCase(name, "exec") ||
-            ((AsciiEqualsIgnoreCase(name, "link") || AsciiEqualsIgnoreCase(name, "a")) &&
-             ContainsIgnoreCase(attributes, "cmd="))) {
-            consider(ReportOutputRisk::DebuggerMarkupLink);
+        // DML: Debugger Markup Language <exec cmd="..."> / <link cmd="...">.
+        // This allows report readers to feed any command back to the debugger with a single click, which is more dangerous than external links.
+        if (asciiEqualsIgnoreCase(kName, "exec") ||
+            ((asciiEqualsIgnoreCase(kName, "link") || asciiEqualsIgnoreCase(kName, "a")) &&
+             containsIgnoreCase(kAttributes, "cmd="))) {
+            kConsider(ReportOutputRisk::kDebuggerMarkupLink);
         }
-        if (IsExternalResourceTagName(name) || AttributesAutoFetchExternal(attributes)) {
-            // 标签名无害不代表片段无害：<table background="//evil/x.png"> 与
-            // <div style="background:url(https://evil/x.png)"> 一样是打开即外连。
-            consider(ReportOutputRisk::ExternalResourceTag);
+        if (isExternalResourceTagName(kName) || attributesAutoFetchExternal(kAttributes)) {
+            // A harmless tag name does not imply a harmless fragment: <table background="//evil/x.png"> is as dangerous as <div
+            // style="background:url(https://evil/x.png)">, both triggering external connections immediately upon rendering.
+            kConsider(ReportOutputRisk::kExternalResourceTag);
         }
-        if (AttributesReferenceExternal(attributes)) {
-            consider(ReportOutputRisk::ExternalLink);
+        if (attributesReferenceExternal(kAttributes)) {
+            kConsider(ReportOutputRisk::kExternalLink);
         }
 
-        index = close == std::string_view::npos ? fragment.size() : close + 1U;
+        index = kClose == std::string_view::npos ? fragment.size() : kClose + 1U;
     }
     return worst;
 }
 
 // ---------------------------------------------------------------------------
-// C-10 报告出处
+// C-10 Report provenance
 // ---------------------------------------------------------------------------
-const char* ProvenanceGapName(ProvenanceGap gap) noexcept {
+const char* provenanceGapName(ProvenanceGap gap) noexcept {
     switch (gap) {
-    case ProvenanceGap::MissingEngineIdentity: return "MissingEngineIdentity";
-    case ProvenanceGap::MissingEngineVersion: return "MissingEngineVersion";
-    case ProvenanceGap::MissingInputPath: return "MissingInputPath";
-    case ProvenanceGap::MissingInputSize: return "MissingInputSize";
-    case ProvenanceGap::MissingInputHash: return "MissingInputHash";
-    case ProvenanceGap::MissingAnalysisWindow: return "MissingAnalysisWindow";
-    case ProvenanceGap::MissingSymbolStates: return "MissingSymbolStates";
-    case ProvenanceGap::UnstatedAnalysisScope: return "UnstatedAnalysisScope";
-    case ProvenanceGap::WrongSourceOrigin: return "WrongSourceOrigin";
-    case ProvenanceGap::UndisclosedExternalSupplement:
+    case ProvenanceGap::kMissingEngineIdentity: return "MissingEngineIdentity";
+    case ProvenanceGap::kMissingEngineVersion: return "MissingEngineVersion";
+    case ProvenanceGap::kMissingInputPath: return "MissingInputPath";
+    case ProvenanceGap::kMissingInputSize: return "MissingInputSize";
+    case ProvenanceGap::kMissingInputHash: return "MissingInputHash";
+    case ProvenanceGap::kMissingAnalysisWindow: return "MissingAnalysisWindow";
+    case ProvenanceGap::kMissingSymbolStates: return "MissingSymbolStates";
+    case ProvenanceGap::kUnstatedAnalysisScope: return "UnstatedAnalysisScope";
+    case ProvenanceGap::kWrongSourceOrigin: return "WrongSourceOrigin";
+    case ProvenanceGap::kUndisclosedExternalSupplement:
         return "UndisclosedExternalSupplement";
     }
     return "MissingEngineIdentity";
@@ -1981,22 +1981,22 @@ const char* ProvenanceGapName(ProvenanceGap gap) noexcept {
 
 namespace {
 
-bool LooksLikeSha256Hex(std::string_view text) noexcept {
+bool looksLikeSha256Hex(std::string_view text) noexcept {
     if (text.size() != 64U) {
         return false;
     }
-    for (const char raw : text) {
-        const auto byte = static_cast<unsigned char>(raw);
-        const bool hex = IsAsciiDigit(byte) || (byte >= 'a' && byte <= 'f') ||
-                         (byte >= 'A' && byte <= 'F');
-        if (!hex) {
+    for (const char kRaw : text) {
+        const auto kByte = static_cast<unsigned char>(kRaw);
+        const bool kHex = isAsciiDigit(kByte) || (kByte >= 'a' && kByte <= 'f') ||
+                         (kByte >= 'A' && kByte <= 'F');
+        if (!kHex) {
             return false;
         }
     }
     return true;
 }
 
-bool ScopeStated(const CoverageAccount& scope) noexcept {
+bool scopeStated(const CoverageAccount& scope) noexcept {
     if (scope.totalKnown.present) {
         return true;
     }
@@ -2007,90 +2007,90 @@ bool ScopeStated(const CoverageAccount& scope) noexcept {
            scope.truncated > 0U;
 }
 
-std::string OptionalFieldValue(const OptionalU64& value, U64Format format) {
+std::string optionalFieldValue(const OptionalU64& value, U64Format format) {
     if (!value.present) {
         return std::string(kUnknownValueKey);
     }
-    return FormatU64(value.value, format);
+    return formatU64(value.value, format);
 }
 
 } // namespace
 
-std::vector<ProvenanceGap> AuditProvenance(const DumpReportProvenance& provenance) {
+std::vector<ProvenanceGap> auditProvenance(const DumpReportProvenance& provenance) {
     std::vector<ProvenanceGap> gaps;
     if (provenance.engine.engineId.empty()) {
-        gaps.push_back(ProvenanceGap::MissingEngineIdentity);
+        gaps.push_back(ProvenanceGap::kMissingEngineIdentity);
     }
     if (provenance.engine.engineVersion.empty()) {
-        gaps.push_back(ProvenanceGap::MissingEngineVersion);
+        gaps.push_back(ProvenanceGap::kMissingEngineVersion);
     }
     if (provenance.input.filePath.empty()) {
-        gaps.push_back(ProvenanceGap::MissingInputPath);
+        gaps.push_back(ProvenanceGap::kMissingInputPath);
     }
     if (!provenance.input.fileSize.present) {
-        gaps.push_back(ProvenanceGap::MissingInputSize);
+        gaps.push_back(ProvenanceGap::kMissingInputSize);
     }
-    if (!provenance.input.hashComputed || !LooksLikeSha256Hex(provenance.input.sha256Hex)) {
-        gaps.push_back(ProvenanceGap::MissingInputHash);
+    if (!provenance.input.hashComputed || !looksLikeSha256Hex(provenance.input.sha256Hex)) {
+        gaps.push_back(ProvenanceGap::kMissingInputHash);
     }
     if (!provenance.window.startUtc100ns.present || !provenance.window.endUtc100ns.present) {
-        gaps.push_back(ProvenanceGap::MissingAnalysisWindow);
+        gaps.push_back(ProvenanceGap::kMissingAnalysisWindow);
     }
     if (provenance.symbolStates.empty()) {
-        // 一份没写符号状态的报告无法被重核：读者分不清"函数名可信"与"只是猜的"。
-        gaps.push_back(ProvenanceGap::MissingSymbolStates);
+        // A report without symbol states cannot be re-verified: readers cannot distinguish between 'function name is trusted' and 'just a guess'.
+        gaps.push_back(ProvenanceGap::kMissingSymbolStates);
     }
-    if (!ScopeStated(provenance.analysisScope)) {
-        gaps.push_back(ProvenanceGap::UnstatedAnalysisScope);
+    if (!scopeStated(provenance.analysisScope)) {
+        gaps.push_back(ProvenanceGap::kUnstatedAnalysisScope);
     }
-    if (provenance.source.origin != SourceOrigin::OfflineSample) {
-        gaps.push_back(ProvenanceGap::WrongSourceOrigin);
+    if (provenance.source.origin != SourceOrigin::kOfflineSample) {
+        gaps.push_back(ProvenanceGap::kWrongSourceOrigin);
     }
-    if (!SupplementDisclosed(provenance.supplement)) {
-        gaps.push_back(ProvenanceGap::UndisclosedExternalSupplement);
+    if (!supplementDisclosed(provenance.supplement)) {
+        gaps.push_back(ProvenanceGap::kUndisclosedExternalSupplement);
     }
     return gaps;
 }
 
-bool ProvenanceReviewable(const DumpReportProvenance& provenance) {
-    return AuditProvenance(provenance).empty();
+bool provenanceReviewable(const DumpReportProvenance& provenance) {
+    return auditProvenance(provenance).empty();
 }
 
-std::vector<ReportField> BuildProvenanceFields(const DumpReportProvenance& provenance) {
+std::vector<ReportField> buildProvenanceFields(const DumpReportProvenance& provenance) {
     std::vector<ReportField> fields;
     fields.reserve(18U);
 
-    const auto push = [&fields](std::string key, std::string rawValue) {
-        // 唯一出口：所有值在这里统一过转义，调用方拿到的就是可直接进 HTML 的值。
-        fields.push_back(ReportField{std::move(key), EscapeForReport(rawValue)});
+    const auto kPush = [&fields](std::string key, std::string rawValue) {
+        // Single exit point: all values are uniformly escaped here, so callers receive values ready for direct inclusion in HTML.
+        fields.push_back(ReportField{std::move(key), escapeForReport(rawValue)});
     };
-    const auto pushText = [&push](std::string key, const std::string& text) {
-        push(std::move(key), text.empty() ? std::string(kUnknownValueKey) : text);
+    const auto kPushText = [&kPush](std::string key, const std::string& text) {
+        kPush(std::move(key), text.empty() ? std::string(kUnknownValueKey) : text);
     };
 
-    pushText("dump.report.engine_id", provenance.engine.engineId);
-    pushText("dump.report.engine_version", provenance.engine.engineVersion);
-    push("dump.report.engine_available",
+    kPushText("dump.report.engine_id", provenance.engine.engineId);
+    kPushText("dump.report.engine_version", provenance.engine.engineVersion);
+    kPush("dump.report.engine_available",
          provenance.engine.engineAvailable ? std::string("true") : std::string("false"));
 
-    pushText("dump.report.input_path", provenance.input.filePath);
-    push("dump.report.input_size",
-         OptionalFieldValue(provenance.input.fileSize, U64Format::Decimal));
-    push("dump.report.input_sha256",
+    kPushText("dump.report.input_path", provenance.input.filePath);
+    kPush("dump.report.input_size",
+         optionalFieldValue(provenance.input.fileSize, U64Format::kDecimal));
+    kPush("dump.report.input_sha256",
          provenance.input.hashComputed && !provenance.input.sha256Hex.empty()
              ? provenance.input.sha256Hex
              : std::string(kUnknownValueKey));
-    push("dump.report.input_last_modified",
-         OptionalFieldValue(provenance.input.lastModifiedUtc100ns, U64Format::Decimal));
+    kPush("dump.report.input_last_modified",
+         optionalFieldValue(provenance.input.lastModifiedUtc100ns, U64Format::kDecimal));
 
-    pushText("dump.report.source_collector", provenance.source.collectorId);
-    push("dump.report.source_origin", SourceOriginName(provenance.source.origin));
+    kPushText("dump.report.source_collector", provenance.source.collectorId);
+    kPush("dump.report.source_origin", sourceOriginName(provenance.source.origin));
 
-    push("dump.report.analysis_window_start",
-         OptionalFieldValue(provenance.window.startUtc100ns, U64Format::Decimal));
-    push("dump.report.analysis_window_end",
-         OptionalFieldValue(provenance.window.endUtc100ns, U64Format::Decimal));
-    push("dump.report.analysis_scope_remaining", provenance.analysisScope.describeRemaining());
+    kPush("dump.report.analysis_window_start",
+         optionalFieldValue(provenance.window.startUtc100ns, U64Format::kDecimal));
+    kPush("dump.report.analysis_window_end",
+         optionalFieldValue(provenance.window.endUtc100ns, U64Format::kDecimal));
+    kPush("dump.report.analysis_scope_remaining", provenance.analysisScope.describeRemaining());
 
     std::uint64_t matched = 0;
     std::uint64_t wrongVersion = 0;
@@ -2098,20 +2098,20 @@ std::vector<ReportField> BuildProvenanceFields(const DumpReportProvenance& prove
     std::uint64_t notAttempted = 0;
     for (const ModuleSymbolState& state : provenance.symbolStates) {
         switch (state.match) {
-        case SymbolMatch::Matched: ++matched; break;
-        case SymbolMatch::WrongVersion: ++wrongVersion; break;
-        case SymbolMatch::Absent: ++absent; break;
-        case SymbolMatch::NotAttempted: ++notAttempted; break;
+        case SymbolMatch::kMatched: ++matched; break;
+        case SymbolMatch::kWrongVersion: ++wrongVersion; break;
+        case SymbolMatch::kAbsent: ++absent; break;
+        case SymbolMatch::kNotAttempted: ++notAttempted; break;
         }
     }
-    push("dump.report.symbol_module_count",
-         FormatU64(static_cast<std::uint64_t>(provenance.symbolStates.size()), U64Format::Decimal));
-    push("dump.report.symbol_matched_count", FormatU64(matched, U64Format::Decimal));
-    push("dump.report.symbol_wrong_version_count", FormatU64(wrongVersion, U64Format::Decimal));
-    push("dump.report.symbol_absent_count", FormatU64(absent, U64Format::Decimal));
-    push("dump.report.symbol_not_attempted_count", FormatU64(notAttempted, U64Format::Decimal));
+    kPush("dump.report.symbol_module_count",
+         formatU64(static_cast<std::uint64_t>(provenance.symbolStates.size()), U64Format::kDecimal));
+    kPush("dump.report.symbol_matched_count", formatU64(matched, U64Format::kDecimal));
+    kPush("dump.report.symbol_wrong_version_count", formatU64(wrongVersion, U64Format::kDecimal));
+    kPush("dump.report.symbol_absent_count", formatU64(absent, U64Format::kDecimal));
+    kPush("dump.report.symbol_not_attempted_count", formatU64(notAttempted, U64Format::kDecimal));
 
-    push("dump.report.external_supplement",
+    kPush("dump.report.external_supplement",
          provenance.supplement.used
              ? (provenance.supplement.disclosureKey.empty()
                     ? std::string(kUnknownValueKey)
@@ -2120,4 +2120,4 @@ std::vector<ReportField> BuildProvenanceFields(const DumpReportProvenance& prove
     return fields;
 }
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

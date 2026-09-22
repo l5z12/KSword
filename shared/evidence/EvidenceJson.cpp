@@ -3,16 +3,16 @@
 #include <limits>
 #include <unordered_set>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 namespace {
 
 constexpr char kHexDigitsLower[] = "0123456789abcdef";
 
-void AppendEscapedString(std::string& out, const std::string& text) {
+void appendEscapedString(std::string& out, const std::string& text) {
     out.push_back('"');
-    for (const char raw : text) {
-        const unsigned char c = static_cast<unsigned char>(raw);
-        switch (c) {
+    for (const char kRaw : text) {
+        const unsigned char kC = static_cast<unsigned char>(kRaw);
+        switch (kC) {
         case '"':  out.append("\\\""); break;
         case '\\': out.append("\\\\"); break;
         case '\b': out.append("\\b"); break;
@@ -21,13 +21,13 @@ void AppendEscapedString(std::string& out, const std::string& text) {
         case '\r': out.append("\\r"); break;
         case '\t': out.append("\\t"); break;
         default:
-            if (c < 0x20U) {
-                // Q-12：控制字符一律转义，报告里不残留裸控制码。
+            if (kC < 0x20U) {
+                // Q-12: All control characters must be escaped; no raw control codes should remain in the report.
                 out.append("\\u00");
-                out.push_back(kHexDigitsLower[(c >> 4U) & 0xFU]);
-                out.push_back(kHexDigitsLower[c & 0xFU]);
+                out.push_back(kHexDigitsLower[(kC >> 4U) & 0xFU]);
+                out.push_back(kHexDigitsLower[kC & 0xFU]);
             } else {
-                out.push_back(raw);
+                out.push_back(kRaw);
             }
             break;
         }
@@ -35,7 +35,7 @@ void AppendEscapedString(std::string& out, const std::string& text) {
     out.push_back('"');
 }
 
-void AppendIndent(std::string& out, unsigned indent, unsigned depth) {
+void appendIndent(std::string& out, unsigned indent, unsigned depth) {
     if (indent == 0U) {
         return;
     }
@@ -43,9 +43,9 @@ void AppendIndent(std::string& out, unsigned indent, unsigned depth) {
     out.append(static_cast<std::size_t>(indent) * depth, ' ');
 }
 
-void WriteValue(std::string& out, const JsonValue& value, unsigned indent, unsigned depth);
+void writeValue(std::string& out, const JsonValue& value, unsigned indent, unsigned depth);
 
-void WriteContainer(std::string& out,
+void writeContainer(std::string& out,
                     const JsonValue& value,
                     unsigned indent,
                     unsigned depth) {
@@ -61,10 +61,10 @@ void WriteContainer(std::string& out,
                 out.push_back(',');
             }
             first = false;
-            AppendIndent(out, indent, depth + 1U);
-            WriteValue(out, item, indent, depth + 1U);
+            appendIndent(out, indent, depth + 1U);
+            writeValue(out, item, indent, depth + 1U);
         }
-        AppendIndent(out, indent, depth);
+        appendIndent(out, indent, depth);
         out.push_back(']');
         return;
     }
@@ -81,56 +81,56 @@ void WriteContainer(std::string& out,
             out.push_back(',');
         }
         first = false;
-        AppendIndent(out, indent, depth + 1U);
-        AppendEscapedString(out, member.first);
+        appendIndent(out, indent, depth + 1U);
+        appendEscapedString(out, member.first);
         out.push_back(':');
         if (indent != 0U) {
             out.push_back(' ');
         }
-        WriteValue(out, member.second, indent, depth + 1U);
+        writeValue(out, member.second, indent, depth + 1U);
     }
-    AppendIndent(out, indent, depth);
+    appendIndent(out, indent, depth);
     out.push_back('}');
 }
 
-void WriteValue(std::string& out, const JsonValue& value, unsigned indent, unsigned depth) {
+void writeValue(std::string& out, const JsonValue& value, unsigned indent, unsigned depth) {
     switch (value.type()) {
-    case JsonType::Null:
+    case JsonType::kNull:
         out.append("null");
         break;
-    case JsonType::Bool: {
+    case JsonType::kBool: {
         bool flag = false;
         (void)value.tryGetBool(flag);
         out.append(flag ? "true" : "false");
         break;
     }
-    case JsonType::UInt: {
+    case JsonType::kUInt: {
         std::uint64_t number = 0U;
         (void)value.tryGetU64(number);
-        out.append(FormatU64(number, U64Format::Decimal));
+        out.append(formatU64(number, U64Format::kDecimal));
         break;
     }
-    case JsonType::Int: {
+    case JsonType::kInt: {
         std::int64_t number = 0;
         (void)value.tryGetI64(number);
-        out.append(FormatI64(number));
+        out.append(formatI64(number));
         break;
     }
-    case JsonType::String: {
+    case JsonType::kString: {
         std::string text;
         (void)value.tryGetString(text);
-        AppendEscapedString(out, text);
+        appendEscapedString(out, text);
         break;
     }
-    case JsonType::Array:
-    case JsonType::Object:
-        WriteContainer(out, value, indent, depth);
+    case JsonType::kArray:
+    case JsonType::kObject:
+        writeContainer(out, value, indent, depth);
         break;
     }
 }
 
 // ---------------------------------------------------------------------------
-// 解析器
+// Parser
 // ---------------------------------------------------------------------------
 class Parser final {
 public:
@@ -140,7 +140,7 @@ public:
     JsonParseResult run() {
         skipWhitespace();
         if (pos_ >= text_.size()) {
-            return fail(JsonParseStatus::Empty);
+            return fail(JsonParseStatus::kEmpty);
         }
         JsonValue value;
         if (!parseValue(value, 0U)) {
@@ -148,10 +148,10 @@ public:
         }
         skipWhitespace();
         if (pos_ != text_.size()) {
-            return fail(JsonParseStatus::TrailingData);
+            return fail(JsonParseStatus::kTrailingData);
         }
         JsonParseResult result;
-        result.status = JsonParseStatus::Ok;
+        result.status = JsonParseStatus::kOk;
         result.value = std::move(value);
         return result;
     }
@@ -159,15 +159,15 @@ public:
 private:
     JsonParseResult fail(JsonParseStatus status) const {
         JsonParseResult result;
-        result.status = status == JsonParseStatus::Ok ? JsonParseStatus::Syntax : status;
+        result.status = status == JsonParseStatus::kOk ? JsonParseStatus::kSyntax : status;
         result.errorOffset = pos_;
         return result;
     }
 
     void skipWhitespace() noexcept {
         while (pos_ < text_.size()) {
-            const char c = text_[pos_];
-            if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+            const char kC = text_[pos_];
+            if (kC == ' ' || kC == '\t' || kC == '\n' || kC == '\r') {
                 ++pos_;
             } else {
                 break;
@@ -180,13 +180,13 @@ private:
             ++pos_;
             return true;
         }
-        status_ = JsonParseStatus::Syntax;
+        status_ = JsonParseStatus::kSyntax;
         return false;
     }
 
     bool literal(std::string_view word) noexcept {
         if (text_.size() - pos_ < word.size() || text_.compare(pos_, word.size(), word) != 0) {
-            status_ = JsonParseStatus::Syntax;
+            status_ = JsonParseStatus::kSyntax;
             return false;
         }
         pos_ += word.size();
@@ -195,15 +195,15 @@ private:
 
     bool countNode() noexcept {
         if (++nodes_ > limits_.maxTotalNodes) {
-            status_ = JsonParseStatus::NodeLimit;
+            status_ = JsonParseStatus::kNodeLimit;
             return false;
         }
-        // F-07 / Q-12：节点个数管不住内存放大 —— 4 个各 100 万元素的数组只有 7.6 MB
-        // 输入，却按 sizeof(JsonValue) 撑出几百 MB。这里按估算字节数再卡一道。
-        // 用除法而不是乘法，避免 nodes_ * sizeof 自己先溢出。
+        // F-07 / Q-12: Limiting node count alone does not bound memory amplification. Four arrays of one million elements each use only
+        // 7.6 MB of input but expand to hundreds of MB based on sizeof(JsonValue). Apply a separate limit to the estimated byte size.
+        // Use division instead of multiplication to avoid overflow of nodes_ * sizeof before the operation.
         if (limits_.maxEstimatedNodeBytes != 0U &&
             nodes_ > limits_.maxEstimatedNodeBytes / sizeof(JsonValue)) {
-            status_ = JsonParseStatus::SizeLimit;
+            status_ = JsonParseStatus::kSizeLimit;
             return false;
         }
         return true;
@@ -211,7 +211,7 @@ private:
 
     bool parseValue(JsonValue& out, std::size_t depth) {
         if (depth > limits_.maxDepth) {
-            status_ = JsonParseStatus::DepthLimit;
+            status_ = JsonParseStatus::kDepthLimit;
             return false;
         }
         if (!countNode()) {
@@ -219,7 +219,7 @@ private:
         }
         skipWhitespace();
         if (pos_ >= text_.size()) {
-            status_ = JsonParseStatus::Syntax;
+            status_ = JsonParseStatus::kSyntax;
             return false;
         }
         switch (text_[pos_]) {
@@ -271,7 +271,7 @@ private:
         }
         for (;;) {
             if (items.size() >= limits_.maxContainerItems) {
-                status_ = JsonParseStatus::SizeLimit;
+                status_ = JsonParseStatus::kSizeLimit;
                 return false;
             }
             JsonValue item;
@@ -298,9 +298,9 @@ private:
             return false;
         }
         JsonObject members;
-        // Q-12：重复键检测必须是均摊 O(1)。早先用 any_of 线性扫已收成员，导入侧
-        // 就多了一条 O(n²) 的 DoS 通道：128,000 个成员（1.4 MB）实测要 15 秒，按
-        // 默认成员上限外推约 17 分钟，而全程 status=Ok，UI 只会看起来挂死。
+        // Q-12: Duplicate key detection must be amortized O(1). Previously, using any_of to linearly scan collected members
+        // created an O(n²) DoS vector on the import side: 128,000 members (1.4 MB) took 15 seconds in practice; extrapolating
+        // to the default member limit yields ~17 minutes, yet status=Ok throughout, making the UI appear frozen.
         std::unordered_set<std::string> seenNames;
         skipWhitespace();
         if (pos_ < text_.size() && text_[pos_] == '}') {
@@ -310,7 +310,7 @@ private:
         }
         for (;;) {
             if (members.size() >= limits_.maxContainerItems) {
-                status_ = JsonParseStatus::SizeLimit;
+                status_ = JsonParseStatus::kSizeLimit;
                 return false;
             }
             skipWhitespace();
@@ -318,9 +318,9 @@ private:
             if (!parseString(name)) {
                 return false;
             }
-            // Q-12：重复 id / 重复键必须拒绝，不能让后写的悄悄覆盖前一个。
+            // Q-12: Duplicate IDs or duplicate keys must be rejected; later writes must not silently overwrite earlier ones.
             if (!seenNames.insert(name).second) {
-                status_ = JsonParseStatus::DuplicateKey;
+                status_ = JsonParseStatus::kDuplicateKey;
                 return false;
             }
             skipWhitespace();
@@ -362,7 +362,7 @@ private:
             out.push_back(static_cast<char>(0x80U | ((codepoint >> 6U) & 0x3FU)));
             out.push_back(static_cast<char>(0x80U | (codepoint & 0x3FU)));
         } else {
-            status_ = JsonParseStatus::Syntax;
+            status_ = JsonParseStatus::kSyntax;
             return false;
         }
         return true;
@@ -370,21 +370,21 @@ private:
 
     bool parseHex4(std::uint32_t& out) noexcept {
         if (text_.size() - pos_ < 4U) {
-            status_ = JsonParseStatus::Syntax;
+            status_ = JsonParseStatus::kSyntax;
             return false;
         }
         std::uint32_t value = 0U;
         for (std::size_t i = 0U; i < 4U; ++i) {
-            const char c = text_[pos_ + i];
+            const char kC = text_[pos_ + i];
             std::uint32_t digit = 0U;
-            if (c >= '0' && c <= '9') {
-                digit = static_cast<std::uint32_t>(c - '0');
-            } else if (c >= 'a' && c <= 'f') {
-                digit = static_cast<std::uint32_t>(c - 'a') + 10U;
-            } else if (c >= 'A' && c <= 'F') {
-                digit = static_cast<std::uint32_t>(c - 'A') + 10U;
+            if (kC >= '0' && kC <= '9') {
+                digit = static_cast<std::uint32_t>(kC - '0');
+            } else if (kC >= 'a' && kC <= 'f') {
+                digit = static_cast<std::uint32_t>(kC - 'a') + 10U;
+            } else if (kC >= 'A' && kC <= 'F') {
+                digit = static_cast<std::uint32_t>(kC - 'A') + 10U;
             } else {
-                status_ = JsonParseStatus::Syntax;
+                status_ = JsonParseStatus::kSyntax;
                 return false;
             }
             value = (value << 4U) | digit;
@@ -401,26 +401,26 @@ private:
         out.clear();
         for (;;) {
             if (pos_ >= text_.size()) {
-                status_ = JsonParseStatus::Syntax;
+                status_ = JsonParseStatus::kSyntax;
                 return false;
             }
             if (out.size() > limits_.maxStringBytes) {
-                status_ = JsonParseStatus::SizeLimit;
+                status_ = JsonParseStatus::kSizeLimit;
                 return false;
             }
-            const char c = text_[pos_];
-            if (c == '"') {
+            const char kC = text_[pos_];
+            if (kC == '"') {
                 ++pos_;
                 return true;
             }
-            if (c == '\\') {
+            if (kC == '\\') {
                 ++pos_;
                 if (pos_ >= text_.size()) {
-                    status_ = JsonParseStatus::Syntax;
+                    status_ = JsonParseStatus::kSyntax;
                     return false;
                 }
-                const char esc = text_[pos_++];
-                switch (esc) {
+                const char kEsc = text_[pos_++];
+                switch (kEsc) {
                 case '"':  out.push_back('"'); break;
                 case '\\': out.push_back('\\'); break;
                 case '/':  out.push_back('/'); break;
@@ -435,9 +435,9 @@ private:
                         return false;
                     }
                     if (code >= 0xD800U && code <= 0xDBFFU) {
-                        // 高代理必须紧跟低代理，否则是坏数据。
+                        // High proxy must immediately follow low proxy; otherwise, it is invalid data.
                         if (text_.size() - pos_ < 6U || text_[pos_] != '\\' || text_[pos_ + 1U] != 'u') {
-                            status_ = JsonParseStatus::Syntax;
+                            status_ = JsonParseStatus::kSyntax;
                             return false;
                         }
                         pos_ += 2U;
@@ -446,12 +446,12 @@ private:
                             return false;
                         }
                         if (low < 0xDC00U || low > 0xDFFFU) {
-                            status_ = JsonParseStatus::Syntax;
+                            status_ = JsonParseStatus::kSyntax;
                             return false;
                         }
                         code = 0x10000U + ((code - 0xD800U) << 10U) + (low - 0xDC00U);
                     } else if (code >= 0xDC00U && code <= 0xDFFFU) {
-                        status_ = JsonParseStatus::Syntax;
+                        status_ = JsonParseStatus::kSyntax;
                         return false;
                     }
                     if (!appendUtf8(out, code)) {
@@ -460,54 +460,54 @@ private:
                     break;
                 }
                 default:
-                    status_ = JsonParseStatus::Syntax;
+                    status_ = JsonParseStatus::kSyntax;
                     return false;
                 }
                 continue;
             }
-            if (static_cast<unsigned char>(c) < 0x20U) {
-                status_ = JsonParseStatus::Syntax;  // 裸控制字符不合法
+            if (static_cast<unsigned char>(kC) < 0x20U) {
+                status_ = JsonParseStatus::kSyntax;  // Raw control characters are invalid
                 return false;
             }
-            out.push_back(c);
+            out.push_back(kC);
             ++pos_;
         }
     }
 
     bool parseNumber(JsonValue& out) {
-        const std::size_t start = pos_;
-        const bool negative = pos_ < text_.size() && text_[pos_] == '-';
-        if (negative) {
+        const std::size_t kStart = pos_;
+        const bool kNegative = pos_ < text_.size() && text_[pos_] == '-';
+        if (kNegative) {
             ++pos_;
         }
-        const std::size_t digitStart = pos_;
+        const std::size_t kDigitStart = pos_;
         while (pos_ < text_.size() && text_[pos_] >= '0' && text_[pos_] <= '9') {
             ++pos_;
         }
-        if (pos_ == digitStart) {
-            status_ = JsonParseStatus::Syntax;
-            pos_ = start;
+        if (pos_ == kDigitStart) {
+            status_ = JsonParseStatus::kSyntax;
+            pos_ = kStart;
             return false;
         }
-        // F-08：本读写器不接受浮点。小数点/指数一律判失败，而不是降精度。
+        // F-08: This reader does not accept floating-point numbers. Decimal points and exponents are rejected outright, not downgraded in precision.
         if (pos_ < text_.size() && (text_[pos_] == '.' || text_[pos_] == 'e' || text_[pos_] == 'E')) {
-            status_ = JsonParseStatus::FloatingPointRejected;
+            status_ = JsonParseStatus::kFloatingPointRejected;
             return false;
         }
-        const std::string_view digits = text_.substr(digitStart, pos_ - digitStart);
+        const std::string_view kDigits = text_.substr(kDigitStart, pos_ - kDigitStart);
         std::uint64_t magnitude = 0U;
-        if (!ParseU64(digits, magnitude)) {
-            status_ = JsonParseStatus::IntegerOverflow;
+        if (!parseU64(kDigits, magnitude)) {
+            status_ = JsonParseStatus::kIntegerOverflow;
             return false;
         }
-        if (!negative) {
+        if (!kNegative) {
             out = JsonValue::makeUInt(magnitude);
             return true;
         }
         constexpr std::uint64_t kPositiveMax =
             static_cast<std::uint64_t>((std::numeric_limits<std::int64_t>::max)());
         if (magnitude > kPositiveMax + 1ULL) {
-            status_ = JsonParseStatus::IntegerOverflow;
+            status_ = JsonParseStatus::kIntegerOverflow;
             return false;
         }
         if (magnitude == kPositiveMax + 1ULL) {
@@ -522,7 +522,7 @@ private:
     JsonLimits limits_;
     std::size_t pos_ = 0;
     std::size_t nodes_ = 0;
-    JsonParseStatus status_ = JsonParseStatus::Syntax;
+    JsonParseStatus status_ = JsonParseStatus::kSyntax;
 };
 
 } // namespace
@@ -532,65 +532,65 @@ private:
 // ---------------------------------------------------------------------------
 JsonValue JsonValue::makeNull() {
     JsonValue value;
-    value.type_ = JsonType::Null;
+    value.type_ = JsonType::kNull;
     return value;
 }
 
 JsonValue JsonValue::makeBool(bool flag) {
     JsonValue value;
-    value.type_ = JsonType::Bool;
+    value.type_ = JsonType::kBool;
     value.bool_ = flag;
     return value;
 }
 
 JsonValue JsonValue::makeUInt(std::uint64_t number) {
     JsonValue value;
-    value.type_ = JsonType::UInt;
+    value.type_ = JsonType::kUInt;
     value.uint_ = number;
     return value;
 }
 
 JsonValue JsonValue::makeInt(std::int64_t number) {
     JsonValue value;
-    value.type_ = JsonType::Int;
+    value.type_ = JsonType::kInt;
     value.int_ = number;
     return value;
 }
 
 JsonValue JsonValue::makeString(std::string text) {
     JsonValue value;
-    value.type_ = JsonType::String;
+    value.type_ = JsonType::kString;
     value.string_ = std::move(text);
     return value;
 }
 
 JsonValue JsonValue::makeArray(JsonArray items) {
     JsonValue value;
-    value.type_ = JsonType::Array;
+    value.type_ = JsonType::kArray;
     value.array_ = std::make_shared<JsonArray>(std::move(items));
     return value;
 }
 
 JsonValue JsonValue::makeObject(JsonObject members) {
     JsonValue value;
-    value.type_ = JsonType::Object;
+    value.type_ = JsonType::kObject;
     value.object_ = std::make_shared<JsonObject>(std::move(members));
     return value;
 }
 
 JsonValue JsonValue::makeU64Text(std::uint64_t number, U64Format format) {
-    return makeString(FormatU64(number, format));
+    return makeString(formatU64(number, format));
 }
 
 JsonValue JsonValue::makeOptionalU64Text(const OptionalU64& number, U64Format format) {
     if (!number.present) {
-        return makeNull();  // F-08：空值写 null，读回仍是空值，不变成 0
+        return makeNull();  // F-08: Writing null results in null on read; it does not become 0.
     }
-    return makeString(FormatU64(number.value, format));
+    return makeString(formatU64(number.value, format));
 }
 
 bool JsonValue::tryGetBool(bool& out) const noexcept {
-    if (type_ != JsonType::Bool) {
+    if (type_ != JsonType::kBool) {
         return false;
     }
     out = bool_;
@@ -598,29 +598,29 @@ bool JsonValue::tryGetBool(bool& out) const noexcept {
 }
 
 bool JsonValue::tryGetU64(std::uint64_t& out) const noexcept {
-    if (type_ == JsonType::UInt) {
+    if (type_ == JsonType::kUInt) {
         out = uint_;
         return true;
     }
-    if (type_ == JsonType::Int) {
+    if (type_ == JsonType::kInt) {
         if (int_ < 0) {
             return false;
         }
         out = static_cast<std::uint64_t>(int_);
         return true;
     }
-    if (type_ == JsonType::String) {
-        return ParseU64(string_, out);
+    if (type_ == JsonType::kString) {
+        return parseU64(string_, out);
     }
     return false;
 }
 
 bool JsonValue::tryGetI64(std::int64_t& out) const noexcept {
-    if (type_ == JsonType::Int) {
+    if (type_ == JsonType::kInt) {
         out = int_;
         return true;
     }
-    if (type_ == JsonType::UInt) {
+    if (type_ == JsonType::kUInt) {
         constexpr std::uint64_t kMax =
             static_cast<std::uint64_t>((std::numeric_limits<std::int64_t>::max)());
         if (uint_ > kMax) {
@@ -629,14 +629,14 @@ bool JsonValue::tryGetI64(std::int64_t& out) const noexcept {
         out = static_cast<std::int64_t>(uint_);
         return true;
     }
-    if (type_ == JsonType::String) {
-        return ParseI64(string_, out);
+    if (type_ == JsonType::kString) {
+        return parseI64(string_, out);
     }
     return false;
 }
 
 bool JsonValue::tryGetString(std::string& out) const {
-    if (type_ != JsonType::String) {
+    if (type_ != JsonType::kString) {
         return false;
     }
     out = string_;
@@ -644,7 +644,7 @@ bool JsonValue::tryGetString(std::string& out) const {
 }
 
 bool JsonValue::tryGetOptionalU64(OptionalU64& out) const noexcept {
-    if (type_ == JsonType::Null) {
+    if (type_ == JsonType::kNull) {
         out = OptionalU64::unset();
         return true;
     }
@@ -657,11 +657,11 @@ bool JsonValue::tryGetOptionalU64(OptionalU64& out) const noexcept {
 }
 
 const JsonArray* JsonValue::asArray() const noexcept {
-    return (type_ == JsonType::Array && array_) ? array_.get() : nullptr;
+    return (type_ == JsonType::kArray && array_) ? array_.get() : nullptr;
 }
 
 const JsonObject* JsonValue::asObject() const noexcept {
-    return (type_ == JsonType::Object && object_) ? object_.get() : nullptr;
+    return (type_ == JsonType::kObject && object_) ? object_.get() : nullptr;
 }
 
 const JsonValue* JsonValue::find(std::string_view name) const noexcept {
@@ -677,34 +677,34 @@ const JsonValue* JsonValue::find(std::string_view name) const noexcept {
     return nullptr;
 }
 
-std::string WriteJson(const JsonValue& value, unsigned indent) {
+std::string writeJson(const JsonValue& value, unsigned indent) {
     std::string out;
-    WriteValue(out, value, indent, 0U);
+    writeValue(out, value, indent, 0U);
     return out;
 }
 
-const char* JsonParseStatusName(JsonParseStatus status) noexcept {
+const char* jsonParseStatusName(JsonParseStatus status) noexcept {
     switch (status) {
-    case JsonParseStatus::Ok:                    return "Ok";
-    case JsonParseStatus::Empty:                 return "Empty";
-    case JsonParseStatus::Syntax:                return "Syntax";
-    case JsonParseStatus::DepthLimit:            return "DepthLimit";
-    case JsonParseStatus::SizeLimit:             return "SizeLimit";
-    case JsonParseStatus::NodeLimit:             return "NodeLimit";
-    case JsonParseStatus::FloatingPointRejected: return "FloatingPointRejected";
-    case JsonParseStatus::IntegerOverflow:       return "IntegerOverflow";
-    case JsonParseStatus::TrailingData:          return "TrailingData";
-    case JsonParseStatus::DuplicateKey:          return "DuplicateKey";
+    case JsonParseStatus::kOk:                    return "Ok";
+    case JsonParseStatus::kEmpty:                 return "Empty";
+    case JsonParseStatus::kSyntax:                return "Syntax";
+    case JsonParseStatus::kDepthLimit:            return "DepthLimit";
+    case JsonParseStatus::kSizeLimit:             return "SizeLimit";
+    case JsonParseStatus::kNodeLimit:             return "NodeLimit";
+    case JsonParseStatus::kFloatingPointRejected: return "FloatingPointRejected";
+    case JsonParseStatus::kIntegerOverflow:       return "IntegerOverflow";
+    case JsonParseStatus::kTrailingData:          return "TrailingData";
+    case JsonParseStatus::kDuplicateKey:          return "DuplicateKey";
     }
     return "Syntax";
 }
 
-JsonParseResult ParseJson(std::string_view text, const JsonLimits& limits) {
-    // Q-12：会话/报告导入是不可信输入。先卡总字节，再谈解析 —— 否则一个 11 MB 的
-    // 文件就能把导入线程占死。
+JsonParseResult parseJson(std::string_view text, const JsonLimits& limits) {
+    // Q-12: Session/report import involves untrusted input. Enforce total byte limits
+    // first before parsing; otherwise, an 11 MB file can deadlock the import thread.
     if (limits.maxTotalBytes != 0U && text.size() > limits.maxTotalBytes) {
         JsonParseResult result;
-        result.status = JsonParseStatus::SizeLimit;
+        result.status = JsonParseStatus::kSizeLimit;
         result.errorOffset = limits.maxTotalBytes;
         return result;
     }
@@ -712,4 +712,4 @@ JsonParseResult ParseJson(std::string_view text, const JsonLimits& limits) {
     return parser.run();
 }
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

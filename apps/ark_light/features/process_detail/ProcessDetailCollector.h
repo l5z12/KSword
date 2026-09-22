@@ -1,0 +1,21 @@
+#pragma once
+
+#include "ProcessDetailTypes.h"
+
+namespace ksword::features::process_detail {
+
+// ProcessDetailCollector performs the read-only process detail snapshot.
+// Inputs are a PID selected by the process module; processing uses Win32 and
+// dynamically resolved ntdll/Kernel32 exports; output is a detached snapshot
+// suitable for UI rendering without keeping target handles open.
+class ProcessDetailCollector final {
+public:
+    // Collect builds the Basic/Threads/Modules snapshot for one process ID.
+    // Input is processId; processing enriches Basic with independently queried
+    // Win32 identity, token, timing, memory, I/O, PEB and affinity fields while
+    // tolerating protected, exited or access-denied targets; output always
+    // contains per-section status text.
+    ProcessDetailSnapshot collect(DWORD processId, ULONGLONG expectedCreationTime100ns) const;
+};
+
+} // namespace Ksword::Features::process_detail

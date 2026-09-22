@@ -1,14 +1,14 @@
 /*
- * hvmprobe - 用户态硬件虚拟化环境探测器
+ * hvmprobe: User-mode hardware virtualization environment detector.
  *
- * 存在的理由：KswordARK 的 HVM 后端在启动常驻前会检查一串 CPUID/MSR 条件，
- * 其中 CPUID.1:ECX[31]（hypervisor present）在虚拟机里必然为 1，导致常驻被拒。
- * 要判断某台虚拟机能不能用来测常驻，得先知道 guest 实际看到的 CPUID 长什么样。
+ * Rationale: The HVM backend of KswordARK checks a series of CPUID/MSR conditions before starting the resident component. Among
+ * them, CPUID.1:ECX[31] (hypervisor present) is always 1 in a virtual machine, causing the resident component to be rejected.
+ * To determine whether a VM can test resident operation, first establish which CPUID values its guest actually sees.
  *
- * 这个程序不加载驱动、不需要签名、不需要管理员，把驱动会读到的那几项 CPUID
- * 原样打印出来，因此可以直接拷进虚拟机运行，用来验证 .vmx 的改动是否生效。
+ * This program does not load a driver, requires no signature, and needs no administrator privileges. It prints the CPUID values that the
+ * driver would read exactly as-is, so it can be copied directly into a virtual machine to verify whether .vmx modifications have taken effect.
  *
- * 编译（host 上，静态链接以免虚拟机里缺运行库）：
+ * Compile (on host, statically linked to avoid missing runtime libraries in the VM):
  *   cl /nologo /O2 /MT /W4 hvmprobe.c /Fe:hvmprobe.exe
  */
 
@@ -16,9 +16,9 @@
 #include <intrin.h>
 #include <stdio.h>
 
-/* 把 CPUID 的三个寄存器拼回 12 字节厂商串。 */
+/* Reconstruct the 12-byte vendor string from the three CPUID registers. */
 static void
-CopyVendor(char* out, int b, int d, int c)
+copyVendor(char* out, int b, int d, int c)
 {
     memcpy(out + 0, &b, 4);
     memcpy(out + 4, &d, 4);
@@ -26,9 +26,9 @@ CopyVendor(char* out, int b, int d, int c)
     out[12] = '\0';
 }
 
-/* Hyper-V 的厂商串在 leaf 0x40000000 里是 EBX/ECX/EDX 顺序，与 leaf 0 不同。 */
+/* Hyper-V vendor string is in leaf 0x40000000 in EBX/ECX/EDX order, unlike leaf 0. */
 static void
-CopyHvVendor(char* out, int b, int c, int d)
+copyHvVendor(char* out, int b, int c, int d)
 {
     memcpy(out + 0, &b, 4);
     memcpy(out + 4, &c, 4);
@@ -37,14 +37,14 @@ CopyHvVendor(char* out, int b, int c, int d)
 }
 
 static void
-PrintBit(const char* name, int value, const char* meaning)
+printBit(const char* name, int value, const char* meaning)
 {
     printf("  %-34s %s   %s\n", name, value ? "yes" : "no ", meaning);
 }
 
-/* 读一个 DWORD 注册表值；找不到时返回 fallback。 */
+/* Read a DWORD registry value; return fallback if not found. */
 static DWORD
-ReadDword(const char* subKey, const char* valueName, DWORD fallback)
+readDword(const char* subKey, const char* valueName, DWORD fallback)
 {
     HKEY key = NULL;
     DWORD value = fallback;
@@ -79,45 +79,45 @@ main(void)
     printf("hvmprobe - KswordARK HVM 环境探测\n");
     printf("================================================================\n\n");
 
-    /* leaf 0：厂商标识，决定走 VMX 还是 SVM 分支。 */
+    /* Leaf 0: Vendor ID, determines whether to take the VMX or SVM branch. */
     __cpuid(regs, 0);
-    CopyVendor(vendor, regs[1], regs[3], regs[2]);
+    copyVendor(vendor, regs[1], regs[3], regs[2]);
     printf("CPU 厂商: %s\n", vendor);
 
-    /* leaf 1：VMX 与 hypervisor-present 两个决定性位。 */
+    /* leaf 1: The two decisive bits for VMX and hypervisor-present. */
     __cpuid(regs, 1);
     vmxSupported = (regs[2] >> 5) & 1;
     hypervisorPresent = (regs[2] >> 31) & 1;
     printf("\nCPUID.1:ECX 关键位\n");
-    PrintBit("[5]  VMX", vmxSupported, "Intel 硬件虚拟化");
-    PrintBit("[31] hypervisor present", hypervisorPresent,
+    printBit("[5]  VMX", vmxSupported, "Intel 硬件虚拟化");
+    printBit("[31] hypervisor present", hypervisorPresent,
              "驱动据此判定已有 hypervisor 占用");
 
-    /* AMD 侧的对应位，便于同一份输出覆盖两种平台。 */
+    /* Corresponding bit on the AMD side, allowing the same output to cover both platforms. */
     __cpuid(regs, (int)0x80000000);
     if ((unsigned)regs[0] >= 0x80000001u) {
         __cpuid(regs, (int)0x80000001);
         svmSupported = (regs[2] >> 2) & 1;
         printf("\nCPUID.80000001:ECX 关键位\n");
-        PrintBit("[2]  SVM", svmSupported, "AMD 硬件虚拟化");
+        printBit("[2]  SVM", svmSupported, "AMD 硬件虚拟化");
     }
 
-    /* hypervisor 厂商串只在 present 位为 1 时有定义。 */
+    /* The hypervisor vendor string is defined only when the present bit is set to 1. */
     if (hypervisorPresent) {
         __cpuid(regs, (int)0x40000000);
-        CopyHvVendor(hvVendor, regs[1], regs[2], regs[3]);
+        copyHvVendor(hvVendor, regs[1], regs[2], regs[3]);
         printf("\nhypervisor 厂商串: \"%s\"  (CPUID.40000000)\n", hvVendor);
         printf("  最大 hypervisor leaf: 0x%08X\n", (unsigned)regs[0]);
     }
 
     /*
-     * VBS 与 HVCI 会让 Windows 自己的 hypervisor 常驻，效果与身处虚拟机相同，
-     * 所以在真机上也要一起看。这两项用户态可读，不需要管理员。
+     * VBS and HVCI keep Windows' own hypervisor resident, making the environment behave like a VM. These
+     * settings are readable from user mode without admin privileges, so they must be checked even on bare metal.
      */
-    vbsEnabled = ReadDword(
+    vbsEnabled = readDword(
         "SYSTEM\\CurrentControlSet\\Control\\DeviceGuard",
         "EnableVirtualizationBasedSecurity", 0);
-    hvciRunning = ReadDword(
+    hvciRunning = readDword(
         "SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios"
         "\\HypervisorEnforcedCodeIntegrity",
         "Enabled", 0);
@@ -126,15 +126,15 @@ main(void)
            (unsigned long)vbsEnabled);
     printf("  %-34s %lu\n", "HVCI Enabled", (unsigned long)hvciRunning);
 
-    /* 把上面的事实翻译成"驱动会怎么做"，这是跑这个程序的真正目的。 */
+    /* Translate the facts above into "how the driver behaves"; this is the true purpose of running this program. */
     printf("\n----------------------------------------------------------------\n");
     printf("对 KswordARK 常驻的判定\n\n");
     if (!vmxSupported && !svmSupported && hypervisorPresent) {
         /*
-         * 这是最容易误判的一种：CPU 本身支持虚拟化，但底下的 hypervisor
-         * 没有把它暴露上来，于是能力探测阶段就看不到 VMX/SVM。
-         * 真机上通常是 HVCI/内存完整性拉起了 Hyper-V；虚拟机里则是宿主
-         * 没开嵌套，或者宿主自己也运行在别的 hypervisor 之下。
+         * This is the most easily misjudged case: the CPU supports virtualization, but the underlying hypervisor
+         * does not expose it, so VMX/SVM capabilities are not visible during the capability detection phase.
+         * On bare metal, HVCI/Memory Integrity typically launches Hyper-V; in a VM, the
+         * host either lacks nested virtualization or runs under another hypervisor.
          */
         printf("  拒绝：底层 hypervisor \"%s\" 没有把硬件虚拟化暴露上来，\n",
                hvVendor);

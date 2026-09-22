@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <Filter Include="apps">
+      <UniqueIdentifier>{3BE9954F-B033-51AC-B93B-CCFC44E697ED}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\desktop">
+      <UniqueIdentifier>{89DEE00E-D903-5FA6-A316-B94316AF1152}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\desktop\file_dock">
+      <UniqueIdentifier>{43B03DD9-3AF4-5781-82E8-AEF4C72D595F}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="KswordFsDecodeTests.cpp" />
+    <ClCompile Include="..\..\..\apps\desktop\file_dock\NtfsRunListDecode.cpp">
+      <Filter>apps\desktop\file_dock</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\apps\desktop\file_dock\NtfsRunListDecode.h">
+      <Filter>apps\desktop\file_dock</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

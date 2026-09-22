@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $sourceDir = $PSScriptRoot
 $repoDir = [IO.Path]::GetFullPath((Join-Path $sourceDir '../../..'))
-$outputDir = Join-Path $repoDir 'output/pdf'
+$outputDir = Join-Path $repoDir 'artifacts/pdf'
 if (-not $TectonicPath) {
     $TectonicPath = Join-Path $repoDir '.deps/tectonic/tectonic.exe'
 }

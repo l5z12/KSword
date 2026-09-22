@@ -4,10 +4,10 @@
 
 // ============================================================
 // KswordArkDeviceAuditIoctl.h
-// 作用：
-// - 定义 R3 <-> R0 设备/输入/USB/GPU 只读审计协议；
-// - 协议只返回设备对象、驱动对象、链路关系和风险提示；
-// - 协议不代表任何写入、卸载、解绑、禁用或 hook 动作。
+// Purpose:
+// - Defines the R3 <-> R0 device/input/USB/GPU read-only audit protocol;
+// - The protocol returns only device objects, driver objects, link relationships, and risk warnings.
+// - The protocol does not imply any write, unload, unbind, disable, or hook actions.
 // ============================================================
 
 #define KSWORD_ARK_DEVICE_AUDIT_PROTOCOL_VERSION 1UL
@@ -117,10 +117,10 @@
 
 typedef struct _KSWORD_ARK_QUERY_DEVICE_AUDIT_REQUEST
 {
-    // 说明：这是一个只读审计请求头，用于限定版本、页大小和单目标筛选。
-    // 输入：R3 传入版本号、profileFlags、最大行数、最大附加深度和可选目标名。
-    // 处理：R0 只做校验和归一化，不会修改系统策略或遍历未知对象链。
-    // 返回：无返回值；结构体由 IOCTL 输入缓冲区直接承载。
+    // Note: This is a read-only audit request header used to constrain version, page size, and single-target filtering.
+    // Input: R3 passes version number, profileFlags, max rows, max nesting depth, and optional target name.
+    // Note: R0 performs only validation and normalization; it does not modify system policies or traverse unknown object chains.
+    // Returns: No return value; the structure is carried directly by the IOCTL input buffer.
     unsigned long size;
     unsigned long version;
     unsigned long profileFlags;
@@ -132,10 +132,10 @@ typedef struct _KSWORD_ARK_QUERY_DEVICE_AUDIT_REQUEST
 
 typedef struct _KSWORD_ARK_DEVICE_AUDIT_ENTRY
 {
-    // 说明：这是设备/驱动审计的统一输出行，既可以表示 summary，也可以表示设备链证据。
-    // 输入：由 R0 从 DriverObject integrity 证据转换而来，或在失败时合成部分行。
-    // 处理：字段只承载地址、名称、状态和风险提示，不触发任何写入动作。
-    // 返回：无返回值；结构体被放入可变长响应体 entries[]。
+    // Note: This is the unified output row for device/driver auditing, capable of representing either a summary or device chain evidence.
+    // Input: Converted from DriverObject integrity evidence by R0, or synthesized as partial rows on failure.
+    // Processing: Fields carry only address, name, status, and risk hints; no write actions are triggered.
+    // Return: No return value; the structure is placed in the variable-length response body entries[].
     unsigned long size;
     unsigned long profileFlags;
     unsigned long rowKind;
@@ -165,10 +165,10 @@ typedef struct _KSWORD_ARK_DEVICE_AUDIT_ENTRY
 
 typedef struct _KSWORD_ARK_QUERY_DEVICE_AUDIT_RESPONSE
 {
-    // 说明：这是可变长审计响应头，后面紧跟 entries[]。
-    // 输入：R0 填写查询结果、返回计数和状态汇总。
-    // 处理：R3 通过 returnedCount 和 entrySize 逐行枚举。
-    // 返回：无返回值；结构体直接写入 METHOD_BUFFERED 输出缓冲区。
+    // Note: This is a variable-length audit response header, immediately followed by entries[].
+    // Input: R0 fills in query results, return count, and status summary.
+    // Handling: R3 enumerates rows one by one using returnedCount and entrySize.
+    // Returns: no return value; the structure is written directly to the METHOD_BUFFERED output buffer.
     unsigned long size;
     unsigned long version;
     unsigned long queryStatus;

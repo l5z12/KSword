@@ -4,7 +4,7 @@ param([string]$DriverPath, [string]$ControlPath)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $repository=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-if ([string]::IsNullOrWhiteSpace($DriverPath)) { $DriverPath=Join-Path $repository 'Ksword5.1\x64\Release\KswordARK.sys' }
+if ([string]::IsNullOrWhiteSpace($DriverPath)) { $DriverPath=Join-Path $repository 'artifacts/bin\x64\Release\KswordARK.sys' }
 if ([string]::IsNullOrWhiteSpace($ControlPath)) { $ControlPath=Join-Path $repository 'tools\hvm_ctl\hvm_ctl.exe' }
 $DriverPath=(Resolve-Path -LiteralPath $DriverPath).Path
 $ControlPath=(Resolve-Path -LiteralPath $ControlPath).Path

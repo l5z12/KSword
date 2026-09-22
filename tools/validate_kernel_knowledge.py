@@ -11,54 +11,41 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = (
     ROOT
-    / "Ksword5.1"
-    / "Ksword5.1"
-    / "KernelDock"
-    / "KernelKnowledgeCatalog.cpp"
+    / 'apps/desktop/kernel_dock/KernelKnowledgeCatalog.cpp'
 )
 KERNEL_DOCK_PATH = (
-    ROOT / "Ksword5.1" / "Ksword5.1" / "KernelDock" / "KernelDock.cpp"
+    ROOT / 'apps/desktop/kernel_dock/KernelDock.cpp'
 )
 KNOWLEDGE_TAB_PATH = (
     ROOT
-    / "Ksword5.1"
-    / "Ksword5.1"
-    / "KernelDock"
-    / "KernelKnowledgeTab.cpp"
+    / 'apps/desktop/kernel_dock/KernelKnowledgeTab.cpp'
 )
 RESEARCH_PROTOCOL_PATH = ROOT / "shared" / "driver" / "KswordArkResearchIoctl.h"
 RESEARCH_DRIVER_PATH = (
     ROOT
-    / "KswordARKDriver"
-    / "src"
-    / "features"
-    / "research"
-    / "research_topic_ioctl.c"
+    / 'drivers/ark/src/features/research/research_topic_ioctl.c'
 )
 RESEARCH_CLIENT_PATH = (
     ROOT
-    / "Ksword5.1"
-    / "Ksword5.1"
-    / "ArkDriverClient"
-    / "ArkDriverResearch.cpp"
+    / 'shared/ark_client/ArkDriverResearch.cpp'
 )
 DRIVER_REGISTRY_PATH = (
-    ROOT / "KswordARKDriver" / "src" / "dispatch" / "ioctl_registry.c"
+    ROOT / 'drivers/ark/src/dispatch/ioctl_registry.c'
 )
-DRIVER_PROJECT_PATH = ROOT / "KswordARKDriver" / "KswordARKDriver.vcxproj"
-DRIVER_FILTERS_PATH = ROOT / "KswordARKDriver" / "KswordARKDriver.vcxproj.filters"
-DRIVER_IOCTL_INCLUDE_PATH = ROOT / "KswordARKDriver" / "include" / "ark" / "ark_ioctl.h"
-GUI_PROJECT_PATH = ROOT / "Ksword5.1" / "Ksword5.1" / "Ksword5.1.vcxproj"
+DRIVER_PROJECT_PATH = ROOT / 'drivers/ark/KswordARKDriver.vcxproj'
+DRIVER_FILTERS_PATH = ROOT / 'drivers/ark/KswordARKDriver.vcxproj.filters'
+DRIVER_IOCTL_INCLUDE_PATH = ROOT / 'drivers/ark/include/ark/ark_ioctl.h'
+GUI_PROJECT_PATH = ROOT / 'apps/desktop/KswordDesktop.vcxproj'
 GUI_FILTERS_PATH = (
-    ROOT / "Ksword5.1" / "Ksword5.1" / "Ksword5.1.vcxproj.filters"
+    ROOT / 'apps/desktop/KswordDesktop.vcxproj.filters'
 )
 GUI_TYPES_PATH = (
-    ROOT / "Ksword5.1" / "Ksword5.1" / "ArkDriverClient" / "ArkDriverTypes.h"
+    ROOT / 'shared/ark_client/ArkDriverTypes.h'
 )
-PLAN_PATH = ROOT / "第二规划.md"
+PLAN_PATH = ROOT / "docs/research/kernel-knowledge-plan.zh-CN.md"
 LANGUAGE_PATHS = {
-    "zh-CN": ROOT / "Ksword5.1" / "Ksword5.1" / "languages" / "zh-CN.json",
-    "en-US": ROOT / "Ksword5.1" / "Ksword5.1" / "languages" / "en-US.json",
+    "zh-CN": ROOT / 'apps/desktop/languages/zh-CN.json',
+    "en-US": ROOT / 'apps/desktop/languages/en-US.json',
 }
 
 CATEGORY_RE = re.compile(
@@ -73,20 +60,20 @@ ROUTE_RE = re.compile(r'routeId\s*==\s*QStringLiteral\("([a-z0-9_]+)"\)')
 EXPECTED_CATEGORY_COUNT = 12
 EXPECTED_TOPIC_COUNT = 71
 EXPECTED_COVERAGE = {
-    "Available",
-    "AvailableNeedsExplanation",
-    "Partial",
-    "Planned",
+    "kAvailable",
+    "kAvailableNeedsExplanation",
+    "kPartial",
+    "kPlanned",
 }
-# 这一组是「知识中心的专题会跳到 KernelDock 的哪些页」，两端必须一一对应：
-# 每个专题声明的 route 必须在这里，KernelDock::openKnowledgeRoute 提供的分支集合
-# 也必须恰好等于这里。多一个少一个都是错。
+# This group defines which pages in KernelDock the 'Knowledge Center' topics will navigate to; both ends must correspond one-to-one:
+# Each topic's declared route must be listed here; the branch set provided by KernelDock::openKnowledgeRoute.
+# It must also match exactly here. One more or one less is an error.
 #
-# 曾经列着 "hvm"，但目录里没有任何专题引用它，KernelDock 里也没有对应分支 ——
-# HVM 页面已经搬到 KvmDock，不在这个 dock 里了。一个两端都不存在、只活在期望
-# 列表里的条目，会让这项一致性检查恒为假：CI 一直红着，而红的原因与任何真实
-# 缺陷无关。移除它是把期望修正回事实，不是放宽判据；真要给知识中心加 HVM 专题，
-# 那时连同目录条目和跨 dock 跳转一起加回来。
+# Previously listed "hvm", but no topic in the directory references it, and there is no corresponding branch in KernelDock —
+# The HVM page has been moved to KvmDock and is no longer in this dock. An entry that exists at neither end, living only in expectations
+# Entries in the list cause this consistency check to always fail: CI remains red, and the reason for the red status has nothing to do with any actual
+# Defect unrelated. Removing it restores expectations to facts, not relaxing criteria; if HVM topics are to be added to the knowledge center,
+# At that time, add back the directory entries and cross-dock jumps together.
 EXPECTED_ROUTES = {
     "",
     "cid",
@@ -186,12 +173,12 @@ def validate() -> list[str]:
             errors.append(
                 f"{source_path}: dynamic semantic keys must not use key as the zh-CN fallback"
             )
-    if "m_articleView->setMarkdown(" in tab_source:
+    if "articleView_->setMarkdown(" in tab_source:
         errors.append(
             "KernelKnowledgeTab must pass MarkdownFeatures through "
             "QTextDocument::setMarkdown, not QTextEdit::setMarkdown"
         )
-    if "m_articleView->document()->setMarkdown(" not in tab_source:
+    if "articleView_->document()->setMarkdown(" not in tab_source:
         errors.append("KernelKnowledgeTab Markdown document rendering call is missing")
     if (
         "QTextDocument::MarkdownFeatures(QTextDocument::MarkdownDialectGitHub)"
@@ -226,12 +213,12 @@ def validate() -> list[str]:
             errors.append(f"{topic_id}: unknown coverage {coverage}")
         if route_id not in EXPECTED_ROUTES:
             errors.append(f"{topic_id}: unknown read-only route {route_id}")
-        if coverage != "Available":
-            errors.append(f"{topic_id}: research implementation is not marked Available")
+        if coverage != "kAvailable":
+            errors.append(f"{topic_id}: research implementation is not marked kAvailable")
         if not route_id:
             errors.append(f"{topic_id}: implemented topic has no business evidence route")
 
-    # 共享 topic ID、R0 映射表和 Qt 目录必须严格同序，防止 UI 采集到错专题。
+    # Shared topic ID, R0 mapping table, and Qt directory must be strictly ordered to prevent UI from collecting incorrect topics.
     try:
         protocol_source = RESEARCH_PROTOCOL_PATH.read_text(encoding="utf-8")
         driver_source = RESEARCH_DRIVER_PATH.read_text(encoding="utf-8")
@@ -272,7 +259,7 @@ def validate() -> list[str]:
             errors.append("research protocol topic count is missing or stale")
 
         mapping_table_match = re.search(
-            r"g_KswResearchTopics\[\]\s*=\s*\{(?P<body>.*?)\n\};",
+            r"kGKswResearchTopics\[\]\s*=\s*\{(?P<body>.*?)\n\};",
             driver_source,
             re.DOTALL,
         )
@@ -326,14 +313,14 @@ def validate() -> list[str]:
             "protocol IOCTL": "IOCTL_KSWORD_ARK_QUERY_RESEARCH_TOPIC",
             "METHOD_BUFFERED transport": "METHOD_BUFFERED",
             "address evidence access gate": "FILE_READ_ACCESS | FILE_WRITE_ACCESS",
-            "R0 handler": "KswordARKResearchIoctlQueryTopic",
+            "R0 handler": "kswordArkResearchIoctlQueryTopic",
             "R0 ABI guard": "KSWORD_ARK_RESEARCH_RESPONSE_HEADER_SIZE == 168UL",
-            "authoritative WDF requestor mode": "WdfRequestGetRequestorMode(Request)",
+            "authoritative WDF requestor mode": "WdfRequestGetRequestorMode(request)",
             "bounded output length": "effectiveOutputLength = min(",
             "R3 wrapper": "DriverClient::queryResearchTopic",
             "R3 ABI guard": "research_response_abi_drift",
             "strict response parser": "row byte count mismatch",
-            "cross-field response parser": "commonValuesMatch",
+            "cross-field response parser": "kCommonValuesMatch",
             "requestor-mode mirror parser": (
                 "requestorModeMirror != response->requestorMode"
             ),
@@ -370,7 +357,7 @@ def validate() -> list[str]:
             errors.append(
                 "research METHOD_BUFFERED input is not snapshotted before output reset"
             )
-        if re.search(r"registryEntry->Handler\s*\(", driver_source):
+        if re.search(r"registryEntry->handler\s*\(", driver_source):
             errors.append("research R0 handler invokes a mapped business handler")
         if "ExGetPreviousMode" in driver_source:
             errors.append(
@@ -381,7 +368,7 @@ def validate() -> list[str]:
             errors.append("research R0 WDM top-device reference is not released")
         if not re.search(
             r"IOCTL_KSWORD_ARK_QUERY_RESEARCH_TOPIC\s*,\s*"
-            r"KswordARKResearchIoctlQueryTopic",
+            r"kswordArkResearchIoctlQueryTopic",
             registry_source,
         ):
             errors.append("research IOCTL is not registered in the central table")
@@ -391,13 +378,13 @@ def validate() -> list[str]:
             errors.append("research R0 source is absent from driver vcxproj.filters")
         if "KswordArkResearchIoctl.h" not in driver_ioctl_include:
             errors.append("research shared protocol is absent from ark_ioctl.h")
-        if "ArkDriverClient\\ArkDriverResearch.cpp" not in gui_project:
+        if "..\\..\\shared\\ark_client\\ArkDriverResearch.cpp" not in gui_project:
             errors.append("research R3 source is absent from GUI vcxproj")
-        if "ArkDriverClient\\ArkDriverResearch.cpp" not in gui_filters:
+        if "..\\..\\shared\\ark_client\\ArkDriverResearch.cpp" not in gui_filters:
             errors.append("research R3 source is absent from GUI vcxproj.filters")
         if "KswordArkResearchIoctl.h" not in gui_types:
             errors.append("research shared protocol is absent from ArkDriverTypes.h")
-        if "queryResearchTopic" not in tab_source or "m_evidenceGeneration" not in tab_source:
+        if "queryResearchTopic" not in tab_source or "evidenceGeneration_" not in tab_source:
             errors.append("knowledge UI does not expose stale-safe live evidence collection")
         if "DeviceIoControl" in tab_source:
             errors.append("knowledge UI bypasses ArkDriverClient with direct DeviceIoControl")
@@ -409,7 +396,7 @@ def validate() -> list[str]:
     else:
         for stale_marker in ("[部分]", "[待补]"):
             if stale_marker in plan_source:
-                errors.append(f"第二规划 still contains stale marker {stale_marker}")
+                errors.append(f"The second-stage plan still contains stale marker {stale_marker}")
 
     kernel_dock_source = KERNEL_DOCK_PATH.read_text(encoding="utf-8")
     route_function_start = kernel_dock_source.find(

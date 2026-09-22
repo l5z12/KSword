@@ -3,37 +3,37 @@
 #include <algorithm>
 #include <utility>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 
 namespace {
 
 // ---------------------------------------------------------------------------
-// 基础工具
+// Basic utility
 // ---------------------------------------------------------------------------
-char LowerAscii(char c) noexcept {
+char lowerAscii(char c) noexcept {
     return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
 }
 
-bool EqualsIgnoreCase(std::string_view a, std::string_view b) noexcept {
+bool equalsIgnoreCase(std::string_view a, std::string_view b) noexcept {
     if (a.size() != b.size()) {
         return false;
     }
     for (std::size_t i = 0; i < a.size(); ++i) {
-        if (LowerAscii(a[i]) != LowerAscii(b[i])) {
+        if (lowerAscii(a[i]) != lowerAscii(b[i])) {
             return false;
         }
     }
     return true;
 }
 
-bool StartsWithIgnoreCase(std::string_view text, std::string_view prefix) noexcept {
+bool startsWithIgnoreCase(std::string_view text, std::string_view prefix) noexcept {
     if (prefix.size() > text.size()) {
         return false;
     }
-    return EqualsIgnoreCase(text.substr(0, prefix.size()), prefix);
+    return equalsIgnoreCase(text.substr(0, prefix.size()), prefix);
 }
 
-int HexDigit(char c) noexcept {
+int hexDigit(char c) noexcept {
     if (c >= '0' && c <= '9') {
         return c - '0';
     }
@@ -46,7 +46,7 @@ int HexDigit(char c) noexcept {
     return -1;
 }
 
-void AddKey(std::vector<std::string>& keys, std::string_view key) {
+void addKey(std::vector<std::string>& keys, std::string_view key) {
     for (const std::string& existing : keys) {
         if (std::string_view(existing) == key) {
             return;
@@ -55,140 +55,140 @@ void AddKey(std::vector<std::string>& keys, std::string_view key) {
     keys.emplace_back(key);
 }
 
-void MergeKeys(std::vector<std::string>& target, const std::vector<std::string>& source) {
+void mergeKeys(std::vector<std::string>& target, const std::vector<std::string>& source) {
     for (const std::string& key : source) {
-        AddKey(target, key);
+        addKey(target, key);
     }
 }
 
 // ---------------------------------------------------------------------------
-// 三值逻辑（Kleene）。这是 N-02/N-03 的核心：未知的否定仍然是未知，
-// 未知绝不塌成"匹配"，也绝不塌成"不匹配"。
+// Three-valued logic (Kleene). This is core to N-02/N-03: the negation of unknown
+// remains unknown; unknown never collapses into 'Match' nor into 'No Match'.
 // ---------------------------------------------------------------------------
-ConditionMatch NegateMatch(ConditionMatch value) noexcept {
+ConditionMatch negateMatch(ConditionMatch value) noexcept {
     switch (value) {
-    case ConditionMatch::Match:
-        return ConditionMatch::NoMatch;
-    case ConditionMatch::NoMatch:
-        return ConditionMatch::Match;
-    case ConditionMatch::InsufficientInfo:
-        return ConditionMatch::InsufficientInfo;
+    case ConditionMatch::kMatch:
+        return ConditionMatch::kNoMatch;
+    case ConditionMatch::kNoMatch:
+        return ConditionMatch::kMatch;
+    case ConditionMatch::kInsufficientInfo:
+        return ConditionMatch::kInsufficientInfo;
     }
-    return ConditionMatch::InsufficientInfo;
+    return ConditionMatch::kInsufficientInfo;
 }
 
-ConditionMatch AndMatch(ConditionMatch a, ConditionMatch b) noexcept {
-    if (a == ConditionMatch::NoMatch || b == ConditionMatch::NoMatch) {
-        return ConditionMatch::NoMatch;
+ConditionMatch andMatch(ConditionMatch a, ConditionMatch b) noexcept {
+    if (a == ConditionMatch::kNoMatch || b == ConditionMatch::kNoMatch) {
+        return ConditionMatch::kNoMatch;
     }
-    if (a == ConditionMatch::InsufficientInfo || b == ConditionMatch::InsufficientInfo) {
-        return ConditionMatch::InsufficientInfo;
+    if (a == ConditionMatch::kInsufficientInfo || b == ConditionMatch::kInsufficientInfo) {
+        return ConditionMatch::kInsufficientInfo;
     }
-    return ConditionMatch::Match;
+    return ConditionMatch::kMatch;
 }
 
-ConditionMatch OrMatch(ConditionMatch a, ConditionMatch b) noexcept {
-    if (a == ConditionMatch::Match || b == ConditionMatch::Match) {
-        return ConditionMatch::Match;
+ConditionMatch orMatch(ConditionMatch a, ConditionMatch b) noexcept {
+    if (a == ConditionMatch::kMatch || b == ConditionMatch::kMatch) {
+        return ConditionMatch::kMatch;
     }
-    if (a == ConditionMatch::InsufficientInfo || b == ConditionMatch::InsufficientInfo) {
-        return ConditionMatch::InsufficientInfo;
+    if (a == ConditionMatch::kInsufficientInfo || b == ConditionMatch::kInsufficientInfo) {
+        return ConditionMatch::kInsufficientInfo;
     }
-    return ConditionMatch::NoMatch;
+    return ConditionMatch::kNoMatch;
 }
 
-ConditionMatch FromBool(bool value) noexcept {
-    return value ? ConditionMatch::Match : ConditionMatch::NoMatch;
+ConditionMatch fromBool(bool value) noexcept {
+    return value ? ConditionMatch::kMatch : ConditionMatch::kNoMatch;
 }
 
 // ---------------------------------------------------------------------------
-// 内置条件字段表。GUID 抄自 Windows SDK fwpmu.h 的 FWPM_CONDITION_*。
+// Built-in condition field table. GUIDs copied from Windows SDK fwpmu.h's FWPM_CONDITION_*.
 // ---------------------------------------------------------------------------
 struct FieldTableEntry final {
     WfpFieldKind kind;
-    const char* guid;  // 已经是规范化形式（小写带花括号）
+    const char* guid;  // Already in normalized format (lowercase with braces).
     const char* name;
 };
 
 constexpr FieldTableEntry kFieldTable[] = {
-    { WfpFieldKind::IpLocalAddress,     "{d9ee00de-c1ef-4617-bfe3-ffd8f5a08957}", "FWPM_CONDITION_IP_LOCAL_ADDRESS" },
-    { WfpFieldKind::IpRemoteAddress,    "{b235ae9a-1d64-49b8-a44c-5ff3d9095045}", "FWPM_CONDITION_IP_REMOTE_ADDRESS" },
-    // 注意：FWPM_CONDITION_ICMP_TYPE 在 SDK 里就是 IP_LOCAL_PORT 的别名，
-    // FWPM_CONDITION_ICMP_CODE 是 IP_REMOTE_PORT 的别名。GUID 解不出"到底是哪个语义"，
-    // 只能按端口解释；真要区分得看所在 layer。这一点必须在 UI 上说明，不能装作端口。
-    { WfpFieldKind::IpLocalPort,        "{0c1ba1af-5765-453f-af22-a8f791ac775b}", "FWPM_CONDITION_IP_LOCAL_PORT" },
-    { WfpFieldKind::IpRemotePort,       "{c35a604d-d22b-4e1a-91b4-68f674ee674b}", "FWPM_CONDITION_IP_REMOTE_PORT" },
-    { WfpFieldKind::IpProtocol,         "{3971ef2b-623e-4f9a-8cb1-6e79b806b9a7}", "FWPM_CONDITION_IP_PROTOCOL" },
-    { WfpFieldKind::Direction,          "{8784c146-ca97-44d6-9fd1-19fb1840cbf7}", "FWPM_CONDITION_DIRECTION" },
-    { WfpFieldKind::AleAppId,           "{d78e1e87-8644-4ea5-9437-d809ecefc971}", "FWPM_CONDITION_ALE_APP_ID" },
-    { WfpFieldKind::AleUserId,          "{af043a0a-b34d-4f86-979c-c90371af6e66}", "FWPM_CONDITION_ALE_USER_ID" },
-    { WfpFieldKind::IpLocalAddressType, "{6ec7f6c4-376b-45d7-9e9c-d337cedcd237}", "FWPM_CONDITION_IP_LOCAL_ADDRESS_TYPE" },
-    { WfpFieldKind::Flags,              "{632ce23b-5167-435c-86d7-e903684aa80c}", "FWPM_CONDITION_FLAGS" },
+    { WfpFieldKind::kIpLocalAddress,     "{d9ee00de-c1ef-4617-bfe3-ffd8f5a08957}", "FWPM_CONDITION_IP_LOCAL_ADDRESS" },
+    { WfpFieldKind::kIpRemoteAddress,    "{b235ae9a-1d64-49b8-a44c-5ff3d9095045}", "FWPM_CONDITION_IP_REMOTE_ADDRESS" },
+    // Note: FWPM_CONDITION_ICMP_TYPE is an alias for IP_LOCAL_PORT in the SDK, and FWPM_CONDITION_ICMP_CODE is an alias
+    // for IP_REMOTE_PORT. The GUID cannot resolve the exact semantic meaning, so it must be interpreted as a port;
+    // distinguishing them requires checking the layer. This must be explicitly stated in the UI and not treated as a port.
+    { WfpFieldKind::kIpLocalPort,        "{0c1ba1af-5765-453f-af22-a8f791ac775b}", "FWPM_CONDITION_IP_LOCAL_PORT" },
+    { WfpFieldKind::kIpRemotePort,       "{c35a604d-d22b-4e1a-91b4-68f674ee674b}", "FWPM_CONDITION_IP_REMOTE_PORT" },
+    { WfpFieldKind::kIpProtocol,         "{3971ef2b-623e-4f9a-8cb1-6e79b806b9a7}", "FWPM_CONDITION_IP_PROTOCOL" },
+    { WfpFieldKind::kDirection,          "{8784c146-ca97-44d6-9fd1-19fb1840cbf7}", "FWPM_CONDITION_DIRECTION" },
+    { WfpFieldKind::kAleAppId,           "{d78e1e87-8644-4ea5-9437-d809ecefc971}", "FWPM_CONDITION_ALE_APP_ID" },
+    { WfpFieldKind::kAleUserId,          "{af043a0a-b34d-4f86-979c-c90371af6e66}", "FWPM_CONDITION_ALE_USER_ID" },
+    { WfpFieldKind::kIpLocalAddressType, "{6ec7f6c4-376b-45d7-9e9c-d337cedcd237}", "FWPM_CONDITION_IP_LOCAL_ADDRESS_TYPE" },
+    { WfpFieldKind::kFlags,              "{632ce23b-5167-435c-86d7-e903684aa80c}", "FWPM_CONDITION_FLAGS" },
 };
 
-// 本层真正能拿去判定一条连接的字段。IP_LOCAL_ADDRESS_TYPE / FLAGS 认得出名字，
-// 但连接描述里没有对应维度 —— 认得名字不等于能判定，必须退回 InsufficientInfo。
-bool FieldIsModeled(WfpFieldKind kind) noexcept {
+// Fields at this level that can actually be used to determine a connection. IP_LOCAL_ADDRESS_TYPE / FLAGS are recognized by name, but the
+// connection description lacks a corresponding dimension — recognizing a name does not imply determinability; must fall back to InsufficientInfo.
+bool fieldIsModeled(WfpFieldKind kind) noexcept {
     switch (kind) {
-    case WfpFieldKind::IpLocalAddress:
-    case WfpFieldKind::IpRemoteAddress:
-    case WfpFieldKind::IpLocalPort:
-    case WfpFieldKind::IpRemotePort:
-    case WfpFieldKind::IpProtocol:
-    case WfpFieldKind::Direction:
-    case WfpFieldKind::AleAppId:
-    case WfpFieldKind::AleUserId:
+    case WfpFieldKind::kIpLocalAddress:
+    case WfpFieldKind::kIpRemoteAddress:
+    case WfpFieldKind::kIpLocalPort:
+    case WfpFieldKind::kIpRemotePort:
+    case WfpFieldKind::kIpProtocol:
+    case WfpFieldKind::kDirection:
+    case WfpFieldKind::kAleAppId:
+    case WfpFieldKind::kAleUserId:
         return true;
-    case WfpFieldKind::IpLocalAddressType:
-    case WfpFieldKind::Flags:
-    case WfpFieldKind::Unknown:
+    case WfpFieldKind::kIpLocalAddressType:
+    case WfpFieldKind::kFlags:
+    case WfpFieldKind::kUnknown:
         return false;
     }
     return false;
 }
 
-bool DataTypeIsNumeric(WfpDataType type) noexcept {
+bool dataTypeIsNumeric(WfpDataType type) noexcept {
     switch (type) {
-    case WfpDataType::Uint8:
-    case WfpDataType::Uint16:
-    case WfpDataType::Uint32:
-    case WfpDataType::Uint64:
+    case WfpDataType::kUint8:
+    case WfpDataType::kUint16:
+    case WfpDataType::kUint32:
+    case WfpDataType::kUint64:
         return true;
-    case WfpDataType::Empty:
-    case WfpDataType::ByteArray16:
-    case WfpDataType::ByteBlob:
-    case WfpDataType::Sid:
-    case WfpDataType::V4AddrMask:
-    case WfpDataType::V6AddrMask:
-    case WfpDataType::Range:
-    case WfpDataType::Unknown:
+    case WfpDataType::kEmpty:
+    case WfpDataType::kByteArray16:
+    case WfpDataType::kByteBlob:
+    case WfpDataType::kSid:
+    case WfpDataType::kV4AddrMask:
+    case WfpDataType::kV6AddrMask:
+    case WfpDataType::kRange:
+    case WfpDataType::kUnknown:
         return false;
     }
     return false;
 }
 
 // ---------------------------------------------------------------------------
-// 条件签名：只用于 N-06 的两代对比，不参与任何匹配判定。
+// Condition signature: used only for generation comparison in N-06, not involved in any matching logic.
 // ---------------------------------------------------------------------------
-std::string ConditionSignature(const WfpCondition& condition) {
+std::string conditionSignature(const WfpCondition& condition) {
     std::string sig = condition.fieldKey.text;
     sig.push_back('|');
-    sig += FormatU64(condition.rawMatchCode, U64Format::Decimal);
+    sig += formatU64(condition.rawMatchCode, U64Format::kDecimal);
     sig.push_back('|');
-    sig += FormatU64(condition.value.rawTypeCode, U64Format::Decimal);
+    sig += formatU64(condition.value.rawTypeCode, U64Format::kDecimal);
     sig.push_back('|');
-    sig += FormatOptionalU64(condition.value.numeric, U64Format::Decimal);
+    sig += formatOptionalU64(condition.value.numeric, U64Format::kDecimal);
     sig.push_back('|');
     if (condition.value.v4Present) {
-        sig += FormatIpAddress(condition.value.v4.address);
+        sig += formatIpAddress(condition.value.v4.address);
         sig.push_back('/');
-        sig += FormatU64(condition.value.v4.mask, U64Format::Decimal);
+        sig += formatU64(condition.value.v4.mask, U64Format::kDecimal);
     }
     sig.push_back('|');
     if (condition.value.v6Present) {
-        sig += FormatIpAddress(condition.value.v6.address);
+        sig += formatIpAddress(condition.value.v6.address);
         sig.push_back('/');
-        sig += FormatU64(condition.value.v6.prefixLength, U64Format::Decimal);
+        sig += formatU64(condition.value.v6.prefixLength, U64Format::kDecimal);
     }
     sig.push_back('|');
     if (condition.value.blobText.present) {
@@ -201,16 +201,16 @@ std::string ConditionSignature(const WfpCondition& condition) {
     sig.push_back('|');
     sig += condition.value.rawText;
     sig.push_back('|');
-    sig += FormatOptionalU64(condition.value.range.low, U64Format::Decimal);
+    sig += formatOptionalU64(condition.value.range.low, U64Format::kDecimal);
     sig.push_back('-');
-    sig += FormatOptionalU64(condition.value.range.high, U64Format::Decimal);
+    sig += formatOptionalU64(condition.value.range.high, U64Format::kDecimal);
     return sig;
 }
 
-std::string FilterConditionsSignature(const WfpFilter& filter) {
+std::string filterConditionsSignature(const WfpFilter& filter) {
     std::string sig = filter.conditionsTruncated ? "truncated;" : "complete;";
     for (const WfpCondition& condition : filter.conditions) {
-        sig += ConditionSignature(condition);
+        sig += conditionSignature(condition);
         sig.push_back(';');
     }
     return sig;
@@ -219,9 +219,9 @@ std::string FilterConditionsSignature(const WfpFilter& filter) {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// 限制键
+// Limit key
 // ---------------------------------------------------------------------------
-bool HasLimitation(const std::vector<std::string>& keys, std::string_view key) noexcept {
+bool hasLimitation(const std::vector<std::string>& keys, std::string_view key) noexcept {
     for (const std::string& existing : keys) {
         if (std::string_view(existing) == key) {
             return true;
@@ -233,7 +233,7 @@ bool HasLimitation(const std::vector<std::string>& keys, std::string_view key) n
 // ---------------------------------------------------------------------------
 // GUID
 // ---------------------------------------------------------------------------
-bool ParseGuid(std::string_view text, WfpGuid& out) {
+bool parseGuid(std::string_view text, WfpGuid& out) {
     std::string_view body = text;
     if (body.size() >= 2 && body.front() == '{' && body.back() == '}') {
         body = body.substr(1, body.size() - 2);
@@ -251,47 +251,47 @@ bool ParseGuid(std::string_view text, WfpGuid& out) {
     normalized.reserve(38U);
     normalized.push_back('{');
     for (std::size_t i = 0; i < body.size(); ++i) {
-        const char c = body[i];
-        if (c == '-') {
+        const char kC = body[i];
+        if (kC == '-') {
             if (i != kHyphen[0] && i != kHyphen[1] && i != kHyphen[2] && i != kHyphen[3]) {
                 return false;
             }
             normalized.push_back('-');
             continue;
         }
-        if (HexDigit(c) < 0) {
+        if (hexDigit(kC) < 0) {
             return false;
         }
-        normalized.push_back(LowerAscii(c));
+        normalized.push_back(lowerAscii(kC));
     }
     normalized.push_back('}');
     out.text = std::move(normalized);
     return true;
 }
 
-WfpGuid GuidFromText(std::string_view text) {
+WfpGuid guidFromText(std::string_view text) {
     WfpGuid guid;
-    if (!ParseGuid(text, guid)) {
+    if (!parseGuid(text, guid)) {
         return WfpGuid{};
     }
     return guid;
 }
 
 // ---------------------------------------------------------------------------
-// 地址
+// address
 // ---------------------------------------------------------------------------
-const char* WfpAddressFamilyName(WfpAddressFamily family) noexcept {
+const char* wfpAddressFamilyName(WfpAddressFamily family) noexcept {
     switch (family) {
-    case WfpAddressFamily::Unknown: return "Unknown";
-    case WfpAddressFamily::IPv4:    return "IPv4";
-    case WfpAddressFamily::IPv6:    return "IPv6";
+    case WfpAddressFamily::kUnknown: return "Unknown";
+    case WfpAddressFamily::kIPv4:    return "IPv4";
+    case WfpAddressFamily::kIPv6:    return "IPv6";
     }
     return "Unknown";
 }
 
 WfpAddress WfpAddress::ipv4FromHostOrder(std::uint32_t hostOrder) noexcept {
     WfpAddress address;
-    address.family = WfpAddressFamily::IPv4;
+    address.family = WfpAddressFamily::kIPv4;
     address.bytes[0] = static_cast<std::uint8_t>((hostOrder >> 24) & 0xFFU);
     address.bytes[1] = static_cast<std::uint8_t>((hostOrder >> 16) & 0xFFU);
     address.bytes[2] = static_cast<std::uint8_t>((hostOrder >> 8) & 0xFFU);
@@ -301,7 +301,7 @@ WfpAddress WfpAddress::ipv4FromHostOrder(std::uint32_t hostOrder) noexcept {
 
 WfpAddress WfpAddress::ipv6FromBytes(const std::array<std::uint8_t, 16>& raw) noexcept {
     WfpAddress address;
-    address.family = WfpAddressFamily::IPv6;
+    address.family = WfpAddressFamily::kIPv6;
     address.bytes = raw;
     return address;
 }
@@ -310,11 +310,11 @@ bool operator==(const WfpAddress& a, const WfpAddress& b) noexcept {
     if (a.family != b.family) {
         return false;
     }
-    const std::size_t length = (a.family == WfpAddressFamily::IPv4) ? 4U : 16U;
-    if (a.family == WfpAddressFamily::Unknown) {
-        return true;  // 两个"未知"在结构上相等；调用方必须先看 known()
+    const std::size_t kLength = (a.family == WfpAddressFamily::kIPv4) ? 4U : 16U;
+    if (a.family == WfpAddressFamily::kUnknown) {
+        return true;  // Two "unknown" values are structurally equal; the caller must check known() first.
     }
-    for (std::size_t i = 0; i < length; ++i) {
+    for (std::size_t i = 0; i < kLength; ++i) {
         if (a.bytes[i] != b.bytes[i]) {
             return false;
         }
@@ -324,7 +324,7 @@ bool operator==(const WfpAddress& a, const WfpAddress& b) noexcept {
 
 namespace {
 
-bool ParseIpv4Bytes(std::string_view text, std::array<std::uint8_t, 4>& out) {
+bool parseIpv4Bytes(std::string_view text, std::array<std::uint8_t, 4>& out) {
     std::size_t pos = 0;
     for (std::size_t part = 0; part < 4U; ++part) {
         if (part > 0) {
@@ -333,7 +333,7 @@ bool ParseIpv4Bytes(std::string_view text, std::array<std::uint8_t, 4>& out) {
             }
             ++pos;
         }
-        const std::size_t start = pos;
+        const std::size_t kStart = pos;
         std::uint32_t value = 0;
         while (pos < text.size() && text[pos] >= '0' && text[pos] <= '9') {
             value = value * 10U + static_cast<std::uint32_t>(text[pos] - '0');
@@ -342,14 +342,14 @@ bool ParseIpv4Bytes(std::string_view text, std::array<std::uint8_t, 4>& out) {
             }
             ++pos;
         }
-        const std::size_t digits = pos - start;
-        if (digits == 0U || digits > 3U) {
+        const std::size_t kDigits = pos - kStart;
+        if (kDigits == 0U || kDigits > 3U) {
             return false;
         }
-        // N-02"显示与输入一致"：前导零一律拒绝，与 inet_pton 对齐。历史 inet_addr 会把
-        // "010" 按八进制解成 8，宽松接受就意味着 010.001.001.001 在本层显示成 10.1.1.1、
-        // 在系统接口里是 8.1.1.1 —— 同一串文本三种含义，还没有任何提示。
-        if (digits > 1U && text[start] == '0') {
+        // N-02 "Display must match input": Leading zeros are always rejected to align with inet_pton. Historically,
+        // inet_addr parsed "010" as octal 8. Accepting it loosely would cause "010.001.001.001" to display as
+        // 10.1.1.1 here but as 8.1.1.1 in the system interface—three meanings for the same string with no warning.
+        if (kDigits > 1U && text[kStart] == '0') {
             return false;
         }
         out[part] = static_cast<std::uint8_t>(value);
@@ -357,7 +357,7 @@ bool ParseIpv4Bytes(std::string_view text, std::array<std::uint8_t, 4>& out) {
     return pos == text.size();
 }
 
-bool ParseIpv6Bytes(std::string_view text, std::array<std::uint8_t, 16>& out) {
+bool parseIpv6Bytes(std::string_view text, std::array<std::uint8_t, 16>& out) {
     std::vector<std::uint8_t> head;
     std::vector<std::uint8_t> tail;
     bool sawDoubleColon = false;
@@ -378,21 +378,21 @@ bool ParseIpv6Bytes(std::string_view text, std::array<std::uint8_t, 16>& out) {
     }
 
     while (pos < text.size()) {
-        const std::size_t start = pos;
+        const std::size_t kStart = pos;
         while (pos < text.size() && text[pos] != ':') {
             ++pos;
         }
-        const std::string_view token = text.substr(start, pos - start);
-        if (token.empty()) {
+        const std::string_view kToken = text.substr(kStart, pos - kStart);
+        if (kToken.empty()) {
             return false;
         }
         std::vector<std::uint8_t>& target = inTail ? tail : head;
-        if (token.find('.') != std::string_view::npos) {
+        if (kToken.find('.') != std::string_view::npos) {
             if (pos != text.size()) {
-                return false;  // 内嵌 IPv4 只能出现在末尾
+                return false;  // Embedded IPv4 can only appear at the end.
             }
             std::array<std::uint8_t, 4> v4{};
-            if (!ParseIpv4Bytes(token, v4)) {
+            if (!parseIpv4Bytes(kToken, v4)) {
                 return false;
             }
             for (std::uint8_t byte : v4) {
@@ -400,16 +400,16 @@ bool ParseIpv6Bytes(std::string_view text, std::array<std::uint8_t, 16>& out) {
             }
             break;
         }
-        if (token.size() > 4U) {
+        if (kToken.size() > 4U) {
             return false;
         }
         std::uint32_t group = 0;
-        for (char c : token) {
-            const int digit = HexDigit(c);
-            if (digit < 0) {
+        for (char c : kToken) {
+            const int kDigit = hexDigit(c);
+            if (kDigit < 0) {
                 return false;
             }
-            group = group * 16U + static_cast<std::uint32_t>(digit);
+            group = group * 16U + static_cast<std::uint32_t>(kDigit);
         }
         target.push_back(static_cast<std::uint8_t>((group >> 8) & 0xFFU));
         target.push_back(static_cast<std::uint8_t>(group & 0xFFU));
@@ -417,7 +417,7 @@ bool ParseIpv6Bytes(std::string_view text, std::array<std::uint8_t, 16>& out) {
         if (pos == text.size()) {
             break;
         }
-        ++pos;  // 跳过 ':'
+        ++pos;  // Skip ':'.
         if (pos < text.size() && text[pos] == ':') {
             if (sawDoubleColon) {
                 return false;
@@ -426,19 +426,19 @@ bool ParseIpv6Bytes(std::string_view text, std::array<std::uint8_t, 16>& out) {
             inTail = true;
             ++pos;
             if (pos == text.size()) {
-                break;  // 结尾 "::"
+                break;  // Ends with "::"
             }
         } else if (pos == text.size()) {
-            return false;  // 结尾单个 ':'
+            return false;  // Single ':' at end
         }
     }
 
-    const std::size_t filled = head.size() + tail.size();
+    const std::size_t kFilled = head.size() + tail.size();
     if (sawDoubleColon) {
-        if (filled >= 16U) {
-            return false;  // "::" 至少要压掉一组
+        if (kFilled >= 16U) {
+            return false;  // "::" must consume at least one group.
         }
-    } else if (filled != 16U) {
+    } else if (kFilled != 16U) {
         return false;
     }
     out.fill(0U);
@@ -451,14 +451,14 @@ bool ParseIpv6Bytes(std::string_view text, std::array<std::uint8_t, 16>& out) {
     return true;
 }
 
-std::string FormatHexGroup(std::uint32_t group) {
+std::string formatHexGroup(std::uint32_t group) {
     static constexpr char kDigits[] = "0123456789abcdef";
     std::string text;
     bool started = false;
     for (int shift = 12; shift >= 0; shift -= 4) {
-        const std::uint32_t nibble = (group >> shift) & 0xFU;
-        if (nibble != 0U || started || shift == 0) {
-            text.push_back(kDigits[nibble]);
+        const std::uint32_t kNibble = (group >> shift) & 0xFU;
+        if (kNibble != 0U || started || shift == 0) {
+            text.push_back(kDigits[kNibble]);
             started = true;
         }
     }
@@ -467,24 +467,24 @@ std::string FormatHexGroup(std::uint32_t group) {
 
 } // namespace
 
-bool ParseIpAddress(std::string_view text, WfpAddress& out) {
+bool parseIpAddress(std::string_view text, WfpAddress& out) {
     if (text.empty()) {
         return false;
     }
     if (text.find(':') != std::string_view::npos) {
         std::array<std::uint8_t, 16> bytes{};
-        if (!ParseIpv6Bytes(text, bytes)) {
+        if (!parseIpv6Bytes(text, bytes)) {
             return false;
         }
         out = WfpAddress::ipv6FromBytes(bytes);
         return true;
     }
     std::array<std::uint8_t, 4> v4{};
-    if (!ParseIpv4Bytes(text, v4)) {
+    if (!parseIpv4Bytes(text, v4)) {
         return false;
     }
     WfpAddress address;
-    address.family = WfpAddressFamily::IPv4;
+    address.family = WfpAddressFamily::kIPv4;
     address.bytes.fill(0U);
     for (std::size_t i = 0; i < 4U; ++i) {
         address.bytes[i] = v4[i];
@@ -493,18 +493,18 @@ bool ParseIpAddress(std::string_view text, WfpAddress& out) {
     return true;
 }
 
-std::string FormatIpAddress(const WfpAddress& address) {
-    if (address.family == WfpAddressFamily::IPv4) {
+std::string formatIpAddress(const WfpAddress& address) {
+    if (address.family == WfpAddressFamily::kIPv4) {
         std::string text;
         for (std::size_t i = 0; i < 4U; ++i) {
             if (i > 0) {
                 text.push_back('.');
             }
-            text += FormatU64(address.bytes[i], U64Format::Decimal);
+            text += formatU64(address.bytes[i], U64Format::kDecimal);
         }
         return text;
     }
-    if (address.family != WfpAddressFamily::IPv6) {
+    if (address.family != WfpAddressFamily::kIPv6) {
         return std::string();
     }
 
@@ -513,7 +513,7 @@ std::string FormatIpAddress(const WfpAddress& address) {
         groups[i] = (static_cast<std::uint32_t>(address.bytes[i * 2U]) << 8) |
                     static_cast<std::uint32_t>(address.bytes[i * 2U + 1U]);
     }
-    // RFC 5952：压缩最长的零段（长度 >= 2），并列时取最左。
+    // RFC 5952: compress the longest zero segment (length >= 2); in case of a tie, take the leftmost one.
     std::size_t bestStart = 8U;
     std::size_t bestLength = 0;
     std::size_t runStart = 8U;
@@ -547,7 +547,7 @@ std::string FormatIpAddress(const WfpAddress& address) {
         if (!text.empty() && text.back() != ':') {
             text.push_back(':');
         }
-        text += FormatHexGroup(groups[i]);
+        text += formatHexGroup(groups[i]);
         ++i;
     }
     if (text.empty()) {
@@ -556,8 +556,8 @@ std::string FormatIpAddress(const WfpAddress& address) {
     return text;
 }
 
-bool Ipv4HostOrder(const WfpAddress& address, std::uint32_t& out) noexcept {
-    if (address.family != WfpAddressFamily::IPv4) {
+bool ipv4HostOrder(const WfpAddress& address, std::uint32_t& out) noexcept {
+    if (address.family != WfpAddressFamily::kIPv4) {
         return false;
     }
     out = (static_cast<std::uint32_t>(address.bytes[0]) << 24) |
@@ -567,11 +567,11 @@ bool Ipv4HostOrder(const WfpAddress& address, std::uint32_t& out) noexcept {
     return true;
 }
 
-bool MaskToPrefixLength(std::uint32_t mask, std::uint32_t& outPrefixLength) noexcept {
-    const std::uint32_t inverted = ~mask;
-    // 连续掩码的取反必然是 2^n - 1 形式；非连续掩码（例如 255.0.255.0）在这里被拒绝，
-    // 调用方必须继续按"掩码"展示，不能改说成前缀长度（N-02）。
-    if ((inverted & (inverted + 1U)) != 0U) {
+bool maskToPrefixLength(std::uint32_t mask, std::uint32_t& outPrefixLength) noexcept {
+    const std::uint32_t kInverted = ~mask;
+    // The bitwise negation of a contiguous mask is always of the form 2^n - 1. Non-contiguous masks (e.g., 255.0.255.0) are
+    // rejected here; the caller must continue presenting them as 'masks' and cannot convert them to prefix lengths (N-02).
+    if ((kInverted & (kInverted + 1U)) != 0U) {
         return false;
     }
     std::uint32_t bits = 0;
@@ -584,230 +584,230 @@ bool MaskToPrefixLength(std::uint32_t mask, std::uint32_t& outPrefixLength) noex
     return true;
 }
 
-const char* AddressContainmentName(AddressContainment containment) noexcept {
+const char* addressContainmentName(AddressContainment containment) noexcept {
     switch (containment) {
-    case AddressContainment::Inside:      return "Inside";
-    case AddressContainment::Outside:     return "Outside";
-    case AddressContainment::Undecidable: return "Undecidable";
+    case AddressContainment::kInside:      return "Inside";
+    case AddressContainment::kOutside:     return "Outside";
+    case AddressContainment::kUndecidable: return "Undecidable";
     }
     return "Undecidable";
 }
 
-AddressContainment ClassifyV4Containment(const WfpAddress& address, const WfpV4AddrMask& subnet) noexcept {
+AddressContainment classifyV4Containment(const WfpAddress& address, const WfpV4AddrMask& subnet) noexcept {
     std::uint32_t addressValue = 0;
     std::uint32_t networkValue = 0;
-    // 任一侧不是解出来的 IPv4 —— 包括"条件里带着 v4Present 但地址根本没解码"这种
-    // 离线样本 —— 都不构成"不在子网内"的证据。
-    if (!Ipv4HostOrder(address, addressValue) || !Ipv4HostOrder(subnet.address, networkValue)) {
-        return AddressContainment::Undecidable;
+    // If either side is not a resolved IPv4 address—including offline samples where v4Present is set in the
+    // condition but the address was never decoded—this does not constitute evidence of "not being in the subnet."
+    if (!ipv4HostOrder(address, addressValue) || !ipv4HostOrder(subnet.address, networkValue)) {
+        return AddressContainment::kUndecidable;
     }
-    return ((addressValue & subnet.mask) == (networkValue & subnet.mask)) ? AddressContainment::Inside
-                                                                         : AddressContainment::Outside;
+    return ((addressValue & subnet.mask) == (networkValue & subnet.mask)) ? AddressContainment::kInside
+                                                                         : AddressContainment::kOutside;
 }
 
-AddressContainment ClassifyV6Containment(const WfpAddress& address, const WfpV6AddrPrefix& prefix) noexcept {
-    if (address.family != WfpAddressFamily::IPv6 || prefix.address.family != WfpAddressFamily::IPv6) {
-        return AddressContainment::Undecidable;
+AddressContainment classifyV6Containment(const WfpAddress& address, const WfpV6AddrPrefix& prefix) noexcept {
+    if (address.family != WfpAddressFamily::kIPv6 || prefix.address.family != WfpAddressFamily::kIPv6) {
+        return AddressContainment::kUndecidable;
     }
     if (!prefix.prefixLengthValid || prefix.prefixLength > 128U) {
-        return AddressContainment::Undecidable;
+        return AddressContainment::kUndecidable;
     }
-    const std::size_t fullBytes = prefix.prefixLength / 8U;
-    const std::size_t remainingBits = prefix.prefixLength % 8U;
-    for (std::size_t i = 0; i < fullBytes; ++i) {
+    const std::size_t kFullBytes = prefix.prefixLength / 8U;
+    const std::size_t kRemainingBits = prefix.prefixLength % 8U;
+    for (std::size_t i = 0; i < kFullBytes; ++i) {
         if (address.bytes[i] != prefix.address.bytes[i]) {
-            return AddressContainment::Outside;
+            return AddressContainment::kOutside;
         }
     }
-    if (remainingBits == 0U) {
-        return AddressContainment::Inside;
+    if (kRemainingBits == 0U) {
+        return AddressContainment::kInside;
     }
-    const std::uint32_t mask = (0xFFU << (8U - remainingBits)) & 0xFFU;
-    return ((static_cast<std::uint32_t>(address.bytes[fullBytes]) & mask) ==
-            (static_cast<std::uint32_t>(prefix.address.bytes[fullBytes]) & mask))
-               ? AddressContainment::Inside
-               : AddressContainment::Outside;
+    const std::uint32_t kMask = (0xFFU << (8U - kRemainingBits)) & 0xFFU;
+    return ((static_cast<std::uint32_t>(address.bytes[kFullBytes]) & kMask) ==
+            (static_cast<std::uint32_t>(prefix.address.bytes[kFullBytes]) & kMask))
+               ? AddressContainment::kInside
+               : AddressContainment::kOutside;
 }
 
-bool AddressInV4Subnet(const WfpAddress& address, const WfpV4AddrMask& subnet) noexcept {
-    return ClassifyV4Containment(address, subnet) == AddressContainment::Inside;
+bool addressInV4Subnet(const WfpAddress& address, const WfpV4AddrMask& subnet) noexcept {
+    return classifyV4Containment(address, subnet) == AddressContainment::kInside;
 }
 
-bool AddressInV6Prefix(const WfpAddress& address, const WfpV6AddrPrefix& prefix) noexcept {
-    return ClassifyV6Containment(address, prefix) == AddressContainment::Inside;
+bool addressInV6Prefix(const WfpAddress& address, const WfpV6AddrPrefix& prefix) noexcept {
+    return classifyV6Containment(address, prefix) == AddressContainment::kInside;
 }
 
 // ---------------------------------------------------------------------------
-// 枚举名与解码
+// Enum name and decoding
 // ---------------------------------------------------------------------------
-const char* WfpDataTypeName(WfpDataType type) noexcept {
+const char* wfpDataTypeName(WfpDataType type) noexcept {
     switch (type) {
-    case WfpDataType::Empty:       return "Empty";
-    case WfpDataType::Uint8:       return "Uint8";
-    case WfpDataType::Uint16:      return "Uint16";
-    case WfpDataType::Uint32:      return "Uint32";
-    case WfpDataType::Uint64:      return "Uint64";
-    case WfpDataType::ByteArray16: return "ByteArray16";
-    case WfpDataType::ByteBlob:    return "ByteBlob";
-    case WfpDataType::Sid:         return "Sid";
-    case WfpDataType::V4AddrMask:  return "V4AddrMask";
-    case WfpDataType::V6AddrMask:  return "V6AddrMask";
-    case WfpDataType::Range:       return "Range";
-    case WfpDataType::Unknown:     return "Unknown";
+    case WfpDataType::kEmpty:       return "Empty";
+    case WfpDataType::kUint8:       return "Uint8";
+    case WfpDataType::kUint16:      return "Uint16";
+    case WfpDataType::kUint32:      return "Uint32";
+    case WfpDataType::kUint64:      return "Uint64";
+    case WfpDataType::kByteArray16: return "ByteArray16";
+    case WfpDataType::kByteBlob:    return "ByteBlob";
+    case WfpDataType::kSid:         return "Sid";
+    case WfpDataType::kV4AddrMask:  return "V4AddrMask";
+    case WfpDataType::kV6AddrMask:  return "V6AddrMask";
+    case WfpDataType::kRange:       return "Range";
+    case WfpDataType::kUnknown:     return "Unknown";
     }
     return "Unknown";
 }
 
-WfpDataType DecodeDataType(std::uint32_t rawTypeCode) noexcept {
-    // 数值来自 Windows SDK fwptypes.h 的 FWP_DATA_TYPE。
+WfpDataType decodeDataType(std::uint32_t rawTypeCode) noexcept {
+    // Values come from FWP_DATA_TYPE in the Windows SDK header fwptypes.h.
     switch (rawTypeCode) {
-    case 0U:     return WfpDataType::Empty;
-    case 1U:     return WfpDataType::Uint8;
-    case 2U:     return WfpDataType::Uint16;
-    case 3U:     return WfpDataType::Uint32;
-    case 4U:     return WfpDataType::Uint64;
-    case 11U:    return WfpDataType::ByteArray16;
-    case 12U:    return WfpDataType::ByteBlob;
-    case 13U:    return WfpDataType::Sid;
-    case 0x100U: return WfpDataType::V4AddrMask;
-    case 0x101U: return WfpDataType::V6AddrMask;
-    case 0x102U: return WfpDataType::Range;
+    case 0U:     return WfpDataType::kEmpty;
+    case 1U:     return WfpDataType::kUint8;
+    case 2U:     return WfpDataType::kUint16;
+    case 3U:     return WfpDataType::kUint32;
+    case 4U:     return WfpDataType::kUint64;
+    case 11U:    return WfpDataType::kByteArray16;
+    case 12U:    return WfpDataType::kByteBlob;
+    case 13U:    return WfpDataType::kSid;
+    case 0x100U: return WfpDataType::kV4AddrMask;
+    case 0x101U: return WfpDataType::kV6AddrMask;
+    case 0x102U: return WfpDataType::kRange;
     default:     break;
     }
-    return WfpDataType::Unknown;
+    return WfpDataType::kUnknown;
 }
 
-const char* WfpMatchTypeName(WfpMatchType match) noexcept {
+const char* wfpMatchTypeName(WfpMatchType match) noexcept {
     switch (match) {
-    case WfpMatchType::Equal:                return "Equal";
-    case WfpMatchType::Greater:              return "Greater";
-    case WfpMatchType::Less:                 return "Less";
-    case WfpMatchType::GreaterOrEqual:       return "GreaterOrEqual";
-    case WfpMatchType::LessOrEqual:          return "LessOrEqual";
-    case WfpMatchType::Range:                return "Range";
-    case WfpMatchType::FlagsAllSet:          return "FlagsAllSet";
-    case WfpMatchType::FlagsAnySet:          return "FlagsAnySet";
-    case WfpMatchType::FlagsNoneSet:         return "FlagsNoneSet";
-    case WfpMatchType::EqualCaseInsensitive: return "EqualCaseInsensitive";
-    case WfpMatchType::NotEqual:             return "NotEqual";
-    case WfpMatchType::Prefix:               return "Prefix";
-    case WfpMatchType::NotPrefix:            return "NotPrefix";
-    case WfpMatchType::Unknown:              return "Unknown";
+    case WfpMatchType::kEqual:                return "Equal";
+    case WfpMatchType::kGreater:              return "Greater";
+    case WfpMatchType::kLess:                 return "Less";
+    case WfpMatchType::kGreaterOrEqual:       return "GreaterOrEqual";
+    case WfpMatchType::kLessOrEqual:          return "LessOrEqual";
+    case WfpMatchType::kRange:                return "Range";
+    case WfpMatchType::kFlagsAllSet:          return "FlagsAllSet";
+    case WfpMatchType::kFlagsAnySet:          return "FlagsAnySet";
+    case WfpMatchType::kFlagsNoneSet:         return "FlagsNoneSet";
+    case WfpMatchType::kEqualCaseInsensitive: return "EqualCaseInsensitive";
+    case WfpMatchType::kNotEqual:             return "NotEqual";
+    case WfpMatchType::kPrefix:               return "Prefix";
+    case WfpMatchType::kNotPrefix:            return "NotPrefix";
+    case WfpMatchType::kUnknown:              return "Unknown";
     }
     return "Unknown";
 }
 
-WfpMatchType DecodeMatchType(std::uint32_t rawMatchCode) noexcept {
-    // 数值来自 FWP_MATCH_TYPE（0..12）。
+WfpMatchType decodeMatchType(std::uint32_t rawMatchCode) noexcept {
+    // Values are from FWP_MATCH_TYPE (0..12).
     switch (rawMatchCode) {
-    case 0U:  return WfpMatchType::Equal;
-    case 1U:  return WfpMatchType::Greater;
-    case 2U:  return WfpMatchType::Less;
-    case 3U:  return WfpMatchType::GreaterOrEqual;
-    case 4U:  return WfpMatchType::LessOrEqual;
-    case 5U:  return WfpMatchType::Range;
-    case 6U:  return WfpMatchType::FlagsAllSet;
-    case 7U:  return WfpMatchType::FlagsAnySet;
-    case 8U:  return WfpMatchType::FlagsNoneSet;
-    case 9U:  return WfpMatchType::EqualCaseInsensitive;
-    case 10U: return WfpMatchType::NotEqual;
-    case 11U: return WfpMatchType::Prefix;
-    case 12U: return WfpMatchType::NotPrefix;
+    case 0U:  return WfpMatchType::kEqual;
+    case 1U:  return WfpMatchType::kGreater;
+    case 2U:  return WfpMatchType::kLess;
+    case 3U:  return WfpMatchType::kGreaterOrEqual;
+    case 4U:  return WfpMatchType::kLessOrEqual;
+    case 5U:  return WfpMatchType::kRange;
+    case 6U:  return WfpMatchType::kFlagsAllSet;
+    case 7U:  return WfpMatchType::kFlagsAnySet;
+    case 8U:  return WfpMatchType::kFlagsNoneSet;
+    case 9U:  return WfpMatchType::kEqualCaseInsensitive;
+    case 10U: return WfpMatchType::kNotEqual;
+    case 11U: return WfpMatchType::kPrefix;
+    case 12U: return WfpMatchType::kNotPrefix;
     default:  break;
     }
-    return WfpMatchType::Unknown;
+    return WfpMatchType::kUnknown;
 }
 
-const char* WfpDirectionName(WfpDirection direction) noexcept {
+const char* wfpDirectionName(WfpDirection direction) noexcept {
     switch (direction) {
-    case WfpDirection::Unknown:  return "Unknown";
-    case WfpDirection::Outbound: return "Outbound";
-    case WfpDirection::Inbound:  return "Inbound";
-    case WfpDirection::Forward:  return "Forward";
+    case WfpDirection::kUnknown:  return "Unknown";
+    case WfpDirection::kOutbound: return "Outbound";
+    case WfpDirection::kInbound:  return "Inbound";
+    case WfpDirection::kForward:  return "Forward";
     }
     return "Unknown";
 }
 
-WfpDirection DecodeDirectionValue(std::uint64_t rawValue) noexcept {
-    // FWP_DIRECTION_ 只定义 OUTBOUND=0 / INBOUND=1。2 是 FWP_DIRECTION_MAX，不是 FORWARD。
+WfpDirection decodeDirectionValue(std::uint64_t rawValue) noexcept {
+    // FWP_DIRECTION_ only defines OUTBOUND=0 and INBOUND=1. 2 is FWP_DIRECTION_MAX, not FORWARD.
     switch (rawValue) {
-    case 0U: return WfpDirection::Outbound;
-    case 1U: return WfpDirection::Inbound;
+    case 0U: return WfpDirection::kOutbound;
+    case 1U: return WfpDirection::kInbound;
     default: break;
     }
-    return WfpDirection::Unknown;
+    return WfpDirection::kUnknown;
 }
 
-const char* WfpActionTypeName(WfpActionType action) noexcept {
+const char* wfpActionTypeName(WfpActionType action) noexcept {
     switch (action) {
-    case WfpActionType::Unknown:            return "Unknown";
-    case WfpActionType::Block:              return "Block";
-    case WfpActionType::Permit:             return "Permit";
-    case WfpActionType::CalloutTerminating: return "CalloutTerminating";
-    case WfpActionType::CalloutInspection:  return "CalloutInspection";
-    case WfpActionType::CalloutUnknown:     return "CalloutUnknown";
-    case WfpActionType::Continue:           return "Continue";
-    case WfpActionType::None:               return "None";
-    case WfpActionType::NoneNoMatch:        return "NoneNoMatch";
+    case WfpActionType::kUnknown:            return "Unknown";
+    case WfpActionType::kBlock:              return "Block";
+    case WfpActionType::kPermit:             return "Permit";
+    case WfpActionType::kCalloutTerminating: return "CalloutTerminating";
+    case WfpActionType::kCalloutInspection:  return "CalloutInspection";
+    case WfpActionType::kCalloutUnknown:     return "CalloutUnknown";
+    case WfpActionType::kContinue:           return "Continue";
+    case WfpActionType::kNone:               return "None";
+    case WfpActionType::kNoneNoMatch:        return "NoneNoMatch";
     }
     return "Unknown";
 }
 
-WfpActionType DecodeActionType(std::uint32_t rawActionCode) noexcept {
-    // FWP_ACTION_* = 低位序号 | 标志位。标志位不同的同序号不是同一个动作，
-    // 因此这里按完整常量比对，而不是只看低 8 位。
+WfpActionType decodeActionType(std::uint32_t rawActionCode) noexcept {
+    // FWP_ACTION_* = low-order sequence number | flags. Actions with the same sequence number but different flags
+    // are not the same action; therefore, compare against the full constant here, not just the lower 8 bits.
     constexpr std::uint32_t kFlagTerminating = 0x00001000U;
     constexpr std::uint32_t kFlagNonTerminating = 0x00002000U;
     constexpr std::uint32_t kFlagCallout = 0x00004000U;
     switch (rawActionCode) {
-    case 0x00000001U | kFlagTerminating:                  return WfpActionType::Block;
-    case 0x00000002U | kFlagTerminating:                  return WfpActionType::Permit;
-    case 0x00000003U | kFlagCallout | kFlagTerminating:   return WfpActionType::CalloutTerminating;
-    case 0x00000004U | kFlagCallout | kFlagNonTerminating: return WfpActionType::CalloutInspection;
-    case 0x00000005U | kFlagCallout:                      return WfpActionType::CalloutUnknown;
-    case 0x00000006U | kFlagNonTerminating:               return WfpActionType::Continue;
-    case 0x00000007U:                                     return WfpActionType::None;
-    case 0x00000008U:                                     return WfpActionType::NoneNoMatch;
+    case 0x00000001U | kFlagTerminating:                  return WfpActionType::kBlock;
+    case 0x00000002U | kFlagTerminating:                  return WfpActionType::kPermit;
+    case 0x00000003U | kFlagCallout | kFlagTerminating:   return WfpActionType::kCalloutTerminating;
+    case 0x00000004U | kFlagCallout | kFlagNonTerminating: return WfpActionType::kCalloutInspection;
+    case 0x00000005U | kFlagCallout:                      return WfpActionType::kCalloutUnknown;
+    case 0x00000006U | kFlagNonTerminating:               return WfpActionType::kContinue;
+    case 0x00000007U:                                     return WfpActionType::kNone;
+    case 0x00000008U:                                     return WfpActionType::kNoneNoMatch;
     default: break;
     }
-    return WfpActionType::Unknown;
+    return WfpActionType::kUnknown;
 }
 
-bool ActionIsCallout(WfpActionType action) noexcept {
+bool actionIsCallout(WfpActionType action) noexcept {
     switch (action) {
-    case WfpActionType::CalloutTerminating:
-    case WfpActionType::CalloutInspection:
-    case WfpActionType::CalloutUnknown:
+    case WfpActionType::kCalloutTerminating:
+    case WfpActionType::kCalloutInspection:
+    case WfpActionType::kCalloutUnknown:
         return true;
-    case WfpActionType::Unknown:
-    case WfpActionType::Block:
-    case WfpActionType::Permit:
-    case WfpActionType::Continue:
-    case WfpActionType::None:
-    case WfpActionType::NoneNoMatch:
+    case WfpActionType::kUnknown:
+    case WfpActionType::kBlock:
+    case WfpActionType::kPermit:
+    case WfpActionType::kContinue:
+    case WfpActionType::kNone:
+    case WfpActionType::kNoneNoMatch:
         return false;
     }
     return false;
 }
 
-const char* WfpFieldKindName(WfpFieldKind kind) noexcept {
+const char* wfpFieldKindName(WfpFieldKind kind) noexcept {
     switch (kind) {
-    case WfpFieldKind::Unknown:            return "Unknown";
-    case WfpFieldKind::IpLocalAddress:     return "IpLocalAddress";
-    case WfpFieldKind::IpRemoteAddress:    return "IpRemoteAddress";
-    case WfpFieldKind::IpLocalPort:        return "IpLocalPort";
-    case WfpFieldKind::IpRemotePort:       return "IpRemotePort";
-    case WfpFieldKind::IpProtocol:         return "IpProtocol";
-    case WfpFieldKind::Direction:          return "Direction";
-    case WfpFieldKind::AleAppId:           return "AleAppId";
-    case WfpFieldKind::AleUserId:          return "AleUserId";
-    case WfpFieldKind::IpLocalAddressType: return "IpLocalAddressType";
-    case WfpFieldKind::Flags:              return "Flags";
+    case WfpFieldKind::kUnknown:            return "Unknown";
+    case WfpFieldKind::kIpLocalAddress:     return "IpLocalAddress";
+    case WfpFieldKind::kIpRemoteAddress:    return "IpRemoteAddress";
+    case WfpFieldKind::kIpLocalPort:        return "IpLocalPort";
+    case WfpFieldKind::kIpRemotePort:       return "IpRemotePort";
+    case WfpFieldKind::kIpProtocol:         return "IpProtocol";
+    case WfpFieldKind::kDirection:          return "Direction";
+    case WfpFieldKind::kAleAppId:           return "AleAppId";
+    case WfpFieldKind::kAleUserId:          return "AleUserId";
+    case WfpFieldKind::kIpLocalAddressType: return "IpLocalAddressType";
+    case WfpFieldKind::kFlags:              return "Flags";
     }
     return "Unknown";
 }
 
-WfpFieldDescriptor LookupFieldByGuid(const WfpGuid& fieldKey) noexcept {
+WfpFieldDescriptor lookupFieldByGuid(const WfpGuid& fieldKey) noexcept {
     WfpFieldDescriptor descriptor;
     if (!fieldKey.known()) {
         return descriptor;
@@ -822,188 +822,188 @@ WfpFieldDescriptor LookupFieldByGuid(const WfpGuid& fieldKey) noexcept {
     return descriptor;
 }
 
-WfpGuid FieldGuidFor(WfpFieldKind kind) {
+WfpGuid fieldGuidFor(WfpFieldKind kind) {
     for (const FieldTableEntry& entry : kFieldTable) {
         if (entry.kind == kind) {
-            return GuidFromText(entry.guid);
+            return guidFromText(entry.guid);
         }
     }
     return WfpGuid{};
 }
 
-const char* WfpWeightKindName(WfpWeightKind kind) noexcept {
+const char* wfpWeightKindName(WfpWeightKind kind) noexcept {
     switch (kind) {
-    case WfpWeightKind::Unknown:  return "Unknown";
-    case WfpWeightKind::Auto:     return "Auto";
-    case WfpWeightKind::Explicit: return "Explicit";
+    case WfpWeightKind::kUnknown:  return "Unknown";
+    case WfpWeightKind::kAuto:     return "Auto";
+    case WfpWeightKind::kExplicit: return "Explicit";
     }
     return "Unknown";
 }
 
-const char* WfpPartitionName(WfpPartition partition) noexcept {
+const char* wfpPartitionName(WfpPartition partition) noexcept {
     switch (partition) {
-    case WfpPartition::Providers: return "Providers";
-    case WfpPartition::SubLayers: return "SubLayers";
-    case WfpPartition::Layers:    return "Layers";
-    case WfpPartition::Filters:   return "Filters";
-    case WfpPartition::Callouts:  return "Callouts";
+    case WfpPartition::kProviders: return "Providers";
+    case WfpPartition::kSubLayers: return "SubLayers";
+    case WfpPartition::kLayers:    return "Layers";
+    case WfpPartition::kFilters:   return "Filters";
+    case WfpPartition::kCallouts:  return "Callouts";
     }
     return "Providers";
 }
 
-const char* ReferenceStateName(ReferenceState state) noexcept {
+const char* referenceStateName(ReferenceState state) noexcept {
     switch (state) {
-    case ReferenceState::Resolved:            return "Resolved";
-    case ReferenceState::UnknownObject:       return "UnknownObject";
-    case ReferenceState::Ambiguous:           return "Ambiguous";
-    case ReferenceState::NotSpecified:        return "NotSpecified";
-    case ReferenceState::CatalogNotCollected: return "CatalogNotCollected";
-    case ReferenceState::CatalogIncomplete:   return "CatalogIncomplete";
+    case ReferenceState::kResolved:            return "Resolved";
+    case ReferenceState::kUnknownObject:       return "UnknownObject";
+    case ReferenceState::kAmbiguous:           return "Ambiguous";
+    case ReferenceState::kNotSpecified:        return "NotSpecified";
+    case ReferenceState::kCatalogNotCollected: return "CatalogNotCollected";
+    case ReferenceState::kCatalogIncomplete:   return "CatalogIncomplete";
     }
     return "NotSpecified";
 }
 
-const char* ConditionMatchName(ConditionMatch match) noexcept {
+const char* conditionMatchName(ConditionMatch match) noexcept {
     switch (match) {
-    case ConditionMatch::Match:            return "Match";
-    case ConditionMatch::NoMatch:          return "NoMatch";
-    case ConditionMatch::InsufficientInfo: return "InsufficientInfo";
+    case ConditionMatch::kMatch:            return "Match";
+    case ConditionMatch::kNoMatch:          return "NoMatch";
+    case ConditionMatch::kInsufficientInfo: return "InsufficientInfo";
     }
     return "InsufficientInfo";
 }
 
-const char* WeightOrderConfidenceName(WeightOrderConfidence confidence) noexcept {
+const char* weightOrderConfidenceName(WeightOrderConfidence confidence) noexcept {
     switch (confidence) {
-    case WeightOrderConfidence::Unknown:         return "Unknown";
-    case WeightOrderConfidence::ExplicitWeight:  return "ExplicitWeight";
-    case WeightOrderConfidence::EffectiveWeight: return "EffectiveWeight";
+    case WeightOrderConfidence::kUnknown:         return "Unknown";
+    case WeightOrderConfidence::kExplicitWeight:  return "ExplicitWeight";
+    case WeightOrderConfidence::kEffectiveWeight: return "EffectiveWeight";
     }
     return "Unknown";
 }
 
-const char* CandidateDecisionName(CandidateDecision decision) noexcept {
+const char* candidateDecisionName(CandidateDecision decision) noexcept {
     switch (decision) {
-    case CandidateDecision::Unknown:          return "Unknown";
-    case CandidateDecision::NoMatchingFilter: return "NoMatchingFilter";
-    case CandidateDecision::BlockCandidate:   return "BlockCandidate";
-    case CandidateDecision::PermitCandidate:  return "PermitCandidate";
+    case CandidateDecision::kUnknown:          return "Unknown";
+    case CandidateDecision::kNoMatchingFilter: return "NoMatchingFilter";
+    case CandidateDecision::kBlockCandidate:   return "BlockCandidate";
+    case CandidateDecision::kPermitCandidate:  return "PermitCandidate";
     }
     return "Unknown";
 }
 
-const char* ObservationSourceName(ObservationSource source) noexcept {
+const char* observationSourceName(ObservationSource source) noexcept {
     switch (source) {
-    case ObservationSource::Unknown:              return "Unknown";
-    case ObservationSource::WfpNetEventEnum:      return "WfpNetEventEnum";
-    case ObservationSource::WfpNetEventSubscribe: return "WfpNetEventSubscribe";
-    case ObservationSource::KernelAleCallout:     return "KernelAleCallout";
-    case ObservationSource::EtwProvider:          return "EtwProvider";
-    case ObservationSource::SecurityAuditLog:     return "SecurityAuditLog";
-    case ObservationSource::OfflineImport:        return "OfflineImport";
+    case ObservationSource::kUnknown:              return "Unknown";
+    case ObservationSource::kWfpNetEventEnum:      return "WfpNetEventEnum";
+    case ObservationSource::kWfpNetEventSubscribe: return "WfpNetEventSubscribe";
+    case ObservationSource::kKernelAleCallout:     return "KernelAleCallout";
+    case ObservationSource::kEtwProvider:          return "EtwProvider";
+    case ObservationSource::kSecurityAuditLog:     return "SecurityAuditLog";
+    case ObservationSource::kOfflineImport:        return "OfflineImport";
     }
     return "Unknown";
 }
 
-const char* WfpEventVerdictName(WfpEventVerdict verdict) noexcept {
+const char* wfpEventVerdictName(WfpEventVerdict verdict) noexcept {
     switch (verdict) {
-    case WfpEventVerdict::Unknown:   return "Unknown";
-    case WfpEventVerdict::Permitted: return "Permitted";
-    case WfpEventVerdict::Blocked:   return "Blocked";
+    case WfpEventVerdict::kUnknown:   return "Unknown";
+    case WfpEventVerdict::kPermitted: return "Permitted";
+    case WfpEventVerdict::kBlocked:   return "Blocked";
     }
     return "Unknown";
 }
 
-const char* ObservationTrustName(ObservationTrust trust) noexcept {
+const char* observationTrustName(ObservationTrust trust) noexcept {
     switch (trust) {
-    case ObservationTrust::ActualObservation: return "ActualObservation";
-    case ObservationTrust::SourceUnknown:     return "SourceUnknown";
-    case ObservationTrust::SourceUnsupported: return "SourceUnsupported";
-    case ObservationTrust::SourceNotEnabled:  return "SourceNotEnabled";
+    case ObservationTrust::kActualObservation: return "ActualObservation";
+    case ObservationTrust::kSourceUnknown:     return "SourceUnknown";
+    case ObservationTrust::kSourceUnsupported: return "SourceUnsupported";
+    case ObservationTrust::kSourceNotEnabled:  return "SourceNotEnabled";
     }
     return "SourceUnknown";
 }
 
-const char* FilterLinkStateName(FilterLinkState state) noexcept {
+const char* filterLinkStateName(FilterLinkState state) noexcept {
     switch (state) {
-    case FilterLinkState::LinkedByGuid:                    return "LinkedByGuid";
-    case FilterLinkState::LinkedByRuntimeIdSameGeneration: return "LinkedByRuntimeIdSameGeneration";
-    case FilterLinkState::RejectedIdReused:                return "RejectedIdReused";
-    case FilterLinkState::RejectedStaleGeneration:         return "RejectedStaleGeneration";
-    case FilterLinkState::RejectedAmbiguous:               return "RejectedAmbiguous";
-    case FilterLinkState::NoMatch:                         return "NoMatch";
-    case FilterLinkState::CatalogNotCollected:             return "CatalogNotCollected";
-    case FilterLinkState::CatalogIncomplete:               return "CatalogIncomplete";
-    case FilterLinkState::NotSpecified:                    return "NotSpecified";
+    case FilterLinkState::kLinkedByGuid:                    return "LinkedByGuid";
+    case FilterLinkState::kLinkedByRuntimeIdSameGeneration: return "LinkedByRuntimeIdSameGeneration";
+    case FilterLinkState::kRejectedIdReused:                return "RejectedIdReused";
+    case FilterLinkState::kRejectedStaleGeneration:         return "RejectedStaleGeneration";
+    case FilterLinkState::kRejectedAmbiguous:               return "RejectedAmbiguous";
+    case FilterLinkState::kNoMatch:                         return "NoMatch";
+    case FilterLinkState::kCatalogNotCollected:             return "CatalogNotCollected";
+    case FilterLinkState::kCatalogIncomplete:               return "CatalogIncomplete";
+    case FilterLinkState::kNotSpecified:                    return "NotSpecified";
     }
     return "NotSpecified";
 }
 
-const char* WfpNavigationRejectionName(WfpNavigationRejection rejection) noexcept {
+const char* wfpNavigationRejectionName(WfpNavigationRejection rejection) noexcept {
     switch (rejection) {
-    case WfpNavigationRejection::None:              return "None";
-    case WfpNavigationRejection::TargetPageMissing: return "TargetPageMissing";
-    case WfpNavigationRejection::ObjectNotPresent:  return "ObjectNotPresent";
-    case WfpNavigationRejection::IdentityUnusable:  return "IdentityUnusable";
-    case WfpNavigationRejection::EvidenceIdMissing: return "EvidenceIdMissing";
-    case WfpNavigationRejection::EvidenceNotSaved:  return "EvidenceNotSaved";
-    case WfpNavigationRejection::SourceNotTrusted:  return "SourceNotTrusted";
+    case WfpNavigationRejection::kNone:              return "None";
+    case WfpNavigationRejection::kTargetPageMissing: return "TargetPageMissing";
+    case WfpNavigationRejection::kObjectNotPresent:  return "ObjectNotPresent";
+    case WfpNavigationRejection::kIdentityUnusable:  return "IdentityUnusable";
+    case WfpNavigationRejection::kEvidenceIdMissing: return "EvidenceIdMissing";
+    case WfpNavigationRejection::kEvidenceNotSaved:  return "EvidenceNotSaved";
+    case WfpNavigationRejection::kSourceNotTrusted:  return "SourceNotTrusted";
     }
     return "ObjectNotPresent";
 }
 
-const char* CatalogChangeKindName(CatalogChangeKind kind) noexcept {
+const char* catalogChangeKindName(CatalogChangeKind kind) noexcept {
     switch (kind) {
-    case CatalogChangeKind::Added:             return "Added";
-    case CatalogChangeKind::Removed:           return "Removed";
-    case CatalogChangeKind::ActionChanged:     return "ActionChanged";
-    case CatalogChangeKind::WeightChanged:     return "WeightChanged";
-    case CatalogChangeKind::ConditionsChanged: return "ConditionsChanged";
-    case CatalogChangeKind::RuntimeIdReused:   return "RuntimeIdReused";
-    case CatalogChangeKind::PresenceUnknown:   return "PresenceUnknown";
+    case CatalogChangeKind::kAdded:             return "Added";
+    case CatalogChangeKind::kRemoved:           return "Removed";
+    case CatalogChangeKind::kActionChanged:     return "ActionChanged";
+    case CatalogChangeKind::kWeightChanged:     return "WeightChanged";
+    case CatalogChangeKind::kConditionsChanged: return "ConditionsChanged";
+    case CatalogChangeKind::kRuntimeIdReused:   return "RuntimeIdReused";
+    case CatalogChangeKind::kPresenceUnknown:   return "PresenceUnknown";
     }
     return "PresenceUnknown";
 }
 
-const char* WfpOwnerAttributionName(WfpOwnerAttribution attribution) noexcept {
+const char* wfpOwnerAttributionName(WfpOwnerAttribution attribution) noexcept {
     switch (attribution) {
-    case WfpOwnerAttribution::Unknown:        return "Unknown";
-    case WfpOwnerAttribution::Candidate:      return "Candidate";
-    case WfpOwnerAttribution::DirectEvidence: return "DirectEvidence";
+    case WfpOwnerAttribution::kUnknown:        return "Unknown";
+    case WfpOwnerAttribution::kCandidate:      return "Candidate";
+    case WfpOwnerAttribution::kDirectEvidence: return "DirectEvidence";
     }
     return "Unknown";
 }
 
 // ---------------------------------------------------------------------------
-// 条件
+// Condition
 // ---------------------------------------------------------------------------
 bool WfpCondition::interpreted() const noexcept {
-    return field != WfpFieldKind::Unknown && match != WfpMatchType::Unknown &&
-           value.type != WfpDataType::Unknown;
+    return field != WfpFieldKind::kUnknown && match != WfpMatchType::kUnknown &&
+           value.type != WfpDataType::kUnknown;
 }
 
 bool WfpCondition::evaluable() const noexcept {
-    return interpreted() && FieldIsModeled(field);
+    return interpreted() && fieldIsModeled(field);
 }
 
-WfpCondition MakeCondition(const WfpGuid& fieldKey, std::uint32_t rawMatchCode, WfpConditionValue value) {
+WfpCondition makeCondition(const WfpGuid& fieldKey, std::uint32_t rawMatchCode, WfpConditionValue value) {
     WfpCondition condition;
     condition.fieldKey = fieldKey;
-    const WfpFieldDescriptor descriptor = LookupFieldByGuid(fieldKey);
-    condition.field = descriptor.kind;
-    condition.fieldName = descriptor.name;
+    const WfpFieldDescriptor kDescriptor = lookupFieldByGuid(fieldKey);
+    condition.field = kDescriptor.kind;
+    condition.fieldName = kDescriptor.name;
     condition.rawMatchCode = rawMatchCode;
-    condition.match = DecodeMatchType(rawMatchCode);
+    condition.match = decodeMatchType(rawMatchCode);
     condition.value = std::move(value);
     return condition;
 }
 
 // ---------------------------------------------------------------------------
-// N-05 归因
+// N-05 attribution
 // ---------------------------------------------------------------------------
-OwnerAttributionResult DeriveOwnerAttribution(const OwnerEvidence& evidence) {
+OwnerAttributionResult deriveOwnerAttribution(const OwnerEvidence& evidence) {
     OwnerAttributionResult result;
 
-    // 签名信息只有真的读到才出现。没读到就是没读到，不因为"名字像微软"而补一个证书。
+    // Signature info only appears if actually read. If not read, it's not read; a certificate isn't added just because the name looks like Microsoft's.
     result.signerCertificateAvailable = evidence.signerCertificateRead && evidence.signerSubject.present;
     if (result.signerCertificateAvailable) {
         result.signerSubject = evidence.signerSubject;
@@ -1013,54 +1013,54 @@ OwnerAttributionResult DeriveOwnerAttribution(const OwnerEvidence& evidence) {
         result.serviceName = evidence.serviceName;
     }
     if (evidence.displayNameAmbiguous) {
-        AddKey(result.limitationKeys, "wfp.owner.ambiguous-display-name");
+        addKey(result.limitationKeys, "wfp.owner.ambiguous-display-name");
     }
 
-    const bool hasModuleAddress = evidence.moduleAddress.present;
-    const bool hasDirectModule =
-        hasModuleAddress && evidence.moduleResolved && evidence.resolvedModulePath.present;
+    const bool kHasModuleAddress = evidence.moduleAddress.present;
+    const bool kHasDirectModule =
+        kHasModuleAddress && evidence.moduleResolved && evidence.resolvedModulePath.present;
 
-    if (hasDirectModule) {
-        // 直接证据：地址落在某个已加载映像范围内，能指名文件。
-        result.attribution = WfpOwnerAttribution::DirectEvidence;
+    if (kHasDirectModule) {
+        // Direct evidence: the address falls within a range of a loaded image, identifying the file.
+        result.attribution = WfpOwnerAttribution::kDirectEvidence;
         result.ownerModulePath = evidence.resolvedModulePath;
         return result;
     }
 
-    if (hasModuleAddress) {
-        // 有地址但没有映像覆盖它 —— 典型是模块已卸载。地址本身留着，但不敢指名文件。
-        AddKey(result.limitationKeys, "wfp.owner.module-unresolved");
+    if (kHasModuleAddress) {
+        // Has an address but no image to cover it — typically the module has been unloaded. Keep the address, but do not name the file.
+        addKey(result.limitationKeys, "wfp.owner.module-unresolved");
     }
 
     if (evidence.serviceRecordFound && evidence.serviceImagePath.present) {
-        // 服务配置说的是"这个服务应该加载谁"，不是"这段代码就是它"。只能是候选。
-        result.attribution = WfpOwnerAttribution::Candidate;
+        // The service configuration specifies 'who should be loaded by this service', not 'this code is it'. It can only be a candidate.
+        result.attribution = WfpOwnerAttribution::kCandidate;
         result.candidateModulePath = evidence.serviceImagePath;
         return result;
     }
 
     if (evidence.serviceName.present && !evidence.serviceRecordFound) {
-        AddKey(result.limitationKeys, "wfp.owner.service-not-found");
-        result.attribution = WfpOwnerAttribution::Unknown;
+        addKey(result.limitationKeys, "wfp.owner.service-not-found");
+        result.attribution = WfpOwnerAttribution::kUnknown;
         return result;
     }
 
     if (evidence.displayName.present) {
-        // 只有显示名。N-05 明确禁止凭名称猜驱动文件。
-        AddKey(result.limitationKeys, "wfp.owner.name-only");
-        result.attribution = WfpOwnerAttribution::Unknown;
+        // Display name only. N-05 explicitly forbids guessing driver files by name.
+        addKey(result.limitationKeys, "wfp.owner.name-only");
+        result.attribution = WfpOwnerAttribution::kUnknown;
         return result;
     }
 
-    if (!hasModuleAddress) {
-        AddKey(result.limitationKeys, "wfp.owner.no-evidence");
+    if (!kHasModuleAddress) {
+        addKey(result.limitationKeys, "wfp.owner.no-evidence");
     }
-    result.attribution = WfpOwnerAttribution::Unknown;
+    result.attribution = WfpOwnerAttribution::kUnknown;
     return result;
 }
 
 // ---------------------------------------------------------------------------
-// 目录
+// Catalog
 // ---------------------------------------------------------------------------
 void WfpCatalog::setPartitionState(WfpPartition partition, CollectionOutcome outcome, CoverageAccount coverage) {
     WfpPartitionState& state = partitions_[static_cast<std::size_t>(partition)];
@@ -1074,19 +1074,19 @@ const WfpPartitionState& WfpCatalog::partitionState(WfpPartition partition) cons
 
 bool WfpCatalog::partitionUsableForAbsence(WfpPartition partition) const noexcept {
     const WfpPartitionState& state = partitionState(partition);
-    if (state.outcome.status != CollectionStatus::Success) {
+    if (state.outcome.status != CollectionStatus::kSuccess) {
         return false;
     }
-    // F-06：完整覆盖需要正面证据。账目一字未填 = 未知覆盖 ≠ 完整枚举。
+    // F-06: Full coverage requires positive evidence. An empty ledger = unknown coverage ≠ full enumeration.
     return state.coverage.fullyCovered();
 }
 
 bool WfpCatalog::registerKey(Index& index, const WfpGuid& key, std::size_t position) {
     if (!key.known()) {
-        return true;  // 没有 GUID 的行进不了索引；它只能靠运行时 id 或根本不可关联。
+        return true;  // Rows without GUID cannot enter the index; they rely solely on runtime IDs or remain unassociatable.
     }
-    const auto inserted = index.byGuid.emplace(key.text, position);
-    if (!inserted.second) {
+    const auto kInserted = index.byGuid.emplace(key.text, position);
+    if (!kInserted.second) {
         index.duplicated[key.text] = true;
         return false;
     }
@@ -1098,76 +1098,76 @@ WfpCatalog::IndexHit WfpCatalog::lookup(const Index& index,
                                         WfpPartition partition) const {
     IndexHit hit;
     if (!key.known()) {
-        hit.state = ReferenceState::NotSpecified;
+        hit.state = ReferenceState::kNotSpecified;
         return hit;
     }
     if (index.duplicated.find(key.text) != index.duplicated.end()) {
-        hit.state = ReferenceState::Ambiguous;
+        hit.state = ReferenceState::kAmbiguous;
         return hit;
     }
-    const auto it = index.byGuid.find(key.text);
-    if (it != index.byGuid.end()) {
-        hit.state = ReferenceState::Resolved;
+    const auto kIt = index.byGuid.find(key.text);
+    if (kIt != index.byGuid.end()) {
+        hit.state = ReferenceState::kResolved;
         hit.hasPosition = true;
-        hit.position = it->second;
+        hit.position = kIt->second;
         return hit;
     }
-    // N-06：只有能**正面证明枚举完整**的分区，"目录里没有"才等于"这个对象不存在"。
-    // 判据必须与 AnalyzeStaticCandidates / DiffCatalogs 一致地走 partitionUsableForAbsence：
-    // StatusCarriesObservation 对 Partial 返回 true，用它会把只枚举到 1/9 的分区
-    // 当成"目录可用"，从而对一个 GUID 宣称"未知对象"（语义是目录里确实没有）。
+    // N-06: Only partitions that can positively prove complete enumeration allow "not found in directory" to imply "object does not exist".
+    // The criterion must consistently follow partitionUsableForAbsence alongside analyzeStaticCandidates and diffCatalogs:
+    // statusCarriesObservation returns true for Partial; using it would treat a partition enumerated to only 1/9 as 'directory
+    // available', thereby claiming 'unknown object' for a GUID (semantically meaning the directory truly contains nothing).
     if (partitionUsableForAbsence(partition)) {
-        hit.state = ReferenceState::UnknownObject;
+        hit.state = ReferenceState::kUnknownObject;
         return hit;
     }
-    hit.state = StatusCarriesObservation(partitionState(partition).outcome.status)
-                    ? ReferenceState::CatalogIncomplete
-                    : ReferenceState::CatalogNotCollected;
+    hit.state = statusCarriesObservation(partitionState(partition).outcome.status)
+                    ? ReferenceState::kCatalogIncomplete
+                    : ReferenceState::kCatalogNotCollected;
     return hit;
 }
 
 bool WfpCatalog::addProvider(WfpProvider provider) {
-    const std::size_t position = providers_.size();
-    const bool unique = registerKey(providerIndex_, provider.providerKey, position);
+    const std::size_t kPosition = providers_.size();
+    const bool kUnique = registerKey(providerIndex_, provider.providerKey, kPosition);
     providers_.push_back(std::move(provider));
-    return unique;
+    return kUnique;
 }
 
 bool WfpCatalog::addSubLayer(WfpSubLayer subLayer) {
-    const std::size_t position = subLayers_.size();
-    const bool unique = registerKey(subLayerIndex_, subLayer.subLayerKey, position);
+    const std::size_t kPosition = subLayers_.size();
+    const bool kUnique = registerKey(subLayerIndex_, subLayer.subLayerKey, kPosition);
     subLayers_.push_back(std::move(subLayer));
-    return unique;
+    return kUnique;
 }
 
 bool WfpCatalog::addLayer(WfpLayer layer) {
-    const std::size_t position = layers_.size();
-    const bool unique = registerKey(layerIndex_, layer.layerKey, position);
+    const std::size_t kPosition = layers_.size();
+    const bool kUnique = registerKey(layerIndex_, layer.layerKey, kPosition);
     layers_.push_back(std::move(layer));
-    return unique;
+    return kUnique;
 }
 
 bool WfpCatalog::addCallout(WfpCallout callout) {
-    const std::size_t position = callouts_.size();
-    const bool unique = registerKey(calloutIndex_, callout.calloutKey, position);
+    const std::size_t kPosition = callouts_.size();
+    const bool kUnique = registerKey(calloutIndex_, callout.calloutKey, kPosition);
     callouts_.push_back(std::move(callout));
-    return unique;
+    return kUnique;
 }
 
 bool WfpCatalog::addFilter(WfpFilter filter) {
-    const std::size_t position = filters_.size();
-    const bool unique = registerKey(filterIndex_, filter.filterKey, position);
+    const std::size_t kPosition = filters_.size();
+    const bool kUnique = registerKey(filterIndex_, filter.filterKey, kPosition);
     filters_.push_back(std::move(filter));
-    return unique;
+    return kUnique;
 }
 
 ObjectReference WfpCatalog::resolveProvider(const WfpGuid& key) const {
     ObjectReference reference;
     reference.key = key;
-    const IndexHit hit = lookup(providerIndex_, key, WfpPartition::Providers);
-    reference.state = hit.state;
-    if (hit.hasPosition) {
-        reference.resolvedName = providers_[hit.position].displayName;
+    const IndexHit kHit = lookup(providerIndex_, key, WfpPartition::kProviders);
+    reference.state = kHit.state;
+    if (kHit.hasPosition) {
+        reference.resolvedName = providers_[kHit.position].displayName;
     }
     return reference;
 }
@@ -1175,10 +1175,10 @@ ObjectReference WfpCatalog::resolveProvider(const WfpGuid& key) const {
 ObjectReference WfpCatalog::resolveSubLayer(const WfpGuid& key) const {
     ObjectReference reference;
     reference.key = key;
-    const IndexHit hit = lookup(subLayerIndex_, key, WfpPartition::SubLayers);
-    reference.state = hit.state;
-    if (hit.hasPosition) {
-        reference.resolvedName = subLayers_[hit.position].displayName;
+    const IndexHit kHit = lookup(subLayerIndex_, key, WfpPartition::kSubLayers);
+    reference.state = kHit.state;
+    if (kHit.hasPosition) {
+        reference.resolvedName = subLayers_[kHit.position].displayName;
     }
     return reference;
 }
@@ -1186,10 +1186,10 @@ ObjectReference WfpCatalog::resolveSubLayer(const WfpGuid& key) const {
 ObjectReference WfpCatalog::resolveLayer(const WfpGuid& key) const {
     ObjectReference reference;
     reference.key = key;
-    const IndexHit hit = lookup(layerIndex_, key, WfpPartition::Layers);
-    reference.state = hit.state;
-    if (hit.hasPosition) {
-        reference.resolvedName = layers_[hit.position].displayName;
+    const IndexHit kHit = lookup(layerIndex_, key, WfpPartition::kLayers);
+    reference.state = kHit.state;
+    if (kHit.hasPosition) {
+        reference.resolvedName = layers_[kHit.position].displayName;
     }
     return reference;
 }
@@ -1197,10 +1197,10 @@ ObjectReference WfpCatalog::resolveLayer(const WfpGuid& key) const {
 ObjectReference WfpCatalog::resolveCallout(const WfpGuid& key) const {
     ObjectReference reference;
     reference.key = key;
-    const IndexHit hit = lookup(calloutIndex_, key, WfpPartition::Callouts);
-    reference.state = hit.state;
-    if (hit.hasPosition) {
-        reference.resolvedName = callouts_[hit.position].displayName;
+    const IndexHit kHit = lookup(calloutIndex_, key, WfpPartition::kCallouts);
+    reference.state = kHit.state;
+    if (kHit.hasPosition) {
+        reference.resolvedName = callouts_[kHit.position].displayName;
     }
     return reference;
 }
@@ -1208,10 +1208,10 @@ ObjectReference WfpCatalog::resolveCallout(const WfpGuid& key) const {
 ObjectReference WfpCatalog::resolveFilter(const WfpGuid& key) const {
     ObjectReference reference;
     reference.key = key;
-    const IndexHit hit = lookup(filterIndex_, key, WfpPartition::Filters);
-    reference.state = hit.state;
-    if (hit.hasPosition) {
-        reference.resolvedName = filters_[hit.position].displayName;
+    const IndexHit kHit = lookup(filterIndex_, key, WfpPartition::kFilters);
+    reference.state = kHit.state;
+    if (kHit.hasPosition) {
+        reference.resolvedName = filters_[kHit.position].displayName;
     }
     return reference;
 }
@@ -1219,7 +1219,7 @@ ObjectReference WfpCatalog::resolveFilter(const WfpGuid& key) const {
 std::vector<WfpGuid> WfpCatalog::findProvidersByDisplayName(std::string_view name) const {
     std::vector<WfpGuid> matches;
     for (const WfpProvider& provider : providers_) {
-        if (provider.displayName.present && EqualsIgnoreCase(provider.displayName.value, name)) {
+        if (provider.displayName.present && equalsIgnoreCase(provider.displayName.value, name)) {
             matches.push_back(provider.providerKey);
         }
     }
@@ -1229,7 +1229,7 @@ std::vector<WfpGuid> WfpCatalog::findProvidersByDisplayName(std::string_view nam
 std::vector<WfpGuid> WfpCatalog::findCalloutsByDisplayName(std::string_view name) const {
     std::vector<WfpGuid> matches;
     for (const WfpCallout& callout : callouts_) {
-        if (callout.displayName.present && EqualsIgnoreCase(callout.displayName.value, name)) {
+        if (callout.displayName.present && equalsIgnoreCase(callout.displayName.value, name)) {
             matches.push_back(callout.calloutKey);
         }
     }
@@ -1272,381 +1272,381 @@ OwnerEvidence WfpCatalog::calloutOwnerEvidence(std::size_t calloutIndex) const {
 }
 
 // ---------------------------------------------------------------------------
-// N-02 / N-03：单条条件求值
+// N-02 / N-03: single condition evaluation
 // ---------------------------------------------------------------------------
 namespace {
 
-ConditionMatch CompareNumeric(WfpMatchType match,
+ConditionMatch compareNumeric(WfpMatchType match,
                               std::uint64_t actual,
                               const WfpConditionValue& value,
                               std::vector<std::string>& keys) {
-    if (match == WfpMatchType::Range) {
-        if (value.type != WfpDataType::Range) {
-            AddKey(keys, "wfp.condition.value-type-mismatch");
-            return ConditionMatch::InsufficientInfo;
+    if (match == WfpMatchType::kRange) {
+        if (value.type != WfpDataType::kRange) {
+            addKey(keys, "wfp.condition.value-type-mismatch");
+            return ConditionMatch::kInsufficientInfo;
         }
         if (!value.range.numeric) {
-            // 端点不是数值（原文保留在 rawLow/rawHigh）—— 无从比较，不猜。
-            AddKey(keys, "wfp.condition.range-not-numeric");
-            return ConditionMatch::InsufficientInfo;
+            // The endpoint is not numeric (original values remain in rawLow/rawHigh) — no comparison is possible, so do not guess.
+            addKey(keys, "wfp.condition.range-not-numeric");
+            return ConditionMatch::kInsufficientInfo;
         }
         if (!value.range.low.present || !value.range.high.present) {
-            // "缺端点"与"类型错配"是两回事，混用一个键会让 UI 说不清到底缺了什么。
-            AddKey(keys, "wfp.condition.range-endpoint-missing");
-            return ConditionMatch::InsufficientInfo;
+            // "Missing endpoint" and "type mismatch" are distinct issues; using a single key for both makes the UI unable to clarify what is missing.
+            addKey(keys, "wfp.condition.range-endpoint-missing");
+            return ConditionMatch::kInsufficientInfo;
         }
         if (value.range.low.value > value.range.high.value) {
-            // low > high 是非法/读坏的 FWP_RANGE0。`actual >= low && actual <= high`
-            // 对任何 actual 都恒为 false，会变成一条"确定的不匹配"，让该 filter 在
-            // DecideWithinSubLayer 里被直接跳过，把仲裁结论让给权重更低的规则。
-            AddKey(keys, "wfp.condition.invalid-range");
-            return ConditionMatch::InsufficientInfo;
+            // low > high is an invalid/corrupt FWP_RANGE0. `actual >= low && actual <= high` is always false
+            // for any actual, becoming a "certain mismatch" that causes the filter to be skipped directly in
+            // decideWithinSubLayer, passing the arbitration decision to rules with lower weight.
+            addKey(keys, "wfp.condition.invalid-range");
+            return ConditionMatch::kInsufficientInfo;
         }
-        return FromBool(actual >= value.range.low.value && actual <= value.range.high.value);
+        return fromBool(actual >= value.range.low.value && actual <= value.range.high.value);
     }
-    if (!DataTypeIsNumeric(value.type) || !value.numeric.present) {
-        AddKey(keys, "wfp.condition.value-type-mismatch");
-        return ConditionMatch::InsufficientInfo;
+    if (!dataTypeIsNumeric(value.type) || !value.numeric.present) {
+        addKey(keys, "wfp.condition.value-type-mismatch");
+        return ConditionMatch::kInsufficientInfo;
     }
-    const std::uint64_t expected = value.numeric.value;
+    const std::uint64_t kExpected = value.numeric.value;
     switch (match) {
-    case WfpMatchType::Equal:
-        return FromBool(actual == expected);
-    case WfpMatchType::NotEqual:
-        return FromBool(actual != expected);
-    case WfpMatchType::Greater:
-        return FromBool(actual > expected);
-    case WfpMatchType::Less:
-        return FromBool(actual < expected);
-    case WfpMatchType::GreaterOrEqual:
-        return FromBool(actual >= expected);
-    case WfpMatchType::LessOrEqual:
-        return FromBool(actual <= expected);
-    case WfpMatchType::EqualCaseInsensitive:
-    case WfpMatchType::FlagsAllSet:
-    case WfpMatchType::FlagsAnySet:
-    case WfpMatchType::FlagsNoneSet:
-    case WfpMatchType::Prefix:
-    case WfpMatchType::NotPrefix:
-        // 端口/协议这类标量上的位标志与前缀比较本层不建模，绝不猜。
-        AddKey(keys, "wfp.condition.match-not-modeled");
-        return ConditionMatch::InsufficientInfo;
-    case WfpMatchType::Range:
-    case WfpMatchType::Unknown:
+    case WfpMatchType::kEqual:
+        return fromBool(actual == kExpected);
+    case WfpMatchType::kNotEqual:
+        return fromBool(actual != kExpected);
+    case WfpMatchType::kGreater:
+        return fromBool(actual > kExpected);
+    case WfpMatchType::kLess:
+        return fromBool(actual < kExpected);
+    case WfpMatchType::kGreaterOrEqual:
+        return fromBool(actual >= kExpected);
+    case WfpMatchType::kLessOrEqual:
+        return fromBool(actual <= kExpected);
+    case WfpMatchType::kEqualCaseInsensitive:
+    case WfpMatchType::kFlagsAllSet:
+    case WfpMatchType::kFlagsAnySet:
+    case WfpMatchType::kFlagsNoneSet:
+    case WfpMatchType::kPrefix:
+    case WfpMatchType::kNotPrefix:
+        // Bit flags on scalar types like ports/protocols and prefix comparisons are not modeled at this layer; never guess.
+        addKey(keys, "wfp.condition.match-not-modeled");
+        return ConditionMatch::kInsufficientInfo;
+    case WfpMatchType::kRange:
+    case WfpMatchType::kUnknown:
         break;
     }
-    AddKey(keys, "wfp.condition.unknown-match");
-    return ConditionMatch::InsufficientInfo;
+    addKey(keys, "wfp.condition.unknown-match");
+    return ConditionMatch::kInsufficientInfo;
 }
 
-bool MatchIsNegated(WfpMatchType match) noexcept {
-    return match == WfpMatchType::NotEqual || match == WfpMatchType::NotPrefix;
+bool matchIsNegated(WfpMatchType match) noexcept {
+    return match == WfpMatchType::kNotEqual || match == WfpMatchType::kNotPrefix;
 }
 
-ConditionMatch CompareAddress(WfpMatchType match,
+ConditionMatch compareAddress(WfpMatchType match,
                               const WfpAddress& actual,
                               const WfpConditionValue& value,
                               std::vector<std::string>& keys) {
-    const bool negated = MatchIsNegated(match);
-    if (match != WfpMatchType::Equal && !negated) {
-        if (match == WfpMatchType::Range) {
-            AddKey(keys, "wfp.condition.address-range-not-modeled");
+    const bool kNegated = matchIsNegated(match);
+    if (match != WfpMatchType::kEqual && !kNegated) {
+        if (match == WfpMatchType::kRange) {
+            addKey(keys, "wfp.condition.address-range-not-modeled");
         } else {
-            AddKey(keys, "wfp.condition.match-not-modeled");
+            addKey(keys, "wfp.condition.match-not-modeled");
         }
-        return ConditionMatch::InsufficientInfo;
+        return ConditionMatch::kInsufficientInfo;
     }
 
-    WfpAddressFamily conditionFamily = WfpAddressFamily::Unknown;
+    WfpAddressFamily conditionFamily = WfpAddressFamily::kUnknown;
     switch (value.type) {
-    case WfpDataType::V4AddrMask:
-    case WfpDataType::Uint32:
-        conditionFamily = WfpAddressFamily::IPv4;
+    case WfpDataType::kV4AddrMask:
+    case WfpDataType::kUint32:
+        conditionFamily = WfpAddressFamily::kIPv4;
         break;
-    case WfpDataType::V6AddrMask:
-    case WfpDataType::ByteArray16:
-        conditionFamily = WfpAddressFamily::IPv6;
+    case WfpDataType::kV6AddrMask:
+    case WfpDataType::kByteArray16:
+        conditionFamily = WfpAddressFamily::kIPv6;
         break;
-    case WfpDataType::Empty:
-    case WfpDataType::Uint8:
-    case WfpDataType::Uint16:
-    case WfpDataType::Uint64:
-    case WfpDataType::ByteBlob:
-    case WfpDataType::Sid:
-    case WfpDataType::Range:
-    case WfpDataType::Unknown:
-        AddKey(keys, "wfp.condition.value-type-mismatch");
-        return ConditionMatch::InsufficientInfo;
+    case WfpDataType::kEmpty:
+    case WfpDataType::kUint8:
+    case WfpDataType::kUint16:
+    case WfpDataType::kUint64:
+    case WfpDataType::kByteBlob:
+    case WfpDataType::kSid:
+    case WfpDataType::kRange:
+    case WfpDataType::kUnknown:
+        addKey(keys, "wfp.condition.value-type-mismatch");
+        return ConditionMatch::kInsufficientInfo;
     }
 
-    // N-02：先确认条件值里的网络地址**真的解出来了**，再谈比较。
-    // WfpConditionValue.v4/v6 的 address 默认 family==Unknown，而 ParseIpAddress 失败时
-    // 按设计不修改 out —— 离线样本里一条地址文本解析失败就会留下 v4Present=true 加一个
-    // 未知族的地址。放过去的话包含判定会返回一个"确定的 false"，再被 NOT_EQUAL 取反成
-    // Match：等于从一个根本没读出来的地址推出了"阻断候选"。
+    // N-02: First confirm that the network address in the condition value is truly resolved before performing comparisons.
+    // WfpConditionValue.v4/v6 address defaults to family==Unknown, and when parseIpAddress fails, it does not modify the output
+    // by design — in offline samples, a single failed address text parse leaves v4Present=true with an address of unknown family.
+    // Passing this through causes the inclusion check to return a 'definite false', which is then inverted by NOT_EQUAL to
+    // Match: Deriving a 'blocking candidate' from an address that was never read.
     switch (value.type) {
-    case WfpDataType::V4AddrMask:
+    case WfpDataType::kV4AddrMask:
         if (!value.v4Present) {
-            AddKey(keys, "wfp.condition.value-type-mismatch");
-            return ConditionMatch::InsufficientInfo;
+            addKey(keys, "wfp.condition.value-type-mismatch");
+            return ConditionMatch::kInsufficientInfo;
         }
         if (!value.v4.address.known()) {
-            AddKey(keys, "wfp.condition.address-not-decoded");
-            return ConditionMatch::InsufficientInfo;
+            addKey(keys, "wfp.condition.address-not-decoded");
+            return ConditionMatch::kInsufficientInfo;
         }
         break;
-    case WfpDataType::V6AddrMask:
+    case WfpDataType::kV6AddrMask:
         if (!value.v6Present) {
-            AddKey(keys, "wfp.condition.value-type-mismatch");
-            return ConditionMatch::InsufficientInfo;
+            addKey(keys, "wfp.condition.value-type-mismatch");
+            return ConditionMatch::kInsufficientInfo;
         }
         if (!value.v6.address.known()) {
-            AddKey(keys, "wfp.condition.address-not-decoded");
-            return ConditionMatch::InsufficientInfo;
+            addKey(keys, "wfp.condition.address-not-decoded");
+            return ConditionMatch::kInsufficientInfo;
         }
         if (!value.v6.prefixLengthValid) {
-            AddKey(keys, "wfp.condition.invalid-prefix-length");
-            return ConditionMatch::InsufficientInfo;
+            addKey(keys, "wfp.condition.invalid-prefix-length");
+            return ConditionMatch::kInsufficientInfo;
         }
         break;
-    case WfpDataType::ByteArray16:
+    case WfpDataType::kByteArray16:
         if (!value.singleAddress.known()) {
-            AddKey(keys, "wfp.condition.address-not-decoded");
-            return ConditionMatch::InsufficientInfo;
+            addKey(keys, "wfp.condition.address-not-decoded");
+            return ConditionMatch::kInsufficientInfo;
         }
         break;
-    case WfpDataType::Uint32:
+    case WfpDataType::kUint32:
         if (!value.numeric.present) {
-            AddKey(keys, "wfp.condition.value-type-mismatch");
-            return ConditionMatch::InsufficientInfo;
+            addKey(keys, "wfp.condition.value-type-mismatch");
+            return ConditionMatch::kInsufficientInfo;
         }
         break;
-    case WfpDataType::Empty:
-    case WfpDataType::Uint8:
-    case WfpDataType::Uint16:
-    case WfpDataType::Uint64:
-    case WfpDataType::ByteBlob:
-    case WfpDataType::Sid:
-    case WfpDataType::Range:
-    case WfpDataType::Unknown:
-        AddKey(keys, "wfp.condition.value-type-mismatch");
-        return ConditionMatch::InsufficientInfo;
+    case WfpDataType::kEmpty:
+    case WfpDataType::kUint8:
+    case WfpDataType::kUint16:
+    case WfpDataType::kUint64:
+    case WfpDataType::kByteBlob:
+    case WfpDataType::kSid:
+    case WfpDataType::kRange:
+    case WfpDataType::kUnknown:
+        addKey(keys, "wfp.condition.value-type-mismatch");
+        return ConditionMatch::kInsufficientInfo;
     }
 
     if (conditionFamily != actual.family) {
-        // 正向比较：v4 子网装不下一个 v6 地址，判 NoMatch 是有依据的。
-        // 否定比较：跨地址族的"不等于"本层不做真值断言，保持未知。
-        if (negated) {
-            AddKey(keys, "wfp.condition.address-family-mismatch");
-            return ConditionMatch::InsufficientInfo;
+        // Forward comparison: A v4 subnet cannot contain a v6 address, so returning NoMatch is justified.
+        // Negated comparison: For 'not equal' across address families, this layer does not assert a truth value and keeps the result unknown.
+        if (kNegated) {
+            addKey(keys, "wfp.condition.address-family-mismatch");
+            return ConditionMatch::kInsufficientInfo;
         }
-        AddKey(keys, "wfp.condition.address-family-mismatch");
-        return ConditionMatch::NoMatch;
+        addKey(keys, "wfp.condition.address-family-mismatch");
+        return ConditionMatch::kNoMatch;
     }
 
-    ConditionMatch positive = ConditionMatch::InsufficientInfo;
+    ConditionMatch positive = ConditionMatch::kInsufficientInfo;
     switch (value.type) {
-    case WfpDataType::V4AddrMask: {
-        // 三态：Undecidable 绝不能塌成 NoMatch —— NegateMatch 会把它翻成 Match。
-        const AddressContainment containment = ClassifyV4Containment(actual, value.v4);
-        if (containment == AddressContainment::Undecidable) {
-            AddKey(keys, "wfp.condition.address-not-decoded");
-            return ConditionMatch::InsufficientInfo;
+    case WfpDataType::kV4AddrMask: {
+        // Three-state logic: Undecidable must never collapse to NoMatch — negateMatch would flip it to Match.
+        const AddressContainment kContainment = classifyV4Containment(actual, value.v4);
+        if (kContainment == AddressContainment::kUndecidable) {
+            addKey(keys, "wfp.condition.address-not-decoded");
+            return ConditionMatch::kInsufficientInfo;
         }
-        positive = FromBool(containment == AddressContainment::Inside);
+        positive = fromBool(kContainment == AddressContainment::kInside);
         break;
     }
-    case WfpDataType::Uint32: {
-        const WfpAddress expected =
+    case WfpDataType::kUint32: {
+        const WfpAddress kExpected =
             WfpAddress::ipv4FromHostOrder(static_cast<std::uint32_t>(value.numeric.value & 0xFFFFFFFFULL));
-        positive = FromBool(actual == expected);
+        positive = fromBool(actual == kExpected);
         break;
     }
-    case WfpDataType::V6AddrMask: {
-        const AddressContainment containment = ClassifyV6Containment(actual, value.v6);
-        if (containment == AddressContainment::Undecidable) {
-            AddKey(keys, "wfp.condition.address-not-decoded");
-            return ConditionMatch::InsufficientInfo;
+    case WfpDataType::kV6AddrMask: {
+        const AddressContainment kContainment = classifyV6Containment(actual, value.v6);
+        if (kContainment == AddressContainment::kUndecidable) {
+            addKey(keys, "wfp.condition.address-not-decoded");
+            return ConditionMatch::kInsufficientInfo;
         }
-        positive = FromBool(containment == AddressContainment::Inside);
+        positive = fromBool(kContainment == AddressContainment::kInside);
         break;
     }
-    case WfpDataType::ByteArray16:
-        positive = FromBool(actual == value.singleAddress);
+    case WfpDataType::kByteArray16:
+        positive = fromBool(actual == value.singleAddress);
         break;
-    case WfpDataType::Empty:
-    case WfpDataType::Uint8:
-    case WfpDataType::Uint16:
-    case WfpDataType::Uint64:
-    case WfpDataType::ByteBlob:
-    case WfpDataType::Sid:
-    case WfpDataType::Range:
-    case WfpDataType::Unknown:
-        AddKey(keys, "wfp.condition.value-type-mismatch");
-        return ConditionMatch::InsufficientInfo;
+    case WfpDataType::kEmpty:
+    case WfpDataType::kUint8:
+    case WfpDataType::kUint16:
+    case WfpDataType::kUint64:
+    case WfpDataType::kByteBlob:
+    case WfpDataType::kSid:
+    case WfpDataType::kRange:
+    case WfpDataType::kUnknown:
+        addKey(keys, "wfp.condition.value-type-mismatch");
+        return ConditionMatch::kInsufficientInfo;
     }
-    return negated ? NegateMatch(positive) : positive;
+    return kNegated ? negateMatch(positive) : positive;
 }
 
-ConditionMatch CompareText(WfpMatchType match,
+ConditionMatch compareText(WfpMatchType match,
                            std::string_view actual,
                            std::string_view expected,
                            std::vector<std::string>& keys) {
     switch (match) {
-    case WfpMatchType::Equal:
-    case WfpMatchType::EqualCaseInsensitive:
-        // AppId / SID 在 WFP 里就是大小写不敏感比较。
-        return FromBool(EqualsIgnoreCase(actual, expected));
-    case WfpMatchType::NotEqual:
-        return FromBool(!EqualsIgnoreCase(actual, expected));
-    case WfpMatchType::Prefix:
-        return FromBool(StartsWithIgnoreCase(actual, expected));
-    case WfpMatchType::NotPrefix:
-        return FromBool(!StartsWithIgnoreCase(actual, expected));
-    case WfpMatchType::Greater:
-    case WfpMatchType::Less:
-    case WfpMatchType::GreaterOrEqual:
-    case WfpMatchType::LessOrEqual:
-    case WfpMatchType::Range:
-    case WfpMatchType::FlagsAllSet:
-    case WfpMatchType::FlagsAnySet:
-    case WfpMatchType::FlagsNoneSet:
-        AddKey(keys, "wfp.condition.match-not-modeled");
-        return ConditionMatch::InsufficientInfo;
-    case WfpMatchType::Unknown:
+    case WfpMatchType::kEqual:
+    case WfpMatchType::kEqualCaseInsensitive:
+        // AppId and SID in WFP use case-insensitive comparison.
+        return fromBool(equalsIgnoreCase(actual, expected));
+    case WfpMatchType::kNotEqual:
+        return fromBool(!equalsIgnoreCase(actual, expected));
+    case WfpMatchType::kPrefix:
+        return fromBool(startsWithIgnoreCase(actual, expected));
+    case WfpMatchType::kNotPrefix:
+        return fromBool(!startsWithIgnoreCase(actual, expected));
+    case WfpMatchType::kGreater:
+    case WfpMatchType::kLess:
+    case WfpMatchType::kGreaterOrEqual:
+    case WfpMatchType::kLessOrEqual:
+    case WfpMatchType::kRange:
+    case WfpMatchType::kFlagsAllSet:
+    case WfpMatchType::kFlagsAnySet:
+    case WfpMatchType::kFlagsNoneSet:
+        addKey(keys, "wfp.condition.match-not-modeled");
+        return ConditionMatch::kInsufficientInfo;
+    case WfpMatchType::kUnknown:
         break;
     }
-    AddKey(keys, "wfp.condition.unknown-match");
-    return ConditionMatch::InsufficientInfo;
+    addKey(keys, "wfp.condition.unknown-match");
+    return ConditionMatch::kInsufficientInfo;
 }
 
 } // namespace
 
-ConditionEvaluation EvaluateCondition(const WfpCondition& condition, const ConnectionDescription& connection) {
+ConditionEvaluation evaluateCondition(const WfpCondition& condition, const ConnectionDescription& connection) {
     ConditionEvaluation evaluation;
     evaluation.condition = condition;
-    evaluation.result = ConditionMatch::InsufficientInfo;
+    evaluation.result = ConditionMatch::kInsufficientInfo;
 
-    // N-02 核心陷阱：没读懂的条件不是"无条件匹配"，而是"信息不足"。
-    if (condition.field == WfpFieldKind::Unknown) {
-        AddKey(evaluation.limitationKeys, "wfp.condition.unknown-field");
+    // N-02 Core Trap: A condition that hasn't been understood is not 'unconditional match', but 'insufficient information'.
+    if (condition.field == WfpFieldKind::kUnknown) {
+        addKey(evaluation.limitationKeys, "wfp.condition.unknown-field");
     }
-    if (condition.match == WfpMatchType::Unknown) {
-        AddKey(evaluation.limitationKeys, "wfp.condition.unknown-match");
+    if (condition.match == WfpMatchType::kUnknown) {
+        addKey(evaluation.limitationKeys, "wfp.condition.unknown-match");
     }
-    if (condition.value.type == WfpDataType::Unknown) {
-        AddKey(evaluation.limitationKeys, "wfp.condition.unknown-value-type");
+    if (condition.value.type == WfpDataType::kUnknown) {
+        addKey(evaluation.limitationKeys, "wfp.condition.unknown-value-type");
     }
     if (!condition.interpreted()) {
         return evaluation;
     }
-    if (!FieldIsModeled(condition.field)) {
-        AddKey(evaluation.limitationKeys, "wfp.condition.field-not-modeled");
+    if (!fieldIsModeled(condition.field)) {
+        addKey(evaluation.limitationKeys, "wfp.condition.field-not-modeled");
         return evaluation;
     }
 
     switch (condition.field) {
-    case WfpFieldKind::IpLocalPort:
-    case WfpFieldKind::IpRemotePort:
-    case WfpFieldKind::IpProtocol: {
-        const OptionalU64& actual = (condition.field == WfpFieldKind::IpLocalPort)
+    case WfpFieldKind::kIpLocalPort:
+    case WfpFieldKind::kIpRemotePort:
+    case WfpFieldKind::kIpProtocol: {
+        const OptionalU64& actual = (condition.field == WfpFieldKind::kIpLocalPort)
                                         ? connection.localPort
-                                        : (condition.field == WfpFieldKind::IpRemotePort
+                                        : (condition.field == WfpFieldKind::kIpRemotePort
                                                ? connection.remotePort
                                                : connection.protocol);
         if (!actual.present) {
-            AddKey(evaluation.limitationKeys, "wfp.condition.attribute-unknown");
+            addKey(evaluation.limitationKeys, "wfp.condition.attribute-unknown");
             return evaluation;
         }
-        evaluation.result = CompareNumeric(condition.match, actual.value, condition.value,
+        evaluation.result = compareNumeric(condition.match, actual.value, condition.value,
                                            evaluation.limitationKeys);
         return evaluation;
     }
-    case WfpFieldKind::IpLocalAddress:
-    case WfpFieldKind::IpRemoteAddress: {
-        const WfpAddress& actual = (condition.field == WfpFieldKind::IpLocalAddress)
+    case WfpFieldKind::kIpLocalAddress:
+    case WfpFieldKind::kIpRemoteAddress: {
+        const WfpAddress& actual = (condition.field == WfpFieldKind::kIpLocalAddress)
                                        ? connection.localAddress
                                        : connection.remoteAddress;
         if (!actual.known()) {
-            AddKey(evaluation.limitationKeys, "wfp.condition.attribute-unknown");
+            addKey(evaluation.limitationKeys, "wfp.condition.attribute-unknown");
             return evaluation;
         }
-        evaluation.result = CompareAddress(condition.match, actual, condition.value,
+        evaluation.result = compareAddress(condition.match, actual, condition.value,
                                            evaluation.limitationKeys);
         return evaluation;
     }
-    case WfpFieldKind::Direction: {
-        if (connection.direction == WfpDirection::Unknown) {
-            AddKey(evaluation.limitationKeys, "wfp.condition.attribute-unknown");
+    case WfpFieldKind::kDirection: {
+        if (connection.direction == WfpDirection::kUnknown) {
+            addKey(evaluation.limitationKeys, "wfp.condition.attribute-unknown");
             return evaluation;
         }
-        if (!DataTypeIsNumeric(condition.value.type) || !condition.value.numeric.present) {
-            AddKey(evaluation.limitationKeys, "wfp.condition.value-type-mismatch");
+        if (!dataTypeIsNumeric(condition.value.type) || !condition.value.numeric.present) {
+            addKey(evaluation.limitationKeys, "wfp.condition.value-type-mismatch");
             return evaluation;
         }
-        const WfpDirection expected = DecodeDirectionValue(condition.value.numeric.value);
-        if (expected == WfpDirection::Unknown) {
-            // 数值不在 FWP_DIRECTION_ 定义里 —— 原值已保留在 value.numeric，不猜语义。
-            AddKey(evaluation.limitationKeys, "wfp.condition.unknown-direction-value");
+        const WfpDirection kExpected = decodeDirectionValue(condition.value.numeric.value);
+        if (kExpected == WfpDirection::kUnknown) {
+            // Value is not in FWP_DIRECTION_ definitions — original value preserved in value.numeric without guessing semantics.
+            addKey(evaluation.limitationKeys, "wfp.condition.unknown-direction-value");
             return evaluation;
         }
-        if (connection.direction == WfpDirection::Forward) {
-            // 转发流量不在 FWP_DIRECTION_ 的 in/out 二分里，不做真值断言。
-            AddKey(evaluation.limitationKeys, "wfp.condition.direction-not-comparable");
+        if (connection.direction == WfpDirection::kForward) {
+            // Forwarded traffic is not within the FWP_DIRECTION_ in/out binary split; no truth assertion is made.
+            addKey(evaluation.limitationKeys, "wfp.condition.direction-not-comparable");
             return evaluation;
         }
-        if (condition.match == WfpMatchType::Equal) {
-            evaluation.result = FromBool(connection.direction == expected);
-        } else if (condition.match == WfpMatchType::NotEqual) {
-            evaluation.result = FromBool(connection.direction != expected);
+        if (condition.match == WfpMatchType::kEqual) {
+            evaluation.result = fromBool(connection.direction == kExpected);
+        } else if (condition.match == WfpMatchType::kNotEqual) {
+            evaluation.result = fromBool(connection.direction != kExpected);
         } else {
-            AddKey(evaluation.limitationKeys, "wfp.condition.match-not-modeled");
+            addKey(evaluation.limitationKeys, "wfp.condition.match-not-modeled");
         }
         return evaluation;
     }
-    case WfpFieldKind::AleAppId: {
+    case WfpFieldKind::kAleAppId: {
         if (!connection.appId.present) {
-            AddKey(evaluation.limitationKeys, "wfp.condition.attribute-unknown");
+            addKey(evaluation.limitationKeys, "wfp.condition.attribute-unknown");
             return evaluation;
         }
-        if (condition.value.type != WfpDataType::ByteBlob) {
-            AddKey(evaluation.limitationKeys, "wfp.condition.value-type-mismatch");
+        if (condition.value.type != WfpDataType::kByteBlob) {
+            addKey(evaluation.limitationKeys, "wfp.condition.value-type-mismatch");
             return evaluation;
         }
         if (!condition.value.blobText.present) {
-            // 字节还在（blobBytes），只是解不成路径文本 —— 不能当成"匹配任何程序"。
-            AddKey(evaluation.limitationKeys, "wfp.condition.blob-not-decoded");
+            // Bytes are present (blobBytes), but cannot be decoded into a path text — do not treat as 'matches any program'.
+            addKey(evaluation.limitationKeys, "wfp.condition.blob-not-decoded");
             return evaluation;
         }
-        evaluation.result = CompareText(condition.match, connection.appId.value,
+        evaluation.result = compareText(condition.match, connection.appId.value,
                                         condition.value.blobText.value, evaluation.limitationKeys);
         return evaluation;
     }
-    case WfpFieldKind::AleUserId: {
+    case WfpFieldKind::kAleUserId: {
         if (!connection.userSid.present) {
-            AddKey(evaluation.limitationKeys, "wfp.condition.attribute-unknown");
+            addKey(evaluation.limitationKeys, "wfp.condition.attribute-unknown");
             return evaluation;
         }
-        if (condition.value.type != WfpDataType::Sid || !condition.value.sidText.present) {
-            AddKey(evaluation.limitationKeys, "wfp.condition.value-type-mismatch");
+        if (condition.value.type != WfpDataType::kSid || !condition.value.sidText.present) {
+            addKey(evaluation.limitationKeys, "wfp.condition.value-type-mismatch");
             return evaluation;
         }
-        evaluation.result = CompareText(condition.match, connection.userSid.value,
+        evaluation.result = compareText(condition.match, connection.userSid.value,
                                         condition.value.sidText.value, evaluation.limitationKeys);
         return evaluation;
     }
-    case WfpFieldKind::IpLocalAddressType:
-    case WfpFieldKind::Flags:
-    case WfpFieldKind::Unknown:
+    case WfpFieldKind::kIpLocalAddressType:
+    case WfpFieldKind::kFlags:
+    case WfpFieldKind::kUnknown:
         break;
     }
-    AddKey(evaluation.limitationKeys, "wfp.condition.field-not-modeled");
+    addKey(evaluation.limitationKeys, "wfp.condition.field-not-modeled");
     return evaluation;
 }
 
-ConditionMatch CombineConditionResults(const std::vector<ConditionEvaluation>& evaluations,
+ConditionMatch combineConditionResults(const std::vector<ConditionEvaluation>& evaluations,
                                        bool conditionsTruncated) {
-    // FWP 真实语义：同一字段的多条条件是 OR，不同字段之间是 AND。
+    // FWP semantics: Multiple conditions on the same field are OR, while conditions on different fields are AND.
     std::map<std::string, ConditionMatch> groups;
     for (std::size_t i = 0; i < evaluations.size(); ++i) {
         const ConditionEvaluation& evaluation = evaluations[i];
@@ -1654,33 +1654,33 @@ ConditionMatch CombineConditionResults(const std::vector<ConditionEvaluation>& e
         if (evaluation.condition.fieldKey.known()) {
             key = evaluation.condition.fieldKey.text;
         } else {
-            // 没有字段 GUID 的条件不知道属于哪个字段，绝不能和别的未知条件 OR 到一起
-            // （OR 会让一条"匹配"掩盖另一条"不匹配"）。这里给它一个独占分组，走 AND。
-            key = "#unkeyed-" + FormatU64(i, U64Format::Decimal);
+            // Without a field GUID, it is unknown which field this condition belongs to; it must never be OR-ed with other unknown
+            // conditions (as OR-ing can cause a 'match' to mask a 'non-match'). Assign it an exclusive group here and use AND.
+            key = "#unkeyed-" + formatU64(i, U64Format::kDecimal);
         }
-        const auto existing = groups.find(key);
-        if (existing == groups.end()) {
+        const auto kExisting = groups.find(key);
+        if (kExisting == groups.end()) {
             groups.emplace(std::move(key), evaluation.result);
         } else {
-            existing->second = OrMatch(existing->second, evaluation.result);
+            kExisting->second = orMatch(kExisting->second, evaluation.result);
         }
     }
 
-    ConditionMatch combined = ConditionMatch::Match;  // 空条件集 = 真正的"无条件匹配"
+    ConditionMatch combined = ConditionMatch::kMatch;  // An empty condition set equals a true "unconditional match".
     for (const auto& entry : groups) {
-        combined = AndMatch(combined, entry.second);
+        combined = andMatch(combined, entry.second);
     }
     if (conditionsTruncated) {
-        // 被截断掉的条件内容未知，等价于再 AND 一条未知条件。
-        combined = AndMatch(combined, ConditionMatch::InsufficientInfo);
+        // The truncated condition content is unknown, equivalent to applying AND with another unknown condition.
+        combined = andMatch(combined, ConditionMatch::kInsufficientInfo);
     }
     return combined;
 }
 
 // ---------------------------------------------------------------------------
-// N-03：候选分析
+// N-03: Candidate analysis
 // ---------------------------------------------------------------------------
-FilterCandidate EvaluateFilter(const WfpCatalog& catalog,
+FilterCandidate evaluateFilter(const WfpCatalog& catalog,
                                const WfpFilter& filter,
                                const ConnectionDescription& connection) {
     FilterCandidate candidate;
@@ -1691,182 +1691,182 @@ FilterCandidate EvaluateFilter(const WfpCatalog& catalog,
     candidate.layer = catalog.resolveLayer(filter.layerKey);
     candidate.subLayer = catalog.resolveSubLayer(filter.subLayerKey);
     candidate.action = filter.action;
-    candidate.dynamicByCallout = ActionIsCallout(filter.action);
+    candidate.dynamicByCallout = actionIsCallout(filter.action);
     if (candidate.dynamicByCallout) {
         candidate.actionCallout = catalog.resolveCallout(filter.actionCalloutKey);
     }
 
-    // effectiveWeight 与调用方指定的 weight 是两个量纲，优先用 BFE 算出来的那个。
+    // effectiveWeight and the weight specified by the caller are in different dimensions; prefer the one calculated by BFE.
     if (filter.effectiveWeight.present) {
-        candidate.weightConfidence = WeightOrderConfidence::EffectiveWeight;
+        candidate.weightConfidence = WeightOrderConfidence::kEffectiveWeight;
         candidate.orderingWeight = filter.effectiveWeight;
-    } else if (filter.weightKind == WfpWeightKind::Explicit && filter.weight.present) {
-        candidate.weightConfidence = WeightOrderConfidence::ExplicitWeight;
+    } else if (filter.weightKind == WfpWeightKind::kExplicit && filter.weight.present) {
+        candidate.weightConfidence = WeightOrderConfidence::kExplicitWeight;
         candidate.orderingWeight = filter.weight;
     } else {
-        candidate.weightConfidence = WeightOrderConfidence::Unknown;
-        AddKey(candidate.limitationKeys, "wfp.filter.weight-unknown");
+        candidate.weightConfidence = WeightOrderConfidence::kUnknown;
+        addKey(candidate.limitationKeys, "wfp.filter.weight-unknown");
     }
 
     candidate.conditions.reserve(filter.conditions.size());
     for (const WfpCondition& condition : filter.conditions) {
-        ConditionEvaluation evaluation = EvaluateCondition(condition, connection);
-        MergeKeys(candidate.limitationKeys, evaluation.limitationKeys);
+        ConditionEvaluation evaluation = evaluateCondition(condition, connection);
+        mergeKeys(candidate.limitationKeys, evaluation.limitationKeys);
         candidate.conditions.push_back(std::move(evaluation));
     }
-    candidate.match = CombineConditionResults(candidate.conditions, filter.conditionsTruncated);
+    candidate.match = combineConditionResults(candidate.conditions, filter.conditionsTruncated);
 
     if (filter.conditionsTruncated) {
-        AddKey(candidate.limitationKeys, "wfp.filter.conditions-truncated");
+        addKey(candidate.limitationKeys, "wfp.filter.conditions-truncated");
     }
-    if (filter.action == WfpActionType::Unknown) {
-        AddKey(candidate.limitationKeys, "wfp.filter.action-unknown");
+    if (filter.action == WfpActionType::kUnknown) {
+        addKey(candidate.limitationKeys, "wfp.filter.action-unknown");
     }
     if (candidate.dynamicByCallout) {
-        AddKey(candidate.limitationKeys, "wfp.filter.dynamic-callout");
+        addKey(candidate.limitationKeys, "wfp.filter.dynamic-callout");
     }
-    if (candidate.layer.state == ReferenceState::NotSpecified) {
-        AddKey(candidate.limitationKeys, "wfp.filter.layer-missing");
+    if (candidate.layer.state == ReferenceState::kNotSpecified) {
+        addKey(candidate.limitationKeys, "wfp.filter.layer-missing");
     }
-    if (candidate.subLayer.state == ReferenceState::NotSpecified) {
-        AddKey(candidate.limitationKeys, "wfp.filter.sublayer-missing");
+    if (candidate.subLayer.state == ReferenceState::kNotSpecified) {
+        addKey(candidate.limitationKeys, "wfp.filter.sublayer-missing");
     }
     return candidate;
 }
 
 namespace {
 
-// 单个 sublayer 内的仲裁。返回值一律保守：只要顺序不可信或有读不懂的条件就是 Unknown。
-CandidateDecision DecideWithinSubLayer(const std::vector<FilterCandidate>& ordered,
+// Arbitration within a single sublayer. The return value is always conservative: Unknown if the ordering is unreliable or if there are unreadable conditions.
+CandidateDecision decideWithinSubLayer(const std::vector<FilterCandidate>& ordered,
                                        bool orderingReliable) {
     if (orderingReliable) {
         for (const FilterCandidate& candidate : ordered) {
-            if (candidate.match == ConditionMatch::InsufficientInfo) {
-                // 它可能就是赢家，也可能不是 —— 不猜。
-                return CandidateDecision::Unknown;
+            if (candidate.match == ConditionMatch::kInsufficientInfo) {
+                // It might be the winner or it might not — no guessing.
+                return CandidateDecision::kUnknown;
             }
-            if (candidate.match == ConditionMatch::NoMatch) {
+            if (candidate.match == ConditionMatch::kNoMatch) {
                 continue;
             }
             if (candidate.dynamicByCallout) {
-                return CandidateDecision::Unknown;
+                return CandidateDecision::kUnknown;
             }
             switch (candidate.action) {
-            case WfpActionType::Block:
-                return CandidateDecision::BlockCandidate;
-            case WfpActionType::Permit:
-                return CandidateDecision::PermitCandidate;
-            case WfpActionType::Continue:
-                continue;  // FWP_ACTION_CONTINUE 的语义就是继续往下走
-            case WfpActionType::Unknown:
-            case WfpActionType::None:
-            case WfpActionType::NoneNoMatch:
-            case WfpActionType::CalloutTerminating:
-            case WfpActionType::CalloutInspection:
-            case WfpActionType::CalloutUnknown:
-                return CandidateDecision::Unknown;
+            case WfpActionType::kBlock:
+                return CandidateDecision::kBlockCandidate;
+            case WfpActionType::kPermit:
+                return CandidateDecision::kPermitCandidate;
+            case WfpActionType::kContinue:
+                continue;  // The semantics of FWP_ACTION_CONTINUE is to continue processing.
+            case WfpActionType::kUnknown:
+            case WfpActionType::kNone:
+            case WfpActionType::kNoneNoMatch:
+            case WfpActionType::kCalloutTerminating:
+            case WfpActionType::kCalloutInspection:
+            case WfpActionType::kCalloutUnknown:
+                return CandidateDecision::kUnknown;
             }
-            return CandidateDecision::Unknown;
+            return CandidateDecision::kUnknown;
         }
-        return CandidateDecision::NoMatchingFilter;
+        return CandidateDecision::kNoMatchingFilter;
     }
 
-    // 顺序不可信：只有"候选唯一"时结论才与顺序无关。
+    // Order is unreliable: conclusions are order-independent only when there is a single candidate.
     std::size_t candidateCount = 0;
     const FilterCandidate* single = nullptr;
     for (const FilterCandidate& candidate : ordered) {
-        if (candidate.match == ConditionMatch::NoMatch) {
+        if (candidate.match == ConditionMatch::kNoMatch) {
             continue;
         }
         ++candidateCount;
         single = &candidate;
     }
     if (candidateCount == 0U) {
-        return CandidateDecision::NoMatchingFilter;
+        return CandidateDecision::kNoMatchingFilter;
     }
     if (candidateCount > 1U || single == nullptr) {
-        return CandidateDecision::Unknown;
+        return CandidateDecision::kUnknown;
     }
-    if (single->match == ConditionMatch::InsufficientInfo || single->dynamicByCallout) {
-        return CandidateDecision::Unknown;
+    if (single->match == ConditionMatch::kInsufficientInfo || single->dynamicByCallout) {
+        return CandidateDecision::kUnknown;
     }
     switch (single->action) {
-    case WfpActionType::Block:
-        return CandidateDecision::BlockCandidate;
-    case WfpActionType::Permit:
-        return CandidateDecision::PermitCandidate;
-    case WfpActionType::Continue:
-        return CandidateDecision::NoMatchingFilter;  // 唯一候选让路，后面没有别的了
-    case WfpActionType::Unknown:
-    case WfpActionType::None:
-    case WfpActionType::NoneNoMatch:
-    case WfpActionType::CalloutTerminating:
-    case WfpActionType::CalloutInspection:
-    case WfpActionType::CalloutUnknown:
+    case WfpActionType::kBlock:
+        return CandidateDecision::kBlockCandidate;
+    case WfpActionType::kPermit:
+        return CandidateDecision::kPermitCandidate;
+    case WfpActionType::kContinue:
+        return CandidateDecision::kNoMatchingFilter;  // Yield to the sole candidate; no other options remain.
+    case WfpActionType::kUnknown:
+    case WfpActionType::kNone:
+    case WfpActionType::kNoneNoMatch:
+    case WfpActionType::kCalloutTerminating:
+    case WfpActionType::kCalloutInspection:
+    case WfpActionType::kCalloutUnknown:
         break;
     }
-    return CandidateDecision::Unknown;
+    return CandidateDecision::kUnknown;
 }
 
-// 跨 sublayer / 跨 layer 的保守汇总。
-// 真实 WFP 里 block 会盖过 permit，但那要求每个 sublayer 都已判明；再加上本层没有建模
-// FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT 这种否决权和层默认动作，所以只要有一个不确定，
-// 整体就保持 Unknown（N-03 明确要求存在动态行为时保留未知）。
-CandidateDecision CombineDecisions(const std::vector<CandidateDecision>& decisions) {
+// Conservative aggregation across sublayers and layers.
+// In real WFP, block overrides permit, but that requires every sublayer to be determined. Additionally, this layer does
+// not model FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT (a veto right) or layer default actions. Therefore, if any decision is
+// uncertain, the overall result remains Unknown (N-03 explicitly requires retaining Unknown when dynamic behavior exists).
+CandidateDecision combineDecisions(const std::vector<CandidateDecision>& decisions) {
     bool sawBlock = false;
     bool sawPermit = false;
     for (CandidateDecision decision : decisions) {
         switch (decision) {
-        case CandidateDecision::Unknown:
-            return CandidateDecision::Unknown;
-        case CandidateDecision::BlockCandidate:
+        case CandidateDecision::kUnknown:
+            return CandidateDecision::kUnknown;
+        case CandidateDecision::kBlockCandidate:
             sawBlock = true;
             break;
-        case CandidateDecision::PermitCandidate:
+        case CandidateDecision::kPermitCandidate:
             sawPermit = true;
             break;
-        case CandidateDecision::NoMatchingFilter:
+        case CandidateDecision::kNoMatchingFilter:
             break;
         }
     }
     if (sawBlock) {
-        return CandidateDecision::BlockCandidate;
+        return CandidateDecision::kBlockCandidate;
     }
     if (sawPermit) {
-        return CandidateDecision::PermitCandidate;
+        return CandidateDecision::kPermitCandidate;
     }
-    return CandidateDecision::NoMatchingFilter;
+    return CandidateDecision::kNoMatchingFilter;
 }
 
-// N-01：layer / sublayer 引用未采集的 filter 用这些前缀单独开桶。真实 GUID 一律是
-// "{...}" 形式，'#' 开头的键不可能与之相撞（与 CombineConditionResults 对无 GUID 条件
-// 的 "#unkeyed-" 处理同一套做法）。
+// N-01: Layers/sublayers referencing uncollected filters use these prefixes to create
+// separate buckets. Real GUIDs are always in "{...}" format, so keys starting with '#' cannot
+// collide (same approach as combineConditionResults for unkeyed conditions with "#unkeyed-").
 constexpr const char* kUnlinkedLayerPrefix = "#unlinked-layer-";
 constexpr const char* kUnlinkedSubLayerPrefix = "#unlinked-sublayer-";
 
-bool IsUnlinkedBucketKey(const std::string& key) noexcept {
+bool isUnlinkedBucketKey(const std::string& key) noexcept {
     return key.rfind("#unlinked-", 0U) == 0U;
 }
 
-bool OrderingIsReliable(const std::vector<FilterCandidate>& filters, bool& mixedScale) {
+bool orderingIsReliable(const std::vector<FilterCandidate>& filters, bool& mixedScale) {
     mixedScale = false;
     if (filters.empty()) {
         return false;
     }
-    const WeightOrderConfidence first = filters.front().weightConfidence;
+    const WeightOrderConfidence kFirst = filters.front().weightConfidence;
     std::vector<std::uint64_t> seen;
     for (const FilterCandidate& candidate : filters) {
-        if (candidate.weightConfidence == WeightOrderConfidence::Unknown ||
+        if (candidate.weightConfidence == WeightOrderConfidence::kUnknown ||
             !candidate.orderingWeight.present) {
             return false;
         }
-        if (candidate.weightConfidence != first) {
+        if (candidate.weightConfidence != kFirst) {
             mixedScale = true;
             return false;
         }
         for (std::uint64_t value : seen) {
             if (value == candidate.orderingWeight.value) {
-                return false;  // 同权重无法确定先后
+                return false;  // Same weight cannot determine order.
             }
         }
         seen.push_back(candidate.orderingWeight.value);
@@ -1876,36 +1876,36 @@ bool OrderingIsReliable(const std::vector<FilterCandidate>& filters, bool& mixed
 
 } // namespace
 
-StaticCandidateReport AnalyzeStaticCandidates(const WfpCatalog& catalog,
+StaticCandidateReport analyzeStaticCandidates(const WfpCatalog& catalog,
                                               const ConnectionDescription& connection) {
     StaticCandidateReport report;
-    // 这两条永远成立：本层不模拟层默认动作，也不解释 filter flags（含否决权）。
-    AddKey(report.limitationKeys, "wfp.candidate.layer-default-action-not-modeled");
-    AddKey(report.limitationKeys, "wfp.candidate.filter-flags-not-modeled");
-    // N-06：只有"能正面证明枚举完整"的 filter 分区才允许产出"无匹配规则"这条缺席断言。
-    const bool usableForAbsence = catalog.partitionUsableForAbsence(WfpPartition::Filters);
-    report.catalogUsableForAbsence = usableForAbsence;
-    if (!usableForAbsence) {
-        // 目录本身可能没枚举全 —— "没有匹配的规则"不等于"确实没有规则"。
-        AddKey(report.limitationKeys, "wfp.candidate.filter-catalog-incomplete");
+    // These two conditions always hold: this layer does not model the default action, nor does it interpret filter flags (including veto rights).
+    addKey(report.limitationKeys, "wfp.candidate.layer-default-action-not-modeled");
+    addKey(report.limitationKeys, "wfp.candidate.filter-flags-not-modeled");
+    // N-06: Only filter partitions that can positively prove enumeration completeness are allowed to produce the 'no matching rules' absence assertion.
+    const bool kUsableForAbsence = catalog.partitionUsableForAbsence(WfpPartition::kFilters);
+    report.catalogUsableForAbsence = kUsableForAbsence;
+    if (!kUsableForAbsence) {
+        // The directory enumeration may be incomplete: 'no matching rules' does not mean 'no rules exist'.
+        addKey(report.limitationKeys, "wfp.candidate.filter-catalog-incomplete");
     }
 
     // layerKey -> subLayerKey -> filters。
-    // N-01：引用未采集的 filter **每条独占一个桶**，既不并进任何已知分组，也不和别的
-    // 同样缺引用的 filter 并到一起 —— 后者是同一个谬误：两条不知道属于哪个 layer 的规则
-    // 很可能根本不在同一个仲裁范围里（一条在 ALE_AUTH_CONNECT_V4、一条在
-    // OUTBOUND_TRANSPORT_V4），却会被判成"900 压过 100 → 阻断候选"。
+    // N-01: Filters with missing references each occupy their own bucket; they are neither merged into any
+    // known group nor combined with other filters lacking references. The latter is the same fallacy: two rules
+    // with unknown layers may not even share the same arbitration scope (one in ALE_AUTH_CONNECT_V4, another in
+    // OUTBOUND_TRANSPORT_V4), yet they would be incorrectly judged as "900 overrides 100 → block candidate".
     std::map<std::string, std::map<std::string, std::vector<FilterCandidate>>> buckets;
     std::size_t bucketIndex = 0;
     for (const WfpFilter& filter : catalog.filters()) {
-        FilterCandidate candidate = EvaluateFilter(catalog, filter, connection);
-        const std::string suffix = FormatU64(bucketIndex, U64Format::Decimal);
-        const std::string layerBucket =
-            filter.layerKey.known() ? filter.layerKey.text : (std::string(kUnlinkedLayerPrefix) + suffix);
-        const std::string subBucket = filter.subLayerKey.known()
+        FilterCandidate candidate = evaluateFilter(catalog, filter, connection);
+        const std::string kSuffix = formatU64(bucketIndex, U64Format::kDecimal);
+        const std::string kLayerBucket =
+            filter.layerKey.known() ? filter.layerKey.text : (std::string(kUnlinkedLayerPrefix) + kSuffix);
+        const std::string kSubBucket = filter.subLayerKey.known()
                                           ? filter.subLayerKey.text
-                                          : (std::string(kUnlinkedSubLayerPrefix) + suffix);
-        buckets[layerBucket][subBucket].push_back(std::move(candidate));
+                                          : (std::string(kUnlinkedSubLayerPrefix) + kSuffix);
+        buckets[kLayerBucket][kSubBucket].push_back(std::move(candidate));
         ++bucketIndex;
         ++report.evaluatedFilterCount;
     }
@@ -1913,21 +1913,21 @@ StaticCandidateReport AnalyzeStaticCandidates(const WfpCatalog& catalog,
     std::vector<CandidateDecision> layerDecisions;
     for (auto& layerEntry : buckets) {
         LayerCandidateGroup layerGroup;
-        const bool layerUnlinked = IsUnlinkedBucketKey(layerEntry.first);
+        const bool kLayerUnlinked = isUnlinkedBucketKey(layerEntry.first);
         layerGroup.layer =
-            catalog.resolveLayer(layerUnlinked ? WfpGuid{} : GuidFromText(layerEntry.first));
-        if (layerGroup.layer.state == ReferenceState::NotSpecified) {
-            AddKey(layerGroup.limitationKeys, "wfp.filter.layer-missing");
+            catalog.resolveLayer(kLayerUnlinked ? WfpGuid{} : guidFromText(layerEntry.first));
+        if (layerGroup.layer.state == ReferenceState::kNotSpecified) {
+            addKey(layerGroup.limitationKeys, "wfp.filter.layer-missing");
         }
-        layerGroup.unlinkedReference = layerUnlinked;
+        layerGroup.unlinkedReference = kLayerUnlinked;
 
         std::vector<CandidateDecision> subLayerDecisions;
         for (auto& subEntry : layerEntry.second) {
             SubLayerCandidateGroup subGroup;
-            const bool subUnlinked = IsUnlinkedBucketKey(subEntry.first);
-            subGroup.unlinkedReference = layerUnlinked || subUnlinked;
+            const bool kSubUnlinked = isUnlinkedBucketKey(subEntry.first);
+            subGroup.unlinkedReference = kLayerUnlinked || kSubUnlinked;
             subGroup.subLayer =
-                catalog.resolveSubLayer(subUnlinked ? WfpGuid{} : GuidFromText(subEntry.first));
+                catalog.resolveSubLayer(kSubUnlinked ? WfpGuid{} : guidFromText(subEntry.first));
             if (subGroup.subLayer.resolved()) {
                 for (const WfpSubLayer& subLayer : catalog.subLayers()) {
                     if (subLayer.subLayerKey == subGroup.subLayer.key) {
@@ -1937,11 +1937,11 @@ StaticCandidateReport AnalyzeStaticCandidates(const WfpCatalog& catalog,
                 }
             }
             if (!subGroup.subLayerWeight.present) {
-                AddKey(subGroup.limitationKeys, "wfp.layer.sublayer-weight-unknown");
+                addKey(subGroup.limitationKeys, "wfp.layer.sublayer-weight-unknown");
             }
             subGroup.filters = std::move(subEntry.second);
 
-            // 展示顺序：权重降序（未知权重排最后）。判定是否敢依赖这个顺序另算。
+            // Display order: descending by weight (unknown weights last). Whether to rely on this order is a separate decision.
             std::stable_sort(subGroup.filters.begin(), subGroup.filters.end(),
                              [](const FilterCandidate& a, const FilterCandidate& b) {
                                  if (a.orderingWeight.present != b.orderingWeight.present) {
@@ -1954,43 +1954,43 @@ StaticCandidateReport AnalyzeStaticCandidates(const WfpCatalog& catalog,
                              });
 
             bool mixedScale = false;
-            subGroup.orderingReliable = OrderingIsReliable(subGroup.filters, mixedScale);
+            subGroup.orderingReliable = orderingIsReliable(subGroup.filters, mixedScale);
             if (mixedScale) {
-                AddKey(subGroup.limitationKeys, "wfp.sublayer.weight-scale-mixed");
+                addKey(subGroup.limitationKeys, "wfp.sublayer.weight-scale-mixed");
             }
             if (subGroup.unlinkedReference) {
-                // 连"这条规则和谁在同一个仲裁范围里"都不知道，遑论范围内的先后顺序。
+                // If we don't even know which arbitration scope this rule belongs to, we certainly can't determine the order within that scope.
                 subGroup.orderingReliable = false;
-                if (layerUnlinked) {
-                    AddKey(subGroup.limitationKeys, "wfp.filter.layer-missing");
+                if (kLayerUnlinked) {
+                    addKey(subGroup.limitationKeys, "wfp.filter.layer-missing");
                 }
-                if (subUnlinked) {
-                    AddKey(subGroup.limitationKeys, "wfp.filter.sublayer-missing");
+                if (kSubUnlinked) {
+                    addKey(subGroup.limitationKeys, "wfp.filter.sublayer-missing");
                 }
             }
             if (!subGroup.orderingReliable) {
-                AddKey(subGroup.limitationKeys, "wfp.sublayer.order-unreliable");
+                addKey(subGroup.limitationKeys, "wfp.sublayer.order-unreliable");
             }
-            subGroup.decision = DecideWithinSubLayer(subGroup.filters, subGroup.orderingReliable);
-            if (subGroup.unlinkedReference && subGroup.decision != CandidateDecision::NoMatchingFilter) {
-                // 范围未知的分组只允许"这条规则不匹配"或"不知道"，绝不允许给出
-                // 阻断/放行候选 —— 那需要先确定它到底在哪个 sublayer 里跟谁竞争。
-                subGroup.decision = CandidateDecision::Unknown;
+            subGroup.decision = decideWithinSubLayer(subGroup.filters, subGroup.orderingReliable);
+            if (subGroup.unlinkedReference && subGroup.decision != CandidateDecision::kNoMatchingFilter) {
+                // Groups with unknown scope are only allowed to report "rule did not match" or "unknown"; they must never suggest
+                // "block" or "allow" candidates. This requires first determining which sublayer it belongs to and who it competes with.
+                subGroup.decision = CandidateDecision::kUnknown;
             }
-            if (!usableForAbsence) {
-                // N-03/N-06：目录不足以证明缺席时，"该范围内没有任何 filter 匹配"这条
-                // 缺席断言在分组这一级也不成立。限制键必须落到分组上，只写在 report
-                // 级别的话 UI 渲染 SubLayerCandidateGroup::decision 时看不到任何异常。
-                AddKey(subGroup.limitationKeys, "wfp.candidate.filter-catalog-incomplete");
-                if (subGroup.decision == CandidateDecision::NoMatchingFilter) {
-                    subGroup.decision = CandidateDecision::Unknown;
+            if (!kUsableForAbsence) {
+                // N-03/N-06: When the catalog is insufficient to prove absence, the assertion "no filter matches within
+                // this range" also fails at the group level. The limitation key must be applied to the group; if written
+                // only at the report level, the UI rendering of SubLayerCandidateGroup::decision will not see any anomaly.
+                addKey(subGroup.limitationKeys, "wfp.candidate.filter-catalog-incomplete");
+                if (subGroup.decision == CandidateDecision::kNoMatchingFilter) {
+                    subGroup.decision = CandidateDecision::kUnknown;
                 }
             }
             subLayerDecisions.push_back(subGroup.decision);
             layerGroup.subLayers.push_back(std::move(subGroup));
         }
 
-        // sublayer 之间按 UINT16 权重降序展示。
+        // Sublayers are displayed in descending order by UINT16 weight.
         std::stable_sort(layerGroup.subLayers.begin(), layerGroup.subLayers.end(),
                          [](const SubLayerCandidateGroup& a, const SubLayerCandidateGroup& b) {
                              if (a.subLayerWeight.present != b.subLayerWeight.present) {
@@ -2029,11 +2029,11 @@ StaticCandidateReport AnalyzeStaticCandidates(const WfpCatalog& catalog,
             }
         }
 
-        layerGroup.decision = CombineDecisions(subLayerDecisions);
-        if (!usableForAbsence) {
-            AddKey(layerGroup.limitationKeys, "wfp.candidate.filter-catalog-incomplete");
-            if (layerGroup.decision == CandidateDecision::NoMatchingFilter) {
-                layerGroup.decision = CandidateDecision::Unknown;
+        layerGroup.decision = combineDecisions(subLayerDecisions);
+        if (!kUsableForAbsence) {
+            addKey(layerGroup.limitationKeys, "wfp.candidate.filter-catalog-incomplete");
+            if (layerGroup.decision == CandidateDecision::kNoMatchingFilter) {
+                layerGroup.decision = CandidateDecision::kUnknown;
             }
         }
         layerDecisions.push_back(layerGroup.decision);
@@ -2041,57 +2041,57 @@ StaticCandidateReport AnalyzeStaticCandidates(const WfpCatalog& catalog,
     }
 
     if (layerDecisions.empty()) {
-        // 一条 filter 都没有：目录能证明完整时这才是"确实没有规则"，否则是"没采到"。
+        // No filters found: this means "truly no rules" only if the directory proves completeness; otherwise, it means "data not collected".
         report.overallDecision =
-            usableForAbsence ? CandidateDecision::NoMatchingFilter : CandidateDecision::Unknown;
+            kUsableForAbsence ? CandidateDecision::kNoMatchingFilter : CandidateDecision::kUnknown;
     } else {
-        report.overallDecision = CombineDecisions(layerDecisions);
-        if (!usableForAbsence && report.overallDecision == CandidateDecision::NoMatchingFilter) {
-            report.overallDecision = CandidateDecision::Unknown;
+        report.overallDecision = combineDecisions(layerDecisions);
+        if (!kUsableForAbsence && report.overallDecision == CandidateDecision::kNoMatchingFilter) {
+            report.overallDecision = CandidateDecision::kUnknown;
         }
     }
     return report;
 }
 
 // ---------------------------------------------------------------------------
-// N-04：运行事件
+// N-04: Runtime events
 // ---------------------------------------------------------------------------
-ObservationTrust ClassifyObservation(const ObservedFilterHit& hit) noexcept {
-    // 来源未知时，记录自己声称的"已启用/受支持"没有意义 —— 先看来源。
-    if (hit.source == ObservationSource::Unknown) {
-        return ObservationTrust::SourceUnknown;
+ObservationTrust classifyObservation(const ObservedFilterHit& hit) noexcept {
+    // When the source is unknown, recording our own claim of 'enabled/supported' is meaningless — check the source first.
+    if (hit.source == ObservationSource::kUnknown) {
+        return ObservationTrust::kSourceUnknown;
     }
-    if (hit.source == ObservationSource::OfflineImport &&
-        (hit.originalSource == ObservationSource::Unknown ||
-         hit.originalSource == ObservationSource::OfflineImport)) {
-        // N-04：离线导入只说明"这条记录是从样本读进来的"。原始来源不明时，样本里
-        // 自己填的 supported/enabled 两个布尔不能把它抬成"实际阻断" —— 那样来源栏
-        // 只能显示"离线导入"，分不清原始是 5157 安全审计、FwpmNetEventEnum 还是
-        // 本工具驱动的 ALE 流授权环。
-        return ObservationTrust::SourceUnknown;
+    if (hit.source == ObservationSource::kOfflineImport &&
+        (hit.originalSource == ObservationSource::kUnknown ||
+         hit.originalSource == ObservationSource::kOfflineImport)) {
+        // N-04: Offline import only indicates "this record was read from a sample." When the original source is
+        // unknown, the sample's own `supported`/`enabled` booleans cannot elevate it to "actual block"—otherwise the
+        // source field would only show "Offline Import," making it impossible to distinguish whether the original
+        // was from Security Audit 5157, FwpmNetEventEnum, or this tool driver's ALE flow authorization ring.
+        return ObservationTrust::kSourceUnknown;
     }
     if (!hit.sourceSupported) {
-        return ObservationTrust::SourceUnsupported;
+        return ObservationTrust::kSourceUnsupported;
     }
     if (!hit.sourceEnabled) {
-        return ObservationTrust::SourceNotEnabled;
+        return ObservationTrust::kSourceNotEnabled;
     }
-    return ObservationTrust::ActualObservation;
+    return ObservationTrust::kActualObservation;
 }
 
-bool DescribesActualVerdict(const ObservedFilterHit& hit) noexcept {
-    return ClassifyObservation(hit) == ObservationTrust::ActualObservation &&
-           hit.verdict != WfpEventVerdict::Unknown;
+bool describesActualVerdict(const ObservedFilterHit& hit) noexcept {
+    return classifyObservation(hit) == ObservationTrust::kActualObservation &&
+           hit.verdict != WfpEventVerdict::kUnknown;
 }
 
 bool ObservationSourceOutcome::carriesObservation() const noexcept {
-    return StatusCarriesObservation(outcome.status);
+    return statusCarriesObservation(outcome.status);
 }
 
 std::size_t RuleExplanation::actualHitCount() const noexcept {
     std::size_t count = 0;
     for (const ObservedFilterHit& hit : observations) {
-        if (ClassifyObservation(hit) == ObservationTrust::ActualObservation) {
+        if (classifyObservation(hit) == ObservationTrust::kActualObservation) {
             ++count;
         }
     }
@@ -2103,8 +2103,8 @@ std::size_t RuleExplanation::untrustedObservationCount() const noexcept {
 }
 
 bool RuleExplanation::observationsCollected() const noexcept {
-    // N-04 / F-05：只有"受支持 + 已启用 + 状态携带观测"的来源，才让"零命中"这句话
-    // 具备"确实没有命中"的含义。一条都没登记（从没订阅过）时返回 false。
+    // N-04 / F-05: Only sources that are 'Supported + Enabled + Carrying Observation' give the meaning
+    // of 'zero hits' as 'truly no hits'. Return false if nothing was registered (never subscribed).
     for (const ObservationSourceOutcome& entry : sourceOutcomes) {
         if (entry.sourceSupported && entry.sourceEnabled && entry.carriesObservation()) {
             return true;
@@ -2116,34 +2116,34 @@ bool RuleExplanation::observationsCollected() const noexcept {
 bool RuleExplanation::anyObservationSourceFailed() const noexcept {
     for (const ObservationSourceOutcome& entry : sourceOutcomes) {
         if (!entry.carriesObservation()) {
-            return true;  // 未采集 / 订阅失败 / 拒绝访问 —— 原始错误码在 outcome 里
+            return true;  // Not collected / subscription failed / access denied — original error code is in outcome.
         }
     }
     return false;
 }
 
 bool RuleExplanation::hasActualPath() const noexcept {
-    // N-04：没有受支持且启用来源的记录时，不允许生成"实际经过路径"。
-    // 静态候选再多也不能顶。
+    // N-04: Actual path generation is disallowed when no supported and enabled source records exist.
+    // Even a large number of static candidates cannot override this.
     return actualHitCount() > 0U;
 }
 
 // ---------------------------------------------------------------------------
-// N-06：运行时 id 引用
+// N-06: Runtime ID reference.
 // ---------------------------------------------------------------------------
-FilterReferenceResolution ResolveFilterReference(const WfpCatalog& catalog,
+FilterReferenceResolution resolveFilterReference(const WfpCatalog& catalog,
                                                  const RuntimeFilterReference& reference) {
     FilterReferenceResolution resolution;
     if (!reference.filterKey.known() && !reference.filterId.present) {
-        resolution.state = FilterLinkState::NotSpecified;
+        resolution.state = FilterLinkState::kNotSpecified;
         return resolution;
     }
 
     if (reference.filterKey.known()) {
-        const ObjectReference object = catalog.resolveFilter(reference.filterKey);
-        switch (object.state) {
-        case ReferenceState::Resolved: {
-            resolution.state = FilterLinkState::LinkedByGuid;
+        const ObjectReference kObject = catalog.resolveFilter(reference.filterKey);
+        switch (kObject.state) {
+        case ReferenceState::kResolved: {
+            resolution.state = FilterLinkState::kLinkedByGuid;
             const std::vector<WfpFilter>& filters = catalog.filters();
             for (std::size_t i = 0; i < filters.size(); ++i) {
                 if (filters[i].filterKey == reference.filterKey) {
@@ -2155,99 +2155,99 @@ FilterReferenceResolution ResolveFilterReference(const WfpCatalog& catalog,
             if (resolution.hasIndex && reference.filterId.present) {
                 const OptionalU64& current = catalog.filters()[resolution.filterIndex].filterId;
                 if (!current.present || current.value != reference.filterId.value) {
-                    // GUID 是稳定键，照连；但运行时 id 变了必须说出来。
-                    AddKey(resolution.limitationKeys, "wfp.link.runtime-id-changed");
+                    // The GUID is a stable key, so it is included; but if the runtime ID changes, it must be stated.
+                    addKey(resolution.limitationKeys, "wfp.link.runtime-id-changed");
                 }
             }
             return resolution;
         }
-        case ReferenceState::Ambiguous:
-            resolution.state = FilterLinkState::RejectedAmbiguous;
+        case ReferenceState::kAmbiguous:
+            resolution.state = FilterLinkState::kRejectedAmbiguous;
             return resolution;
-        case ReferenceState::CatalogNotCollected:
-            resolution.state = FilterLinkState::CatalogNotCollected;
+        case ReferenceState::kCatalogNotCollected:
+            resolution.state = FilterLinkState::kCatalogNotCollected;
             return resolution;
-        case ReferenceState::CatalogIncomplete:
-            // 采到了但没采全：找不到不等于不存在。
-            resolution.state = FilterLinkState::CatalogIncomplete;
-            AddKey(resolution.limitationKeys, "wfp.link.catalog-incomplete");
+        case ReferenceState::kCatalogIncomplete:
+            // Data collected but incomplete: not found does not mean does not exist.
+            resolution.state = FilterLinkState::kCatalogIncomplete;
+            addKey(resolution.limitationKeys, "wfp.link.catalog-incomplete");
             return resolution;
-        case ReferenceState::UnknownObject:
-        case ReferenceState::NotSpecified:
+        case ReferenceState::kUnknownObject:
+        case ReferenceState::kNotSpecified:
             break;
         }
-        // GUID 不在目录里。如果同一个运行时 id 已经被别的 filter 占用，那就是 id 复用。
-        const std::vector<std::size_t> byId = catalog.findFilterIndexesByRuntimeId(reference.filterId);
-        if (!byId.empty()) {
-            resolution.state = FilterLinkState::RejectedIdReused;
-            AddKey(resolution.limitationKeys, "wfp.link.id-reused");
+        // GUID not found in the catalog. If the same runtime ID is already occupied by another filter, it indicates ID reuse.
+        const std::vector<std::size_t> kById = catalog.findFilterIndexesByRuntimeId(reference.filterId);
+        if (!kById.empty()) {
+            resolution.state = FilterLinkState::kRejectedIdReused;
+            addKey(resolution.limitationKeys, "wfp.link.id-reused");
             return resolution;
         }
-        // 走到这里 resolveFilter 已经判过 UnknownObject（目录能正面证明缺席），
-        // NoMatch 这条缺席断言才成立。
-        resolution.state = FilterLinkState::NoMatch;
+        // At this point, resolveFilter has already checked for UnknownObject (a directory
+        // can positively prove absence), so the NoMatch absence assertion holds.
+        resolution.state = FilterLinkState::kNoMatch;
         return resolution;
     }
 
-    // 只有运行时 id：id 可复用，必须先确认代次。
-    const CollectionStatus filterStatus = catalog.partitionState(WfpPartition::Filters).outcome.status;
-    if (!StatusCarriesObservation(filterStatus)) {
-        resolution.state = FilterLinkState::CatalogNotCollected;
+    // Runtime ID only: IDs are reusable, so generation must be confirmed first.
+    const CollectionStatus kFilterStatus = catalog.partitionState(WfpPartition::kFilters).outcome.status;
+    if (!statusCarriesObservation(kFilterStatus)) {
+        resolution.state = FilterLinkState::kCatalogNotCollected;
         return resolution;
     }
     if (!reference.capturedGeneration.present) {
-        resolution.state = FilterLinkState::RejectedStaleGeneration;
-        AddKey(resolution.limitationKeys, "wfp.link.generation-unknown");
+        resolution.state = FilterLinkState::kRejectedStaleGeneration;
+        addKey(resolution.limitationKeys, "wfp.link.generation-unknown");
         return resolution;
     }
     if (reference.capturedGeneration.value != catalog.generation()) {
-        resolution.state = FilterLinkState::RejectedStaleGeneration;
-        AddKey(resolution.limitationKeys, "wfp.link.stale-generation");
+        resolution.state = FilterLinkState::kRejectedStaleGeneration;
+        addKey(resolution.limitationKeys, "wfp.link.stale-generation");
         return resolution;
     }
-    // 代次号跨启动会从 0 重来，"代次相同"在跨启动时不构成证据。两侧都有 bootId
-    // 且不相等就直接拒绝；有一侧拿不到 bootId 时只能保持"代次相同"这一层判据。
+    // Generation numbers reset to 0 across boots, so "same generation" does not constitute evidence across boots. If both sides have
+    // bootIds and they differ, reject immediately; if one side lacks a bootId, only the "same generation" criterion can be retained.
     const std::string& catalogBoot = catalog.captureWindow().bootId;
     if (!reference.bootId.empty() && !catalogBoot.empty() && reference.bootId != catalogBoot) {
-        resolution.state = FilterLinkState::RejectedStaleGeneration;
-        AddKey(resolution.limitationKeys, "wfp.link.boot-mismatch");
+        resolution.state = FilterLinkState::kRejectedStaleGeneration;
+        addKey(resolution.limitationKeys, "wfp.link.boot-mismatch");
         return resolution;
     }
-    const std::vector<std::size_t> matches = catalog.findFilterIndexesByRuntimeId(reference.filterId);
-    if (matches.empty()) {
-        // N-06：目录没枚举全时"这个 id 不在里面"证明不了这条规则不存在。
-        if (!catalog.partitionUsableForAbsence(WfpPartition::Filters)) {
-            resolution.state = FilterLinkState::CatalogIncomplete;
-            AddKey(resolution.limitationKeys, "wfp.link.catalog-incomplete");
+    const std::vector<std::size_t> kMatches = catalog.findFilterIndexesByRuntimeId(reference.filterId);
+    if (kMatches.empty()) {
+        // N-06: If the catalog is not fully enumerated, the absence of this ID does not prove the rule is missing.
+        if (!catalog.partitionUsableForAbsence(WfpPartition::kFilters)) {
+            resolution.state = FilterLinkState::kCatalogIncomplete;
+            addKey(resolution.limitationKeys, "wfp.link.catalog-incomplete");
             return resolution;
         }
-        resolution.state = FilterLinkState::NoMatch;
+        resolution.state = FilterLinkState::kNoMatch;
         return resolution;
     }
-    if (matches.size() > 1U) {
-        resolution.state = FilterLinkState::RejectedAmbiguous;
+    if (kMatches.size() > 1U) {
+        resolution.state = FilterLinkState::kRejectedAmbiguous;
         return resolution;
     }
-    resolution.state = FilterLinkState::LinkedByRuntimeIdSameGeneration;
+    resolution.state = FilterLinkState::kLinkedByRuntimeIdSameGeneration;
     resolution.hasIndex = true;
-    resolution.filterIndex = matches.front();
+    resolution.filterIndex = kMatches.front();
     return resolution;
 }
 
-FilterReferenceResolution LinkObservationToCatalog(const WfpCatalog& catalog,
+FilterReferenceResolution linkObservationToCatalog(const WfpCatalog& catalog,
                                                    const ObservedFilterHit& hit) {
     RuntimeFilterReference reference;
     reference.filterId = hit.filterId;
     reference.filterKey = hit.filterKey;
     reference.capturedGeneration = hit.capturedGeneration;
-    reference.bootId = hit.connection.bootId;  // 事件自带的启动周期，用于跨启动保护
-    return ResolveFilterReference(catalog, reference);
+    reference.bootId = hit.connection.bootId;  // The event's native boot cycle, used for cross-boot protection.
+    return resolveFilterReference(catalog, reference);
 }
 
 namespace {
 
-// GUID 索引 + 让这套索引失真的两类行。std::map::emplace 会静默丢掉重复 GUID 的第二行，
-// 没有 GUID 的行则根本进不了索引 —— 两者都会让"增删改"结论悄悄漏掉规则。
+// GUID index + two types of rows that distort this index. std::map::emplace silently drops the second row for duplicate
+// GUIDs, and rows without a GUID never enter the index — both cause "add/remove/update" conclusions to silently miss rules.
 struct FilterGuidIndex final {
     std::map<std::string, std::size_t> byGuid;
     std::vector<std::string> duplicatedGuids;
@@ -2258,7 +2258,7 @@ struct FilterGuidIndex final {
     }
 };
 
-FilterGuidIndex BuildFilterGuidIndex(const std::vector<WfpFilter>& filters) {
+FilterGuidIndex buildFilterGuidIndex(const std::vector<WfpFilter>& filters) {
     FilterGuidIndex index;
     for (std::size_t i = 0; i < filters.size(); ++i) {
         const WfpFilter& filter = filters[i];
@@ -2266,9 +2266,9 @@ FilterGuidIndex BuildFilterGuidIndex(const std::vector<WfpFilter>& filters) {
             index.rowsWithoutGuid.push_back(i);
             continue;
         }
-        const auto inserted = index.byGuid.emplace(filter.filterKey.text, i);
-        if (!inserted.second) {
-            AddKey(index.duplicatedGuids, filter.filterKey.text);
+        const auto kInserted = index.byGuid.emplace(filter.filterKey.text, i);
+        if (!kInserted.second) {
+            addKey(index.duplicatedGuids, filter.filterKey.text);
         }
     }
     return index;
@@ -2276,89 +2276,89 @@ FilterGuidIndex BuildFilterGuidIndex(const std::vector<WfpFilter>& filters) {
 
 } // namespace
 
-CatalogDelta DiffCatalogs(const WfpCatalog& before, const WfpCatalog& after) {
+CatalogDelta diffCatalogs(const WfpCatalog& before, const WfpCatalog& after) {
     CatalogDelta delta;
-    const bool beforeUsable = before.partitionUsableForAbsence(WfpPartition::Filters);
-    const bool afterUsable = after.partitionUsableForAbsence(WfpPartition::Filters);
-    if (!beforeUsable) {
-        AddKey(delta.limitationKeys, "wfp.delta.before-incomplete");
+    const bool kBeforeUsable = before.partitionUsableForAbsence(WfpPartition::kFilters);
+    const bool kAfterUsable = after.partitionUsableForAbsence(WfpPartition::kFilters);
+    if (!kBeforeUsable) {
+        addKey(delta.limitationKeys, "wfp.delta.before-incomplete");
     }
-    if (!afterUsable) {
-        AddKey(delta.limitationKeys, "wfp.delta.after-incomplete");
+    if (!kAfterUsable) {
+        addKey(delta.limitationKeys, "wfp.delta.after-incomplete");
     }
 
-    const FilterGuidIndex beforeIndex = BuildFilterGuidIndex(before.filters());
-    const FilterGuidIndex afterIndex = BuildFilterGuidIndex(after.filters());
-    const std::map<std::string, std::size_t>& beforeByGuid = beforeIndex.byGuid;
-    const std::map<std::string, std::size_t>& afterByGuid = afterIndex.byGuid;
+    const FilterGuidIndex kBeforeIndex = buildFilterGuidIndex(before.filters());
+    const FilterGuidIndex kAfterIndex = buildFilterGuidIndex(after.filters());
+    const std::map<std::string, std::size_t>& beforeByGuid = kBeforeIndex.byGuid;
+    const std::map<std::string, std::size_t>& afterByGuid = kAfterIndex.byGuid;
 
-    // 索引失真时"两代之间毫无变化"这句话没有依据 —— 被丢掉的那一行既可能一直在，
-    // 也可能刚被删掉，本层不知道。
+    // When indices are distorted, the claim of 'no change between generations' is unfounded—the
+    // dropped line might have always existed or just been deleted; this layer doesn't know.
     delta.comparable =
-        beforeUsable && afterUsable && !beforeIndex.distorted() && !afterIndex.distorted();
+        kBeforeUsable && kAfterUsable && !kBeforeIndex.distorted() && !kAfterIndex.distorted();
 
-    // N-01：同一 GUID 在一侧出现多次 = 快照不自洽。目录自己已经会把它报成 Ambiguous，
-    // 这里绝不能取第一条了事，而要对这条 GUID 拒绝做任何增删改结论。
+    // N-01: A GUID appearing multiple times on one side indicates an inconsistent snapshot. The directory already reports this as Ambiguous;
+    // here we must not simply take the first occurrence, but must refuse to make any add/delete/modify conclusions for this GUID.
     std::vector<std::string> ambiguousGuids;
-    MergeKeys(ambiguousGuids, beforeIndex.duplicatedGuids);
-    MergeKeys(ambiguousGuids, afterIndex.duplicatedGuids);
+    mergeKeys(ambiguousGuids, kBeforeIndex.duplicatedGuids);
+    mergeKeys(ambiguousGuids, kAfterIndex.duplicatedGuids);
     if (!ambiguousGuids.empty()) {
-        AddKey(delta.limitationKeys, "wfp.delta.duplicate-guid");
+        addKey(delta.limitationKeys, "wfp.delta.duplicate-guid");
     }
     for (const std::string& text : ambiguousGuids) {
         CatalogChange change;
-        change.kind = CatalogChangeKind::PresenceUnknown;
-        change.filterKey = GuidFromText(text);
-        // 歧义行的运行时 id 本来就不唯一，留 unset 而不是随手取一条。
-        AddKey(change.limitationKeys, "wfp.delta.duplicate-guid");
+        change.kind = CatalogChangeKind::kPresenceUnknown;
+        change.filterKey = guidFromText(text);
+        // The runtime ID for ambiguous rows is inherently non-unique; leave it unset rather than arbitrarily picking one.
+        addKey(change.limitationKeys, "wfp.delta.duplicate-guid");
         delta.changes.push_back(std::move(change));
     }
 
-    // N-06：只有可复用运行时 id、没有 GUID 的行进不了比较循环。必须逐行产出可解释的
-    // "在场未知"，而不是只在 delta 级别记一个"有过这类行"的全局键 —— 那样看不出有几条、
-    // 是哪条、是新增还是删除。
-    if (!beforeIndex.rowsWithoutGuid.empty() || !afterIndex.rowsWithoutGuid.empty()) {
-        AddKey(delta.limitationKeys, "wfp.delta.filter-without-guid");
+    // N-06: Rows with only reusable runtime IDs and no GUID cannot enter the comparison loop. We must emit explainable
+    // 'presence unknown' for each row individually, rather than just recording a global key at the delta level indicating
+    // 'such rows existed'—the latter hides the count, the specific rows, and whether they were added or deleted.
+    if (!kBeforeIndex.rowsWithoutGuid.empty() || !kAfterIndex.rowsWithoutGuid.empty()) {
+        addKey(delta.limitationKeys, "wfp.delta.filter-without-guid");
     }
-    for (std::size_t row : beforeIndex.rowsWithoutGuid) {
+    for (std::size_t row : kBeforeIndex.rowsWithoutGuid) {
         CatalogChange change;
-        change.kind = CatalogChangeKind::PresenceUnknown;
+        change.kind = CatalogChangeKind::kPresenceUnknown;
         change.beforeFilterId = before.filters()[row].filterId;
-        AddKey(change.limitationKeys, "wfp.delta.filter-without-guid");
+        addKey(change.limitationKeys, "wfp.delta.filter-without-guid");
         delta.changes.push_back(std::move(change));
     }
-    for (std::size_t row : afterIndex.rowsWithoutGuid) {
+    for (std::size_t row : kAfterIndex.rowsWithoutGuid) {
         CatalogChange change;
-        change.kind = CatalogChangeKind::PresenceUnknown;
+        change.kind = CatalogChangeKind::kPresenceUnknown;
         change.afterFilterId = after.filters()[row].filterId;
-        AddKey(change.limitationKeys, "wfp.delta.filter-without-guid");
+        addKey(change.limitationKeys, "wfp.delta.filter-without-guid");
         delta.changes.push_back(std::move(change));
     }
 
     for (const auto& entry : beforeByGuid) {
-        if (HasLimitation(ambiguousGuids, entry.first)) {
-            continue;  // 已经产出过 PresenceUnknown
+        if (hasLimitation(ambiguousGuids, entry.first)) {
+            continue;  // PresenceUnknown has already been generated.
         }
         const WfpFilter& oldFilter = before.filters()[entry.second];
-        const auto found = afterByGuid.find(entry.first);
-        if (found == afterByGuid.end()) {
+        const auto kFound = afterByGuid.find(entry.first);
+        if (kFound == afterByGuid.end()) {
             CatalogChange change;
             change.filterKey = oldFilter.filterKey;
             change.beforeFilterId = oldFilter.filterId;
-            if (afterUsable) {
-                change.kind = CatalogChangeKind::Removed;
+            if (kAfterUsable) {
+                change.kind = CatalogChangeKind::kRemoved;
             } else {
-                // 新一侧没枚举全 —— "不在里面"不等于"被删了"（禁止从没采到推出结论）。
-                change.kind = CatalogChangeKind::PresenceUnknown;
-                AddKey(change.limitationKeys, "wfp.delta.after-incomplete");
+                // The new side wasn't fully enumerated — "not present" does not equal "deleted" (do not infer deletion from absence).
+                change.kind = CatalogChangeKind::kPresenceUnknown;
+                addKey(change.limitationKeys, "wfp.delta.after-incomplete");
             }
             delta.changes.push_back(std::move(change));
             continue;
         }
-        const WfpFilter& newFilter = after.filters()[found->second];
+        const WfpFilter& newFilter = after.filters()[kFound->second];
         if (oldFilter.action != newFilter.action || oldFilter.rawActionCode != newFilter.rawActionCode) {
             CatalogChange change;
-            change.kind = CatalogChangeKind::ActionChanged;
+            change.kind = CatalogChangeKind::kActionChanged;
             change.filterKey = oldFilter.filterKey;
             change.beforeFilterId = oldFilter.filterId;
             change.afterFilterId = newFilter.filterId;
@@ -2367,15 +2367,15 @@ CatalogDelta DiffCatalogs(const WfpCatalog& before, const WfpCatalog& after) {
         if (oldFilter.weightKind != newFilter.weightKind || oldFilter.weight != newFilter.weight ||
             oldFilter.effectiveWeight != newFilter.effectiveWeight) {
             CatalogChange change;
-            change.kind = CatalogChangeKind::WeightChanged;
+            change.kind = CatalogChangeKind::kWeightChanged;
             change.filterKey = oldFilter.filterKey;
             change.beforeFilterId = oldFilter.filterId;
             change.afterFilterId = newFilter.filterId;
             delta.changes.push_back(std::move(change));
         }
-        if (FilterConditionsSignature(oldFilter) != FilterConditionsSignature(newFilter)) {
+        if (filterConditionsSignature(oldFilter) != filterConditionsSignature(newFilter)) {
             CatalogChange change;
-            change.kind = CatalogChangeKind::ConditionsChanged;
+            change.kind = CatalogChangeKind::kConditionsChanged;
             change.filterKey = oldFilter.filterKey;
             change.beforeFilterId = oldFilter.filterId;
             change.afterFilterId = newFilter.filterId;
@@ -2387,28 +2387,28 @@ CatalogDelta DiffCatalogs(const WfpCatalog& before, const WfpCatalog& after) {
         if (beforeByGuid.find(entry.first) != beforeByGuid.end()) {
             continue;
         }
-        if (HasLimitation(ambiguousGuids, entry.first)) {
+        if (hasLimitation(ambiguousGuids, entry.first)) {
             continue;
         }
         const WfpFilter& newFilter = after.filters()[entry.second];
         CatalogChange change;
         change.filterKey = newFilter.filterKey;
         change.afterFilterId = newFilter.filterId;
-        if (beforeUsable) {
-            change.kind = CatalogChangeKind::Added;
+        if (kBeforeUsable) {
+            change.kind = CatalogChangeKind::kAdded;
         } else {
-            change.kind = CatalogChangeKind::PresenceUnknown;
-            AddKey(change.limitationKeys, "wfp.delta.before-incomplete");
+            change.kind = CatalogChangeKind::kPresenceUnknown;
+            addKey(change.limitationKeys, "wfp.delta.before-incomplete");
         }
         delta.changes.push_back(std::move(change));
     }
 
-    // 运行时 id 复用：同一个 filterId 在两代里指向不同 GUID。
+    // Runtime id reuse: The same filterId refers to a different GUID in each of two generations.
     const std::string& beforeBoot = before.captureWindow().bootId;
     const std::string& afterBoot = after.captureWindow().bootId;
-    const bool bootChanged = !beforeBoot.empty() && !afterBoot.empty() && beforeBoot != afterBoot;
-    if (bootChanged) {
-        AddKey(delta.limitationKeys, "wfp.delta.boot-changed");
+    const bool kBootChanged = !beforeBoot.empty() && !afterBoot.empty() && beforeBoot != afterBoot;
+    if (kBootChanged) {
+        addKey(delta.limitationKeys, "wfp.delta.boot-changed");
     }
     std::map<std::uint64_t, std::string> beforeById;
     for (const WfpFilter& filter : before.filters()) {
@@ -2420,19 +2420,19 @@ CatalogDelta DiffCatalogs(const WfpCatalog& before, const WfpCatalog& after) {
         if (!filter.filterId.present || !filter.filterKey.known()) {
             continue;
         }
-        const auto found = beforeById.find(filter.filterId.value);
-        if (found == beforeById.end() || found->second == filter.filterKey.text) {
+        const auto kFound = beforeById.find(filter.filterId.value);
+        if (kFound == beforeById.end() || kFound->second == filter.filterKey.text) {
             continue;
         }
         CatalogChange change;
-        change.kind = CatalogChangeKind::RuntimeIdReused;
+        change.kind = CatalogChangeKind::kRuntimeIdReused;
         change.filterKey = filter.filterKey;
         change.beforeFilterId = filter.filterId;
         change.afterFilterId = filter.filterId;
-        AddKey(change.limitationKeys, "wfp.link.id-reused");
-        if (bootChanged) {
-            // 跨启动的 id 重排是必然现象，不是"同一次会话里 id 被回收再分配"的证据。
-            AddKey(change.limitationKeys, "wfp.delta.boot-changed");
+        addKey(change.limitationKeys, "wfp.link.id-reused");
+        if (kBootChanged) {
+            // ID reordering across boots is inevitable and does not constitute evidence of ID recycling and reallocation within the same session.
+            addKey(change.limitationKeys, "wfp.delta.boot-changed");
         }
         delta.changes.push_back(std::move(change));
     }
@@ -2440,126 +2440,126 @@ CatalogDelta DiffCatalogs(const WfpCatalog& before, const WfpCatalog& after) {
 }
 
 // ---------------------------------------------------------------------------
-// N-08：导航
+// N-08: navigation
 // ---------------------------------------------------------------------------
 namespace {
 
-// outcome 复用 LiveNavigation 的取值域（本层不新增导航结果），拒绝原因单列一维。
-WfpNavigationRejection RejectionFromOutcome(NavigationOutcome outcome) noexcept {
+// outcome reuses the value domain of LiveNavigation (no new navigation results added at this layer); rejection reasons are listed separately in a single dimension.
+WfpNavigationRejection rejectionFromOutcome(NavigationOutcome outcome) noexcept {
     switch (outcome) {
-    case NavigationOutcome::Delivered:         return WfpNavigationRejection::None;
-    case NavigationOutcome::TargetPageMissing: return WfpNavigationRejection::TargetPageMissing;
-    case NavigationOutcome::ObjectNotPresent:  return WfpNavigationRejection::ObjectNotPresent;
-    case NavigationOutcome::IdentityUnusable:  return WfpNavigationRejection::IdentityUnusable;
-    case NavigationOutcome::EvidenceIdMissing: return WfpNavigationRejection::EvidenceIdMissing;
-    case NavigationOutcome::EvidenceNotSaved:  return WfpNavigationRejection::EvidenceNotSaved;
+    case NavigationOutcome::kDelivered:         return WfpNavigationRejection::kNone;
+    case NavigationOutcome::kTargetPageMissing: return WfpNavigationRejection::kTargetPageMissing;
+    case NavigationOutcome::kObjectNotPresent:  return WfpNavigationRejection::kObjectNotPresent;
+    case NavigationOutcome::kIdentityUnusable:  return WfpNavigationRejection::kIdentityUnusable;
+    case NavigationOutcome::kEvidenceIdMissing: return WfpNavigationRejection::kEvidenceIdMissing;
+    case NavigationOutcome::kEvidenceNotSaved:  return WfpNavigationRejection::kEvidenceNotSaved;
     }
-    return WfpNavigationRejection::ObjectNotPresent;
+    return WfpNavigationRejection::kObjectNotPresent;
 }
 
 } // namespace
 
-ObjectRef MakeFilterRef(const WfpFilter& filter, std::string evidenceId) {
+ObjectRef makeFilterRef(const WfpFilter& filter, std::string evidenceId) {
     ObjectRef ref;
-    ref.kind = ObjectKind::Unknown;  // ObjectIdentity 没有 WFP filter 这一类
+    ref.kind = ObjectKind::kUnknown;  // ObjectIdentity does not include WFP filter types.
     ref.evidenceId = std::move(evidenceId);
     ref.displayText = filter.displayName.present ? filter.displayName.value : filter.filterKey.text;
     if (filter.filterKey.known()) {
         ref.key = "wfp-filter|" + filter.filterKey.text;
-        ref.strength = IdentityStrength::Strong;  // GUID 是稳定的跨会话键
+        ref.strength = IdentityStrength::kStrong;  // GUID is a stable cross-session key.
     } else {
-        // 只有运行时 id 的引用不发键：filterId 会被复用，跨会话跳过去可能是别的规则。
-        ref.strength = IdentityStrength::Unusable;
+        // References with runtime IDs do not emit keys: filterId is reused, and jumping across sessions may refer to different rules.
+        ref.strength = IdentityStrength::kUnusable;
     }
     return ref;
 }
 
-ObjectRef MakeCalloutRef(const WfpCallout& callout, std::string evidenceId) {
+ObjectRef makeCalloutRef(const WfpCallout& callout, std::string evidenceId) {
     ObjectRef ref;
-    ref.kind = ObjectKind::Unknown;
+    ref.kind = ObjectKind::kUnknown;
     ref.evidenceId = std::move(evidenceId);
     ref.displayText = callout.displayName.present ? callout.displayName.value : callout.calloutKey.text;
     if (callout.calloutKey.known()) {
         ref.key = "wfp-callout|" + callout.calloutKey.text;
-        ref.strength = IdentityStrength::Strong;
+        ref.strength = IdentityStrength::kStrong;
     } else {
-        ref.strength = IdentityStrength::Unusable;
+        ref.strength = IdentityStrength::kUnusable;
     }
     return ref;
 }
 
-WfpNavigationResult NavigateConnectionToProcess(const ConnectionDescription& connection,
+WfpNavigationResult navigateConnectionToProcess(const ConnectionDescription& connection,
                                                 const LiveResolution& live,
                                                 bool targetPageAvailable,
                                                 bool evidencePresentInSession,
                                                 std::string evidenceId) {
     WfpNavigationResult result;
     result.identityRevalidated = true;
-    result.liveDecision = ResolveProcessNavigation(connection.identity.owner, live);
-    result.request.page = NavigationPage::Process;
+    result.liveDecision = resolveProcessNavigation(connection.identity.owner, live);
+    result.request.page = NavigationPage::kProcess;
     result.request.evidenceId = evidenceId;
 
     switch (result.liveDecision) {
-    case LiveNavigationDecision::Allow:
+    case LiveNavigationDecision::kAllow:
         break;
-    case LiveNavigationDecision::RejectObjectExited:
-    case LiveNavigationDecision::RejectIdentityMismatch:
-        // PID 复用 / 对象已退出：现场没有这个对象，绝不把操作交给"看起来像"的新进程。
-        result.request.object = MakeProcessRef(connection.identity.owner, std::move(evidenceId));
-        result.outcome = NavigationOutcome::ObjectNotPresent;
-        result.rejection = WfpNavigationRejection::ObjectNotPresent;
+    case LiveNavigationDecision::kRejectObjectExited:
+    case LiveNavigationDecision::kRejectIdentityMismatch:
+        // PID reuse / object exited: The object is not present in the context; never delegate the operation to a new process that merely resembles it.
+        result.request.object = makeProcessRef(connection.identity.owner, std::move(evidenceId));
+        result.outcome = NavigationOutcome::kObjectNotPresent;
+        result.rejection = WfpNavigationRejection::kObjectNotPresent;
         return result;
-    case LiveNavigationDecision::RejectIdentityUnverifiable:
-        result.request.object = MakeProcessRef(connection.identity.owner, std::move(evidenceId));
-        result.outcome = NavigationOutcome::IdentityUnusable;
-        result.rejection = WfpNavigationRejection::IdentityUnusable;
+    case LiveNavigationDecision::kRejectIdentityUnverifiable:
+        result.request.object = makeProcessRef(connection.identity.owner, std::move(evidenceId));
+        result.outcome = NavigationOutcome::kIdentityUnusable;
+        result.rejection = WfpNavigationRejection::kIdentityUnusable;
         return result;
     }
 
-    result.request.object = MakeProcessRef(live.liveProcess, std::move(evidenceId));
-    result.outcome = DecideNavigation(result.request, targetPageAvailable, true, evidencePresentInSession);
-    result.rejection = RejectionFromOutcome(result.outcome);
+    result.request.object = makeProcessRef(live.liveProcess, std::move(evidenceId));
+    result.outcome = decideNavigation(result.request, targetPageAvailable, true, evidencePresentInSession);
+    result.rejection = rejectionFromOutcome(result.outcome);
     return result;
 }
 
-WfpNavigationResult NavigateFilterToEvidence(const WfpFilter& filter,
+WfpNavigationResult navigateFilterToEvidence(const WfpFilter& filter,
                                              bool targetPageAvailable,
                                              bool objectPresentInPage,
                                              bool evidencePresentInSession,
                                              std::string evidenceId) {
     WfpNavigationResult result;
-    result.request.page = NavigationPage::Network;
+    result.request.page = NavigationPage::kNetwork;
     result.request.evidenceId = evidenceId;
-    result.request.object = MakeFilterRef(filter, std::move(evidenceId));
-    result.outcome = DecideNavigation(result.request, targetPageAvailable, objectPresentInPage,
+    result.request.object = makeFilterRef(filter, std::move(evidenceId));
+    result.outcome = decideNavigation(result.request, targetPageAvailable, objectPresentInPage,
                                       evidencePresentInSession);
-    result.rejection = RejectionFromOutcome(result.outcome);
+    result.rejection = rejectionFromOutcome(result.outcome);
     return result;
 }
 
-WfpNavigationResult NavigateObservationToTimeline(const ObservedFilterHit& hit,
+WfpNavigationResult navigateObservationToTimeline(const ObservedFilterHit& hit,
                                                   bool targetPageAvailable,
                                                   bool evidencePresentInSession) {
     WfpNavigationResult result;
-    result.request.page = NavigationPage::Timeline;
+    result.request.page = NavigationPage::kTimeline;
     result.request.evidenceId = hit.evidenceId;
-    result.request.object = MakeConnectionRef(hit.connection, hit.evidenceId);
-    // 先按常规导航判据判：身份不足 / 没带证据 id / 离线没保存 / 目标页不在，这四种
-    // 原因各不相同。把来源可信度排在前面会让它们全被"对象不在当前数据里"盖掉 ——
-    // 连"请求根本没带证据 id"都查不出来。
-    result.outcome = DecideNavigation(result.request, targetPageAvailable, true, evidencePresentInSession);
-    result.rejection = RejectionFromOutcome(result.outcome);
-    if (ClassifyObservation(hit) != ObservationTrust::ActualObservation) {
-        // N-04：来源不受支持/未启用/来源不明的记录不能当"实际经过路径"放到时间线上。
-        // outcome 保留上面那条常规判据的结论，拒绝原因单独标成 SourceNotTrusted：
-        // 两个字段合起来才说得清"既不可信、而且还没带证据 id"。
+    result.request.object = makeConnectionRef(hit.connection, hit.evidenceId);
+    // First, apply standard navigation criteria: insufficient identity, missing evidence ID, offline without saving, or
+    // target page unavailable. These four reasons are distinct. Prioritizing source trustworthiness would cause all of
+    // them to be masked by "object not in current data" — even failing to detect that the request lacked an evidence ID.
+    result.outcome = decideNavigation(result.request, targetPageAvailable, true, evidencePresentInSession);
+    result.rejection = rejectionFromOutcome(result.outcome);
+    if (classifyObservation(hit) != ObservationTrust::kActualObservation) {
+        // N-04: Records from unsupported, disabled, or untrusted sources cannot be placed on the timeline as the 'actual path traversed'.
+        // outcome: Retains the conclusion from the previous standard check; the rejection reason is separately marked as SourceNotTrusted.
+        // These two fields together clarify the state of 'untrusted and lacking an evidence ID'.
         result.blockedByUntrustedSource = true;
-        if (result.outcome == NavigationOutcome::Delivered) {
-            result.outcome = NavigationOutcome::ObjectNotPresent;
+        if (result.outcome == NavigationOutcome::kDelivered) {
+            result.outcome = NavigationOutcome::kObjectNotPresent;
         }
-        result.rejection = WfpNavigationRejection::SourceNotTrusted;
+        result.rejection = WfpNavigationRejection::kSourceNotTrusted;
     }
     return result;
 }
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

@@ -1,0 +1,627 @@
+/*++
+
+Module Name:
+
+    hvm_nested_decode.c
+
+Abstract:
+
+    Implements VM-exit instruction-information decoding for nested VMX
+    instruction dispatch.
+
+Environment:
+
+    Kernel-mode Driver Framework.
+
+--*/
+
+#include "hvm_nested_decode.h"
+#include "hvm_exit.h"
+/* VMCS access goes through the seam in hvm_vmcs.h, never the raw intrinsic. */
+#include "hvm_vmcs.h"
+/*
+ * The guest accessors below walk the guest's own page tables and read the
+ * entries as physical memory.  That is what this window is for, and it is the
+ * only mapping primitive in the tree documented as VM-exit safe.
+ */
+#include "hvm_phys_window.h"
+
+#if defined(_M_AMD64)
+
+/* Name the VM-exit instruction-information field. */
+#define KSW_VMCS_VMX_INSTRUCTION_INFORMATION 0x440EUL
+/* Name the exit-qualification field, which carries the displacement. */
+#define KSW_VMCS_EXIT_QUALIFICATION 0x6400UL
+/* Name the VMCS guest stack pointer, which is not in the register frame. */
+#define KSW_VMCS_GUEST_RSP 0x681CUL
+
+/*
+ * Name the guest segment base fields.
+ *
+ * They are consecutive at a stride of two starting from ES, so the segment
+ * register number out of the instruction-information field indexes them
+ * directly.  The stride is asserted below rather than assumed.
+ */
+#define KSW_VMCS_GUEST_ES_BASE 0x6806UL
+#define KSW_VMCS_GUEST_SEGMENT_BASE_STRIDE 2UL
+/* Name the highest segment register number Intel encodes (GS). */
+#define KSW_VMCS_GUEST_SEGMENT_MAX 5UL
+
+/* Name the architectural register number that denotes RSP. */
+#define KSW_HVM_GPR_NUMBER_RSP 4UL
+/* Name the count of architectural general-purpose registers. */
+#define KSW_HVM_GPR_COUNT 16UL
+
+UCHAR
+kswordArkHvmNestedReadGpr(
+    _In_ const struct KswHvmGprFrame* frame,
+    _In_ ULONG registerNumber,
+    _Out_ ULONGLONG* value
+    )
+{
+    /* Reject an incomplete caller contract before touching any storage. */
+    if (frame == NULL || value == NULL) {
+        /* Return the explicit contract failure. */
+        return 1U;
+    }
+    *value = 0ULL;
+    /* Reject register numbers Intel does not encode. */
+    if (registerNumber >= KSW_HVM_GPR_COUNT) {
+        /* Return the explicit range failure. */
+        return 1U;
+    }
+    /*
+     * RSP is the hole in the frame, and it is a silent one.
+     *
+     * Intel numbers registers RAX, RCX, RDX, RBX, RSP, RBP, RSI, RDI, R8..R15.
+     * The VM-exit stub does not push RSP - it cannot, because the value that
+     * matters is the guest's, and by the time the stub runs the stack pointer
+     * is the host's.  The guest value lives in the VMCS instead.
+     *
+     * So the frame holds fifteen registers where Intel numbers sixteen, and
+     * every number above four is shifted by one relative to a naive index.
+     * Treating the frame as an array would hand back RBP for RSP, RSI for RBP,
+     * and so on for the rest - wrong values, no error, for every instruction
+     * whose operand used one of those registers as a base or index.
+     */
+    if (registerNumber == KSW_HVM_GPR_NUMBER_RSP) {
+        SIZE_T guestRsp = 0U;
+
+        /* Read the guest stack pointer from the only place that holds it. */
+        if (kswordArkHvmVmcsFieldLoad(KSW_VMCS_GUEST_RSP, &guestRsp) != 0U) {
+            /* Return the explicit VMCS read failure. */
+            return 1U;
+        }
+        *value = (ULONGLONG)guestRsp;
+        /* Return the complete guest stack pointer. */
+        return 0U;
+    }
+    switch (registerNumber) {
+    case 0UL:  *value = frame->rax; break;
+    case 1UL:  *value = frame->rcx; break;
+    case 2UL:  *value = frame->rdx; break;
+    case 3UL:  *value = frame->rbx; break;
+    /* Case four is RSP and was handled above. */
+    case 5UL:  *value = frame->rbp; break;
+    case 6UL:  *value = frame->rsi; break;
+    case 7UL:  *value = frame->rdi; break;
+    case 8UL:  *value = frame->r8;  break;
+    case 9UL:  *value = frame->r9;  break;
+    case 10UL: *value = frame->r10; break;
+    case 11UL: *value = frame->r11; break;
+    case 12UL: *value = frame->r12; break;
+    case 13UL: *value = frame->r13; break;
+    case 14UL: *value = frame->r14; break;
+    case 15UL: *value = frame->r15; break;
+    default:
+        /* Return the explicit unreachable-number failure. */
+        return 1U;
+    }
+    /* Return the complete register value. */
+    return 0U;
+}
+
+UCHAR
+kswordArkHvmNestedWriteGpr(
+    _Inout_ struct KswHvmGprFrame* frame,
+    _In_ ULONG registerNumber,
+    _In_ ULONGLONG value
+    )
+{
+    /* Reject an incomplete caller contract before touching any storage. */
+    if (frame == NULL || registerNumber >= KSW_HVM_GPR_COUNT) {
+        /* Return the explicit contract failure. */
+        return 1U;
+    }
+    /* RSP is written back through the VMCS for the same reason it is read. */
+    if (registerNumber == KSW_HVM_GPR_NUMBER_RSP) {
+        /* Return whatever the VMCS write reported, unmodified. */
+        return kswordArkHvmVmcsFieldStore(
+            KSW_VMCS_GUEST_RSP,
+            (SIZE_T)value);
+    }
+    switch (registerNumber) {
+    case 0UL:  frame->rax = value; break;
+    case 1UL:  frame->rcx = value; break;
+    case 2UL:  frame->rdx = value; break;
+    case 3UL:  frame->rbx = value; break;
+    /* Case four is RSP and was handled above. */
+    case 5UL:  frame->rbp = value; break;
+    case 6UL:  frame->rsi = value; break;
+    case 7UL:  frame->rdi = value; break;
+    case 8UL:  frame->r8  = value; break;
+    case 9UL:  frame->r9  = value; break;
+    case 10UL: frame->r10 = value; break;
+    case 11UL: frame->r11 = value; break;
+    case 12UL: frame->r12 = value; break;
+    case 13UL: frame->r13 = value; break;
+    case 14UL: frame->r14 = value; break;
+    case 15UL: frame->r15 = value; break;
+    default:
+        /* Return the explicit unreachable-number failure. */
+        return 1U;
+    }
+    /* Return the complete register write. */
+    return 0U;
+}
+
+/* Guest paging-mode inputs the walk needs, all read from the VMCS. */
+#define KSW_VMCS_GUEST_CR0 0x6800UL
+#define KSW_VMCS_GUEST_CR3 0x6802UL
+#define KSW_VMCS_GUEST_CR4 0x6804UL
+#define KSW_VMCS_GUEST_IA32_EFER 0x2806UL
+
+/* CR0.PG, CR4.PAE, CR4.LA57 and EFER.LMA select the paging mode. */
+#define KSW_HVM_CR0_PG (1ULL << 31)
+#define KSW_HVM_CR4_PAE (1ULL << 5)
+#define KSW_HVM_CR4_LA57 (1ULL << 12)
+#define KSW_HVM_EFER_LMA (1ULL << 10)
+
+/* Paging-structure entry bits the walk reads. */
+#define KSW_HVM_PTE_PRESENT (1ULL << 0)
+#define KSW_HVM_PTE_LARGE (1ULL << 7)
+/* Bits 51:12 of an entry hold the next table or the page frame. */
+#define KSW_HVM_PTE_FRAME_MASK 0x000FFFFFFFFFF000ULL
+/* A 1 GiB leaf keeps bits 51:30; a 2 MiB leaf keeps bits 51:21. */
+#define KSW_HVM_PTE_FRAME_1G_MASK 0x000FFFFFC0000000ULL
+#define KSW_HVM_PTE_FRAME_2M_MASK 0x000FFFFFFFE00000ULL
+
+/*
+ * Translate one guest linear address to a guest physical address.
+ *
+ * This function exists because of a machine check, not a code review.  The
+ * accessors below used to dereference the guest linear address directly, on
+ * the argument that HOST_CR3 and GUEST_CR3 name the same kernel half because
+ * Windows maps it identically into every process.  That argument is true of
+ * every Windows *process* and false of the thing this whole nested path exists
+ * to host: another hypervisor runs its own page tables.  The first real one to
+ * reach here handed us 0xFFFFFFFFFC407E98 - an address in its own monitor
+ * world, mapped in its CR3 and in no Windows address space at all - and the
+ * direct dereference took a page fault in root mode.  Bugcheck 0xD1, IRQL 0xFF,
+ * inside the INVEPT handler.
+ *
+ * The old comment also said there was no VM-exit-safe way to ask whether a page
+ * is present.  There is: walk the guest's own tables through the per-processor
+ * physical window, which allocates nothing, takes no lock and calls no memory
+ * manager routine.  A walk that ends on a clear present bit is a refusal, which
+ * the callers already know how to turn into VMfailInvalid.
+ *
+ * The returned address is a guest physical address, and the caller reads it
+ * back through the same window - which treats it as a host physical address.
+ * That is sound only because our EPT identity-maps RAM, the same assumption
+ * hvm_nested_bitmap.c and hvm_nested_ept.c already read guest pages under.
+ *
+ * Refused rather than implemented: five-level paging, and anything that is not
+ * 4-level IA-32e paging.  A guest using either gets a clean refusal rather than
+ * a walk under the wrong structure format.
+ */
+static NTSTATUS
+kswordArkHvmNestedTranslateGuestLinear(
+    _Inout_ KswHvmPhysWindow* window,
+    _In_ ULONGLONG linearAddress,
+    _Out_ ULONGLONG* guestPhysical
+    )
+{
+    SIZE_T cr0 = 0U;
+    SIZE_T cr3 = 0U;
+    SIZE_T cr4 = 0U;
+    SIZE_T efer = 0U;
+    ULONGLONG table = 0ULL;
+    ULONG level = 0UL;
+
+    *guestPhysical = 0ULL;
+    if (window == NULL) {
+        /* Return the explicit missing-window failure. */
+        return STATUS_DEVICE_NOT_READY;
+    }
+    if (kswordArkHvmVmcsFieldLoad(KSW_VMCS_GUEST_CR0, &cr0) != 0 ||
+        kswordArkHvmVmcsFieldLoad(KSW_VMCS_GUEST_CR3, &cr3) != 0 ||
+        kswordArkHvmVmcsFieldLoad(KSW_VMCS_GUEST_CR4, &cr4) != 0 ||
+        kswordArkHvmVmcsFieldLoad(KSW_VMCS_GUEST_IA32_EFER, &efer) != 0) {
+        /* Return the explicit unreadable-guest-state failure. */
+        return STATUS_UNSUCCESSFUL;
+    }
+    /* Refuse every paging mode other than 4-level IA-32e paging. */
+    if (((ULONGLONG)cr0 & KSW_HVM_CR0_PG) == 0ULL ||
+        ((ULONGLONG)cr4 & KSW_HVM_CR4_PAE) == 0ULL ||
+        ((ULONGLONG)efer & KSW_HVM_EFER_LMA) == 0ULL ||
+        ((ULONGLONG)cr4 & KSW_HVM_CR4_LA57) != 0ULL) {
+        /* Return the explicit unsupported-paging-mode refusal. */
+        return STATUS_NOT_SUPPORTED;
+    }
+    table = (ULONGLONG)cr3 & KSW_HVM_PTE_FRAME_MASK;
+    /* Walk PML4 -> PDPT -> PD -> PT, stopping at the first leaf. */
+    for (level = 4UL; level >= 1UL; --level) {
+        const ULONG kShift = 12UL + (9UL * (level - 1UL));
+        const ULONGLONG kIndex = (linearAddress >> kShift) & 0x1FFULL;
+        ULONGLONG entry = 0ULL;
+
+        if (!NT_SUCCESS(kswordArkHvmPhysWindowReadQword(
+                window,
+                table + (kIndex * 8ULL),
+                &entry))) {
+            /* Return the explicit unreadable-structure failure. */
+            return STATUS_UNSUCCESSFUL;
+        }
+        if ((entry & KSW_HVM_PTE_PRESENT) == 0ULL) {
+            /* Return the explicit not-present refusal. */
+            return STATUS_NOT_FOUND;
+        }
+        /* A leaf at level 3 covers 1 GiB and at level 2 covers 2 MiB. */
+        if (level == 3UL && (entry & KSW_HVM_PTE_LARGE) != 0ULL) {
+            *guestPhysical = (entry & KSW_HVM_PTE_FRAME_1G_MASK) |
+                (linearAddress & 0x3FFFFFFFULL);
+            /* Return the complete one-gibibyte translation. */
+            return STATUS_SUCCESS;
+        }
+        if (level == 2UL && (entry & KSW_HVM_PTE_LARGE) != 0ULL) {
+            *guestPhysical = (entry & KSW_HVM_PTE_FRAME_2M_MASK) |
+                (linearAddress & 0x1FFFFFULL);
+            /* Return the complete two-mebibyte translation. */
+            return STATUS_SUCCESS;
+        }
+        if (level == 1UL) {
+            *guestPhysical = (entry & KSW_HVM_PTE_FRAME_MASK) |
+                (linearAddress & 0xFFFULL);
+            /* Return the complete four-kibibyte translation. */
+            return STATUS_SUCCESS;
+        }
+        table = entry & KSW_HVM_PTE_FRAME_MASK;
+    }
+    /* Return the unreachable-walk failure. */
+    return STATUS_UNSUCCESSFUL;
+}
+
+/* VMX memory operands need not be aligned, including packed GDTR/IDTR bases. */
+static NTSTATUS
+kswordArkHvmNestedAccessGuestQword(
+    _Inout_opt_ KswHvmPhysWindow* window,
+    _In_ ULONGLONG linearAddress,
+    _Inout_ ULONGLONG* value,
+    _In_ BOOLEAN write
+    )
+{
+    ULONGLONG physical[2] = { 0ULL, 0ULL };
+    ULONG bytes[2] = { 8UL, 0UL };
+    ULONG count = 1UL;
+    ULONG part = 0UL;
+    ULONG offset = 0UL;
+    ULONGLONG transfer = write ? *value : 0ULL;
+    const ULONGLONG kLast = linearAddress + 7ULL;
+    NTSTATUS status;
+
+    /* The walker supports four-level paging; reject a noncanonical range. */
+    if (kLast < linearAddress ||
+        ((linearAddress >> 47) != 0ULL && (linearAddress >> 47) != 0x1FFFFULL) ||
+        ((kLast >> 47) != 0ULL && (kLast >> 47) != 0x1FFFFULL)) {
+        return STATUS_ACCESS_VIOLATION;
+    }
+    if ((linearAddress & 0xFFFULL) > 0xFF8ULL) {
+        bytes[0] = (ULONG)(0x1000ULL - (linearAddress & 0xFFFULL));
+        bytes[1] = 8UL - bytes[0];
+        count = 2UL;
+    }
+    /* Resolve both pages before a write so a missing second page changes neither. */
+    for (part = 0UL; part < count; ++part) {
+        status = kswordArkHvmNestedTranslateGuestLinear(
+            window, linearAddress + offset, &physical[part]);
+        if (!NT_SUCCESS(status)) { return status; }
+        offset += bytes[part];
+    }
+    offset = 0UL;
+    for (part = 0UL; part < count; ++part) {
+        volatile VOID* mapped = NULL;
+        ULONG index;
+        if (kswordArkHvmPhysWindowMap(window, physical[part], bytes[part], &mapped) !=
+            KSW_HVM_PHYS_WINDOW_OK) {
+            return STATUS_UNSUCCESSFUL;
+        }
+        for (index = 0UL; index < bytes[part]; ++index) {
+            if (write) {
+                ((volatile UCHAR*)mapped)[index] = ((UCHAR*)&transfer)[offset + index];
+            } else {
+                ((UCHAR*)&transfer)[offset + index] = ((volatile UCHAR*)mapped)[index];
+            }
+        }
+        kswordArkHvmPhysWindowUnmap(window);
+        offset += bytes[part];
+    }
+    if (!write) { *value = transfer; }
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+kswordArkHvmNestedReadGuestQword(
+    _Inout_opt_ struct KswHvmPhysWindow* window,
+    _In_ ULONGLONG linearAddress,
+    _Out_ ULONGLONG* value
+    )
+{
+    /* Reject an incomplete caller contract before any translation. */
+    if (value == NULL) {
+        /* Return the exact caller-contract failure. */
+        return STATUS_INVALID_PARAMETER;
+    }
+    *value = 0ULL;
+    return kswordArkHvmNestedAccessGuestQword(window, linearAddress, value, FALSE);
+}
+
+NTSTATUS
+kswordArkHvmNestedWriteGuestQword(
+    _Inout_opt_ struct KswHvmPhysWindow* window,
+    _In_ ULONGLONG linearAddress,
+    _In_ ULONGLONG value
+    )
+{
+    /* As before, this software access does not update guest paging A/D bits. */
+    return kswordArkHvmNestedAccessGuestQword(window, linearAddress, &value, TRUE);
+}
+
+/* Translate the encoded address-size field into a width in bytes. */
+static UCHAR
+kswordArkHvmNestedAddressSizeBytes(
+    _In_ ULONG encoded
+    )
+{
+    /* Select the two-byte width Intel encodes as zero. */
+    if (encoded == 0UL) {
+        /* Return sixteen-bit addressing. */
+        return 2U;
+    }
+    /* Select the four-byte width Intel encodes as one. */
+    if (encoded == 1UL) {
+        /* Return thirty-two-bit addressing. */
+        return 4U;
+    }
+    /* Return sixty-four-bit addressing for every remaining encoding. */
+    return 8U;
+}
+
+/* Truncate one address to the operand address width. */
+static ULONGLONG
+kswordArkHvmNestedTruncateAddress(
+    _In_ ULONGLONG address,
+    _In_ UCHAR addressSizeBytes
+    )
+{
+    /* Select sixteen-bit truncation. */
+    if (addressSizeBytes == 2U) {
+        /* Return the low sixteen bits. */
+        return address & 0xFFFFULL;
+    }
+    /* Select thirty-two-bit truncation. */
+    if (addressSizeBytes == 4U) {
+        /* Return the low thirty-two bits. */
+        return address & 0xFFFFFFFFULL;
+    }
+    /* Return the untruncated sixty-four-bit address. */
+    return address;
+}
+
+NTSTATUS
+kswordArkHvmNestedDecodeOperand(
+    _In_ const struct KswHvmGprFrame* frame,
+    _In_ ULONG layout,
+    _Out_ KswHvmVmxOperand* operand
+    )
+{
+    SIZE_T rawInformation = 0U;
+    SIZE_T rawQualification = 0U;
+    ULONG information = 0UL;
+    ULONG scaling = 0UL;
+    ULONG segment = 0UL;
+    ULONG indexRegister = 0UL;
+    ULONG baseRegister = 0UL;
+    BOOLEAN indexValid = FALSE;
+    BOOLEAN baseValid = FALSE;
+    ULONGLONG effectiveAddress = 0ULL;
+    ULONGLONG component = 0ULL;
+    SIZE_T segmentBase = 0U;
+
+    /* Reject an incomplete caller contract before reading any VMCS field. */
+    if (frame == NULL || operand == NULL) {
+        /* Return the exact caller-contract failure. */
+        return STATUS_INVALID_PARAMETER;
+    }
+    RtlZeroMemory(operand, sizeof(*operand));
+    /* Read the instruction-information field that describes the operand. */
+    if (kswordArkHvmVmcsFieldLoad(
+            KSW_VMCS_VMX_INSTRUCTION_INFORMATION,
+            &rawInformation) != 0U) {
+        /* Return the explicit VMCS read failure. */
+        return STATUS_UNSUCCESSFUL;
+    }
+    information = (ULONG)rawInformation;
+    /* Decode the address width, which both layouts place at bits 9:7. */
+    operand->addressSizeBytes = kswordArkHvmNestedAddressSizeBytes(
+        (information >> 7) & 0x7UL);
+    /*
+     * Decode the register form, which only VMREAD and VMWRITE can take.
+     *
+     * Bit 10 is cleared to zero for the memory-only instructions, so reading
+     * it under either layout is safe; what is not safe is reading bits 6:3 or
+     * 31:28 under the memory-only layout, where Intel leaves them undefined.
+     */
+    if (layout == KSW_HVM_VMX_OPERAND_LAYOUT_VMREAD_WRITE) {
+        operand->primaryRegister = (UCHAR)((information >> 3) & 0xFUL);
+        operand->secondaryRegister = (UCHAR)((information >> 28) & 0xFUL);
+        if (((information >> 10) & 0x1UL) != 0UL) {
+            operand->isRegister = TRUE;
+            /* Return the complete register-form operand. */
+            return STATUS_SUCCESS;
+        }
+    } else if (layout == KSW_HVM_VMX_OPERAND_LAYOUT_INVALIDATION) {
+        /*
+         * The invalidation pair has a register operand but never a register
+         * *form*: the descriptor is always in memory, so bit 10 is not
+         * consulted and the decode falls through to the memory path below.
+         */
+        operand->secondaryRegister = (UCHAR)((information >> 28) & 0xFUL);
+    }
+    /* Decode the memory form shared by both layouts. */
+    scaling = information & 0x3UL;
+    segment = (information >> 15) & 0x7UL;
+    indexRegister = (information >> 18) & 0xFUL;
+    /* Intel sets the invalid bits to one, so valid is the cleared state. */
+    indexValid = (((information >> 22) & 0x1UL) == 0UL);
+    baseRegister = (information >> 23) & 0xFUL;
+    baseValid = (((information >> 27) & 0x1UL) == 0UL);
+    /* Read the displacement, which the exit qualification carries whole. */
+    if (kswordArkHvmVmcsFieldLoad(
+            KSW_VMCS_EXIT_QUALIFICATION,
+            &rawQualification) != 0U) {
+        /* Return the explicit VMCS read failure. */
+        return STATUS_UNSUCCESSFUL;
+    }
+    effectiveAddress = (ULONGLONG)rawQualification;
+    /* Add the base register when the instruction named one. */
+    if (baseValid) {
+        if (kswordArkHvmNestedReadGpr(
+                frame,
+                baseRegister,
+                &component) != 0U) {
+            /* Return the explicit register read failure. */
+            return STATUS_UNSUCCESSFUL;
+        }
+        effectiveAddress += component;
+    }
+    /* Add the scaled index register when the instruction named one. */
+    if (indexValid) {
+        if (kswordArkHvmNestedReadGpr(
+                frame,
+                indexRegister,
+                &component) != 0U) {
+            /* Return the explicit register read failure. */
+            return STATUS_UNSUCCESSFUL;
+        }
+        effectiveAddress += (component << scaling);
+    }
+    /*
+     * Truncate before adding the segment base, not after.
+     *
+     * The address-size attribute bounds the effective address that the
+     * addressing expression produces; the segment base is then added to form a
+     * linear address that is not itself truncated to that width.  Doing it in
+     * the other order would mask off the high half of a long-mode FS or GS
+     * base on any instruction that happened to use 32-bit addressing.
+     */
+    effectiveAddress = kswordArkHvmNestedTruncateAddress(
+        effectiveAddress,
+        operand->addressSizeBytes);
+    operand->segmentRegister = segment;
+    /* Reject a segment number Intel does not encode rather than index past. */
+    if (segment > KSW_VMCS_GUEST_SEGMENT_MAX) {
+        /* Return the explicit encoding failure. */
+        return STATUS_UNSUCCESSFUL;
+    }
+    /* Read the base of the segment the operand was relative to. */
+    if (kswordArkHvmVmcsFieldLoad(
+            (SIZE_T)(KSW_VMCS_GUEST_ES_BASE +
+                (segment * KSW_VMCS_GUEST_SEGMENT_BASE_STRIDE)),
+            &segmentBase) != 0U) {
+        /* Return the explicit VMCS read failure. */
+        return STATUS_UNSUCCESSFUL;
+    }
+    operand->linearAddress = effectiveAddress + (ULONGLONG)segmentBase;
+    /* Return the complete memory-form operand. */
+    return STATUS_SUCCESS;
+}
+
+#else
+
+UCHAR
+KswordARKHvmNestedReadGpr(
+    _In_ const struct _KSW_HVM_GPR_FRAME* Frame,
+    _In_ ULONG RegisterNumber,
+    _Out_ ULONGLONG* Value
+    )
+{
+    UNREFERENCED_PARAMETER(Frame);
+    UNREFERENCED_PARAMETER(RegisterNumber);
+    /* Reject a missing output before reporting the architecture boundary. */
+    if (Value != NULL) {
+        *Value = 0ULL;
+    }
+    /* Return the explicit unsupported-architecture failure. */
+    return 1U;
+}
+
+UCHAR
+KswordARKHvmNestedWriteGpr(
+    _Inout_ struct _KSW_HVM_GPR_FRAME* Frame,
+    _In_ ULONG RegisterNumber,
+    _In_ ULONGLONG Value
+    )
+{
+    UNREFERENCED_PARAMETER(Frame);
+    UNREFERENCED_PARAMETER(RegisterNumber);
+    UNREFERENCED_PARAMETER(Value);
+    /* Return the explicit unsupported-architecture failure. */
+    return 1U;
+}
+
+NTSTATUS
+KswordARKHvmNestedReadGuestQword(
+    _In_ ULONGLONG LinearAddress,
+    _Out_ ULONGLONG* Value
+    )
+{
+    UNREFERENCED_PARAMETER(LinearAddress);
+    /* Zero the output so no caller reads uninitialized operand state. */
+    if (Value != NULL) {
+        *Value = 0ULL;
+    }
+    /* Return the explicit unsupported-architecture boundary. */
+    return STATUS_NOT_SUPPORTED;
+}
+
+NTSTATUS
+KswordARKHvmNestedWriteGuestQword(
+    _In_ ULONGLONG LinearAddress,
+    _In_ ULONGLONG Value
+    )
+{
+    UNREFERENCED_PARAMETER(LinearAddress);
+    UNREFERENCED_PARAMETER(Value);
+    /* Return the explicit unsupported-architecture boundary. */
+    return STATUS_NOT_SUPPORTED;
+}
+
+NTSTATUS
+KswordARKHvmNestedDecodeOperand(
+    _In_ const struct _KSW_HVM_GPR_FRAME* Frame,
+    _In_ ULONG Layout,
+    _Out_ KSW_HVM_VMX_OPERAND* Operand
+    )
+{
+    UNREFERENCED_PARAMETER(Frame);
+    UNREFERENCED_PARAMETER(Layout);
+    /* Zero the output so no caller reads uninitialized operand state. */
+    if (Operand != NULL) {
+        RtlZeroMemory(Operand, sizeof(*Operand));
+    }
+    /* Return the explicit unsupported-architecture boundary. */
+    return STATUS_NOT_SUPPORTED;
+}
+
+#endif

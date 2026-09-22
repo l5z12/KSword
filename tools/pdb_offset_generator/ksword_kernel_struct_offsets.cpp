@@ -1,20 +1,20 @@
-// 离线内核结构偏移提取器（开发机工具，不随产品分发）。
+// Offline kernel structure offset extractor (development tool, not distributed with the product).
 //
-// 为什么需要它：注入检查的 VAD 视图、映像节对象比较与 VAD 断链判定都要按目标 build
-// 验证过的结构偏移，而 `ksword_pdb_profile_generator.py` 的后端是 llvm-pdbutil，
-// 这台机器上没有。DbgHelp 在，而且仓库里 ArkRuntimeDynData.cpp 已经用它读 PDB 类型
-// 读了很久 —— 这里复用同一套 TI_FINDCHILDREN 配方，只是跑在离线侧。
+// Why it's needed: VAD view injection checks, image section object comparisons, and VAD unlinking judgments all require
+// structure offsets verified against the target build. The backend for `ksword_pdb_profile_generator.py` is llvm-pdbutil,
+// which is not available on this machine. DbgHelp is present, and ArkRuntimeDynData.cpp in the repository has already used
+// it to read PDB types for a long time. Here, we reuse the same TI_FINDCHILDREN recipe, just running on the offline side.
 //
-// **只读本地符号库，绝不联网**：符号路径写死成给定目录，不加 `srv*` 前缀，
-// 所以 DbgHelp 只会在本地符号库的标准布局里找 <pdb>\<GUID><Age>\<pdb>。
-// 产品侧"不得在目标电脑下载 PDB"的策略不受影响 —— 这个工具不进产品。
+// **Read local symbol library only, never connect to the network**: The symbol path is hardcoded to the specified directory without
+// the `srv*` prefix, so DbgHelp searches only within the standard layout of the local symbol library: <pdb>\<GUID><Age>\<pdb>.
+// The product-side policy prohibiting PDB downloads on target machines remains unaffected — this tool is not included in the product.
 //
-// 用法：
+// Usage:
 //   ksword_kernel_struct_offsets.exe <pe-path> <symbol-store> [<type>!<member> ...]
-//   不给 type!member 时输出内置的注入检查所需字段清单。
+//   When type!member is not provided, output the list of fields required for built-in injection checks.
 //
-// 输出是 JSON，便于喂给后续步骤；解析不到的字段明确列在 "missing" 里，
-// **不猜、不取相近 build 的值**。
+// Output is JSON for downstream consumption; fields that fail to parse are explicitly listed in "missing".
+// **Do not guess or use values from similar builds**.
 
 #include <Windows.h>
 #include <DbgHelp.h>
@@ -30,9 +30,9 @@
 
 namespace
 {
-    // 注入检查这条线要用到的全部内核结构字段。
-    // VAD 树遍历只要 EPROCESS.VadRoot；断链判定要 MMVAD_SHORT 的树指针；
-    // 映像节对象比较要从 VAD 走到 ControlArea/Segment 的那条链。
+    // All kernel structure fields required for the injection check line.
+    // VAD tree traversal requires only EPROCESS.VadRoot; chain-break detection requires the tree pointer in MmvadShort.
+    // Image section object comparison requires traversing the chain from VAD to ControlArea/Segment.
     const char* const kWantedFields[] = {
         "_EPROCESS!VadRoot",
         "_EPROCESS!VadHint",
@@ -79,36 +79,36 @@ namespace
         }
     };
 
-    std::string JsonEscape(const std::string& text)
+    std::string jsonEscape(const std::string& text)
     {
         std::string out;
-        for (const char character : text)
+        for (const char kCharacter : text)
         {
-            switch (character)
+            switch (kCharacter)
             {
             case '"': out += "\\\""; break;
             case '\\': out += "\\\\"; break;
             case '\n': out += "\\n"; break;
-            default: out.push_back(character); break;
+            default: out.push_back(kCharacter); break;
             }
         }
         return out;
     }
 
-    std::string Narrow(const wchar_t* const wide)
+    std::string narrow(const wchar_t* const wide)
     {
         if (wide == nullptr)
         {
             return std::string();
         }
-        const int needed =
+        const int kNeeded =
             ::WideCharToMultiByte(CP_UTF8, 0, wide, -1, nullptr, 0, nullptr, nullptr);
-        if (needed <= 1)
+        if (kNeeded <= 1)
         {
             return std::string();
         }
-        std::string out(static_cast<std::size_t>(needed - 1), '\0');
-        ::WideCharToMultiByte(CP_UTF8, 0, wide, -1, out.data(), needed, nullptr, nullptr);
+        std::string out(static_cast<std::size_t>(kNeeded - 1), '\0');
+        ::WideCharToMultiByte(CP_UTF8, 0, wide, -1, out.data(), kNeeded, nullptr, nullptr);
         return out;
     }
 
@@ -120,24 +120,24 @@ namespace
         bool isBitfield = false;
     };
 
-    // 一个类型的全部成员：名字 -> 偏移。
-    bool LoadTypeMembers(const Session& session, const std::string& typeName,
+    // All members of a type: name -> offset.
+    bool loadTypeMembers(const Session& session, const std::string& typeName,
                          std::map<std::string, MemberInfo>& membersOut,
                          ULONG64& sizeOut)
     {
         std::vector<std::uint8_t> storage(sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(char), 0U);
-        auto* const symbol = reinterpret_cast<SYMBOL_INFO*>(storage.data());
-        symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
-        symbol->MaxNameLen = MAX_SYM_NAME;
-        if (::SymGetTypeFromName(session.key, session.base, typeName.c_str(), symbol) == FALSE)
+        auto* const kSymbol = reinterpret_cast<SYMBOL_INFO*>(storage.data());
+        kSymbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+        kSymbol->MaxNameLen = MAX_SYM_NAME;
+        if (::SymGetTypeFromName(session.key, session.base, typeName.c_str(), kSymbol) == FALSE)
         {
             return false;
         }
-        sizeOut = symbol->Size;
-        const ULONG typeIndex = symbol->TypeIndex;
+        sizeOut = kSymbol->Size;
+        const ULONG kTypeIndex = kSymbol->TypeIndex;
 
         DWORD childCount = 0U;
-        if (::SymGetTypeInfo(session.key, session.base, typeIndex, TI_GET_CHILDRENCOUNT,
+        if (::SymGetTypeInfo(session.key, session.base, kTypeIndex, TI_GET_CHILDRENCOUNT,
                              &childCount) == FALSE)
         {
             return false;
@@ -147,32 +147,32 @@ namespace
             return true;
         }
 
-        const std::size_t bytes = sizeof(TI_FINDCHILDREN_PARAMS) +
+        const std::size_t kBytes = sizeof(TI_FINDCHILDREN_PARAMS) +
                                   (static_cast<std::size_t>(childCount) - 1U) * sizeof(ULONG);
-        std::vector<std::uint8_t> childStorage(bytes, 0U);
-        auto* const children = reinterpret_cast<TI_FINDCHILDREN_PARAMS*>(childStorage.data());
-        children->Count = childCount;
-        children->Start = 0U;
-        if (::SymGetTypeInfo(session.key, session.base, typeIndex, TI_FINDCHILDREN,
-                             children) == FALSE)
+        std::vector<std::uint8_t> childStorage(kBytes, 0U);
+        auto* const kChildren = reinterpret_cast<TI_FINDCHILDREN_PARAMS*>(childStorage.data());
+        kChildren->Count = childCount;
+        kChildren->Start = 0U;
+        if (::SymGetTypeInfo(session.key, session.base, kTypeIndex, TI_FINDCHILDREN,
+                             kChildren) == FALSE)
         {
             return false;
         }
 
         for (ULONG index = 0U; index < childCount; ++index)
         {
-            const ULONG childId = children->ChildId[index];
+            const ULONG kChildId = kChildren->ChildId[index];
             wchar_t* rawName = nullptr;
-            if (::SymGetTypeInfo(session.key, session.base, childId, TI_GET_SYMNAME,
+            if (::SymGetTypeInfo(session.key, session.base, kChildId, TI_GET_SYMNAME,
                                  &rawName) == FALSE ||
                 rawName == nullptr)
             {
                 continue;
             }
-            const std::unique_ptr<wchar_t, decltype(&::LocalFree)> name(rawName, &::LocalFree);
+            const std::unique_ptr<wchar_t, decltype(&::LocalFree)> kName(rawName, &::LocalFree);
 
             DWORD offset = 0U;
-            if (::SymGetTypeInfo(session.key, session.base, childId, TI_GET_OFFSET,
+            if (::SymGetTypeInfo(session.key, session.base, kChildId, TI_GET_OFFSET,
                                  &offset) == FALSE)
             {
                 continue;
@@ -180,11 +180,11 @@ namespace
             MemberInfo info;
             info.offset = offset;
             DWORD bitPosition = 0U;
-            if (::SymGetTypeInfo(session.key, session.base, childId, TI_GET_BITPOSITION,
+            if (::SymGetTypeInfo(session.key, session.base, kChildId, TI_GET_BITPOSITION,
                                  &bitPosition) != FALSE)
             {
                 ULONG64 bitLength = 0U;
-                if (::SymGetTypeInfo(session.key, session.base, childId, TI_GET_LENGTH,
+                if (::SymGetTypeInfo(session.key, session.base, kChildId, TI_GET_LENGTH,
                                      &bitLength) != FALSE)
                 {
                     info.isBitfield = true;
@@ -192,7 +192,7 @@ namespace
                     info.bitLength = bitLength;
                 }
             }
-            membersOut.emplace(Narrow(name.get()), info);
+            membersOut.emplace(narrow(kName.get()), info);
         }
         return true;
     }
@@ -205,8 +205,8 @@ int main(int argc, char** argv)
         std::printf("usage: %s <pe-path> <symbol-store> [<type>!<member> ...]\n", argv[0]);
         return 2;
     }
-    const std::string pePath = argv[1];
-    const std::string symbolStore = argv[2];
+    const std::string kPePath = argv[1];
+    const std::string kSymbolStore = argv[2];
 
     std::vector<std::string> wanted;
     for (int index = 3; index < argc; ++index)
@@ -215,27 +215,27 @@ int main(int argc, char** argv)
     }
     if (wanted.empty())
     {
-        for (const char* const field : kWantedFields)
+        for (const char* const kField : kWantedFields)
         {
-            wanted.emplace_back(field);
+            wanted.emplace_back(kField);
         }
     }
 
-    // SYMOPT_EXACT_SYMBOLS：GUID/Age 对不上就失败，绝不接受相邻版本的 PDB。
-    // 不设 SYMOPT_DEBUG，不用 srv* 前缀 —— 搜索路径只有给定的本地库。
+    // SYMOPT_EXACT_SYMBOLS: fails if GUID/Age mismatch, never accepts adjacent PDB versions.
+    // Do not set SYMOPT_DEBUG and do not use srv* prefixes—the search path is limited to the specified local libraries.
     ::SymSetOptions(SYMOPT_EXACT_SYMBOLS | SYMOPT_UNDNAME | SYMOPT_NO_PROMPTS |
                     SYMOPT_FAIL_CRITICAL_ERRORS | SYMOPT_INCLUDE_32BIT_MODULES);
 
     Session session;
     session.key = reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(0x4B53574FU));
-    if (::SymInitialize(session.key, symbolStore.c_str(), FALSE) == FALSE)
+    if (::SymInitialize(session.key, kSymbolStore.c_str(), FALSE) == FALSE)
     {
         std::printf("{\"error\":\"SymInitialize failed\",\"win32\":%lu}\n", ::GetLastError());
         session.key = nullptr;
         return 3;
     }
 
-    session.base = ::SymLoadModuleEx(session.key, nullptr, pePath.c_str(), nullptr,
+    session.base = ::SymLoadModuleEx(session.key, nullptr, kPePath.c_str(), nullptr,
                                      0x10000000ULL, 0U, nullptr, 0U);
     if (session.base == 0U)
     {
@@ -250,7 +250,7 @@ int main(int argc, char** argv)
         std::printf("{\"error\":\"SymGetModuleInfoW64 failed\",\"win32\":%lu}\n", ::GetLastError());
         return 5;
     }
-    // SymNone / SymDeferred 表示符号根本没加载成功，这时任何"偏移"都是假的。
+    // SymNone / SymDeferred indicates that symbols failed to load entirely; in this case, any 'offset' is invalid.
     if (moduleInfo.SymType != SymPdb)
     {
         std::printf("{\"error\":\"no PDB loaded\",\"symType\":%d}\n",
@@ -259,8 +259,8 @@ int main(int argc, char** argv)
     }
 
     std::printf("{\n");
-    std::printf("  \"pe\": \"%s\",\n", JsonEscape(pePath).c_str());
-    std::printf("  \"pdb\": \"%s\",\n", JsonEscape(Narrow(moduleInfo.LoadedPdbName)).c_str());
+    std::printf("  \"pe\": \"%s\",\n", jsonEscape(kPePath).c_str());
+    std::printf("  \"pdb\": \"%s\",\n", jsonEscape(narrow(moduleInfo.LoadedPdbName)).c_str());
     std::printf("  \"pdbGuid\": \"%08lX%04X%04X%02X%02X%02X%02X%02X%02X%02X%02X\",\n",
                 moduleInfo.PdbSig70.Data1, moduleInfo.PdbSig70.Data2, moduleInfo.PdbSig70.Data3,
                 moduleInfo.PdbSig70.Data4[0], moduleInfo.PdbSig70.Data4[1],
@@ -279,33 +279,33 @@ int main(int argc, char** argv)
     bool first = true;
     for (const std::string& entry : wanted)
     {
-        const std::size_t bang = entry.find('!');
-        if (bang == std::string::npos)
+        const std::size_t kBang = entry.find('!');
+        if (kBang == std::string::npos)
         {
             missing.push_back(entry);
             continue;
         }
-        const std::string typeName = entry.substr(0U, bang);
-        const std::string memberName = entry.substr(bang + 1U);
+        const std::string kTypeName = entry.substr(0U, kBang);
+        const std::string kMemberName = entry.substr(kBang + 1U);
 
-        if (cache.find(typeName) == cache.end())
+        if (cache.find(kTypeName) == cache.end())
         {
             std::map<std::string, MemberInfo> members;
             ULONG64 size = 0U;
-            if (!LoadTypeMembers(session, typeName, members, size))
+            if (!loadTypeMembers(session, kTypeName, members, size))
             {
-                cache.emplace(typeName, std::map<std::string, MemberInfo>{});
-                typeSizes.emplace(typeName, 0U);
+                cache.emplace(kTypeName, std::map<std::string, MemberInfo>{});
+                typeSizes.emplace(kTypeName, 0U);
             }
             else
             {
-                cache.emplace(typeName, std::move(members));
-                typeSizes.emplace(typeName, size);
+                cache.emplace(kTypeName, std::move(members));
+                typeSizes.emplace(kTypeName, size);
             }
         }
-        const auto& members = cache[typeName];
-        const auto hit = members.find(memberName);
-        if (hit == members.end())
+        const auto& members = cache[kTypeName];
+        const auto kHit = members.find(kMemberName);
+        if (kHit == members.end())
         {
             missing.push_back(entry);
             continue;
@@ -316,12 +316,12 @@ int main(int argc, char** argv)
         }
         first = false;
         std::printf("    \"%s\": { \"offset\": %lu, \"offsetHex\": \"0x%lX\"",
-                    JsonEscape(entry).c_str(), hit->second.offset, hit->second.offset);
-        if (hit->second.isBitfield)
+                    jsonEscape(entry).c_str(), kHit->second.offset, kHit->second.offset);
+        if (kHit->second.isBitfield)
         {
             std::printf(", \"bitPosition\": %lu, \"bitLength\": %llu",
-                        hit->second.bitPosition,
-                        static_cast<unsigned long long>(hit->second.bitLength));
+                        kHit->second.bitPosition,
+                        static_cast<unsigned long long>(kHit->second.bitLength));
         }
         std::printf(" }");
     }
@@ -336,7 +336,7 @@ int main(int argc, char** argv)
             std::printf(",\n");
         }
         first = false;
-        std::printf("    \"%s\": %llu", JsonEscape(typeName).c_str(),
+        std::printf("    \"%s\": %llu", jsonEscape(typeName).c_str(),
                     static_cast<unsigned long long>(size));
     }
     std::printf("\n  },\n");
@@ -344,7 +344,7 @@ int main(int argc, char** argv)
     std::printf("  \"missing\": [");
     for (std::size_t index = 0U; index < missing.size(); ++index)
     {
-        std::printf("%s\"%s\"", index == 0U ? "" : ", ", JsonEscape(missing[index]).c_str());
+        std::printf("%s\"%s\"", index == 0U ? "" : ", ", jsonEscape(missing[index]).c_str());
     }
     std::printf("]\n}\n");
     return 0;

@@ -4,10 +4,10 @@
 
 // ============================================================
 // KswordArkThreadIoctl.h
-// 作用：
-// - 定义 R3/R0 线程扩展枚举协议；
-// - 线程基础列表仍可由 R3 NtQuerySystemInformation 提供；
-// - KTHREAD 栈边界和 I/O counter 由本协议按 DynData capability 补齐。
+// Purpose:
+// - Define R3/R0 thread extension enumeration protocol.
+// - The basic thread list can still be provided by R3 NtQuerySystemInformation;
+// - KTHREAD stack boundaries and I/O counters are supplemented by this protocol according to the DynData capability.
 // ============================================================
 
 #define KSWORD_ARK_THREAD_PROTOCOL_VERSION 1UL
@@ -34,10 +34,10 @@
         METHOD_BUFFERED, \
         FILE_ANY_ACCESS)
 
-// 线程运行时详情协议：
-// - 输入：只接受 TID 和可选 PID 过滤，R0 自行 PsLookupThreadByThreadId；
-// - 处理：按 ETHREAD/KTHREAD PDB 偏移只读采样 Cid、链表、启动地址、栈和 I/O 计数；
-// - 输出：固定响应包，R3 可直接渲染成人可读详情。
+// Thread runtime detail protocol:
+// - Input: Accepts only TID and optional PID filtering; R0 performs PsLookupThreadByThreadId internally.
+// - Processing: Read-only sampling of Cid, linked list, start address, stack, and I/O count based on ETHREAD/KTHREAD PDB offset.
+// - Output: fixed response packet, directly renderable into human-readable details by R3.
 #define IOCTL_KSWORD_ARK_QUERY_THREAD_DETAIL \
     CTL_CODE( \
         KSWORD_ARK_IOCTL_DEVICE_TYPE, \
@@ -52,10 +52,10 @@
         METHOD_BUFFERED, \
         FILE_ANY_ACCESS)
 
-// 指定线程终止协议：
-// - 输入：TID、所属 PID 和线程退出状态；R0 仅通过 ID 自行引用对象；
-// - 处理：验证 ETHREAD 当前仍属于请求 PID 后，结束这一条指定线程；
-// - 输出：无；完成状态通过 DeviceIoControl 成功与否以及驱动日志返回。
+// Specify the thread termination protocol:
+// - Input: TID, associated PID, and thread exit status; R0 references objects solely by ID;
+// - Processing: Verify that the ETHREAD still belongs to the requesting PID before terminating the specified thread.
+// - Output: none; completion status is determined by the success or failure of DeviceIoControl and driver logs.
 #define IOCTL_KSWORD_ARK_TERMINATE_THREAD \
     CTL_CODE( \
         KSWORD_ARK_IOCTL_DEVICE_TYPE, \
@@ -71,10 +71,10 @@ typedef struct _KSWORD_ARK_TERMINATE_THREAD_REQUEST
     unsigned long reserved;
 } KSWORD_ARK_TERMINATE_THREAD_REQUEST;
 
-// 指定线程挂起/恢复协议：
-// - 输入：TID、所属 PID 和 action；R0 重新引用 ETHREAD 并验证所属关系；
-// - action：KSWORD_ARK_THREAD_SUSPEND_ACTION_SUSPEND 或 RESUME；
-// - 输出：无；驱动日志记录操作前的 suspend count。
+// Thread suspend/resume protocol specification:
+// - Input: TID, owning PID, and action; R0 re-references ETHREAD and verifies ownership.
+// - action: KSWORD_ARK_THREAD_SUSPEND_ACTION_SUSPEND or RESUME;
+// - Output: None; the driver logs the suspend count before the operation.
 #define IOCTL_KSWORD_ARK_SET_THREAD_SUSPENDED \
     CTL_CODE( \
         KSWORD_ARK_IOCTL_DEVICE_TYPE, \
@@ -93,11 +93,11 @@ typedef struct _KSWORD_ARK_SET_THREAD_SUSPENDED_REQUEST
     unsigned long reserved;
 } KSWORD_ARK_SET_THREAD_SUSPENDED_REQUEST;
 
-// 驱动/System 线程控制协议：
-// - 只接受 PID 4 的系统线程；R0 自行读取真实启动地址和创建时间；
-// - 危险动作执行前必须精确匹配 TID + StartAddress + CreateTime100ns；
-// - 拒绝 ntoskrnl 第一模块、当前 WDF 驱动实体范围、当前 IOCTL 执行线程和身份不一致请求；
-// - terminate/suspend 必须携带 UI_CONFIRMED，resume 作为恢复动作可直接执行。
+// Driver/System thread control protocol:
+// - Accept only system threads with PID 4; R0 reads the actual start address and creation time itself;
+// - Before executing dangerous actions, TID + StartAddress + CreateTime100ns must match precisely.
+// - Reject requests where the ntoskrnl first module, current WDF driver instance, current IOCTL execution thread, or identity do not match;
+// - terminate/suspend must carry UI_CONFIRMED; resume, as a recovery action, can be executed directly.
 #define IOCTL_KSWORD_ARK_CONTROL_DRIVER_THREAD \
     CTL_CODE( \
         KSWORD_ARK_IOCTL_DEVICE_TYPE, \
@@ -114,12 +114,12 @@ typedef struct _KSWORD_ARK_SET_THREAD_SUSPENDED_REQUEST
 #define KSWORD_ARK_DRIVER_THREAD_CONTROL_FLAG_VALID_MASK \
     KSWORD_ARK_DRIVER_THREAD_CONTROL_FLAG_UI_CONFIRMED
 
-// terminateMethod 只在 ACTION_TERMINATE 时生效。所有后端均为实验性：
-// - PspTerminateThreadByPointer：未文档化、按 ETHREAD 指针进入终止流程；
-// - Zw/NtTerminateThread：按内核句柄请求线程终止；
-// - Normal APC：在目标系统线程 PASSIVE_LEVEL 上调用 PsTerminateSystemThread；
-// - Special -> Normal APC：Special Kernel APC 只负责在 APC_LEVEL 排入下一段，
-//   最终仍由 PASSIVE_LEVEL 的 Normal Kernel APC 调用 PsTerminateSystemThread。
+// terminateMethod is effective only during ACTION_TERMINATE. All backends are experimental:
+// - PspTerminateThreadByPointer: undocumented; terminates the thread via the ETHREAD pointer.
+// - Zw/NtTerminateThread: Request thread termination based on a kernel handle;
+// - Normal APC: Call PsTerminateSystemThread on the target system thread at PASSIVE_LEVEL.
+// - Special -> Normal APC: Special Kernel APC only queues the next segment at APC_LEVEL; the
+//   final call to PsTerminateSystemThread is made by the Normal Kernel APC at PASSIVE_LEVEL.
 #define KSWORD_ARK_DRIVER_THREAD_TERMINATE_METHOD_NONE                   0UL
 #define KSWORD_ARK_DRIVER_THREAD_TERMINATE_METHOD_PSP_BY_POINTER         1UL
 #define KSWORD_ARK_DRIVER_THREAD_TERMINATE_METHOD_ZW_OR_NT               2UL
@@ -140,10 +140,10 @@ typedef struct _KSWORD_ARK_CONTROL_DRIVER_THREAD_REQUEST
     unsigned long reserved1;
 } KSWORD_ARK_CONTROL_DRIVER_THREAD_REQUEST;
 
-// 线程 runtime field sample 请求：
-// - 输入：threadId 定位 ETHREAD，processId 只做可选一致性上下文展示；
-// - 处理：items 与进程协议共用，不接受 R3 传入对象地址；
-// - 返回：共用 KSWORD_ARK_RUNTIME_FIELD_SAMPLE_RESPONSE。
+// Thread runtime field sample request:
+// - Input: threadId to locate the ETHREAD; processId is for optional consistency context display only;
+// - Processing: items are shared with the process protocol; do not accept object addresses passed from R3.
+// - Return: Shared KSWORD_ARK_RUNTIME_FIELD_SAMPLE_RESPONSE.
 typedef struct _KSWORD_ARK_THREAD_RUNTIME_FIELD_SAMPLE_REQUEST
 {
     unsigned long version;
@@ -242,10 +242,10 @@ typedef struct _KSWORD_ARK_THREAD_DETAIL_OFFSETS
     unsigned long ktOtherTransferCount;
 } KSWORD_ARK_THREAD_DETAIL_OFFSETS;
 
-// 线程 detail 偏移来源包：
-// - 输入：R0 当前 KSW_DYN_STATE.KernelSources；
-// - 处理：与 offsets 字段一一对应，记录 System Informer/PDB profile/runtime pattern；
-// - 返回：结构体本身无返回值，仅供 R3 解释线程字段来源。
+// Thread detail offset source packet:
+// - Input: R0 current KswDynState.KernelSources;
+// - Processing: Corresponds one-to-one with the offsets fields, recording System Informer/PDB profile/runtime pattern.
+// - Return: The structure itself has no return value; it is provided solely for R3 to interpret the thread field source.
 typedef struct _KSWORD_ARK_THREAD_DETAIL_SOURCES
 {
     unsigned long etCid;

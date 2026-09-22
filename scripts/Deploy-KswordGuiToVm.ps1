@@ -1,26 +1,26 @@
 <#
 .SYNOPSIS
-    把构建好的 Qt 主程序、语言包与 hvm_ctl 送进测试机。
+    Send the built Qt main program, language packs, and hvm_ctl to the test machine.
 
 .DESCRIPTION
-    Deploy-KswordDriverToVm.ps1 只管驱动和 KswordCLI。GUI 这一侧此前一直是手工
-    敲命令做的，于是每次都要重新踩同样的坑，而且"这次到底推没推"完全取决于当时
-    记没记得做。这个脚本存在的唯一理由就是把那几步固定下来。
+    Deploy-KswordDriverToVm.ps1 handles only the driver and KswordCLI. The GUI side has historically
+    been deployed manually via command-line, leading to repeated mistakes and uncertainty about
+    whether the deployment actually occurred. This script exists solely to fix those steps.
 
-    三个坑，都是实际撞过的：
+    Three pitfalls, all encountered in practice:
 
-    1) Copy-VMFile 需要来宾服务接口。本机这台靶机上它返回 0x80070015（设备未
-       就绪），所以必须有 PowerShell Direct 的回退路径，不能只写 Copy-VMFile。
+    1) Copy-VMFile requires the Guest Service Interface. On this local target machine, it returns 0x80070015
+       (Device not ready), so a PowerShell Direct fallback path is mandatory; do not rely solely on Copy-VMFile.
 
-    2) Expand-Archive -Force 碰到 guest 里**正在被内核加载**的 gui\KswordARK.sys
-       会整个中止，而且是在解压过程中中止 —— 结果是另外八十多个文件一个都没落
-       地，但命令本身看起来只是报了一个文件的错。所以这里先解到暂存目录，再逐
-       个文件拷过去；拷不动的那个如果哈希本来就一致，就算它过。
+    2) Expand-Archive -Force aborts the entire operation if the gui\KswordARK.sys file in the guest is
+       **currently being loaded by the kernel** during extraction. This causes all 80+ other files to fail to
+       land, while the command only reports an error for that single file. Therefore, first extract to a staging
+       directory, then copy files one by one. If a file cannot be copied but its hash already matches, skip it.
 
-    3) ABI 一动，GUI 和驱动必须一起换。查询响应结构里插一个字段，旧 GUI 读新驱
-       动会把插入点之后的每一个字段都错位读出来，而界面上不会报错，只会显示一
-       堆看着眼熟但其实挪了一格的数字。所以这里默认校验 guest 上的驱动与本地构
-       建同源，不同源就拒绝推 GUI。
+    3) If the ABI changes, the GUI and driver must be updated together. Inserting a field into the query-response structure causes the
+       old GUI to misalign every field after the insertion point when reading the new driver, without raising an error on the interface;
+       it only displays numbers that look familiar but are shifted by one position. Therefore, this script defaults to verifying that the
+       driver on the guest is built from the same source as the local build; if they differ, GUI deployment is rejected.
 
 .EXAMPLE
     .\Deploy-KswordGuiToVm.ps1
@@ -35,26 +35,26 @@ param(
     [string] $GuestPassword = 'password',
     [string] $GuestGuiDir = 'C:\ksword\gui',
     [string] $GuestToolDir = 'C:\ksword',
-    # 每块的字节数。太大时 PowerShell Direct 的序列化会显著变慢甚至失败，
-    # 4 MiB 是本机实测还稳的量级。
+    # Bytes per chunk. If too large, PowerShell Direct serialization slows down significantly or fails,
+    # 4 MiB is the stable magnitude confirmed by local testing.
     [int]    $ChunkBytes = 4MB,
-    # ABI 校验是默认开着的，见上面第 3 条。只在明确知道自己要推不配套的组合
-    # 时才关掉它。
+    # ABI validation is enabled by default (see item 3 above). Only disable it when explicitly pushing an incompatible combination.
+    # Turn it off only then.
     [switch] $SkipDriverMatchCheck
 )
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
-$releaseDir = Join-Path $repo 'Ksword5.1\x64\Release'
+$releaseDir = Join-Path $repo 'artifacts/bin\x64\Release'
 
 $credential = New-Object System.Management.Automation.PSCredential(
     $GuestUser, (ConvertTo-SecureString $GuestPassword -AsPlainText -Force))
 
 $vm = Get-VM -Name $VMName -ErrorAction Stop
-if ($vm.State -ne 'Running') { throw "虚拟机不在运行状态（$($vm.State)）。先 Start-VM。" }
+if ($vm.State -ne 'Running') { throw "Virtual machine is not in Running state ($($vm.State)). Start-VM first." }
 
-# 要推的东西。Ksword5.1.exe 与两个语言包必须同批 —— 新词条落在旧 exe 上没用，
-# 新 exe 配旧词条则会退回到源码里的兜底中文，英文界面直接看不到这次的改动。
+# Files to deploy: Ksword5.1.exe and both language packs must be deployed together; new entries are ineffective with an old exe,
+# If a new exe is paired with old terms, it falls back to the default Chinese in the source code, and English interfaces will not show these changes.
 $payload = @(
     [pscustomobject]@{ Local = Join-Path $releaseDir 'Ksword5.1.exe';            Remote = Join-Path $GuestGuiDir  'Ksword5.1.exe' }
     [pscustomobject]@{ Local = Join-Path $releaseDir 'languages\zh-CN.json';     Remote = Join-Path $GuestGuiDir  'languages\zh-CN.json' }
@@ -63,44 +63,44 @@ $payload = @(
 )
 
 $missing = $payload | Where-Object { -not (Test-Path $_.Local) }
-if ($missing) { throw "本地缺文件：$(($missing.Local) -join ', ')" }
+if ($missing) { throw "Missing local files: $(($missing.Local) -join ', ')" }
 
 # ---------------------------------------------------------------------------
-# 0. ABI 配套检查
+# 0. ABI compatibility check
 # ---------------------------------------------------------------------------
 if (-not $SkipDriverMatchCheck) {
-    Write-Host "`n--- 0. 驱动与 GUI 是否同源 ---" -ForegroundColor Cyan
+    Write-Host "`n--- 0. Are the driver and GUI from the same source ---" -ForegroundColor Cyan
     $localSys = Join-Path $releaseDir 'KswordARK.sys'
-    if (-not (Test-Path $localSys)) { throw "本地没有 $localSys，先构建驱动。" }
+    if (-not (Test-Path $localSys)) { throw "Local $localSys is missing; build the driver first." }
     $localSysHash = (Get-FileHash $localSys -Algorithm SHA256).Hash
     $guestSysHash = Invoke-Command -VMName $VMName -Credential $credential -ScriptBlock {
         $path = 'C:\Windows\System32\drivers\KswordARK.sys'
         if (Test-Path $path) { (Get-FileHash $path -Algorithm SHA256).Hash } else { $null }
     }
     if ($null -eq $guestSysHash) {
-        throw 'guest 上没有已安装的驱动。先跑 Deploy-KswordDriverToVm.ps1。'
+        throw 'No driver installed on the guest. Run Deploy-KswordDriverToVm.ps1 first.'
     }
     if ($guestSysHash -ne $localSysHash) {
-        Write-Host "  本地 : $localSysHash" -ForegroundColor Yellow
+        Write-Host "  Local : $localSysHash" -ForegroundColor Yellow
         Write-Host "  guest: $guestSysHash" -ForegroundColor Yellow
-        throw ('guest 上装的驱动不是本地这一份。协议结构一动，旧驱动配新 GUI ' +
-               '（或反过来）会静默错位读字段，界面上不会报错。先跑 ' +
-               'Deploy-KswordDriverToVm.ps1，或用 -SkipDriverMatchCheck 明确跳过。')
+        throw ('The driver installed on the guest is not the local version. Once the protocol structure changes, the old driver cannot configure the new GUI ' +
+               '(or vice versa) will silently misread fields without reporting errors on the UI. First run ' +
+               'Deploy-KswordDriverToVm.ps1, or explicitly skip with -SkipDriverMatchCheck.')
     }
-    Write-Host '  [OK]   guest 上装的就是本地构建的这一份驱动' -ForegroundColor Green
+    Write-Host '  [OK]   The driver installed on the guest is this locally built version' -ForegroundColor Green
 }
 
 # ---------------------------------------------------------------------------
-# 1. 打包
+# 1. Package
 # ---------------------------------------------------------------------------
-Write-Host "`n--- 1. 打包 ---" -ForegroundColor Cyan
+Write-Host "`n--- 1. Packaging ---" -ForegroundColor Cyan
 $stage = Join-Path ([IO.Path]::GetTempPath()) ('ksword-gui-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 try {
     $index = 0
     foreach ($item in $payload) {
-        # 压缩包里用扁平的序号命名，不带路径。目标路径单独随清单传过去，
-        # 这样 guest 侧不需要理解任何目录结构，也就不会有解压路径穿越。
+        # The archive uses flat sequential naming without paths. The target path is passed separately with the manifest.
+        # This way, the guest side does not need to understand any directory structure, preventing path traversal during extraction.
         $index += 1
         Copy-Item $item.Local (Join-Path $stage ('{0:d2}.bin' -f $index)) -Force
     }
@@ -120,12 +120,12 @@ try {
     $zip = Join-Path ([IO.Path]::GetTempPath()) ('ksword-gui-' + [Guid]::NewGuid().ToString('N').Substring(0, 8) + '.zip')
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal -Force
     $zipBytes = [IO.File]::ReadAllBytes($zip)
-    Write-Host ('  {0} 个文件 -> {1:N1} MiB 压缩包' -f $payload.Count, ($zipBytes.Length / 1MB))
+    Write-Host ('  {0}  files -> {1:N1} MiB  compressed archive' -f $payload.Count, ($zipBytes.Length / 1MB))
 
     # -----------------------------------------------------------------------
-    # 2. 分块送进 guest
+    # 2. Transfer to guest in chunks
     # -----------------------------------------------------------------------
-    Write-Host "`n--- 2. 传输（PowerShell Direct，分块）---" -ForegroundColor Cyan
+    Write-Host "`n--- 2. Transfer (PowerShell Direct, Chunked) ---" -ForegroundColor Cyan
     $session = New-PSSession -VMName $VMName -Credential $credential
     try {
         $guestZip = Invoke-Command -Session $session -ScriptBlock {
@@ -149,32 +149,32 @@ try {
             } -ArgumentList $b64, $guestZip
             $offset += $size
             $chunkIndex += 1
-            Write-Host ('  块 {0}/{1}  {2:N1} / {3:N1} MiB' -f $chunkIndex, $chunkCount, ($offset / 1MB), ($zipBytes.Length / 1MB))
+            Write-Host ('  Block {0}/{1}  {2:N1} / {3:N1} MiB' -f $chunkIndex, $chunkCount, ($offset / 1MB), ($zipBytes.Length / 1MB))
         }
 
-        # 传完先对一次整包哈希。分块传输最难查的失败就是中间少一块：解压往往
-        # 还能成功，落地的文件却是坏的。
+        # Verify the full package hash after transfer. The hardest failure to detect in chunked transfer is a missing block: decompression often
+        # The operation might succeed, but the deployed file is corrupted.
         $localZipHash = (Get-FileHash $zip -Algorithm SHA256).Hash
         $guestZipHash = Invoke-Command -Session $session -ScriptBlock {
             param($path) (Get-FileHash $path -Algorithm SHA256).Hash
         } -ArgumentList $guestZip
         if ($localZipHash -ne $guestZipHash) {
-            throw "压缩包传输后哈希不一致（本地 $localZipHash / guest $guestZipHash）。"
+            throw "Hash mismatch after archive transfer (local $localZipHash / guest $guestZipHash)."
         }
-        Write-Host '  [OK]   整包哈希一致' -ForegroundColor Green
+        Write-Host '  [OK]   Package hash matches' -ForegroundColor Green
 
         # -------------------------------------------------------------------
-        # 3. 在 guest 里解压并逐个落位
+        # 3. Extract and deploy one by one in the guest
         # -------------------------------------------------------------------
-        Write-Host "`n--- 3. 落位 ---" -ForegroundColor Cyan
+        Write-Host "`n--- 3. Placement ---" -ForegroundColor Cyan
         $results = Invoke-Command -Session $session -ScriptBlock {
             param($zipPath)
             $out = @()
             $stageDir = Join-Path $env:TEMP ('ksword-gui-stage-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
             New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
             try {
-                # 解到暂存目录，绝不直接 -Force 覆盖目标目录：目标目录里可能有
-                # 正被内核加载的文件，那会让整次解压中止。
+                # Extract to staging directory; never use -Force to overwrite the target directory directly, as the target may contain files currently being loaded by the kernel, which would abort the entire extraction.
+                # Files being loaded by the kernel would abort the entire extraction.
                 Expand-Archive -Path $zipPath -DestinationPath $stageDir -Force
                 $manifest = Get-Content (Join-Path $stageDir 'manifest.json') -Raw | ConvertFrom-Json
                 foreach ($entry in $manifest) {
@@ -186,11 +186,11 @@ try {
                     try {
                         Copy-Item $source $entry.Remote -Force -ErrorAction Stop
                     } catch {
-                        # 拷不动。如果目标本来就是同一份内容，那这次不推也没差别。
+                        # Copy failed. If the target already contains identical content, skipping the push makes no difference.
                         if ((Test-Path $entry.Remote) -and
                             (Get-FileHash $entry.Remote -Algorithm SHA256).Hash -eq $entry.Sha256) {
                             $status = 'locked-but-identical'
-                            $note = '文件被占用，但内容已经是目标内容'
+                            $note = 'File is in use, but content is already the target content'
                         } else {
                             $status = 'FAILED'
                             $note = $_.Exception.Message
@@ -221,16 +221,16 @@ try {
                 Write-Host ('  [OK]   {0}  ({1})' -f $row.Remote, $row.Status) -ForegroundColor Green
             } else {
                 Write-Host ('  [FAIL] {0}  {1} {2}' -f $row.Remote, $row.Status, $row.Note) -ForegroundColor Red
-                Write-Host ('         期望 {0}' -f $row.Expected) -ForegroundColor Red
-                Write-Host ('         实际 {0}' -f $row.Actual) -ForegroundColor Red
+                Write-Host ('         Expecting {0}' -f $row.Expected) -ForegroundColor Red
+                Write-Host ('         Actual {0}' -f $row.Actual) -ForegroundColor Red
                 $failed += $row
             }
         }
         if ($failed.Count -gt 0) {
-            throw "$($failed.Count) 个文件没有落到位。"
+            throw "$($failed.Count) files failed to deploy."
         }
-        Write-Host "`n全部落位，哈希逐个核对通过。" -ForegroundColor Green
-        Write-Host 'GUI 在 guest 里是 C:\ksword\gui\Ksword5.1.exe，命令行工具是 C:\ksword\hvm_ctl.exe。'
+        Write-Host "`nAll components in place, hash verification passed one by one." -ForegroundColor Green
+        Write-Host 'The GUI in the guest is C:\ksword\gui\Ksword5.1.exe, and the command-line tool is C:\ksword\hvm_ctl.exe.'
     } finally {
         Remove-PSSession $session -ErrorAction SilentlyContinue
     }

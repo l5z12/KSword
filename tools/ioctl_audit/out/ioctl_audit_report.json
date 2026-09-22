@@ -56,7 +56,7 @@
       "shared/driver/KswordArkWorkQueueIoctl.h",
       "shared/driver/KswordArkWslSiloIoctl.h"
     ],
-    "registry": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+    "registry": "drivers/ark/src/dispatch/ioctl_registry.c",
     "macroCount": 4514
   },
   "rules": {
@@ -99,7 +99,7 @@
     ],
     "ignoredHeaders": [],
     "notes": {
-      "purpose": "Policy file for the KswordARKDriver IOCTL static auditor.",
+      "purpose": "Policy file for the drivers/ark IOCTL static auditor.",
       "allowedAnyAccess": "Add a full IOCTL_KSWORD_ARK_* name here only when FILE_ANY_ACCESS is intentional and documented.",
       "allowedAnyAccessWhy": "All four are keyword false positives, not exceptions: QUERY_UNLOADED_DRIVERS matches UNLOAD, HWID_DISPATCH_QUERY matches PATCH, QUERY_APP_CONTROL_STATUS matches CONTROL, QUERY_PROCESS_PROTECT_STATE matches PROTECT. Each is a read-only query; requiring FILE_WRITE_ACCESS would break the read path without closing anything. The list exists so the audit can gate the build on HIGH findings - it stays empty of genuine exceptions.",
       "readPrimitiveGap": "The auditor classifies by mutating/query keyword only, so it does not flag read primitives that are themselves privilege escalation - arbitrary physical or virtual memory reads disclose whatever the caller cannot otherwise see. Those were gated by hand on 2026-09-12 and now show up as query_write_access MEDIUM findings, which is the expected shape rather than a regression.",
@@ -4630,1379 +4630,1379 @@
       "name": "IOCTL_KSWORD_ARK_TERMINATE_PROCESS",
       "handler": "KswordARKProcessIoctlTerminate",
       "string_name": "IOCTL_KSWORD_ARK_TERMINATE_PROCESS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 213
     },
     {
       "name": "IOCTL_KSWORD_ARK_SUSPEND_PROCESS",
       "handler": "KswordARKProcessIoctlSuspend",
       "string_name": "IOCTL_KSWORD_ARK_SUSPEND_PROCESS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 214
     },
     {
       "name": "IOCTL_KSWORD_ARK_SET_PPL_LEVEL",
       "handler": "KswordARKProcessIoctlSetPplLevel",
       "string_name": "IOCTL_KSWORD_ARK_SET_PPL_LEVEL",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 215
     },
     {
       "name": "IOCTL_KSWORD_ARK_SET_PROCESS_INTEGRITY",
       "handler": "KswordARKProcessIoctlSetIntegrity",
       "string_name": "IOCTL_KSWORD_ARK_SET_PROCESS_INTEGRITY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 216
     },
     {
       "name": "IOCTL_KSWORD_ARK_PROCESS_TOKEN_PRIVILEGES",
       "handler": "KswordARKProcessIoctlTokenPrivileges",
       "string_name": "IOCTL_KSWORD_ARK_PROCESS_TOKEN_PRIVILEGES",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 217
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_PROCESS_TOKEN_PRIVILEGES",
       "handler": "KswordARKProcessIoctlQueryTokenPrivileges",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_PROCESS_TOKEN_PRIVILEGES",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 218
     },
     {
       "name": "IOCTL_KSWORD_ARK_ADJUST_PROCESS_TOKEN_PRIVILEGE",
       "handler": "KswordARKProcessIoctlAdjustTokenPrivilege",
       "string_name": "IOCTL_KSWORD_ARK_ADJUST_PROCESS_TOKEN_PRIVILEGE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 219
     },
     {
       "name": "IOCTL_KSWORD_ARK_ENUM_PROCESS",
       "handler": "KswordARKProcessIoctlEnumProcess",
       "string_name": "IOCTL_KSWORD_ARK_ENUM_PROCESS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 220
     },
     {
       "name": "IOCTL_KSWORD_ARK_SET_PROCESS_VISIBILITY",
       "handler": "KswordARKProcessIoctlSetVisibility",
       "string_name": "IOCTL_KSWORD_ARK_SET_PROCESS_VISIBILITY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 221
     },
     {
       "name": "IOCTL_KSWORD_ARK_SET_PROCESS_SPECIAL_FLAGS",
       "handler": "KswordARKProcessIoctlSetSpecialFlags",
       "string_name": "IOCTL_KSWORD_ARK_SET_PROCESS_SPECIAL_FLAGS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 222
     },
     {
       "name": "IOCTL_KSWORD_ARK_DKOM_PROCESS",
       "handler": "KswordARKProcessIoctlDkomProcess",
       "string_name": "IOCTL_KSWORD_ARK_DKOM_PROCESS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 223
     },
     {
       "name": "IOCTL_KSWORD_ARK_INJECT_PROCESS",
       "handler": "KswordARKProcessIoctlInjectProcess",
       "string_name": "IOCTL_KSWORD_ARK_INJECT_PROCESS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 224
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_VIRTUAL_MEMORY",
       "handler": "KswordARKMemoryIoctlQueryVirtualMemory",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_VIRTUAL_MEMORY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 225
     },
     {
       "name": "IOCTL_KSWORD_ARK_READ_VIRTUAL_MEMORY",
       "handler": "KswordARKMemoryIoctlReadVirtualMemory",
       "string_name": "IOCTL_KSWORD_ARK_READ_VIRTUAL_MEMORY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 226
     },
     {
       "name": "IOCTL_KSWORD_ARK_WRITE_VIRTUAL_MEMORY",
       "handler": "KswordARKMemoryIoctlWriteVirtualMemory",
       "string_name": "IOCTL_KSWORD_ARK_WRITE_VIRTUAL_MEMORY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 227
     },
     {
       "name": "IOCTL_KSWORD_ARK_READ_PHYSICAL_MEMORY",
       "handler": "KswordARKMemoryIoctlReadPhysicalMemory",
       "string_name": "IOCTL_KSWORD_ARK_READ_PHYSICAL_MEMORY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 228
     },
     {
       "name": "IOCTL_KSWORD_ARK_WRITE_PHYSICAL_MEMORY",
       "handler": "KswordARKMemoryIoctlWritePhysicalMemory",
       "string_name": "IOCTL_KSWORD_ARK_WRITE_PHYSICAL_MEMORY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 229
     },
     {
       "name": "IOCTL_KSWORD_ARK_TRANSLATE_VIRTUAL_ADDRESS",
       "handler": "KswordARKMemoryIoctlTranslateVirtualAddress",
       "string_name": "IOCTL_KSWORD_ARK_TRANSLATE_VIRTUAL_ADDRESS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 230
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_PAGE_TABLE_ENTRY",
       "handler": "KswordARKMemoryIoctlQueryPageTableEntry",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_PAGE_TABLE_ENTRY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 231
     },
     {
       "name": "IOCTL_KSWORD_ARK_SCAN_KERNEL_EXECUTABLE_MEMORY",
       "handler": "KswordARKMemoryIoctlScanKernelExecutableMemory",
       "string_name": "IOCTL_KSWORD_ARK_SCAN_KERNEL_EXECUTABLE_MEMORY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 232
     },
     {
       "name": "IOCTL_KSWORD_ARK_SCAN_KERNEL_MEMORY_EVIDENCE",
       "handler": "KswordARKMemoryIoctlScanKernelMemoryEvidence",
       "string_name": "IOCTL_KSWORD_ARK_SCAN_KERNEL_MEMORY_EVIDENCE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 233
     },
     {
       "name": "IOCTL_KSWORD_ARK_DELETE_PATH",
       "handler": "KswordARKFileIoctlDeletePath",
       "string_name": "IOCTL_KSWORD_ARK_DELETE_PATH",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 234
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_FILE_INFO",
       "handler": "KswordARKFileIoctlQueryFileInfo",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_FILE_INFO",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 235
     },
     {
       "name": "IOCTL_KSWORD_ARK_ENUM_DIRECTORY",
       "handler": "KswordARKFileIoctlEnumDirectory",
       "string_name": "IOCTL_KSWORD_ARK_ENUM_DIRECTORY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 236
     },
     {
       "name": "IOCTL_KSWORD_ARK_SET_FILE_INTEGRITY",
       "handler": "KswordARKFileIoctlSetIntegrity",
       "string_name": "IOCTL_KSWORD_ARK_SET_FILE_INTEGRITY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 237
     },
     {
       "name": "IOCTL_KSWORD_ARK_FILE_IRP_ENUM_DIRECTORY",
       "handler": "KswordARKFileIrpIoctlEnumDirectory",
       "string_name": "IOCTL_KSWORD_ARK_FILE_IRP_ENUM_DIRECTORY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 238
     },
     {
       "name": "IOCTL_KSWORD_ARK_FILE_IRP_SUBMIT",
       "handler": "KswordARKFileIrpIoctlSubmit",
       "string_name": "IOCTL_KSWORD_ARK_FILE_IRP_SUBMIT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 239
     },
     {
       "name": "IOCTL_KSWORD_ARK_FILE_MONITOR_CONTROL",
       "handler": "KswordARKFileMonitorIoctlControl",
       "string_name": "IOCTL_KSWORD_ARK_FILE_MONITOR_CONTROL",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 240
     },
     {
       "name": "IOCTL_KSWORD_ARK_FILE_MONITOR_DRAIN",
       "handler": "KswordARKFileMonitorIoctlDrain",
       "string_name": "IOCTL_KSWORD_ARK_FILE_MONITOR_DRAIN",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 241
     },
     {
       "name": "IOCTL_KSWORD_ARK_FILE_MONITOR_QUERY_STATUS",
       "handler": "KswordARKFileMonitorIoctlQueryStatus",
       "string_name": "IOCTL_KSWORD_ARK_FILE_MONITOR_QUERY_STATUS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 242
     },
     {
       "name": "IOCTL_KSWORD_ARK_ENUM_SSDT",
       "handler": "KswordARKKernelIoctlEnumSsdt",
       "string_name": "IOCTL_KSWORD_ARK_ENUM_SSDT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 243
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_DRIVER_OBJECT",
       "handler": "KswordARKKernelIoctlQueryDriverObject",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_DRIVER_OBJECT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 244
     },
     {
       "name": "IOCTL_KSWORD_ARK_CONTROL_IO_TIMER",
       "handler": "KswordARKKernelIoctlControlIoTimer",
       "string_name": "IOCTL_KSWORD_ARK_CONTROL_IO_TIMER",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 245
     },
     {
       "name": "IOCTL_KSWORD_ARK_ENUM_SHADOW_SSDT",
       "handler": "KswordARKKernelIoctlEnumShadowSsdt",
       "string_name": "IOCTL_KSWORD_ARK_ENUM_SHADOW_SSDT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 246
     },
     {
       "name": "IOCTL_KSWORD_ARK_SCAN_INLINE_HOOKS",
       "handler": "KswordARKKernelIoctlScanInlineHooks",
       "string_name": "IOCTL_KSWORD_ARK_SCAN_INLINE_HOOKS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 247
     },
     {
       "name": "IOCTL_KSWORD_ARK_PATCH_INLINE_HOOK",
       "handler": "KswordARKKernelIoctlPatchInlineHook",
       "string_name": "IOCTL_KSWORD_ARK_PATCH_INLINE_HOOK",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 248
     },
     {
       "name": "IOCTL_KSWORD_ARK_RESTORE_IDT_BASELINE",
       "handler": "KswordARKKernelIoctlRestoreIdtBaseline",
       "string_name": "IOCTL_KSWORD_ARK_RESTORE_IDT_BASELINE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 249
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_PIDDB",
       "handler": "KswordARKKernelIoctlQueryPiDdb",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_PIDDB",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 250
     },
     {
       "name": "IOCTL_KSWORD_ARK_DELETE_PIDDB",
       "handler": "KswordARKKernelIoctlDeletePiDdb",
       "string_name": "IOCTL_KSWORD_ARK_DELETE_PIDDB",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 251
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_HVM",
       "handler": "KswordARKHvmIoctlQuery",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_HVM",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 252
     },
     {
       "name": "IOCTL_KSWORD_ARK_CONTROL_HVM",
       "handler": "KswordARKHvmIoctlControl",
       "string_name": "IOCTL_KSWORD_ARK_CONTROL_HVM",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 253
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_SLAT_IOMMU_AUDIT",
       "handler": "KswordARKKernelIoctlQuerySlatIommuAudit",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_SLAT_IOMMU_AUDIT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 254
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_SYSTEM_TIME",
       "handler": "KswordARKSystemTimeIoctlQuery",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_SYSTEM_TIME",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 255
     },
     {
       "name": "IOCTL_KSWORD_ARK_CONTROL_SYSTEM_TIME",
       "handler": "KswordARKSystemTimeIoctlControl",
       "string_name": "IOCTL_KSWORD_ARK_CONTROL_SYSTEM_TIME",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 256
     },
     {
       "name": "IOCTL_KSWORD_ARK_HVM_EPT_RULE",
       "handler": "KswordARKHvmIoctlEptRule",
       "string_name": "IOCTL_KSWORD_ARK_HVM_EPT_RULE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 257
     },
     {
       "name": "IOCTL_KSWORD_ARK_HVM_MEMORY",
       "handler": "KswordARKHvmIoctlMemory",
       "string_name": "IOCTL_KSWORD_ARK_HVM_MEMORY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 258
     },
     {
       "name": "IOCTL_KSWORD_ARK_HVM_VIEW",
       "handler": "KswordARKHvmIoctlView",
       "string_name": "IOCTL_KSWORD_ARK_HVM_VIEW",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 259
     },
     {
       "name": "IOCTL_KSWORD_ARK_HVM_MSR_POLICY",
       "handler": "KswordARKHvmIoctlMsrPolicy",
       "string_name": "IOCTL_KSWORD_ARK_HVM_MSR_POLICY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 260
     },
     {
       "name": "IOCTL_KSWORD_ARK_HVM_CR_POLICY",
       "handler": "KswordARKHvmIoctlCrPolicy",
       "string_name": "IOCTL_KSWORD_ARK_HVM_CR_POLICY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 261
     },
     {
       "name": "IOCTL_KSWORD_ARK_HVM_DOMAIN",
       "handler": "KswordARKHvmIoctlDomain",
       "string_name": "IOCTL_KSWORD_ARK_HVM_DOMAIN",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 262
     },
     {
       "name": "IOCTL_KSWORD_ARK_HVM_PLATFORM",
       "handler": "KswordARKHvmIoctlPlatform",
       "string_name": "IOCTL_KSWORD_ARK_HVM_PLATFORM",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 263
     },
     {
       "name": "IOCTL_KSWORD_ARK_HVM_PROCESS",
       "handler": "KswordARKHvmIoctlProcess",
       "string_name": "IOCTL_KSWORD_ARK_HVM_PROCESS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 264
     },
     {
       "name": "IOCTL_KSWORD_ARK_HVM_INJECT",
       "handler": "KswordARKHvmIoctlInject",
       "string_name": "IOCTL_KSWORD_ARK_HVM_INJECT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 265
     },
     {
       "name": "IOCTL_KSWORD_ARK_HVM_NESTED_PROBE",
       "handler": "KswordARKHvmIoctlNestedProbe",
       "string_name": "IOCTL_KSWORD_ARK_HVM_NESTED_PROBE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 266
     },
     {
       "name": "IOCTL_KSWORD_ARK_HVM_EVENTS",
       "handler": "KswordARKHvmIoctlEvents",
       "string_name": "IOCTL_KSWORD_ARK_HVM_EVENTS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 267
     },
     {
       "name": "IOCTL_KSWORD_ARK_ENUM_IAT_EAT_HOOKS",
       "handler": "KswordARKKernelIoctlEnumIatEatHooks",
       "string_name": "IOCTL_KSWORD_ARK_ENUM_IAT_EAT_HOOKS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 268
     },
     {
       "name": "IOCTL_KSWORD_ARK_FORCE_UNLOAD_DRIVER",
       "handler": "KswordARKKernelIoctlForceUnloadDriver",
       "string_name": "IOCTL_KSWORD_ARK_FORCE_UNLOAD_DRIVER",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 269
     },
     {
       "name": "IOCTL_KSWORD_ARK_CONTROL_DRIVER_COMMUNICATION",
       "handler": "KswordARKKernelIoctlControlDriverCommunication",
       "string_name": "IOCTL_KSWORD_ARK_CONTROL_DRIVER_COMMUNICATION",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 270
     },
     {
       "name": "IOCTL_KSWORD_ARK_CONTROL_DRIVER_DISPATCH",
       "handler": "KswordARKKernelIoctlControlDriverDispatch",
       "string_name": "IOCTL_KSWORD_ARK_CONTROL_DRIVER_DISPATCH",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 271
     },
     {
       "name": "IOCTL_KSWORD_ARK_CONTROL_DRIVER_IMAGE",
       "handler": "KswordARKKernelIoctlControlDriverImage",
       "string_name": "IOCTL_KSWORD_ARK_CONTROL_DRIVER_IMAGE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 272
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_DRIVER_INTEGRITY",
       "handler": "KswordARKKernelIoctlQueryDriverIntegrity",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_DRIVER_INTEGRITY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 273
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_CPU_HARDWARE",
       "handler": "KswordARKKernelIoctlQueryCpuHardware",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_CPU_HARDWARE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 274
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_PHYSICAL_MEMORY_LAYOUT",
       "handler": "KswordARKKernelIoctlQueryPhysicalMemoryLayout",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_PHYSICAL_MEMORY_LAYOUT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 275
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_IOCTL_REGISTRY",
       "handler": "KswordARKKernelIoctlQueryIoctlRegistry",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_IOCTL_REGISTRY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 276
     },
     {
       "name": "IOCTL_KSWORD_ARK_ENUM_TIMER_DPC",
       "handler": "KswordARKKernelIoctlEnumTimerDpc",
       "string_name": "IOCTL_KSWORD_ARK_ENUM_TIMER_DPC",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 277
     },
     {
       "name": "IOCTL_KSWORD_ARK_EXPERIMENTAL_RETURN_TO_FIRMWARE",
       "handler": "KswordARKKernelIoctlExperimentalReturnToFirmware",
       "string_name": "IOCTL_KSWORD_ARK_EXPERIMENTAL_RETURN_TO_FIRMWARE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 278
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_UNLOADED_DRIVERS",
       "handler": "KswordARKKernelIoctlQueryUnloadedDrivers",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_UNLOADED_DRIVERS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 280
     },
     {
       "name": "IOCTL_KSWORD_ARK_SET_CALLBACK_RULES",
       "handler": "KswordARKCallbackIoctlSetRulesHandler",
       "string_name": "IOCTL_KSWORD_ARK_SET_CALLBACK_RULES",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 281
     },
     {
       "name": "IOCTL_KSWORD_ARK_GET_CALLBACK_RUNTIME_STATE",
       "handler": "KswordARKCallbackIoctlGetRuntimeStateHandler",
       "string_name": "IOCTL_KSWORD_ARK_GET_CALLBACK_RUNTIME_STATE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 282
     },
     {
       "name": "IOCTL_KSWORD_ARK_WAIT_CALLBACK_EVENT",
       "handler": "KswordARKCallbackIoctlWaitEventHandler",
       "string_name": "IOCTL_KSWORD_ARK_WAIT_CALLBACK_EVENT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 283
     },
     {
       "name": "IOCTL_KSWORD_ARK_ANSWER_CALLBACK_EVENT",
       "handler": "KswordARKCallbackIoctlAnswerEventHandler",
       "string_name": "IOCTL_KSWORD_ARK_ANSWER_CALLBACK_EVENT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 284
     },
     {
       "name": "IOCTL_KSWORD_ARK_CANCEL_ALL_PENDING_DECISIONS",
       "handler": "KswordARKCallbackIoctlCancelAllPendingHandler",
       "string_name": "IOCTL_KSWORD_ARK_CANCEL_ALL_PENDING_DECISIONS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 285
     },
     {
       "name": "IOCTL_KSWORD_ARK_REMOVE_EXTERNAL_CALLBACK",
       "handler": "KswordARKCallbackIoctlRemoveExternalCallbackHandler",
       "string_name": "IOCTL_KSWORD_ARK_REMOVE_EXTERNAL_CALLBACK",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 286
     },
     {
       "name": "IOCTL_KSWORD_ARK_REMOVE_EXTERNAL_CALLBACK_EX",
       "handler": "KswordARKCallbackIoctlRemoveExternalCallbackExHandler",
       "string_name": "IOCTL_KSWORD_ARK_REMOVE_EXTERNAL_CALLBACK_EX",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 287
     },
     {
       "name": "IOCTL_KSWORD_ARK_ENUM_CALLBACKS",
       "handler": "KswordARKCallbackIoctlEnumCallbacksHandler",
       "string_name": "IOCTL_KSWORD_ARK_ENUM_CALLBACKS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 288
     },
     {
       "name": "IOCTL_KSWORD_ARK_SET_MINIFILTER_BYPASS_PIDS",
       "handler": "KswordARKCallbackIoctlSetMinifilterBypassPidsHandler",
       "string_name": "IOCTL_KSWORD_ARK_SET_MINIFILTER_BYPASS_PIDS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 289
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_MINIFILTER_BYPASS_PIDS",
       "handler": "KswordARKCallbackIoctlQueryMinifilterBypassPidsHandler",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_MINIFILTER_BYPASS_PIDS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 290
     },
     {
       "name": "IOCTL_KSWORD_ARK_CALLBACK_MONITOR_CONTROL",
       "handler": "KswordARKCallbackMonitorIoctlControl",
       "string_name": "IOCTL_KSWORD_ARK_CALLBACK_MONITOR_CONTROL",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 291
     },
     {
       "name": "IOCTL_KSWORD_ARK_CALLBACK_MONITOR_QUERY",
       "handler": "KswordARKCallbackMonitorIoctlQuery",
       "string_name": "IOCTL_KSWORD_ARK_CALLBACK_MONITOR_QUERY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 292
     },
     {
       "name": "IOCTL_KSWORD_ARK_CALLBACK_MONITOR_READ",
       "handler": "KswordARKCallbackMonitorIoctlRead",
       "string_name": "IOCTL_KSWORD_ARK_CALLBACK_MONITOR_READ",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 293
     },
     {
       "name": "IOCTL_KSWORD_ARK_SET_PROCESS_PROTECT_CONFIG",
       "handler": "KswordARKProcessProtectIoctlSetConfigHandler",
       "string_name": "IOCTL_KSWORD_ARK_SET_PROCESS_PROTECT_CONFIG",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 295
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_PROCESS_PROTECT_STATE",
       "handler": "KswordARKProcessProtectIoctlQueryStateHandler",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_PROCESS_PROTECT_STATE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 296
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_RESEARCH_TOPIC",
       "handler": "KswordARKResearchIoctlQueryTopic",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_RESEARCH_TOPIC",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 298
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_DYN_STATUS",
       "handler": "KswordARKDynDataIoctlQueryStatus",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_DYN_STATUS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 299
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_DYN_FIELDS",
       "handler": "KswordARKDynDataIoctlQueryFields",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_DYN_FIELDS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 300
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_CAPABILITIES",
       "handler": "KswordARKDynDataIoctlQueryCapabilities",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_CAPABILITIES",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 301
     },
     {
       "name": "IOCTL_KSWORD_ARK_APPLY_DYN_PROFILE",
       "handler": "KswordARKDynDataIoctlApplyProfile",
       "string_name": "IOCTL_KSWORD_ARK_APPLY_DYN_PROFILE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 302
     },
     {
       "name": "IOCTL_KSWORD_ARK_APPLY_DYN_PROFILE_EX",
       "handler": "KswordARKDynDataIoctlApplyProfileEx",
       "string_name": "IOCTL_KSWORD_ARK_APPLY_DYN_PROFILE_EX",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 303
     },
     {
       "name": "IOCTL_KSWORD_ARK_APPLY_DYN_PROFILE_V4",
       "handler": "KswordARKDynDataIoctlApplyProfileV4",
       "string_name": "IOCTL_KSWORD_ARK_APPLY_DYN_PROFILE_V4",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 304
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_DYN_V4_MODULES",
       "handler": "KswordARKDynDataIoctlQueryV4Modules",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_DYN_V4_MODULES",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 305
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_DYN_V4_CAPABILITY_GROUPS",
       "handler": "KswordARKDynDataIoctlQueryV4CapabilityGroups",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_DYN_V4_CAPABILITY_GROUPS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 306
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_DYN_V4_MISSING_ITEMS",
       "handler": "KswordARKDynDataIoctlQueryV4MissingItems",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_DYN_V4_MISSING_ITEMS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 307
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_DYN_V4_ITEMS",
       "handler": "KswordARKDynDataIoctlQueryV4Items",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_DYN_V4_ITEMS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 308
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_DRIVER_CAPABILITIES",
       "handler": "KswordARKCapabilityIoctlQueryDriverCapabilities",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_DRIVER_CAPABILITIES",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 309
     },
     {
       "name": "IOCTL_KSWORD_ARK_ENUM_THREAD",
       "handler": "KswordARKThreadIoctlEnumThread",
       "string_name": "IOCTL_KSWORD_ARK_ENUM_THREAD",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 310
     },
     {
       "name": "IOCTL_KSWORD_ARK_TERMINATE_THREAD",
       "handler": "KswordARKThreadIoctlTerminate",
       "string_name": "IOCTL_KSWORD_ARK_TERMINATE_THREAD",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 311
     },
     {
       "name": "IOCTL_KSWORD_ARK_SET_THREAD_SUSPENDED",
       "handler": "KswordARKThreadIoctlSetSuspended",
       "string_name": "IOCTL_KSWORD_ARK_SET_THREAD_SUSPENDED",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 312
     },
     {
       "name": "IOCTL_KSWORD_ARK_CONTROL_DRIVER_THREAD",
       "handler": "KswordARKThreadIoctlControlDriverThread",
       "string_name": "IOCTL_KSWORD_ARK_CONTROL_DRIVER_THREAD",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 313
     },
     {
       "name": "IOCTL_KSWORD_ARK_ENUM_WORK_QUEUE",
       "handler": "KswordARKWorkQueueIoctlEnum",
       "string_name": "IOCTL_KSWORD_ARK_ENUM_WORK_QUEUE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 315
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_PROCESS_CROSSVIEW",
       "handler": "KswordARKProcessIoctlQueryCrossView",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_PROCESS_CROSSVIEW",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 317
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_THREAD_CROSSVIEW",
       "handler": "KswordARKThreadIoctlQueryCrossView",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_THREAD_CROSSVIEW",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 319
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_PROCESS_DETAIL",
       "handler": "KswordARKProcessIoctlQueryDetail",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_PROCESS_DETAIL",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 321
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_PROCESS_RUNTIME_FIELDS",
       "handler": "KswordARKProcessIoctlQueryRuntimeFields",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_PROCESS_RUNTIME_FIELDS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 323
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_THREAD_DETAIL",
       "handler": "KswordARKThreadIoctlQueryDetail",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_THREAD_DETAIL",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 325
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_THREAD_RUNTIME_FIELDS",
       "handler": "KswordARKThreadIoctlQueryRuntimeFields",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_THREAD_RUNTIME_FIELDS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 327
     },
     {
       "name": "IOCTL_KSWORD_ARK_ENUM_PROCESS_HANDLES",
       "handler": "KswordARKHandleIoctlEnumProcessHandles",
       "string_name": "IOCTL_KSWORD_ARK_ENUM_PROCESS_HANDLES",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 332
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_HANDLE_OBJECT",
       "handler": "KswordARKHandleIoctlQueryHandleObject",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_HANDLE_OBJECT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 333
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_ALPC_PORT",
       "handler": "KswordARKAlpcIoctlQueryAlpcPort",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_ALPC_PORT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 334
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_PROCESS_SECTION",
       "handler": "KswordARKSectionIoctlQueryProcessSection",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_PROCESS_SECTION",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 336
     },
     {
       "name": "IOCTL_KSWORD_ARK_ENUMERATE_PROCESS_VAD",
       "handler": "KswordARKInjectionIoctlEnumerateProcessVad",
       "string_name": "IOCTL_KSWORD_ARK_ENUMERATE_PROCESS_VAD",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 337
     },
     {
       "name": "IOCTL_KSWORD_ARK_SCAN_PROCESS_EXECUTABLE_PTE",
       "handler": "KswordARKInjectionIoctlScanExecutablePte",
       "string_name": "IOCTL_KSWORD_ARK_SCAN_PROCESS_EXECUTABLE_PTE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 338
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_FILE_SECTION_MAPPINGS",
       "handler": "KswordARKSectionIoctlQueryFileSectionMappings",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_FILE_SECTION_MAPPINGS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 339
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_WSL_SILO",
       "handler": "KswordARKWslSiloIoctlQuery",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_WSL_SILO",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 340
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_IMAGE_TRUST",
       "handler": "KswordARKTrustIoctlQueryImageTrust",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_IMAGE_TRUST",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 341
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_IMAGE_SIGNATURE",
       "handler": "KswordARKTrustIoctlQueryImageSignature",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_IMAGE_SIGNATURE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 342
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_SAFETY_POLICY",
       "handler": "KswordARKSafetyIoctlQueryPolicy",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_SAFETY_POLICY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 343
     },
     {
       "name": "IOCTL_KSWORD_ARK_SET_SAFETY_POLICY",
       "handler": "KswordARKSafetyIoctlSetPolicy",
       "string_name": "IOCTL_KSWORD_ARK_SET_SAFETY_POLICY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 344
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_PREFLIGHT",
       "handler": "KswordARKPreflightIoctlQuery",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_PREFLIGHT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 345
     },
     {
       "name": "IOCTL_KSWORD_ARK_READ_REGISTRY_VALUE",
       "handler": "KswordARKRegistryIoctlReadValue",
       "string_name": "IOCTL_KSWORD_ARK_READ_REGISTRY_VALUE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 346
     },
     {
       "name": "IOCTL_KSWORD_ARK_ENUM_REGISTRY_KEY",
       "handler": "KswordARKRegistryIoctlEnumKey",
       "string_name": "IOCTL_KSWORD_ARK_ENUM_REGISTRY_KEY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 347
     },
     {
       "name": "IOCTL_KSWORD_ARK_SET_REGISTRY_VALUE",
       "handler": "KswordARKRegistryIoctlSetValue",
       "string_name": "IOCTL_KSWORD_ARK_SET_REGISTRY_VALUE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 348
     },
     {
       "name": "IOCTL_KSWORD_ARK_DELETE_REGISTRY_VALUE",
       "handler": "KswordARKRegistryIoctlDeleteValue",
       "string_name": "IOCTL_KSWORD_ARK_DELETE_REGISTRY_VALUE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 349
     },
     {
       "name": "IOCTL_KSWORD_ARK_CREATE_REGISTRY_KEY",
       "handler": "KswordARKRegistryIoctlCreateKey",
       "string_name": "IOCTL_KSWORD_ARK_CREATE_REGISTRY_KEY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 350
     },
     {
       "name": "IOCTL_KSWORD_ARK_DELETE_REGISTRY_KEY",
       "handler": "KswordARKRegistryIoctlDeleteKey",
       "string_name": "IOCTL_KSWORD_ARK_DELETE_REGISTRY_KEY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 351
     },
     {
       "name": "IOCTL_KSWORD_ARK_RENAME_REGISTRY_VALUE",
       "handler": "KswordARKRegistryIoctlRenameValue",
       "string_name": "IOCTL_KSWORD_ARK_RENAME_REGISTRY_VALUE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 352
     },
     {
       "name": "IOCTL_KSWORD_ARK_RENAME_REGISTRY_KEY",
       "handler": "KswordARKRegistryIoctlRenameKey",
       "string_name": "IOCTL_KSWORD_ARK_RENAME_REGISTRY_KEY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 353
     },
     {
       "name": "IOCTL_KSWORD_ARK_REDIRECT_SET_RULES",
       "handler": "KswordARKRedirectIoctlSetRules",
       "string_name": "IOCTL_KSWORD_ARK_REDIRECT_SET_RULES",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 354
     },
     {
       "name": "IOCTL_KSWORD_ARK_REDIRECT_QUERY_STATUS",
       "handler": "KswordARKRedirectIoctlQueryStatus",
       "string_name": "IOCTL_KSWORD_ARK_REDIRECT_QUERY_STATUS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 355
     },
     {
       "name": "IOCTL_KSWORD_ARK_NETWORK_SET_RULES",
       "handler": "KswordARKNetworkIoctlSetRules",
       "string_name": "IOCTL_KSWORD_ARK_NETWORK_SET_RULES",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 356
     },
     {
       "name": "IOCTL_KSWORD_ARK_NETWORK_QUERY_STATUS",
       "handler": "KswordARKNetworkIoctlQueryStatus",
       "string_name": "IOCTL_KSWORD_ARK_NETWORK_QUERY_STATUS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 357
     },
     {
       "name": "IOCTL_KSWORD_ARK_NETWORK_QUERY_TCP_ENDPOINTS",
       "handler": "KswordARKNetworkIoctlQueryTcpEndpoints",
       "string_name": "IOCTL_KSWORD_ARK_NETWORK_QUERY_TCP_ENDPOINTS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 358
     },
     {
       "name": "IOCTL_KSWORD_ARK_NETWORK_QUERY_UDP_ENDPOINTS",
       "handler": "KswordARKNetworkIoctlQueryUdpEndpoints",
       "string_name": "IOCTL_KSWORD_ARK_NETWORK_QUERY_UDP_ENDPOINTS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 359
     },
     {
       "name": "IOCTL_KSWORD_ARK_NETWORK_QUERY_WFP_INVENTORY",
       "handler": "KswordARKNetworkIoctlQueryWfpInventory",
       "string_name": "IOCTL_KSWORD_ARK_NETWORK_QUERY_WFP_INVENTORY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 360
     },
     {
       "name": "IOCTL_KSWORD_ARK_NETWORK_QUERY_WFP_EVENTS",
       "handler": "KswordARKNetworkIoctlQueryWfpEvents",
       "string_name": "IOCTL_KSWORD_ARK_NETWORK_QUERY_WFP_EVENTS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 361
     },
     {
       "name": "IOCTL_KSWORD_ARK_NETWORK_QUERY_TRAFFIC_PACKETS",
       "handler": "KswordARKNetworkIoctlQueryTrafficPackets",
       "string_name": "IOCTL_KSWORD_ARK_NETWORK_QUERY_TRAFFIC_PACKETS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 362
     },
     {
       "name": "IOCTL_KSWORD_ARK_NETWORK_CONTROL_TRAFFIC_CAPTURE",
       "handler": "KswordARKNetworkIoctlControlTrafficCapture",
       "string_name": "IOCTL_KSWORD_ARK_NETWORK_CONTROL_TRAFFIC_CAPTURE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 363
     },
     {
       "name": "IOCTL_KSWORD_ARK_NETWORK_QUERY_NDIS_CHAIN",
       "handler": "KswordARKNetworkIoctlQueryNdisChain",
       "string_name": "IOCTL_KSWORD_ARK_NETWORK_QUERY_NDIS_CHAIN",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 364
     },
     {
       "name": "IOCTL_KSWORD_ARK_ENUM_KEYBOARD_HOTKEYS",
       "handler": "KswordARKKeyboardIoctlEnumHotkeys",
       "string_name": "IOCTL_KSWORD_ARK_ENUM_KEYBOARD_HOTKEYS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 365
     },
     {
       "name": "IOCTL_KSWORD_ARK_ENUM_KEYBOARD_HOOKS",
       "handler": "KswordARKKeyboardIoctlEnumHooks",
       "string_name": "IOCTL_KSWORD_ARK_ENUM_KEYBOARD_HOOKS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 366
     },
     {
       "name": "IOCTL_KSWORD_ARK_MUTATE_KEYBOARD_HOTKEY",
       "handler": "KswordARKKeyboardIoctlMutateHotkey",
       "string_name": "IOCTL_KSWORD_ARK_MUTATE_KEYBOARD_HOTKEY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 367
     },
     {
       "name": "IOCTL_KSWORD_ARK_MUTATION_PREPARE",
       "handler": "KswordARKMutationIoctlPrepare",
       "string_name": "IOCTL_KSWORD_ARK_MUTATION_PREPARE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 368
     },
     {
       "name": "IOCTL_KSWORD_ARK_MUTATION_COMMIT",
       "handler": "KswordARKMutationIoctlCommit",
       "string_name": "IOCTL_KSWORD_ARK_MUTATION_COMMIT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 369
     },
     {
       "name": "IOCTL_KSWORD_ARK_MUTATION_ROLLBACK",
       "handler": "KswordARKMutationIoctlRollback",
       "string_name": "IOCTL_KSWORD_ARK_MUTATION_ROLLBACK",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 370
     },
     {
       "name": "IOCTL_KSWORD_ARK_MUTATION_QUERY_AUDIT",
       "handler": "KswordARKMutationIoctlQueryAudit",
       "string_name": "IOCTL_KSWORD_ARK_MUTATION_QUERY_AUDIT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 371
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_MINIFILTER_INVENTORY",
       "handler": "KswordARKMinifilterIoctlQueryInventory",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_MINIFILTER_INVENTORY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 372
     },
     {
       "name": "IOCTL_KSWORD_ARK_ENUM_CID_TABLE",
       "handler": "KswordARKKernelObjectIoctlEnumCidTable",
       "string_name": "IOCTL_KSWORD_ARK_ENUM_CID_TABLE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 373
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_KERNEL_OBJECT_SUMMARY",
       "handler": "KswordARKKernelObjectIoctlQueryObjectSummary",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_KERNEL_OBJECT_SUMMARY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 374
     },
     {
       "name": "IOCTL_KSWORD_ARK_ENUM_OBJECT_TYPE_TABLE",
       "handler": "KswordARKKernelObjectIoctlEnumTypeTable",
       "string_name": "IOCTL_KSWORD_ARK_ENUM_OBJECT_TYPE_TABLE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 375
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_IPC_SUMMARY",
       "handler": "KswordARKKernelObjectIoctlQueryIpcSummary",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_IPC_SUMMARY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 376
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_VOLUME_STACK_AUDIT",
       "handler": "KswordARKStorageIoctlQueryVolumeStackAudit",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_VOLUME_STACK_AUDIT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 377
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_BITLOCKER_FVE_AUDIT",
       "handler": "KswordARKStorageIoctlQueryBitLockerFveAudit",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_BITLOCKER_FVE_AUDIT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 378
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_MOUNTMGR_MAPPING_AUDIT",
       "handler": "KswordARKStorageIoctlQueryMountMgrMappingAudit",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_MOUNTMGR_MAPPING_AUDIT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 379
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_FILESYSTEM_INTEGRITY_AUDIT",
       "handler": "KswordARKStorageIoctlQueryFileSystemIntegrityAudit",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_FILESYSTEM_INTEGRITY_AUDIT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 380
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_RAW_DISK_BACKEND",
       "handler": "KswordARKStorageIoctlQueryRawDiskBackend",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_RAW_DISK_BACKEND",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 381
     },
     {
       "name": "IOCTL_KSWORD_ARK_READ_RAW_DISK",
       "handler": "KswordARKStorageIoctlReadRawDisk",
       "string_name": "IOCTL_KSWORD_ARK_READ_RAW_DISK",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 382
     },
     {
       "name": "IOCTL_KSWORD_ARK_WRITE_RAW_DISK",
       "handler": "KswordARKStorageIoctlWriteRawDisk",
       "string_name": "IOCTL_KSWORD_ARK_WRITE_RAW_DISK",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 383
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_SECURITY_STATUS",
       "handler": "KswordARKSecurityAuditIoctlQuerySecurityStatus",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_SECURITY_STATUS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 384
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_DRIVER_TRUST_VIEW",
       "handler": "KswordARKSecurityAuditIoctlQueryDriverTrustView",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_DRIVER_TRUST_VIEW",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 385
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_HYPERV_SUMMARY",
       "handler": "KswordARKSecurityAuditIoctlQueryHyperVSummary",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_HYPERV_SUMMARY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 386
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_APP_CONTROL_STATUS",
       "handler": "KswordARKSecurityAuditIoctlQueryAppControlStatus",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_APP_CONTROL_STATUS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 387
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_WIN32K_PROFILE_STATUS",
       "handler": "KswordARKWin32kIoctlQueryProfileStatus",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_WIN32K_PROFILE_STATUS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 388
     },
     {
       "name": "IOCTL_KSWORD_ARK_WINDOW_BAND",
       "handler": "KswordARKWindowBandIoctl",
       "string_name": "IOCTL_KSWORD_ARK_WINDOW_BAND",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 389
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_WIN32K_WINDOWS",
       "handler": "KswordARKWin32kIoctlQueryWindows",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_WIN32K_WINDOWS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 390
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_WIN32K_GUI_THREADS",
       "handler": "KswordARKWin32kIoctlQueryGuiThreads",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_WIN32K_GUI_THREADS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 391
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_WIN32K_HOTKEYS_PDB",
       "handler": "KswordARKWin32kIoctlQueryHotkeysPdb",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_WIN32K_HOTKEYS_PDB",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 392
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_WIN32K_HOOKS_PDB",
       "handler": "KswordARKWin32kIoctlQueryHooksPdb",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_WIN32K_HOOKS_PDB",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 393
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_WIN32K_WINDOW_DETAIL",
       "handler": "KswordARKWin32kIoctlQueryWindowDetail",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_WIN32K_WINDOW_DETAIL",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 394
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_WIN32K_TIMERS",
       "handler": "KswordARKWin32kIoctlQueryTimers",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_WIN32K_TIMERS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 395
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_WIN32K_EVENT_HOOKS",
       "handler": "KswordARKWin32kIoctlQueryEventHooks",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_WIN32K_EVENT_HOOKS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 396
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_DEVICE_STACK_AUDIT",
       "handler": "KswordARKDeviceAuditIoctlQueryDeviceStack",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_DEVICE_STACK_AUDIT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 397
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_INPUT_STACK_AUDIT",
       "handler": "KswordARKDeviceAuditIoctlQueryInputStack",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_INPUT_STACK_AUDIT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 398
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_USB_TOPOLOGY_AUDIT",
       "handler": "KswordARKDeviceAuditIoctlQueryUsbTopology",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_USB_TOPOLOGY_AUDIT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 399
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_GPU_DISPLAY_WATCHDOG_AUDIT",
       "handler": "KswordARKDeviceAuditIoctlQueryGpuDisplayWatchdog",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_GPU_DISPLAY_WATCHDOG_AUDIT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 400
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_PLATFORM_AUDIT",
       "handler": "KswordARKPlatformAuditIoctlQuery",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_PLATFORM_AUDIT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 403
     },
     {
       "name": "IOCTL_KSWORD_ARK_CONTROL_PLATFORM_AUDIT",
       "handler": "KswordARKPlatformAuditIoctlControl",
       "string_name": "IOCTL_KSWORD_ARK_CONTROL_PLATFORM_AUDIT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 404
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_I8042_AUDIT",
       "handler": "KswordARKI8042AuditIoctlQuery",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_I8042_AUDIT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 406
     },
     {
       "name": "IOCTL_KSWORD_ARK_DEBUG_OUTPUT_CONTROL",
       "handler": "KswordARKDebugOutputIoctlControl",
       "string_name": "IOCTL_KSWORD_ARK_DEBUG_OUTPUT_CONTROL",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 408
     },
     {
       "name": "IOCTL_KSWORD_ARK_DEBUG_OUTPUT_DRAIN",
       "handler": "KswordARKDebugOutputIoctlDrain",
       "string_name": "IOCTL_KSWORD_ARK_DEBUG_OUTPUT_DRAIN",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 409
     },
     {
       "name": "IOCTL_KSWORD_ARK_HWID_DISPATCH_QUERY",
       "handler": "KswordARKHwidIoctlQueryDispatch",
       "string_name": "IOCTL_KSWORD_ARK_HWID_DISPATCH_QUERY",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 410
     },
     {
       "name": "IOCTL_KSWORD_ARK_HWID_DISPATCH_CONTROL",
       "handler": "KswordARKHwidIoctlControlDispatch",
       "string_name": "IOCTL_KSWORD_ARK_HWID_DISPATCH_CONTROL",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 411
     },
     {
       "name": "IOCTL_KSWORD_ARK_QUERY_CPU_POWER",
       "handler": "KswordARKCpuPowerIoctlQuery",
       "string_name": "IOCTL_KSWORD_ARK_QUERY_CPU_POWER",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 412
     },
     {
       "name": "IOCTL_KSWORD_ARK_CONTROL_CPU_POWER",
       "handler": "KswordARKCpuPowerIoctlControl",
       "string_name": "IOCTL_KSWORD_ARK_CONTROL_CPU_POWER",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 413
     },
     {
       "name": "IOCTL_KSWORD_ARK_CONFIGURE_BUGCHECK_DIAGNOSTICS",
       "handler": "KswordARKBugcheckIoctlConfigureDiagnostics",
       "string_name": "IOCTL_KSWORD_ARK_CONFIGURE_BUGCHECK_DIAGNOSTICS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 415
     },
     {
       "name": "IOCTL_KSWORD_ARK_SET_BUGCHECK_BITMAP",
       "handler": "KswordARKBugcheckIoctlSetBitmap",
       "string_name": "IOCTL_KSWORD_ARK_SET_BUGCHECK_BITMAP",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 416
     },
     {
       "name": "IOCTL_KSWORD_ARK_SET_BUGCHECK_VERDICT_RESOURCES",
       "handler": "KswordARKBugcheckIoctlSetVerdictResources",
       "string_name": "IOCTL_KSWORD_ARK_SET_BUGCHECK_VERDICT_RESOURCES",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 417
     },
     {
       "name": "IOCTL_KSWORD_ARK_CONFIGURE_BUGCHECK_GUARD",
       "handler": "KswordARKBugcheckGuardIoctlConfigure",
       "string_name": "IOCTL_KSWORD_ARK_CONFIGURE_BUGCHECK_GUARD",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 418
     },
     {
       "name": "IOCTL_KSWORD_ARK_CONFIGURE_BUGCHECK_SHIELD",
       "handler": "KswordARKBugcheckShieldIoctlConfigure",
       "string_name": "IOCTL_KSWORD_ARK_CONFIGURE_BUGCHECK_SHIELD",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 420
     },
     {
       "name": "IOCTL_KSWORD_ARK_RXPF_QUERY_SUPPORT",
       "handler": "KswordARKRxpfIoctlQuerySupport",
       "string_name": "IOCTL_KSWORD_ARK_RXPF_QUERY_SUPPORT",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 422
     },
     {
       "name": "IOCTL_KSWORD_ARK_RXPF_REGISTER_PAGE",
       "handler": "KswordARKRxpfIoctlRegisterPage",
       "string_name": "IOCTL_KSWORD_ARK_RXPF_REGISTER_PAGE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 423
     },
     {
       "name": "IOCTL_KSWORD_ARK_RXPF_CHANGE_PAGE",
       "handler": "KswordARKRxpfIoctlChangePage",
       "string_name": "IOCTL_KSWORD_ARK_RXPF_CHANGE_PAGE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 424
     },
     {
       "name": "IOCTL_KSWORD_ARK_RXPF_QUERY_PAGE",
       "handler": "KswordARKRxpfIoctlQueryPage",
       "string_name": "IOCTL_KSWORD_ARK_RXPF_QUERY_PAGE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 425
     },
     {
       "name": "IOCTL_KSWORD_ARK_RXPF_WRITE_PAGE",
       "handler": "KswordARKRxpfIoctlWritePage",
       "string_name": "IOCTL_KSWORD_ARK_RXPF_WRITE_PAGE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 426
     },
     {
       "name": "IOCTL_KSWORD_ARK_RXPF_SET_EMULATION",
       "handler": "KswordARKRxpfIoctlSetEmulation",
       "string_name": "IOCTL_KSWORD_ARK_RXPF_SET_EMULATION",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 427
     },
     {
       "name": "IOCTL_KSWORD_ARK_RXPF_QUERY_STATS",
       "handler": "KswordARKRxpfIoctlQueryStats",
       "string_name": "IOCTL_KSWORD_ARK_RXPF_QUERY_STATS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 428
     },
     {
       "name": "IOCTL_KSWORD_ARK_RXPF_DRAIN_EVENTS",
       "handler": "KswordARKRxpfIoctlDrainEvents",
       "string_name": "IOCTL_KSWORD_ARK_RXPF_DRAIN_EVENTS",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 429
     },
     {
       "name": "IOCTL_KSWORD_ARK_RXPF_UNREGISTER_PAGE",
       "handler": "KswordARKRxpfIoctlUnregisterPage",
       "string_name": "IOCTL_KSWORD_ARK_RXPF_UNREGISTER_PAGE",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 430
     },
     {
       "name": "IOCTL_KSWORD_ARK_RXPF_RUN_SELF_TEST",
       "handler": "KswordARKRxpfIoctlRunSelfTest",
       "string_name": "IOCTL_KSWORD_ARK_RXPF_RUN_SELF_TEST",
-      "source": "KswordARKDriver/src/dispatch/ioctl_registry.c",
+      "source": "drivers/ark/src/dispatch/ioctl_registry.c",
       "line": 431
     }
   ],

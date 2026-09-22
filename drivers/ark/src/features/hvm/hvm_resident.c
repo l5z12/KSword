@@ -1,0 +1,2892 @@
+/*++
+
+Module Name:
+
+    hvm_resident.c
+
+Abstract:
+
+    Implements all-processor VMX entry, resident rollback, EPT invalidation,
+    and exact guest continuations for the HVM protocol v3 lifecycle.
+
+Environment:
+
+    Kernel-mode Driver Framework.
+
+--*/
+
+#include "hvm_resident.h"
+#include "hvm_backend.h"
+#include "hvm_metrics.h"
+
+/* Tag the per-processor private-hierarchy descriptor array. */
+#define KSW_HVM_EPT_LOCAL_ARRAY_POOL_TAG 'AvHK'
+#include "hvm_exit.h"
+#include "hvm_event.h"
+/* The multicore start gate asks the view records whether any would flip a leaf. */
+#include "hvm_ept_view.h"
+/* Stopping residency has to retire every armed first-touch watch. */
+#include "hvm_ept.h"
+#include "hvm_vmcs.h"
+#include "hvm_descriptor.h"
+#include "../../platform/pool_compat.h"
+
+#if defined(_M_AMD64)
+#include <intrin.h>
+
+/* Tag resident VM-exit stacks in nonpaged pool diagnostics. */
+#define KSW_HVM_RESIDENT_POOL_TAG 'rHvK'
+
+/* Name the VMCS guest stack-pointer field. */
+#define KSW_VMCS_GUEST_RSP 0x681CUL
+/* Name the VMCS guest instruction-pointer field. */
+#define KSW_VMCS_GUEST_RIP 0x681EUL
+/* Name the VMCS guest RFLAGS field. */
+#define KSW_VMCS_GUEST_RFLAGS 0x6820UL
+/* Name the VMCS primary VM-exit controls field. */
+#define KSW_VMCS_EXIT_CONTROLS 0x400CUL
+/* Name the VMCS guest IA32_DEBUGCTL field. */
+#define KSW_VMCS_GUEST_DEBUGCTL 0x2802UL
+/* Name the VMCS guest PKRS field. */
+#define KSW_VMCS_GUEST_PKRS 0x2818UL
+/* Name the VMCS guest DR7 field. */
+#define KSW_VMCS_GUEST_DR7 0x681AUL
+/* Name the VMCS guest supervisor CET field. */
+#define KSW_VMCS_GUEST_S_CET 0x6828UL
+/* Guest page-directory base, reloaded by hand after VMXOFF. */
+#define KSW_VMCS_GUEST_CR3 0x6802UL
+/* Name the VMCS guest shadow-stack pointer field. */
+#define KSW_VMCS_GUEST_SSP 0x682AUL
+/* Name the VMCS guest interrupt shadow-stack table field. */
+#define KSW_VMCS_GUEST_INTERRUPT_SSP_TABLE 0x682CUL
+/* Name the VMCS guest user-interrupt notification vector field. */
+#define KSW_VMCS_GUEST_UINV 0x0814UL
+/* Name the VMCS VM-instruction error field. */
+#define KSW_VMCS_INSTRUCTION_ERROR 0x4400UL
+/* FXSAVE64 in the VM-exit entry requires host CR0.TS to remain clear. */
+#define KSW_HVM_CR0_TASK_SWITCHED (1ULL << 3)
+/* Request VM-exit guest debug-state saving. */
+#define KSW_HVM_EXIT_SAVE_DEBUG_CONTROLS (1UL << 2)
+/* Request VM-exit UINV clearing. */
+#define KSW_HVM_EXIT_CLEAR_UINV (1UL << 27)
+/* Request VM-exit host CET-state loading. */
+#define KSW_HVM_EXIT_LOAD_CET (1UL << 28)
+/* Request VM-exit host PKRS loading. */
+#define KSW_HVM_EXIT_LOAD_PKRS (1UL << 29)
+/* Name the protection-key rights model-specific register. */
+#define KSW_HVM_IA32_PKRS 0x6E1UL
+/* Name the user-interrupt miscellaneous model-specific register. */
+#define KSW_HVM_IA32_UINTR_MISC 0x988UL
+
+/* Identify one all-processor resident start rendezvous. */
+#define KSW_HVM_RENDEZVOUS_START 1UL
+/* Identify one all-processor resident stop rendezvous. */
+#define KSW_HVM_RENDEZVOUS_STOP 2UL
+/* Identify one all-processor EPT invalidation rendezvous. */
+#define KSW_HVM_RENDEZVOUS_INVEPT 3UL
+
+/* Own fixed per-processor resident contexts and their lifetime. */
+typedef struct KswHvmResidentState
+{
+    /* Publish whether host-stack contexts have been prepared. */
+    BOOLEAN prepared;
+    /* Keep the structure explicitly initialized across architectures. */
+    UCHAR reserved0[3];
+    /* Preserve the number of prepared per-processor contexts. */
+    ULONG processorCount;
+    /* Preserve the start flags used to configure nested dispatch. */
+    ULONG flags;
+    /* Reference the runtime whose pages remain resident. */
+    KswHvmRuntime* runtime;
+    /* Own every bounded per-processor resident context. */
+    KswHvmResidentVcpu processors[KSWORD_ARK_HVM_MAX_PROCESSORS];
+    /*
+     * Own every private EPT hierarchy, appended after Processors so no
+     * existing offset moves.  NULL whenever the feature was not armed for
+     * this residency.
+     */
+    KswHvmEptLocal* eptLocalArray;
+    /* Retain how many hierarchies the array holds, for the release path. */
+    ULONG eptLocalCount;
+    /* Keep the tail deterministic for crash-dump inspection. */
+    ULONG reserved1;
+    /*
+     * Own the one vmcs12 spill pool every processor shares.
+     *
+     * Appended after the existing members so no offset moves.  Shared rather
+     * than per-processor because a VMCS is memory: a hypervisor VMCLEARs on
+     * one processor and VMPTRLDs on another to move a vCPU, and a per-
+     * processor store loses everything it configured at that moment.
+     */
+    PVOID vmcs12PoolBlock;
+} KswHvmResidentState;
+
+/* Share one fixed operation across an IPI rendezvous. */
+typedef struct KswHvmRendezvous
+{
+    /* Select the start, stop, or invalidation operation. */
+    ULONG operation;
+    /* Preserve the number of successful target processors. */
+    volatile LONG successCount;
+    /* Preserve the number of failed or unrepresented processors. */
+    volatile LONG failureCount;
+    /* Preserve the first authoritative failure. */
+    volatile LONG firstStatus;
+    /* Preserve the EPT pointer used by invalidation hypercalls. */
+    ULONGLONG eptPointer;
+} KswHvmRendezvous;
+
+/* Own the process-wide resident contexts under the runtime lifecycle lock. */
+static KswHvmResidentState gKswordHvmResident;
+
+VOID kswordArkHvmResidentMetrics(KSWORD_ARK_HVM_METRICS_RESPONSE* response)
+{
+    /* Resource locking prevents prepare/free from replacing these contexts. */
+    ULONG index;
+    /* Timing rows may describe an older stop, so use a separate current count. */
+    response->shadowProcessorCount = gKswordHvmResident.processorCount;
+    /* Each CPU publishes its own naturally aligned observational counters. */
+    for (index = 0UL; index < response->shadowProcessorCount; ++index) {
+        /* Read static per-CPU storage without dereferencing its heap allocations. */
+        const KswHvmShadowEptState* shadow = &gKswordHvmResident.processors[index].nested.shadowEpt;
+        /* Select the separately versioned wire row. */
+        KSWORD_ARK_HVM_SHADOW_METRICS* row = &response->shadowProcessors[index];
+        /* Preserve stable processor-array identity. */
+        row->index = index;
+        /* Sample PageUsed; the enclosing QPC interval bounds this observation. */
+        row->pagesUsed = shadow->pageUsed;
+        /* Sample TrackedCount; the enclosing QPC interval bounds this observation. */
+        row->trackedPages = shadow->trackedCount;
+        /* Sample TrackedOverflowCount; the enclosing QPC interval bounds this observation. */
+        row->trackedOverflow = shadow->trackedOverflowCount;
+        /* Sample FillCount; the enclosing QPC interval bounds this observation. */
+        row->fills = shadow->fillCount;
+        /* Sample DenyCount; the enclosing QPC interval bounds this observation. */
+        row->denied = shadow->denyCount;
+        /* Sample ExhaustionCount; the enclosing QPC interval bounds this observation. */
+        row->exhausted = shadow->exhaustionCount;
+        /* Sample InvalidateKeptCount; the enclosing QPC interval bounds this observation. */
+        row->kept = shadow->invalidateKeptCount;
+        /* Sample InvalidateDroppedCount; the enclosing QPC interval bounds this observation. */
+        row->dropped = shadow->invalidateDroppedCount;
+        /* Sample AdRecordCount; the enclosing QPC interval bounds this observation. */
+        row->adPending = shadow->adRecordCount;
+        /* Sample AdPropagatedCount; the enclosing QPC interval bounds this observation. */
+        row->adPropagated = shadow->adPropagatedCount;
+        /* Sample AdOverflowCount; the enclosing QPC interval bounds this observation. */
+        row->adOverflow = shadow->adOverflowCount;
+        /* Sample VerifyMismatchCount; the enclosing QPC interval bounds this observation. */
+        row->verifyMismatch = shadow->verifyMismatchCount;
+    }
+}
+
+
+/* Keep assembly offsets synchronized with the resident context contract. */
+C_ASSERT(FIELD_OFFSET(
+    KswHvmResidentVcpu,
+    launchStackPointer) == 0);
+/* Keep the launch RFLAGS assembly offset synchronized. */
+C_ASSERT(FIELD_OFFSET(
+    KswHvmResidentVcpu,
+    launchRflags) == 8);
+/* Keep the devirtualization RSP assembly offset synchronized. */
+C_ASSERT(FIELD_OFFSET(
+    KswHvmResidentVcpu,
+    devirtualizeRsp) == 56);
+/* Keep the devirtualization RIP assembly offset synchronized. */
+C_ASSERT(FIELD_OFFSET(
+    KswHvmResidentVcpu,
+    devirtualizeRip) == 64);
+/* Keep the devirtualization RFLAGS assembly offset synchronized. */
+C_ASSERT(FIELD_OFFSET(
+    KswHvmResidentVcpu,
+    devirtualizeRflags) == 72);
+/* Keep every assembly-restored extended-state offset synchronized. */
+C_ASSERT(FIELD_OFFSET(KswHvmResidentVcpu, guestSCet) == 80);
+C_ASSERT(FIELD_OFFSET(KswHvmResidentVcpu, guestSsp) == 88);
+C_ASSERT(FIELD_OFFSET(
+    KswHvmResidentVcpu,
+    guestInterruptSspTable) == 96);
+C_ASSERT(FIELD_OFFSET(KswHvmResidentVcpu, guestPkrs) == 104);
+C_ASSERT(FIELD_OFFSET(KswHvmResidentVcpu, guestUinv) == 112);
+C_ASSERT(FIELD_OFFSET(
+    KswHvmResidentVcpu,
+    guestDebugControl) == 120);
+C_ASSERT(FIELD_OFFSET(KswHvmResidentVcpu, guestDr7) == 128);
+C_ASSERT(FIELD_OFFSET(
+    KswHvmResidentVcpu,
+    cetStateManaged) == 136);
+C_ASSERT(FIELD_OFFSET(
+    KswHvmResidentVcpu,
+    debugStateManaged) == 139);
+/* Keep the FXSAVE64 assembly offset and alignment synchronized. */
+C_ASSERT(FIELD_OFFSET(
+    KswHvmResidentVcpu,
+    fxState) == 144);
+C_ASSERT((FIELD_OFFSET(
+    KswHvmResidentVcpu,
+    fxState) & 0xFUL) == 0);
+C_ASSERT(__alignof(KswHvmResidentVcpu) >= 16);
+C_ASSERT((FIELD_OFFSET(
+    KswHvmResidentState,
+    processors) & 0xFUL) == 0);
+C_ASSERT(__alignof(KswHvmResidentState) >= 16);
+/* Keep the post-stack-switch active commit offset synchronized. */
+C_ASSERT(FIELD_OFFSET(
+    KswHvmResidentVcpu,
+    active) == 656);
+/* Keep assembly-owned context pointers synchronized. */
+C_ASSERT(FIELD_OFFSET(
+    KswHvmResidentVcpu,
+    runtime) == 16);
+C_ASSERT(FIELD_OFFSET(
+    KswHvmResidentVcpu,
+    resource) == 24);
+/* Keep the final resident-count commit offset synchronized. */
+C_ASSERT(FIELD_OFFSET(
+    KswHvmRuntime,
+    residentProcessorCount) == 40);
+/* Keep the protocol row state offset synchronized with assembly. */
+C_ASSERT(FIELD_OFFSET(
+    KswHvmCpuResource,
+    row.stateFlags) == 4);
+
+/* Record one rendezvous result without waiting or allocation. */
+static VOID
+kswordArkHvmResidentRecordResult(
+    _Inout_ KswHvmRendezvous* rendezvous,
+    _In_ NTSTATUS status
+    )
+{
+    /* Count one successful processor result. */
+    if (NT_SUCCESS(status)) {
+        /* Publish one additional successful target. */
+        InterlockedIncrement(&rendezvous->successCount);
+    } else {
+        /* Publish one additional failed target. */
+        InterlockedIncrement(&rendezvous->failureCount);
+        /* Preserve only the first authoritative failure. */
+        (void)InterlockedCompareExchange(
+            &rendezvous->firstStatus,
+            status,
+            STATUS_SUCCESS);
+    }
+}
+
+/* Return the resident context for one processor identity. */
+static KswHvmResidentVcpu*
+kswordArkHvmResidentFindProcessor(
+    _In_ USHORT processorGroup,
+    _In_ UCHAR processorNumber
+    )
+{
+    ULONG index = 0UL;
+
+    /* Search only prepared bounded processor contexts. */
+    for (index = 0UL;
+         index < gKswordHvmResident.processorCount;
+         ++index) {
+        KswHvmResidentVcpu* context =
+            &gKswordHvmResident.processors[index];
+
+        /* Match the exact group and group-relative processor number. */
+        if (context->resource != NULL &&
+            context->resource->row.processorGroup ==
+                processorGroup &&
+            context->resource->row.processorNumber ==
+                processorNumber) {
+            /* Return the exact processor-owned resident context. */
+            return context;
+        }
+    }
+    /* Report a processor that exceeds the prepared protocol capacity. */
+    return NULL;
+}
+
+#pragma pack(push, 1)
+/* The ten-byte operand SIDT stores. */
+typedef struct KswHvmIdtRegister
+{
+    USHORT limit;
+    ULONG_PTR base;
+} KswHvmIdtRegister;
+
+/* One 64-bit interrupt gate. */
+typedef struct KswHvmIdtEntry
+{
+    USHORT offsetLow;
+    USHORT selector;
+    /* Bits 2:0 select the interrupt stack table entry; the rest is type/DPL/P. */
+    USHORT istAndType;
+    USHORT offsetMiddle;
+    ULONG offsetHigh;
+    ULONG reserved;
+} KSW_HVM_IDT_ENTRY;
+#pragma pack(pop)
+
+/* A full 64-bit IDT is 256 sixteen-byte gates. */
+#define KSW_HVM_IDT_VECTOR_COUNT 256UL
+#define KSW_HVM_IDT_BYTES \
+    (KSW_HVM_IDT_VECTOR_COUNT * sizeof(KSW_HVM_IDT_ENTRY))
+/* Vector 2 is NMI. */
+#define KSW_HVM_IDT_VECTOR_NMI 2UL
+/*
+ * CPUID.1:EBX[31:24] is eight bits wide, so it addresses at most this many
+ * processors.  A machine with more logical processors than that reports its
+ * ids through CPUID leaf 0x0B instead and would alias here; the send path
+ * refuses to fire in that case rather than signalling the wrong processor.
+ */
+#define KSW_HVM_APIC_ID_CAPACITY 256UL
+
+/*
+ * Where the guest's vector 2 pointed, so the stub can forward there.
+ *
+ * Not static: hvm_entry.asm jumps through it by name.
+ */
+ULONGLONG g_KswordHvmOriginalNmiHandler = 0ULL;
+
+/* The private VMX-root IDT, or NULL while none has been built. */
+static KSW_HVM_IDT_ENTRY* gKswordHvmHostIdt = NULL;
+
+/*
+ * How many NMIs each processor still owes to a flush this driver requested,
+ * indexed by initial APIC id.
+ *
+ * Indexed by APIC id rather than held per VCPU because both consumers have to
+ * agree and only one of them can reach a VCPU: the assembly stub runs on an
+ * interrupt frame in VMX root with the host GS base loaded and no per-processor
+ * pointer available, so CPUID.1:EBX[31:24] is the only identity it can get
+ * cheaply.  The C dispatcher indexes the same array with the id its own
+ * processor recorded at launch, so the two halves consume one ledger.
+ *
+ * Both halves are needed because an NMI cannot be told to wait: one that
+ * arrives in VMX non-root becomes a VM exit and is claimed in C, one that
+ * arrives in VMX root is delivered through the private IDT and is claimed by
+ * the stub.
+ *
+ * Not static: hvm_entry.asm addresses it by name.
+ */
+volatile LONG g_KswordHvmPendingTlbNmi[KSW_HVM_APIC_ID_CAPACITY] = { 0 };
+
+/* Read this processor's initial APIC id, the way the stub reads it. */
+static ULONG
+kswordArkHvmReadInitialApicId(
+    VOID
+    )
+{
+    int registers[4] = { 0 };
+
+    __cpuid(registers, 1);
+    return ((ULONG)registers[1] >> 24) & 0xFFUL;
+}
+
+/*
+ * Build one IDT for VMX root, copied from the running one with vector 2
+ * redirected.
+ *
+ * Why VMX root needs its own IDT at all: an NMI that arrives while this
+ * processor is in VMX root is **not** converted into a VM exit, whatever the
+ * pin controls say - it is delivered through HOST_IDTR_BASE.  That has been
+ * the guest's own table, whose vector 2 belongs to Windows, and Windows
+ * bugchecks 0x80 on an NMI it cannot attribute to a source it knows.  So a
+ * private table is a precondition for this driver ever *sending* an NMI, not
+ * an optimization.  Measured 2026-09-07: the first cross-processor flush
+ * attempt failed exactly this way.
+ *
+ * Copied rather than authored: VMX root should raise no exception at all, but
+ * "should" is not a guarantee, and a table holding only vector 2 would turn any
+ * mistake in the exit path into a triple fault - a reset with no bugcheck and
+ * no dump, the least debuggable failure this driver can produce.  Copying keeps
+ * every other vector behaving exactly as it does today, so the private table
+ * changes the behavior of NMIs and nothing else.
+ *
+ * Selector, IST index and type/DPL/present bits are preserved from the guest's
+ * own descriptor; only the 64-bit offset is rewritten.  The IST index matters
+ * most: Windows runs its NMI handler on a dedicated stack, and the stub
+ * forwards there, so the stack the processor switches to has to be the one
+ * that handler expects.
+ *
+ * One table for the whole machine.  Windows keeps the same gate layout on
+ * every processor - the per-processor half of a stack switch lives in that
+ * processor's TSS, which the IST index selects and this table does not carry.
+ *
+ * Idempotent: the first processor to reach it builds the table and the rest
+ * reuse it.  Callers hold the runtime lock.
+ */
+static NTSTATUS
+kswordArkHvmBuildHostIdtLocked(
+    VOID
+    )
+{
+    KswHvmIdtRegister idtr = { 0 };
+    const KSW_HVM_IDT_ENTRY* source = NULL;
+    KSW_HVM_IDT_ENTRY* target = NULL;
+    ULONGLONG stub = (ULONGLONG)(ULONG_PTR)KswordARKHvmAsmHostNmiStub;
+    ULONG copyBytes = 0UL;
+
+    /* Reuse the table the first processor built. */
+    if (gKswordHvmHostIdt != NULL) {
+        return STATUS_SUCCESS;
+    }
+    __sidt(&idtr);
+    /* Refuse a table that cannot even hold the vector being replaced. */
+    if (idtr.base == 0 ||
+        idtr.limit <
+            (((KSW_HVM_IDT_VECTOR_NMI + 1UL) *
+                sizeof(KSW_HVM_IDT_ENTRY)) - 1UL)) {
+        return STATUS_NOT_SUPPORTED;
+    }
+    source = (const KSW_HVM_IDT_ENTRY*)idtr.base;
+    /* Copy what the running table actually holds, never past its limit. */
+    copyBytes = (ULONG)idtr.limit + 1UL;
+    if (copyBytes > (ULONG)KSW_HVM_IDT_BYTES) {
+        copyBytes = (ULONG)KSW_HVM_IDT_BYTES;
+    }
+    target = (KSW_HVM_IDT_ENTRY*)kswordArkAllocateNonPagedPool(
+        KSW_HVM_IDT_BYTES,
+        KSW_HVM_RESIDENT_POOL_TAG);
+    if (target == NULL) {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    /* Vectors past the guest's limit stay zero: not present, same as absent. */
+    RtlZeroMemory(target, KSW_HVM_IDT_BYTES);
+    RtlCopyMemory(target, source, copyBytes);
+    /* Preserve the forwarding target before overwriting the descriptor. */
+    g_KswordHvmOriginalNmiHandler =
+        ((ULONGLONG)target[KSW_HVM_IDT_VECTOR_NMI].offsetLow) |
+        (((ULONGLONG)target[KSW_HVM_IDT_VECTOR_NMI].offsetMiddle) << 16) |
+        (((ULONGLONG)target[KSW_HVM_IDT_VECTOR_NMI].offsetHigh) << 32);
+    /* Refuse to install a table whose forwarding target is unusable. */
+    if (g_KswordHvmOriginalNmiHandler == 0ULL) {
+        ExFreePool(target);
+        return STATUS_NOT_SUPPORTED;
+    }
+    /* Rewrite only the offset; selector, IST and type stay as they were. */
+    target[KSW_HVM_IDT_VECTOR_NMI].offsetLow =
+        (USHORT)(stub & 0xFFFFULL);
+    target[KSW_HVM_IDT_VECTOR_NMI].offsetMiddle =
+        (USHORT)((stub >> 16) & 0xFFFFULL);
+    target[KSW_HVM_IDT_VECTOR_NMI].offsetHigh =
+        (ULONG)((stub >> 32) & 0xFFFFFFFFULL);
+    /* Order every descriptor byte before any processor can load the table. */
+    KeMemoryBarrier();
+    gKswordHvmHostIdt = target;
+    return STATUS_SUCCESS;
+}
+
+/* IA32_APIC_BASE. */
+#define KSW_IA32_APIC_BASE 0x1BUL
+/* IA32_APIC_BASE bit 10: the local APIC is in x2APIC mode. */
+#define KSW_APIC_BASE_X2APIC_ENABLED (1ULL << 10)
+/* x2APIC interrupt command register, writable with a single WRMSR. */
+#define KSW_X2APIC_ICR 0x830UL
+/*
+ * Delivery mode NMI (100b at bits 10:8) plus destination shorthand
+ * "all excluding self" (11b at bits 19:18).
+ *
+ * The shorthand is what makes this affordable from a VM-exit handler: without
+ * it the sender would need a destination field per target and a loop of writes.
+ * With it there is one write and no destination to get wrong.
+ */
+#define KSW_APIC_ICR_NMI_ALL_BUT_SELF 0x000C0400ULL
+
+BOOLEAN
+kswordArkHvmResidentClaimTlbNmi(
+    _In_ ULONG apicId
+    )
+{
+    /* Reject an identity that cannot index the ledger. */
+    if (apicId >= KSW_HVM_APIC_ID_CAPACITY) {
+        return FALSE;
+    }
+    /*
+     * Claim speculatively and restore on underflow, matching the stub exactly.
+     * Testing first and decrementing after would let two deliveries claim one
+     * credit; this way the only NMI swallowed is one whose slot really was
+     * positive.
+     */
+    if (InterlockedDecrement(
+            &g_KswordHvmPendingTlbNmi[apicId]) >= 0L) {
+        return TRUE;
+    }
+    InterlockedIncrement(&g_KswordHvmPendingTlbNmi[apicId]);
+    return FALSE;
+}
+
+VOID
+kswordArkHvmResidentRequestTlbNmi(
+    _In_ KswHvmResidentVcpu* self
+    )
+{
+    ULONG index = 0UL;
+    BOOLEAN anyTarget = FALSE;
+
+    /* Reject a missing caller context before touching the ledger. */
+    if (self == NULL) {
+        return;
+    }
+    /*
+     * Without the private IDT an NMI that lands on a target in VMX root goes
+     * to the guest's vector 2, and Windows bugchecks 0x80 on an NMI it cannot
+     * attribute.  Refusing to send is the only safe answer.
+     */
+    if (gKswordHvmHostIdt == NULL) {
+        return;
+    }
+    /*
+     * x2APIC only.  In xAPIC mode the ICR is MMIO and would need a page mapped
+     * at prepare time; rather than half-implement that, send nothing and let
+     * the probe's violation count say whether this machine needed it.
+     */
+    if ((__readmsr(KSW_IA32_APIC_BASE) &
+            KSW_APIC_BASE_X2APIC_ENABLED) == 0ULL) {
+        return;
+    }
+    /*
+     * Publish intent before sending.  A broadcast that outran its own ledger
+     * entries would be handed to the guest as a spurious NMI - harmless, but it
+     * would also flush nothing.
+     */
+    for (index = 0UL;
+         index < gKswordHvmResident.processorCount;
+         ++index) {
+        KswHvmResidentVcpu* context =
+            &gKswordHvmResident.processors[index];
+
+        /* Skip the processor that is asking; it flushes on its own re-entry. */
+        if (context == self) {
+            continue;
+        }
+        /* Skip processors not in VMX non-root; they hold nothing stale. */
+        if (InterlockedCompareExchange(
+                &context->active,
+                0L,
+                0L) == 0L) {
+            continue;
+        }
+        /* Refuse to signal a processor whose identity cannot index the ledger. */
+        if (context->apicId >= KSW_HVM_APIC_ID_CAPACITY) {
+            continue;
+        }
+        InterlockedIncrement(
+            &g_KswordHvmPendingTlbNmi[context->apicId]);
+        anyTarget = TRUE;
+    }
+    /* Send nothing when this processor is the only resident one. */
+    if (!anyTarget) {
+        return;
+    }
+    /* One broadcast reaches every target; there is no per-target send. */
+    __writemsr(KSW_X2APIC_ICR, KSW_APIC_ICR_NMI_ALL_BUT_SELF);
+}
+
+VOID
+kswordArkHvmSetVmreadBenchIterations(
+    _Inout_ KswHvmRuntime* runtime,
+    _In_ ULONG requested
+    )
+{
+    ULONG depth = requested;
+
+    /* Reject a missing runtime before publishing measurement state. */
+    if (runtime == NULL) {
+        return;
+    }
+    /* Zero asks for the default rather than for a benchmark that does nothing. */
+    if (depth == 0UL) {
+        depth = KSWORD_ARK_HVM_VMREAD_BENCH_DEFAULT;
+    }
+    /*
+     * Clamp rather than refuse.  This runs on every exit with interrupts off
+     * on the exit stack; a mistyped depth should cost a pinned measurement,
+     * not a machine nobody can get back.
+     */
+    if (depth > KSWORD_ARK_HVM_VMREAD_BENCH_MAX) {
+        depth = KSWORD_ARK_HVM_VMREAD_BENCH_MAX;
+    }
+    InterlockedExchange(
+        &runtime->vmreadBenchIterations,
+        (LONG)depth);
+}
+
+KswHvmResidentVcpu*
+kswordArkHvmResidentFindCurrent(
+    VOID
+    )
+{
+    PROCESSOR_NUMBER processor = { 0 };
+
+    /* Read the current group-aware processor identity. */
+    KeGetCurrentProcessorNumberEx(&processor);
+    /* Resolve the exact prepared resident context. */
+    return kswordArkHvmResidentFindProcessor(
+        processor.Group,
+        processor.Number);
+}
+
+/*
+ * Release host stacks only after every processor has left VMX operation.
+ *
+ * Returns FALSE when it declined because somebody is still resident, and TRUE
+ * when the context set is now released and cleared.  The result matters to
+ * callers that go on to overwrite this state: the pointers this function
+ * declines to free are the only record of those allocations.
+ */
+static BOOLEAN
+kswordArkHvmResidentReleaseContexts(
+    VOID
+    )
+{
+    ULONG index = 0UL;
+
+    /* Preserve contexts while any processor remains resident. */
+    if (gKswordHvmResident.runtime != NULL &&
+        InterlockedCompareExchange(
+            &gKswordHvmResident.runtime->
+                residentProcessorCount,
+            0L,
+            0L) != 0L) {
+        /* Report that a live VMCS host stack was left allocated. */
+        return FALSE;
+    }
+    /* Free every processor-owned host stack symmetrically. */
+    for (index = 0UL;
+         index < gKswordHvmResident.processorCount;
+         ++index) {
+        /* Release one nonpaged host stack when allocated. */
+        if (gKswordHvmResident.processors[index].
+                hostStack != NULL) {
+            /* Free the exact processor-owned host stack. */
+            ExFreePool(
+                gKswordHvmResident.processors[index].
+                    hostStack);
+        }
+        /*
+         * The shadow-EPT block shares the host stack's lifetime exactly, and
+         * for the same reason: both are live for precisely as long as this
+         * processor is resident, and both come from the pool so this teardown
+         * path does not need PASSIVE_LEVEL.
+         */
+        kswordArkHvmNestedEptRelease(
+            &gKswordHvmResident.processors[index].nested.shadowEpt);
+        /*
+         * Drop this processor's reference to the shared vmcs12 pool.
+         *
+         * The block itself is freed once, after the loop: every processor
+         * points at the same allocation, so freeing it here would free it as
+         * many times as there are processors.
+         */
+        gKswordHvmResident.processors[index].nested.vmcs12Pool = NULL;
+    }
+    /* The vmcs12 spill pool has that same lifetime, and the same origin. */
+    if (gKswordHvmResident.vmcs12PoolBlock != NULL) {
+        ExFreePool(gKswordHvmResident.vmcs12PoolBlock);
+        gKswordHvmResident.vmcs12PoolBlock = NULL;
+    }
+    /*
+     * Release every private EPT hierarchy alongside the host stacks.  Their
+     * lifetimes coincide exactly: the private root is live in VMCS
+     * EPT_POINTER for precisely as long as the host stack is live in
+     * HOST_RSP, and the early return above guards both.
+     *
+     * ExFreePool rather than MmFreeContiguousMemory: this runs on a teardown
+     * path a power callback can reach, where PASSIVE_LEVEL is not guaranteed.
+     * That constraint is why the module allocates one nonpaged block per
+     * processor instead of one contiguous page per table.
+     */
+    if (gKswordHvmResident.eptLocalArray != NULL) {
+        for (index = 0UL;
+             index < gKswordHvmResident.eptLocalCount;
+             ++index) {
+            /* Idempotent on a record whose build never completed. */
+            kswordArkHvmEptLocalRelease(
+                &gKswordHvmResident.eptLocalArray[index]);
+        }
+        ExFreePool(gKswordHvmResident.eptLocalArray);
+        gKswordHvmResident.eptLocalArray = NULL;
+        gKswordHvmResident.eptLocalCount = 0UL;
+    }
+    /* Clear every stale pointer after all host stacks are released. */
+    RtlZeroMemory(
+        &gKswordHvmResident,
+        sizeof(gKswordHvmResident));
+    /* Report a complete release. */
+    return TRUE;
+}
+
+/* Allocate and anchor every processor-owned VM-exit host stack. */
+static NTSTATUS
+kswordArkHvmResidentPrepareContexts(
+    _Inout_ KswHvmRuntime* runtime,
+    _In_ ULONG flags
+    )
+{
+    ULONG index = 0UL;
+
+    /* Reject a missing or empty prepared runtime. */
+    if (runtime == NULL ||
+        runtime->processorCount == 0UL ||
+        runtime->processorCount >
+            KSWORD_ARK_HVM_MAX_PROCESSORS) {
+        /* Return the exact caller-contract failure. */
+        return STATUS_INVALID_PARAMETER;
+    }
+    /*
+     * Build the VMX-root IDT here, at PASSIVE_LEVEL, because it allocates.
+     * The processors that will load it enter VMX from an IPI worker where
+     * allocation is not available.
+     *
+     * A failure is not fatal to preparing: HostIdtBase stays zero, VMX root
+     * keeps running on the guest's table exactly as it did before, and the
+     * only capability lost is sending NMIs - which nothing does unless this
+     * succeeded.
+     */
+    (void)kswordArkHvmBuildHostIdtLocked();
+    /*
+     * Release reusable stopped contexts before replacing their runtime, and
+     * refuse to continue if that release did not happen.
+     *
+     * The zeroing below is what makes this mandatory rather than tidy: the
+     * host stack pointers live only in the structure it clears, so preparing
+     * over a set the release declined to free leaks them outright - 32 KiB per
+     * processor plus that processor's private EPT block, with nothing left
+     * pointing at either.  The release declines for one reason, somebody is
+     * still resident, and preparing on top of live contexts would be wrong
+     * even if it leaked nothing.
+     */
+    if (!kswordArkHvmResidentReleaseContexts()) {
+        /* Return the exact lifecycle-ordering failure. */
+        return STATUS_INVALID_DEVICE_STATE;
+    }
+    /* initialize the complete process-wide resident state. */
+    RtlZeroMemory(
+        &gKswordHvmResident,
+        sizeof(gKswordHvmResident));
+    /* Preserve the runtime for nonblocking VM-exit lookups. */
+    gKswordHvmResident.runtime = runtime;
+    /* Preserve the complete bounded processor count. */
+    gKswordHvmResident.processorCount =
+        runtime->processorCount;
+    /* Preserve the exact resident start flags. */
+    gKswordHvmResident.flags = flags;
+    /* Reset the reference mode at each start so experiments never inherit it. */
+    InterlockedExchange(&runtime->fullExitSnapshot,
+        (flags & KSWORD_ARK_HVM_CONTROL_FLAG_FULL_EXIT_SNAPSHOT) != 0UL ? 1L : 0L);
+    /*
+     * Publish the VMREAD measurement request where the exit path can see it.
+     *
+     * The depth was written by the caller before this point, so arming last
+     * means the exit path never observes an armed benchmark whose iteration
+     * count has not been decided yet.
+     */
+    InterlockedExchange(
+        &runtime->vmreadBenchArmed,
+        ((flags & KSWORD_ARK_HVM_CONTROL_FLAG_VMREAD_BENCH) != 0UL)
+            ? 1L
+            : 0L);
+    /*
+     * Publish whether routine exits go into the ring, before the first exit.
+     *
+     * Set per resident start rather than sticky, so a run that did not ask for
+     * a trace never inherits one from an earlier run - a trace silently left on
+     * would fill the ring and evict exactly the evidence the next run is
+     * looking for, which is the failure this default exists to prevent.
+     */
+    InterlockedExchange(
+        &runtime->traceRoutineExits,
+        ((flags & KSWORD_ARK_HVM_CONTROL_FLAG_TRACE_ROUTINE_EXITS) != 0UL)
+            ? 1L
+            : 0L);
+    /*
+     * Publish whether user-mode CPUID hides the hypervisor, before the first
+     * exit.  Set per resident start rather than sticky, for the same reason as
+     * the trace bit above: a run that did not ask to hide must not inherit a
+     * lie from an earlier one.
+     */
+    InterlockedExchange(
+        &runtime->hideHypervisorCpuid,
+        ((flags & KSWORD_ARK_HVM_CONTROL_FLAG_HIDE_HYPERVISOR) != 0UL)
+            ? 1L
+            : 0L);
+    /* Allocate and initialize one host stack per prepared processor. */
+    for (index = 0UL;
+         index < runtime->processorCount;
+         ++index) {
+        KswHvmResidentVcpu* context =
+            &gKswordHvmResident.processors[index];
+        ULONG_PTR stackTop = 0U;
+        PVOID* contextAnchor = NULL;
+
+        /* Reference the process-wide runtime from the processor context. */
+        context->runtime = runtime;
+        /* Reference the exact processor-owned VMX resources. */
+        context->resource = &runtime->processors[index];
+        /* Preserve the stable processor array index. */
+        context->processorIndex = index;
+        /* Allocate a bounded nonpaged VM-exit stack. */
+        context->hostStack = kswordArkAllocateNonPagedPool(
+            KSW_HVM_RESIDENT_HOST_STACK_BYTES,
+            KSW_HVM_RESIDENT_POOL_TAG);
+        /* Roll back every prior host stack on allocation failure. */
+        if (context->hostStack == NULL) {
+            /* Release the fully stopped partial context set. */
+            (void)kswordArkHvmResidentReleaseContexts();
+            /* Return the exact resource failure. */
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        /* Remove stale data before VMCS host state references the stack. */
+        RtlZeroMemory(
+            context->hostStack,
+            KSW_HVM_RESIDENT_HOST_STACK_BYTES);
+        /* Align the exclusive stack top to the x64 ABI boundary. */
+        stackTop =
+            ((ULONG_PTR)context->hostStack +
+                KSW_HVM_RESIDENT_HOST_STACK_BYTES) &
+            ~(ULONG_PTR)0xFULL;
+        /* Reserve one pointer-sized context anchor below the stack top. */
+        contextAnchor =
+            (PVOID*)(stackTop - sizeof(PVOID));
+        /* Publish the exact context consumed by the VM-exit assembly entry. */
+        *contextAnchor = context;
+        /* Preserve the anchored host stack pointer for the VMCS. */
+        context->hostStackPointer =
+            (ULONGLONG)(ULONG_PTR)contextAnchor;
+        /* initialize bounded nested state from explicit start flags. */
+        kswordArkHvmNestedInitializeVcpu(
+            &context->nested,
+            (flags &
+                KSWORD_ARK_HVM_CONTROL_FLAG_ENABLE_NESTED_VMX) !=
+                0UL,
+            runtime->eptPointer);
+        /*
+         * Borrow this processor's physical mapping window.
+         *
+         * Deliberately not fatal when absent.  Everything that exists today
+         * runs without one; only paths that must read a guest physical page
+         * from an exit need it, and those check for NULL and refuse cleanly.
+         * Failing residency here would trade the hypervisor itself for a
+         * feature that is off by default.
+         */
+        context->physWindow =
+            kswordArkHvmPhysWindowForProcessor(index);
+        /*
+         * Cache the same window on the nested state.
+         *
+         * Nested VMX-instruction dispatch receives only KswHvmNestedVcpu,
+         * and every memory operand it reads has to be resolved through the
+         * guest's page tables - which needs a window.  Assigned after the
+         * lookup above so both names always refer to the same object.
+         */
+        context->nested.physWindow =
+            (struct KswHvmPhysWindow*)context->physWindow;
+        /*
+         * Reserve this processor's shadow-EPT tables now, because filling one
+         * happens inside a VM exit where allocation is not available.
+         *
+         * Not fatal when it fails: L2 entry checks for an armed hierarchy and
+         * refuses cleanly, which costs nested EPT on this processor rather
+         * than residency itself.
+         */
+        (void)kswordArkHvmNestedEptPrepare(&context->nested.shadowEpt);
+        /*
+         * Reserve the vmcs12 spill pool here for the same reason as the shadow
+         * tables: it is needed from a VM exit, where allocation is not
+         * available, and it must not be embedded in the per-processor array
+         * because a slot is 16 KiB and that array is static and sized for the
+         * architectural maximum.
+         *
+         * Not fatal when it fails.  Without a pool the dispatcher falls back to
+         * modelling one vmcs12, which is exactly the behaviour that shipped
+         * before - worse for an L1 that keeps several, and still correct for
+         * one that keeps a single VMCS.
+         */
+        if (gKswordHvmResident.vmcs12PoolBlock == NULL) {
+            gKswordHvmResident.vmcs12PoolBlock =
+                kswordArkAllocateNonPagedPool(
+                    sizeof(KswHvmVmcS12Pool),
+                    'PvHK');
+            if (gKswordHvmResident.vmcs12PoolBlock != NULL) {
+                KswHvmVmcS12Pool* pool =
+                    (KswHvmVmcS12Pool*)
+                        gKswordHvmResident.vmcs12PoolBlock;
+
+                RtlZeroMemory(pool, sizeof(*pool));
+                pool->count = KSW_HVM_VMCS12_POOL_SLOTS;
+            }
+        }
+        /*
+         * Point this processor at the shared pool, allocated or not.
+         *
+         * Assigned after kswordArkHvmNestedInitializeVcpu above, which zeroes
+         * the whole record; a NULL here is the documented fallback to one
+         * vmcs12 per processor rather than a failure of residency.
+         */
+        context->nested.vmcs12Pool =
+            (KswHvmVmcS12Pool*)gKswordHvmResident.vmcs12PoolBlock;
+    }
+    /* Publish that every processor has a complete host-stack context. */
+    gKswordHvmResident.prepared = TRUE;
+    /* Complete context preparation successfully. */
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+KswordARKHvmConfigureResidentVmcsFromAsm(
+    _Inout_ KswHvmResidentVcpu* context
+    )
+{
+    KswHvmVmcsInput input = { 0 };
+    SIZE_T exitControls = 0U;
+    SIZE_T value = 0U;
+    NTSTATUS status = STATUS_SUCCESS;
+
+    /* Reject an incomplete processor context in VMX root. */
+    if (context == NULL ||
+        context->runtime == NULL ||
+        context->resource == NULL ||
+        context->hostStackPointer == 0ULL ||
+        context->launchStackPointer == 0ULL) {
+        /* Return the exact assembly-contract failure. */
+        return STATUS_INVALID_PARAMETER;
+    }
+    /* Copy the VMX control revision and mode evidence. */
+    input.vmxBasic = context->runtime->vmxBasic;
+    /* Copy the CR0 required-one mask. */
+    input.cr0Fixed0 = context->runtime->cr0Fixed0;
+    /* Copy the CR0 allowed-one mask. */
+    input.cr0Fixed1 = context->runtime->cr0Fixed1;
+    /* Copy the CR4 required-one mask. */
+    input.cr4Fixed0 = context->runtime->cr4Fixed0;
+    /* Copy the CR4 allowed-one mask. */
+    input.cr4Fixed1 = context->runtime->cr4Fixed1;
+    /* Reference the prepared MTRR-aware identity EPT. */
+    /*
+     * The one and only place a per-processor EPT pointer is selected.  When
+     * the feature is off EptLocal is NULL and this is the assignment it has
+     * always been.
+     */
+    input.eptPointer = context->eptLocal != NULL
+        ? context->eptLocal->eptPointer
+        : context->runtime->eptPointer;
+    /*
+     * Whatever pointer was just selected is the base for this processor, so
+     * its hierarchy state starts at "on the base, never switched".
+     *
+     * Reset here rather than once at start because this is where the field is
+     * (re)written - a power transition or any other reconfiguration puts the
+     * processor back on the base pointer, and a ledger that still claimed a
+     * secondary index would make every later decision from a premise the VMCS
+     * no longer supports.  The forward-progress record has to go with it: a
+     * stale (RIP, page, target) from before the reconfiguration would make the
+     * first legitimate switch afterwards look like a cycle, and the machine
+     * would fail closed immediately after installing a view.
+     */
+    context->activeEptpIndex = KSWORD_ARK_HVM_EPTSW_INDEX_BASE;
+    KswordArkHvmEptSwProgressReset(&context->eptpSwitchProgress);
+    /* Keep resident guest MSR access native through the shared bitmap. */
+    input.msrBitmapPhysical =
+        (ULONGLONG)context->runtime->msrBitmapPhysical.QuadPart;
+    /*
+     * Control-register policy is consumed here rather than applied later: the
+     * guest/host masks and the CR3/DR exiting controls are VMCS fields, so a
+     * policy installed after launch would not take effect until the next one.
+     */
+    input.cr0PinnedMask = context->runtime->crPolicyCr0PinnedMask;
+    /* Pin the same way for CR4. */
+    input.cr4PinnedMask = context->runtime->crPolicyCr4PinnedMask;
+    /* Request address-space switch observation only when asked. */
+    input.trackCr3 = (context->runtime->crPolicyFlags &
+        KSWORD_ARK_HVM_CR_POLICY_FLAG_TRACK_CR3) != 0UL ? 1U : 0U;
+    /* Request debug-register interception only when asked. */
+    input.interceptDr = (context->runtime->crPolicyFlags &
+        KSWORD_ARK_HVM_CR_POLICY_FLAG_INTERCEPT_DR) != 0UL ? 1U : 0U;
+    /* Resume on the exact assembly wrapper stack. */
+    input.guestStackPointer =
+        context->launchStackPointer;
+    /* Receive VM exits on the processor-owned anchored host stack. */
+    input.hostStackPointer =
+        context->hostStackPointer;
+    /*
+     * Run the exit handler on the System address space, captured at prepare
+     * time.  Residency outlives the process that requested it, so anything
+     * derived from the current CR3 here would be freed underneath a live VMCS.
+     */
+    input.hostCr3 = context->runtime->hostCr3;
+    /* Resume as the guest at the assembly wrapper continuation. */
+    input.guestInstructionPointer =
+        (ULONGLONG)(ULONG_PTR)
+            KswordARKHvmResidentGuestResume;
+    /* Route every resident exit through the register-preserving entry. */
+    input.hostInstructionPointer =
+        (ULONGLONG)(ULONG_PTR)
+            KswordARKHvmResidentVmExitEntry;
+    /* Preserve the exact guest flags captured by the wrapper. */
+    input.guestRflags = context->launchRflags;
+    /* Select resident controls rather than one-shot HLT interception. */
+    input.residentMode = 1U;
+    /* Index timing by the runtime's processor identity. */
+    input.metricsCpuIndex = (ULONG)(context->resource - context->runtime->processors);
+    /*
+     * Record what ends up enforced, so the protocol can report which control
+     * bits this machine made mandatory rather than which ones we asked for.
+     */
+    input.activeControls = &context->runtime->activeControls;
+    /*
+     * Run VMX root on the private IDT when one was built; zero keeps the
+     * guest's table, which is what every build before this one used.
+     */
+    input.hostIdtBase = (ULONGLONG)(ULONG_PTR)gKswordHvmHostIdt;
+    /* Select nested instruction exposure only when explicitly requested. */
+    input.enableNestedVmx =
+        context->nested.enabled ? 1U : 0U;
+    /*
+     * #VE is opt-in per start and stays inert on its own.  The information
+     * area is this processor's alone; it was latched busy at allocation, so
+     * the processor keeps choosing the ordinary EPT-violation exit.
+     */
+    input.enableVe = ((gKswordHvmResident.flags &
+        KSWORD_ARK_HVM_CONTROL_FLAG_ENABLE_VE) != 0UL) ? 1U : 0U;
+    /* Point at this processor's area so a conversion has somewhere to land. */
+    input.veInfoPhysical =
+        (ULONGLONG)context->resource->veInfoPhysical.QuadPart;
+    /*
+     * VM functions are opt-in per start, like #VE.  Unlike #VE they have no
+     * second safety net: once armed, any ring-3 instruction can switch views.
+     * The protection is structural instead - a domain can only ever hold
+     * fewer permissions than the default view.
+     */
+    input.enableVmFunctions = ((gKswordHvmResident.flags &
+        KSWORD_ARK_HVM_CONTROL_FLAG_ENABLE_VMFUNC) != 0UL) ? 1U : 0U;
+    /* Share the one list; domains are global, not per-processor. */
+    input.eptpListPhysical =
+        (ULONGLONG)context->runtime->eptpListPhysical.QuadPart;
+    /* Discard every prior launch's optional-state ownership evidence. */
+    context->guestSCet = 0ULL;
+    context->guestSsp = 0ULL;
+    context->guestInterruptSspTable = 0ULL;
+    context->guestPkrs = 0ULL;
+    context->guestUinv = 0ULL;
+    context->guestDebugControl = 0ULL;
+    context->guestDr7 = 0ULL;
+    context->cetStateManaged = 0U;
+    context->pkrsStateManaged = 0U;
+    context->uinvStateManaged = 0U;
+    context->debugStateManaged = 0U;
+    /* Program the complete current VMCS. */
+    kswordArkHvmMetricsCpuStamp(input.metricsCpuIndex, KSW_HVM_TIME_VMCS_BEGIN);
+    status = kswordArkHvmConfigureVmcs(
+        &input,
+        &context->lastVmInstructionError);
+    /* A failed builder retains an endpoint and its failed status. */
+    kswordArkHvmMetricsCpuStamp(input.metricsCpuIndex, KSW_HVM_TIME_VMCS_WRITTEN);
+    if (!NT_SUCCESS(status)) {
+        context->lastStatus = status;
+        return status;
+    }
+    /* Recover the exact optional-state controls selected by the builder. */
+    if (kswordArkHvmVmcsFieldLoad(KSW_VMCS_EXIT_CONTROLS, &exitControls) != 0U) {
+        status = STATUS_HV_OPERATION_FAILED;
+    } else {
+        context->cetStateManaged =
+            (exitControls & KSW_HVM_EXIT_LOAD_CET) != 0U ? 1U : 0U;
+        context->pkrsStateManaged =
+            (exitControls & KSW_HVM_EXIT_LOAD_PKRS) != 0U ? 1U : 0U;
+        context->uinvStateManaged =
+            (exitControls & KSW_HVM_EXIT_CLEAR_UINV) != 0U ? 1U : 0U;
+        context->debugStateManaged =
+            (exitControls & KSW_HVM_EXIT_SAVE_DEBUG_CONTROLS) != 0U
+                ? 1U
+                : 0U;
+        /* Assembly needs the CET enable bit before the final resident entry. */
+        if (context->cetStateManaged != 0U) {
+            if (kswordArkHvmVmcsFieldLoad(KSW_VMCS_GUEST_S_CET, &value) != 0U) {
+                status = STATUS_HV_OPERATION_FAILED;
+            } else {
+                context->guestSCet = (ULONGLONG)value;
+            }
+        }
+    }
+    /*
+     * Flush any translations cached under this EPT root before the first
+     * entry uses it.
+     *
+     * A private hierarchy is built out of recycled nonpaged memory, so its
+     * root address may have tagged cached guest-physical translations from an
+     * earlier residency - the architecture does not require VMXON to discard
+     * them.  Entering with a stale tag would let the processor use mappings
+     * that describe pages this hierarchy never mapped.
+     *
+     * This used to run only for private roots, on the stated assumption that
+     * "the shared hierarchy is invalidated on every path that changes it".
+     * **That assumption is false, and it was measured false.**
+     *
+     * The paths that change the shared hierarchy - installing an EPT rule or
+     * a split view - do call kswordArkHvmResidentInvalidateEpt, but that
+     * wrapper is a no-op while no processor is resident.  And a rule or a view
+     * can *only* be installed while residency is stopped, because the exit
+     * path reads those tables without taking the lock.  So the entire sequence
+     * is: change the shared leaf, invalidate nothing, start residency, enter
+     * without invalidating - and the processor keeps using translations it
+     * cached under this same root during an earlier residency.
+     *
+     * The symptom is the worst kind this project has: a restriction that is
+     * correctly written into the leaf and simply never takes effect.  Measured
+     * on 2026-09-06 - the base leaf read back as execute-only
+     * (0x8000000175692034, R=0 W=0 X=1) while a kernel read of that very page
+     * completed and returned the real contents, with no EPT violation and no
+     * exit.  It reproduced for both EPT rules and split views, and it passed
+     * on an earlier run only because that run's freshly allocated page
+     * happened to carry no stale tag.
+     *
+     * Invalidate whichever root this entry will actually load.  The cost is
+     * one INVEPT per entry on a path that already does far more than that.
+     */
+    if (NT_SUCCESS(status) && input.eptPointer != 0ULL) {
+        if (kswordArkHvmAsmInveptSingle(input.eptPointer) != 0U) {
+            /* Refuse the entry rather than launch on an unproven context. */
+            status = STATUS_HV_OPERATION_FAILED;
+        }
+    }
+    /*
+     * Do the same for every secondary hierarchy this entry could switch to.
+     *
+     * The invalidation above covers only the root that gets loaded, and for a
+     * long time that was every root there was.  The EPTP-switching backend
+     * added more: a violation can VMWRITE EPT_POINTER to any built
+     * EptSwitch.Eptp[k] without ever passing through here again.  Those roots
+     * carry exactly the same stale-tag exposure, and worse, they are **more**
+     * likely to be stale than the base:
+     *
+     *   - a slot's pages are a fixed slice computed from its index
+     *     (hvm_ept_switch.c:127), and the pool outlives residency, so
+     *     removing a view and adding another hands the new one the same slot,
+     *     the same four pages, and therefore **the same EPTP bit pattern**
+     *     while the tables underneath now describe a different page;
+     *   - kswordArkHvmResidentInvalidateEpt cannot help: it refuses any
+     *     pointer that is not the shared root (see its parameter check), so
+     *     nothing on the view install or release path ever invalidates these.
+     *
+     * That is the 2026-09-06 defect - a restriction correctly written into a
+     * leaf that simply never takes effect - with the fault moved from the base
+     * root to a secondary one. It is also the stated prerequisite for opening
+     * the multicore gate to this backend: do that first and the same failure
+     * comes back, only now with a second processor able to observe it.
+     *
+     * Slot 0 duplicates the base and is invalidated twice; INVEPT is
+     * idempotent and this runs once per processor at residency start, not per
+     * exit, so the cost is not worth a special case.
+     */
+    if (NT_SUCCESS(status) &&
+        context->runtime->eptSwitch.active) {
+        ULONG hierarchy = 0UL;
+        ULONG ledgerLength = context->runtime->eptSwitch.hierarchyCount;
+
+        /* Never index past the fixed ledger, whatever the recorded length. */
+        if (ledgerLength >
+            (KSWORD_ARK_HVM_MAX_VIEWS + 1UL)) {
+            ledgerLength = KSWORD_ARK_HVM_MAX_VIEWS + 1UL;
+        }
+        for (hierarchy = 0UL;
+             hierarchy < ledgerLength;
+             ++hierarchy) {
+            ULONGLONG secondary =
+                context->runtime->eptSwitch.eptp[hierarchy];
+
+            /* Skip the slots this runtime never built. */
+            if (secondary == 0ULL) {
+                continue;
+            }
+            if (kswordArkHvmAsmInveptSingle(secondary) != 0U) {
+                /* Refuse the entry rather than launch on an unproven context. */
+                status = STATUS_HV_OPERATION_FAILED;
+                break;
+            }
+        }
+    }
+    /* Last measured C boundary before the assembly entry continuation. */
+    if (NT_SUCCESS(status)) {
+        /* Includes remaining SSP/entry assembly, not only the VMLAUNCH instruction. */
+        kswordArkHvmMetricsCpuStamp(input.metricsCpuIndex, KSW_HVM_TIME_ENTRY_BEFORE);
+    }
+    /* Preserve the authoritative per-processor VMCS status. */
+    context->lastStatus = status;
+    /* Return the complete VMCS programming result to assembly. */
+    return status;
+}
+
+NTSTATUS
+KswordARKHvmWriteResidentGuestSspFromAsm(
+    _Inout_ KswHvmResidentVcpu* context
+    )
+{
+    /* Reject a missing context before touching the current VMCS. */
+    if (context == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    /* No SSP transfer is required when supervisor shadow stacks are inactive. */
+    if (context->cetStateManaged == 0U ||
+        (context->guestSCet & 1ULL) == 0ULL) {
+        return STATUS_SUCCESS;
+    }
+    /* A zero shadow-stack continuation can never back the resident RET. */
+    if (context->guestSsp == 0ULL) {
+        return STATUS_INVALID_ADDRESS;
+    }
+    /* Commit the SSP captured after every nested configuration call returned. */
+    if (kswordArkHvmVmcsFieldStore(
+            KSW_VMCS_GUEST_SSP,
+            (SIZE_T)context->guestSsp) != 0U) {
+        return STATUS_HV_OPERATION_FAILED;
+    }
+    return STATUS_SUCCESS;
+}
+
+static BOOLEAN
+kswordArkHvmCaptureResidentExtendedState(
+    _Inout_ KswHvmResidentVcpu* context
+    )
+{
+    SIZE_T value = 0U;
+
+    /* Capture every component before VMCLEAR destroys the VMCS image. */
+    if (context->cetStateManaged != 0U) {
+        if (kswordArkHvmVmcsFieldLoad(KSW_VMCS_GUEST_S_CET, &value) != 0U) {
+            return FALSE;
+        }
+        context->guestSCet = (ULONGLONG)value;
+        if (kswordArkHvmVmcsFieldLoad(KSW_VMCS_GUEST_SSP, &value) != 0U) {
+            return FALSE;
+        }
+        context->guestSsp = (ULONGLONG)value;
+        if (kswordArkHvmVmcsFieldLoad(
+                KSW_VMCS_GUEST_INTERRUPT_SSP_TABLE,
+                &value) != 0U) {
+            return FALSE;
+        }
+        context->guestInterruptSspTable = (ULONGLONG)value;
+    }
+    if (context->pkrsStateManaged != 0U) {
+        if (kswordArkHvmVmcsFieldLoad(KSW_VMCS_GUEST_PKRS, &value) != 0U) {
+            return FALSE;
+        }
+        context->guestPkrs = (ULONGLONG)value;
+    }
+    if (context->uinvStateManaged != 0U) {
+        if (kswordArkHvmVmcsFieldLoad(KSW_VMCS_GUEST_UINV, &value) != 0U) {
+            return FALSE;
+        }
+        context->guestUinv = (ULONGLONG)value & 0xFFULL;
+    }
+    if (context->debugStateManaged != 0U) {
+        if (kswordArkHvmVmcsFieldLoad(KSW_VMCS_GUEST_DEBUGCTL, &value) != 0U) {
+            return FALSE;
+        }
+        context->guestDebugControl = (ULONGLONG)value;
+        if (kswordArkHvmVmcsFieldLoad(KSW_VMCS_GUEST_DR7, &value) != 0U) {
+            return FALSE;
+        }
+        context->guestDr7 = (ULONGLONG)value;
+    }
+    return TRUE;
+}
+
+/* Enter resident VMX non-root operation on the current IPI target. */
+static NTSTATUS
+kswordArkHvmResidentStartCurrent(
+    _Inout_ KswHvmResidentVcpu* context
+    )
+{
+    ULONGLONG originalCr0 = 0ULL;
+    ULONGLONG requiredCr0 = 0ULL;
+    ULONGLONG requiredCr4 = 0ULL;
+    unsigned __int64 vmxonPhysical = 0ULL;
+    unsigned __int64 vmcsPhysical = 0ULL;
+    UCHAR vmxResult = 0xFFU;
+    NTSTATUS status = STATUS_UNSUCCESSFUL;
+    BOOLEAN cr4Changed = FALSE;
+
+    /* Reject incomplete processor resources at IPI_LEVEL. */
+    if (context == NULL ||
+        context->runtime == NULL ||
+        context->resource == NULL) {
+        /* Return the exact current-processor contract failure. */
+        return STATUS_INVALID_PARAMETER;
+    }
+    /* Refuse a duplicate start on an already resident processor. */
+    if (InterlockedCompareExchange(
+            &context->active,
+            0L,
+            0L) != 0L) {
+        /* Return the exact duplicate lifecycle result. */
+        return STATUS_ALREADY_REGISTERED;
+    }
+    /* Protect every privileged transition from virtual-CPU exceptions. */
+    __try {
+        /* Capture current CR0 before fixed-bit validation. */
+        originalCr0 = __readcr0();
+        /* Capture exact CR4 for later devirtualization. */
+        context->originalCr4 = __readcr4();
+        /* Compute the required CR0 without changing host state. */
+        requiredCr0 =
+            (originalCr0 |
+                context->runtime->cr0Fixed0) &
+            context->runtime->cr0Fixed1;
+        /* Compute VMX-root CR4 while preserving every active host feature. */
+        requiredCr4 =
+            ((context->originalCr4 |
+                context->runtime->cr4Fixed0) &
+                context->runtime->cr4Fixed1) |
+            KSW_CR4_VMXE;
+        /*
+         * Refuse to steal VMX root, alter incompatible control state, or
+         * program a host CR0 that would make the entry FXSAVE64 raise #NM.
+         */
+        if ((context->originalCr4 &
+                KSW_CR4_VMXE) != 0ULL ||
+            (originalCr0 &
+                KSW_HVM_CR0_TASK_SWITCHED) != 0ULL ||
+            requiredCr0 != originalCr0 ||
+            (requiredCr4 &
+                context->originalCr4) !=
+                context->originalCr4) {
+            /* Preserve protocol-visible conflict evidence. */
+            context->resource->row.stateFlags |=
+                KSWORD_ARK_HVM_CPU_STATE_CONFLICT;
+            /* Return the exact ownership conflict. */
+            status = STATUS_CONFLICTING_ADDRESSES;
+            /* Leave the guarded transition block. */
+            __leave;
+        }
+        /* Enable VMX instructions on this exact logical processor. */
+        __writecr4(requiredCr4);
+        /* Record the CR4 transition for symmetric cleanup. */
+        cr4Changed = TRUE;
+        /* Copy the processor-owned VMXON physical address. */
+        vmxonPhysical =
+            (unsigned __int64)
+                context->resource->
+                    vmxonPhysical.QuadPart;
+        /* Enter VMX root using the processor-owned VMXON region. */
+        vmxResult = __vmx_on(&vmxonPhysical);
+        /* Preserve the exact VMX instruction result. */
+        context->resource->row.vmxInstructionResult =
+            vmxResult;
+        /* Stop when VMXON fails validly or invalidly. */
+        if (vmxResult != 0U) {
+            /* Preserve the authoritative VMX operation failure. */
+            status = STATUS_HV_OPERATION_FAILED;
+            /* Leave the guarded transition block. */
+            __leave;
+        }
+        /* Publish current ownership of VMX root state. */
+        InterlockedExchange(&context->vmxRoot, 1L);
+        /* Copy the processor-owned VMCS physical address. */
+        vmcsPhysical =
+            (unsigned __int64)
+                context->resource->
+                    vmcsPhysical.QuadPart;
+        /* Clear the VMCS launch state before making it current. */
+        vmxResult = __vmx_vmclear(&vmcsPhysical);
+        /* Preserve the exact VMCLEAR result. */
+        context->resource->row.vmxInstructionResult =
+            vmxResult;
+        /* Stop when VMCLEAR fails. */
+        if (vmxResult != 0U) {
+            /* Preserve the authoritative VMX operation failure. */
+            status = STATUS_HV_OPERATION_FAILED;
+            /* Leave the guarded transition block. */
+            __leave;
+        }
+        /* Load the processor-owned VMCS as current. */
+        vmxResult = __vmx_vmptrld(&vmcsPhysical);
+        /* Preserve the exact VMPTRLD result. */
+        context->resource->row.vmxInstructionResult =
+            vmxResult;
+        /* Stop when VMPTRLD fails. */
+        if (vmxResult != 0U) {
+            /* Preserve the authoritative VMX operation failure. */
+            status = STATUS_HV_OPERATION_FAILED;
+            /* Leave the guarded transition block. */
+            __leave;
+        }
+        /* Publish current-VMCS evidence. */
+        context->resource->row.stateFlags |=
+            KSWORD_ARK_HVM_CPU_STATE_VMCS_LOADED;
+        /*
+         * Record the identity the flush ledger is indexed by, before this
+         * processor can be a target.  Written here rather than at prepare
+         * because CPUID only answers for the processor executing it, and this
+         * is the point where that is guaranteed to be this context's own.
+         */
+        context->apicId = kswordArkHvmReadInitialApicId();
+        /* Cache only the invariant vendor/max-basic leaf on its owning CPU. */
+        __cpuidex(context->cpuidVendorLeaf, 0, 0);
+        /* Publish active ownership before any valid VM exit can occur. */
+        InterlockedExchange(&context->active, 1L);
+        /*
+         * Count this processor **before** the entry that can make it exit,
+         * paired with the marker above and not with the success path below.
+         *
+         * The two used to be split across VMLAUNCH: marker before, count
+         * after.  That leaves a window a few instructions wide where the
+         * processor is already in VMX non-root but uncounted, and an exit
+         * taken there that fails closed decrements a count this processor
+         * never added.  The window is real - VM entry resumes the guest at
+         * KswordARKHvmResidentGuestResume, which returns into the C code just
+         * below, so those instructions genuinely execute in non-root - and the
+         * devirtualization path decrements unconditionally in assembly.
+         *
+         * The damage is not a bad free: every release site tests `!= 0` rather
+         * than `<= 0`, so an undercount fails those guards instead of passing
+         * them.  It is worse in a quieter way - the count never returns to
+         * zero, so contexts are never released and hvm_resident.c refuses to
+         * start residency again.  A machine that needs a reboot, with nothing
+         * logged to say why.
+         *
+         * Nothing can exit between these two writes: VM entry has not happened
+         * yet, so there is no window on this side.  The failure path below
+         * settles the symmetry by testing the marker it clears.
+         */
+        InterlockedIncrement(
+            &context->runtime->residentProcessorCount);
+        /* Attempt resident VM entry through the exact assembly continuation. */
+        vmxResult = KswordARKHvmAsmLaunchResident(context);
+        /* First C boundary after launch, not the exact VMLAUNCH cycle. */
+        kswordArkHvmMetricsCpuStamp((ULONG)(context->resource - context->runtime->processors),
+            KSW_HVM_TIME_ENTRY_AFTER);
+        /* Preserve the wrapper VM-entry result. */
+        context->resource->row.vmxInstructionResult =
+            vmxResult;
+        /* Successful VMLAUNCH resumes here in VMX non-root with result zero. */
+        if (vmxResult == 0U &&
+            InterlockedCompareExchange(
+                &context->active,
+                0L,
+                0L) != 0L) {
+            /* Publish resident active state on this processor. */
+            context->resource->row.stateFlags |=
+                KSWORD_ARK_HVM_CPU_STATE_GUEST_LAUNCHED |
+                KSWORD_ARK_HVM_CPU_STATE_RESIDENT_ACTIVE;
+            /* The count was already published alongside the active marker. */
+            /* Preserve successful current-processor status. */
+            status = STATUS_SUCCESS;
+            /* Leave the guarded transition block in guest context. */
+            __leave;
+        }
+        /* Read VMfailValid detail while the failed VMCS remains current. */
+        if (vmxResult == 1U) {
+            SIZE_T instructionError = 0U;
+
+            /* Preserve VM-instruction error when VMREAD succeeds. */
+            if (kswordArkHvmVmcsFieldLoad(
+                    KSW_VMCS_INSTRUCTION_ERROR,
+                    &instructionError) == 0U) {
+                /* Publish the exact VM-instruction error. */
+                context->lastVmInstructionError =
+                    (ULONG)instructionError;
+            }
+        }
+        /* Publish failed resident entry. */
+        status = STATUS_HV_OPERATION_FAILED;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        /* Preserve privileged exception evidence. */
+        status = GetExceptionCode();
+        /* Publish processor-local exception state. */
+        context->resource->row.stateFlags |=
+            KSWORD_ARK_HVM_CPU_STATE_EXCEPTION;
+    }
+    /* Clean up only a failed start that remains in VMX root. */
+    if (!NT_SUCCESS(status)) {
+        /*
+         * Remove a premature active marker, and give back the count only if
+         * this is the one removing it.
+         *
+         * The marker is the discriminator, and it is exact.  Devirtualization
+         * clears it and decrements in assembly, so a nonzero old value here
+         * means no exit path ran and the count raised before VMLAUNCH is still
+         * outstanding; a zero old value means one already did both.  Testing
+         * the exchange's old value rather than reading the marker separately
+         * is what keeps that from being two decisions that can disagree.
+         *
+         * This also covers the failures that never reached VMLAUNCH at all -
+         * including an exception before the marker was ever set, where the old
+         * value is zero and nothing was counted to give back.
+         */
+        if (InterlockedExchange(&context->active, 0L) != 0L) {
+            /* Give back the count this processor raised and never used. */
+            InterlockedDecrement(
+                &context->runtime->residentProcessorCount);
+        }
+        /* Leave VMX operation when this context still owns root state. */
+        if (InterlockedCompareExchange(
+                &context->vmxRoot,
+                0L,
+                0L) != 0L) {
+            /* Clear current VMCS state before VMXOFF when possible. */
+            (void)__vmx_vmclear(&vmcsPhysical);
+            /* Leave VMX operation on this exact processor. */
+            __vmx_off();
+            /* Publish completed VMX root cleanup. */
+            InterlockedExchange(&context->vmxRoot, 0L);
+        }
+        /* Restore the exact pre-VMX CR4 after VMXOFF. */
+        if (cr4Changed) {
+            /* Protect CR4 restoration from virtual-CPU exceptions. */
+            __try {
+                /* Restore the exact captured CR4 value. */
+                __writecr4(context->originalCr4);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) {
+                /* Preserve restoration failure over an earlier result. */
+                status = GetExceptionCode();
+                /* Publish processor-local exception state. */
+                context->resource->row.stateFlags |=
+                    KSWORD_ARK_HVM_CPU_STATE_EXCEPTION;
+            }
+        }
+    }
+    /* Preserve the authoritative per-processor status. */
+    context->lastStatus = status;
+    /* Publish the authoritative protocol row status. */
+    context->resource->row.lastStatus = status;
+    /* Publish the last VM-instruction error to the runtime. */
+    InterlockedExchange(
+        &context->runtime->lastVmInstructionError,
+        (LONG)context->lastVmInstructionError);
+    /* Return the complete current-processor lifecycle result. */
+    return status;
+}
+
+BOOLEAN
+kswordArkHvmResidentDeactivateCurrent(
+    _Inout_ KswHvmResidentVcpu* context,
+    _In_ ULONG instructionLength,
+    _In_ BOOLEAN faulted
+    )
+{
+    SIZE_T guestRsp = 0U;
+    SIZE_T guestRip = 0U;
+    SIZE_T guestRflags = 0U;
+    unsigned __int64 vmcsPhysical = 0ULL;
+    UCHAR vmxResult = 0xFFU;
+    NTSTATUS status = STATUS_SUCCESS;
+    BOOLEAN transientRestored = TRUE;
+    BOOLEAN safeToResumeNative = TRUE;
+    /* Preserve the current guest tables independently of VMX host state. */
+    KswHvmSegmentSnapshot guestTables = { 0 };
+
+    /* Reject a missing or inactive current processor context. */
+    if (context == NULL ||
+        context->runtime == NULL ||
+        context->resource == NULL ||
+        InterlockedCompareExchange(
+            &context->active,
+            0L,
+            0L) == 0L) {
+        /* Report that no safe devirtualization occurred. */
+        return FALSE;
+    }
+    /*
+     * A fail-closed exit is a whole-machine event, so publish it before this
+     * processor does anything else.
+     *
+     * This call only devirtualizes the current processor, and the IPI
+     * rendezvous that could reach the others is unusable from here (VMX root,
+     * indeterminate IRQL).  The remaining processors therefore have to notice
+     * on their own, and the earliest they can is their next VM exit - so the
+     * request has to be visible before this one leaves VMX rather than after.
+     *
+     * Only on Faulted.  The planned per-processor stop also lands here with
+     * Faulted == FALSE (the KSW_HVM_HYPERCALL_STOP branch of the dispatcher)
+     * and must not drag the other processors out with it; the rendezvous is
+     * already stopping them one by one, in order, with the correct instruction
+     * length.
+     */
+    if (faulted) {
+        /* Publish the whole-machine stop request before leaving VMX. */
+        InterlockedExchange(
+            &context->runtime->residentFaultStopRequested,
+            1L);
+    }
+    /*
+     * Restore any outstanding allow-once permission before reading the guest
+     * continuation.  An INVEPT failure is resolved by the VMXOFF below, but it
+     * remains fault evidence and must never be silently discarded.
+     */
+    transientRestored = kswordArkHvmEptRestoreTransient(
+        context->runtime,
+        &context->eptTransient);
+    /* Preserve the invalidation failure while continuing to fail-closed exit. */
+    if (!transientRestored) {
+        /* Retain the authoritative current-context invalidation failure. */
+        status = STATUS_HV_OPERATION_FAILED;
+    }
+    /* Read the exact guest stack used for the post-VMX continuation. */
+    if (kswordArkHvmVmcsFieldLoad(
+            KSW_VMCS_GUEST_RSP,
+            &guestRsp) != 0U ||
+        kswordArkHvmVmcsFieldLoad(
+            KSW_VMCS_GUEST_RIP,
+            &guestRip) != 0U ||
+        kswordArkHvmVmcsFieldLoad(
+            KSW_VMCS_GUEST_RFLAGS,
+            &guestRflags) != 0U) {
+        /* Preserve an unsafe VMREAD failure. */
+        context->lastStatus = STATUS_HV_OPERATION_FAILED;
+        /* Report that no safe devirtualization occurred. */
+        return FALSE;
+    }
+    /* Capture current guest tables before VMCLEAR, including nested changes. */
+    if (!kswordArkHvmCaptureGuestDescriptorTables(&guestTables)) {
+        /* Do not leave VMX with only the host's tables available. */
+        context->lastStatus = STATUS_HV_OPERATION_FAILED;
+        /* Refuse an unverified native continuation. */
+        return FALSE;
+    }
+    /* Preserve every optional guest component before VMCLEAR. */
+    if (!kswordArkHvmCaptureResidentExtendedState(context)) {
+        context->lastStatus = STATUS_HV_OPERATION_FAILED;
+        return FALSE;
+    }
+    /* Advance only a fully decoded stop or private hypercall. */
+    if (instructionLength != 0UL) {
+        /* Reject an architecturally invalid instruction length. */
+        if (instructionLength > 15UL ||
+            guestRip > MAXULONG_PTR - instructionLength) {
+            /* Preserve the exact continuation validation failure. */
+            context->lastStatus = STATUS_INTEGER_OVERFLOW;
+            /* Report that no safe devirtualization occurred. */
+            return FALSE;
+        }
+        /* Continue after the intercepted instruction. */
+        guestRip += instructionLength;
+    }
+    /* Publish every continuation field before leaving VMX root. */
+    context->devirtualizeRsp = (ULONGLONG)guestRsp;
+    /* Publish the exact guest instruction continuation. */
+    context->devirtualizeRip = (ULONGLONG)guestRip;
+    /* Publish the exact guest RFLAGS continuation. */
+    context->devirtualizeRflags =
+        (ULONGLONG)guestRflags;
+    /*
+     * Capture the guest address space while the VMCS is still current.  VMXOFF
+     * leaves HOST_CR3 loaded, and HOST_CR3 is the System address space, so
+     * without this the guest would resume on somebody else's page tables.
+     */
+    {
+        SIZE_T guestCr3 = 0;
+
+        /* Read the exact space the guest was executing on. */
+        if (kswordArkHvmVmcsFieldLoad(KSW_VMCS_GUEST_CR3, &guestCr3) == 0U &&
+            guestCr3 != 0) {
+            /* Publish it for the post-VMXOFF restoration below. */
+            context->guestCr3 = (ULONGLONG)guestCr3;
+        } else {
+            /* Refuse to resume the guest on an unverified address space. */
+            context->lastStatus = STATUS_HV_OPERATION_FAILED;
+            /* Report that no safe devirtualization occurred. */
+            return FALSE;
+        }
+    }
+    /* Copy the processor-owned VMCS physical address. */
+    vmcsPhysical =
+        (unsigned __int64)
+            context->resource->vmcsPhysical.QuadPart;
+    /* Clear VMCS launch state before VMXOFF. */
+    vmxResult = __vmx_vmclear(&vmcsPhysical);
+    /* Preserve VMCLEAR failure without hiding guest continuation evidence. */
+    if (vmxResult != 0U) {
+        /* Preserve the exact VMX instruction result. */
+        context->resource->row.vmxInstructionResult =
+            vmxResult;
+        /* Preserve the authoritative VMX operation failure. */
+        status = STATUS_HV_OPERATION_FAILED;
+        /* A failed VMCLEAR cannot commit resource release. */
+        safeToResumeNative = FALSE;
+    }
+    /* Leave VMX operation on the current logical processor. */
+    __vmx_off();
+    /*
+     * Return to the guest's own address space immediately.  VMXOFF leaves
+     * HOST_CR3 loaded, and that is the System space, not the space this thread
+     * belongs to.  Everything below runs on kernel addresses, which both spaces
+     * map identically, so the only visible symptom of getting this wrong is the
+     * requesting process quietly losing its user half after it resumes.
+     */
+    __writecr3((ULONG_PTR)context->guestCr3);
+    /* Remove the private host IDT and restore exact guest table limits. */
+    if (!kswordArkHvmRestoreDescriptorTables(
+            &guestTables, KSW_HVM_DESCRIPTOR_RESIDENT)) {
+        /* Retain a failed hardware readback instead of reporting clean stop. */
+        status = STATUS_HV_OPERATION_FAILED;
+        /* Keep the continuation fail-closed until its tables are verified. */
+        safeToResumeNative = FALSE;
+    }
+    /* Publish completed VMX root cleanup. */
+    InterlockedExchange(&context->vmxRoot, 0L);
+    /* Restore non-CET state before entering the final assembly continuation. */
+    __try {
+        if (context->pkrsStateManaged != 0U) {
+            __writemsr(KSW_HVM_IA32_PKRS, context->guestPkrs);
+        }
+        if (context->uinvStateManaged != 0U) {
+            ULONGLONG uintrMisc =
+                __readmsr(KSW_HVM_IA32_UINTR_MISC);
+
+            uintrMisc &= ~(0xFFULL << 32);
+            uintrMisc |=
+                (context->guestUinv & 0xFFULL) << 32;
+            __writemsr(KSW_HVM_IA32_UINTR_MISC, uintrMisc);
+        }
+        /* Restore CR4 after VMXOFF and before returning to guest state. */
+        __writecr4(context->originalCr4);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        /* Preserve the exact privileged restoration exception. */
+        status = GetExceptionCode();
+        /* CR4 restoration failure cannot commit resource release. */
+        safeToResumeNative = FALSE;
+    }
+    /*
+     * VMXOFF invalidates this processor's EPT context.  Only now may a failed
+     * transient INVEPT discard its retained recovery record.
+     */
+    if (!transientRestored) {
+        /* Clear the recovery record after the EPT context ceased to exist. */
+        RtlZeroMemory(
+            &context->eptTransient,
+            sizeof(context->eptTransient));
+    }
+    /* Preserve the authoritative per-processor status. */
+    context->lastStatus = status;
+    /* Preserve the authoritative protocol row status. */
+    context->resource->row.lastStatus = status;
+    /* Publish fault and rollback evidence for unexpected exits. */
+    if (faulted ||
+        !safeToResumeNative ||
+        !transientRestored) {
+        /* Publish process-wide fault and rollback-required state atomically. */
+        InterlockedOr(
+            (volatile LONG*)&context->runtime->stateFlags,
+            (LONG)(
+                KSWORD_ARK_HVM_STATE_FAULTED |
+                KSWORD_ARK_HVM_STATE_ROLLBACK_REQUIRED));
+        /* Publish explicit partial maturity after an unexpected per-CPU exit. */
+        context->runtime->residentImplementation =
+            KSWORD_ARK_HVM_IMPLEMENTATION_PARTIAL;
+    }
+    /*
+     * Active, resident count, and DEVIRTUALIZED are intentionally not changed
+     * here.  Assembly commits them only after it has copied all continuation
+     * state to the guest stack and no longer references the host stack.
+     */
+    return safeToResumeNative;
+}
+
+/* Execute one resident operation on every processor at IPI_LEVEL. */
+static ULONG_PTR
+kswordArkHvmResidentIpiWorker(
+    _In_ ULONG_PTR contextValue
+    )
+{
+    KswHvmRendezvous* rendezvous =
+        (KswHvmRendezvous*)contextValue;
+    KswHvmResidentVcpu* context =
+        kswordArkHvmResidentFindCurrent();
+    NTSTATUS status = STATUS_SUCCESS;
+
+    /* Reject an invalid rendezvous or an unrepresented processor. */
+    if (context != NULL && rendezvous != NULL &&
+        rendezvous->operation != KSW_HVM_RENDEZVOUS_INVEPT) {
+        /* KeIpiGenericCall has reached this processor's callback. */
+        kswordArkHvmMetricsCpuStamp((ULONG)(context->resource - context->runtime->processors),
+            KSW_HVM_TIME_IPI_ENTER);
+    }
+    if (rendezvous == NULL ||
+        context == NULL) {
+        /* Select the explicit processor-capacity failure. */
+        status = STATUS_NOT_FOUND;
+    /* Start resident VMX on the exact current processor. */
+    } else if (rendezvous->operation ==
+        KSW_HVM_RENDEZVOUS_START) {
+        /* Execute the complete current-processor start lifecycle. */
+        status = kswordArkHvmResidentStartCurrent(context);
+    /* Stop only a processor that remains resident. */
+    } else if (rendezvous->operation ==
+        KSW_HVM_RENDEZVOUS_STOP) {
+        /* Skip processors that already devirtualized after a fatal exit. */
+        if (InterlockedCompareExchange(
+                &context->active,
+                0L,
+                0L) != 0L) {
+            ULONGLONG hypercallResult = 0ULL;
+
+            /* Publish the explicit stop request before entering VMX root. */
+            InterlockedExchange(
+                &context->stopRequested,
+                1L);
+            /* Request devirtualization through the private VMCALL contract. */
+            hypercallResult = KswordARKHvmAsmResidentHypercall(
+                KSW_HVM_HYPERCALL_STOP,
+                0ULL);
+            /* Require the exit path to clear active state before returning. */
+            status =
+                hypercallResult == 0ULL &&
+                InterlockedCompareExchange(
+                    &context->active,
+                    0L,
+                    0L) == 0L
+                ? STATUS_SUCCESS
+                : STATUS_HV_OPERATION_FAILED;
+        }
+    /* Invalidate EPT from VMX root through a private VMCALL. */
+    } else if (rendezvous->operation ==
+        KSW_HVM_RENDEZVOUS_INVEPT) {
+        /* Skip processors that are no longer resident. */
+        if (InterlockedCompareExchange(
+                &context->active,
+                0L,
+                0L) != 0L) {
+            ULONGLONG hypercallResult = 0ULL;
+
+            /* Execute single-context INVEPT in this processor's VMX root. */
+            hypercallResult = KswordARKHvmAsmResidentHypercall(
+                KSW_HVM_HYPERCALL_INVEPT,
+                rendezvous->eptPointer);
+            /* Convert the private hypercall result to NTSTATUS. */
+            status = hypercallResult == 0ULL
+                ? STATUS_SUCCESS
+                : STATUS_HV_OPERATION_FAILED;
+        }
+    } else {
+        /* Reject an unknown all-processor operation. */
+        status = STATUS_INVALID_PARAMETER;
+    }
+    /* Publish this exact processor's operation result. */
+    if (context != NULL && rendezvous != NULL &&
+        rendezvous->operation != KSW_HVM_RENDEZVOUS_INVEPT) {
+        /* The Windows IPI return barrier follows this callback endpoint. */
+        kswordArkHvmMetricsCpuStamp((ULONG)(context->resource - context->runtime->processors),
+            KSW_HVM_TIME_IPI_LEAVE);
+    }
+    kswordArkHvmResidentRecordResult(
+        rendezvous,
+        status);
+    /* Return a conventional nonzero IPI worker result on success. */
+    return NT_SUCCESS(status) ? 1U : 0U;
+}
+
+/* Broadcast one fixed resident operation to every active processor. */
+static NTSTATUS
+kswordArkHvmResidentRendezvous(
+    _In_ ULONG operation,
+    _In_ ULONGLONG eptPointer,
+    _Out_opt_ LONG* successCount
+    )
+{
+    KswHvmRendezvous rendezvous = { 0 };
+    NTSTATUS status = STATUS_SUCCESS;
+
+    /* initialize the complete fixed rendezvous contract. */
+    rendezvous.operation = operation;
+    /* Preserve the optional EPT pointer for invalidation. */
+    rendezvous.eptPointer = eptPointer;
+    /* Publish success as the initial compare-exchange sentinel. */
+    rendezvous.firstStatus = STATUS_SUCCESS;
+    /* Interrupt every active processor and execute the nonpaged worker. */
+    if (operation != KSW_HVM_RENDEZVOUS_INVEPT) {
+        /* Bound rendezvous disruption, including Windows barriers. */
+        kswordArkHvmMetricsStamp(KSW_HVM_TIME_RENDEZVOUS_BEGIN);
+    }
+    (void)KeIpiGenericCall(
+        kswordArkHvmResidentIpiWorker,
+        (ULONG_PTR)&rendezvous);
+    /* Mapping invalidations are outside insertion/stop timing. */
+    if (operation != KSW_HVM_RENDEZVOUS_INVEPT) {
+        /* All callbacks have returned before this endpoint. */
+        kswordArkHvmMetricsStamp(KSW_HVM_TIME_RENDEZVOUS_END);
+    }
+    /* Return the successful target count when requested. */
+    if (successCount != NULL) {
+        /* Publish the complete interlocked success count. */
+        *successCount = rendezvous.successCount;
+    }
+    /* Select the first authoritative worker failure. */
+    if (rendezvous.failureCount != 0L) {
+        /* Preserve a missing explicit status as generic failure. */
+        status = NT_SUCCESS(rendezvous.firstStatus)
+            ? STATUS_UNSUCCESSFUL
+            : (NTSTATUS)rendezvous.firstStatus;
+    }
+    /* Return the complete all-processor rendezvous result. */
+    return status;
+}
+
+NTSTATUS
+kswordArkHvmResidentStart(
+    _Inout_ KswHvmRuntime* runtime,
+    _In_ ULONG flags
+    )
+{
+    NTSTATUS status = STATUS_SUCCESS;
+    NTSTATUS rollbackStatus = STATUS_SUCCESS;
+    NTSTATUS guardStatus = STATUS_SUCCESS;
+    LONG successCount = 0L;
+    ULONG activeProcessorCount = 0UL;
+    ULONG processorIndex = 0UL;
+    ULONG ruleIndex = 0UL;
+    LONG powerGeneration = 0L;
+    /* Dispatch AMD before any Intel EPT/MSR-bitmap readiness checks. */
+    if (runtime != NULL && kswordHvmBackend(runtime->backendId) != NULL) {
+        return kswordHvmBackend(runtime->backendId)->start(runtime, flags);
+    }
+    /*
+     * Whether this residency actually gets per-processor hierarchies.  Both
+     * halves matter: the caller has to ask, and the runtime has to have armed
+     * the capability at prepare time.  Everything downstream keys off this
+     * single value so the two conditions cannot drift apart.
+     */
+    BOOLEAN localEptRequested = FALSE;
+    KSWORD_ARK_HVM_EVENT_ROW eventRow = { 0 };
+
+    /* Reject a missing runtime before evaluating lifecycle policy. */
+    if (runtime == NULL) {
+        /* Return the exact caller-contract failure. */
+        return STATUS_INVALID_PARAMETER;
+    }
+    /* Resolve the per-processor EPT decision once, before any gate reads it. */
+    localEptRequested =
+        ((flags & KSWORD_ARK_HVM_CONTROL_FLAG_ENABLE_LOCAL_EPT) != 0UL &&
+         runtime->localEptArmed)
+        ? TRUE
+        : FALSE;
+    /*
+     * Resident entry requires the complete driver-side lifecycle guard set,
+     * plus the MSR bitmap.  Without the bitmap every RDMSR and WRMSR exits
+     * unconditionally, so residency would collapse on the first MSR access
+     * the running system performs.
+     */
+    if (!runtime->residentStartAllowed ||
+        runtime->msrBitmapPhysical.QuadPart == 0LL ||
+        (runtime->featureFlags &
+            (KSWORD_ARK_HVM_FEATURE_INTEL |
+             KSWORD_ARK_HVM_FEATURE_MSR_BITMAP |
+             KSWORD_ARK_HVM_FEATURE_RESIDENT_LIFECYCLE_GUARDED)) !=
+            (KSWORD_ARK_HVM_FEATURE_INTEL |
+             KSWORD_ARK_HVM_FEATURE_MSR_BITMAP |
+             KSWORD_ARK_HVM_FEATURE_RESIDENT_LIFECYCLE_GUARDED)) {
+        /* Preserve every nonresident HVM capability while refusing residency. */
+        runtime->residentImplementation =
+            KSWORD_ARK_HVM_IMPLEMENTATION_UNSUPPORTED;
+        return STATUS_NOT_SUPPORTED;
+    }
+    /* Refuse VMX entry while the power manager is leaving the S0 working state. */
+    if (InterlockedCompareExchange(
+            &runtime->powerTransitionPending,
+            0L,
+            0L) != 0L) {
+        return STATUS_POWER_STATE_INVALID;
+    }
+    powerGeneration = InterlockedCompareExchange(
+        &runtime->powerTransitionGeneration,
+        0L,
+        0L);
+    /* Refuse a resident mapping whose architectural address space was clipped. */
+    if ((runtime->stateFlags &
+            KSWORD_ARK_HVM_STATE_EPT_TRUNCATED) != 0UL) {
+        /*
+         * Do not enter VMX with an incomplete architectural identity map.
+         *
+         * STATUS_SECTION_TOO_BIG rather than STATUS_NOT_SUPPORTED: this is the
+         * one refusal on this path that is not about the processor, and
+         * NOT_SUPPORTED is translated to UNSUPPORTED_CPU one layer up.  A
+         * machine that supports everything here was being told its processor
+         * could not do this, permanently, because its address space was wider
+         * than our window (issue #198).  The status name is literal - the
+         * region we had to map was bigger than we can map.
+         */
+        return STATUS_SECTION_TOO_BIG;
+    }
+    /* Never reuse a lifecycle whose prior devirtualization is uncertain. */
+    if ((runtime->stateFlags &
+            (KSWORD_ARK_HVM_STATE_FAULTED |
+             KSWORD_ARK_HVM_STATE_ROLLBACK_REQUIRED |
+             KSWORD_ARK_HVM_STATE_UNLOAD_GUARD_ARMED)) != 0UL) {
+        return STATUS_INVALID_DEVICE_STATE;
+    }
+    /* Validate prepared, tested, and EPT-ready state before allocation. */
+    if (
+        (runtime->stateFlags &
+            (KSWORD_ARK_HVM_STATE_RESOURCES_READY |
+             KSWORD_ARK_HVM_STATE_EPT_READY |
+             KSWORD_ARK_HVM_STATE_SELF_TEST_PASSED)) !=
+            (KSWORD_ARK_HVM_STATE_RESOURCES_READY |
+             KSWORD_ARK_HVM_STATE_EPT_READY |
+             KSWORD_ARK_HVM_STATE_SELF_TEST_PASSED)) {
+        /* Return the exact lifecycle prerequisite failure. */
+        return STATUS_DEVICE_NOT_READY;
+    }
+    /* Revalidate the complete topology immediately before host allocation. */
+    activeProcessorCount =
+        KeQueryActiveProcessorCountEx(ALL_PROCESSOR_GROUPS);
+    if (activeProcessorCount == 0UL ||
+        activeProcessorCount != runtime->processorCount ||
+        runtime->preparedProcessorCount != runtime->processorCount ||
+        runtime->selfTestPassedProcessorCount != runtime->processorCount) {
+        return STATUS_REVISION_MISMATCH;
+    }
+    /* Require affirmative per-CPU VMXON/VMXOFF evidence for every target. */
+    for (processorIndex = 0UL;
+         processorIndex < runtime->processorCount;
+         ++processorIndex) {
+        const ULONG kCpuState =
+            runtime->processors[processorIndex].row.stateFlags;
+
+        if ((kCpuState &
+                (KSWORD_ARK_HVM_CPU_STATE_RESOURCE_READY |
+                 KSWORD_ARK_HVM_CPU_STATE_SELF_TESTED |
+                 KSWORD_ARK_HVM_CPU_STATE_VMXON_SUCCEEDED)) !=
+            (KSWORD_ARK_HVM_CPU_STATE_RESOURCE_READY |
+             KSWORD_ARK_HVM_CPU_STATE_SELF_TESTED |
+             KSWORD_ARK_HVM_CPU_STATE_VMXON_SUCCEEDED)) {
+            return STATUS_REVISION_MISMATCH;
+        }
+    }
+    /* Refuse duplicate resident start while any processor remains active. */
+    if (InterlockedCompareExchange(
+            &runtime->residentProcessorCount,
+            0L,
+            0L) != 0L) {
+        /* Return the exact duplicate lifecycle result. */
+        return STATUS_ALREADY_REGISTERED;
+    }
+    /*
+     * Running underneath another hypervisor means we become L1: every VMX
+     * operation is emulated by the outer hypervisor rather than executed
+     * directly.  That is slower and the capability set is whatever the outer
+     * one chose to expose, but it is not incorrect - and it is the only
+     * environment where this code can be exercised without risking the
+     * development machine on every mistake.
+     *
+     * The previous unconditional refusal cited "complete outer-hypercall
+     * forwarding and active eVMCS ownership" as prerequisites.  That over-
+     * states the requirement: plain VMREAD/VMWRITE work under nested VMX
+     * because the outer hypervisor emulates them; enlightened VMCS is a
+     * performance optimization, not a correctness one.
+     *
+     * So the gate becomes an explicit opt-in plus evidence that the outer
+     * hypervisor actually exposes nested VMX.  Without the opt-in the refusal
+     * stands, because bare-metal residency remains the intended mode.
+     */
+    if ((runtime->featureFlags &
+            KSWORD_ARK_HVM_FEATURE_HYPERVISOR_PRESENT) != 0ULL &&
+        ((flags & KSWORD_ARK_HVM_CONTROL_FLAG_ALLOW_NESTED) == 0UL ||
+         (runtime->featureFlags &
+             KSWORD_ARK_HVM_FEATURE_NESTED_VMX_EXPOSED) == 0ULL)) {
+        /* Return the explicit hypervisor ownership conflict. */
+        return STATUS_HV_FEATURE_UNAVAILABLE;
+    }
+    /*
+     * #VE is refused rather than silently downgraded.  A caller that asked
+     * for it and got a run without it would draw exactly the wrong conclusion
+     * about what the guest is exposed to, and this is not a feature to be
+     * wrong about in that direction.
+     */
+    if ((flags & KSWORD_ARK_HVM_CONTROL_FLAG_ENABLE_VE) != 0UL &&
+        (runtime->featureFlags &
+            KSWORD_ARK_HVM_FEATURE_EPT_VIOLATION_VE) == 0ULL) {
+        /* Return the exact unsupported-control failure. */
+        return STATUS_NOT_SUPPORTED;
+    }
+    /*
+     * The EPTP-switching backend is incompatible with per-processor
+     * hierarchies and with VM functions, and this is the **only** place that
+     * check can actually fire.
+     *
+     * The protocol layer already refuses a single request carrying
+     * ENABLE_EPTP_SWITCH together with either of them - but the three flags
+     * never ride the same request: the first is read by PREPARE, the other two
+     * by START_RESIDENT.  So that refusal has nothing to refuse, and without
+     * this one a runtime prepared with the switching backend could then be
+     * started with VMFUNC or per-processor EPT armed.
+     *
+     * Why the composite has no meaning: per-processor hierarchies exist to
+     * bound a leaf *write* to one processor, and this backend never writes a
+     * leaf at run time; VM functions publish one shared EPTP list that guest
+     * code selects from by index, while this backend's indices are private to
+     * each processor and mean different things on each.  Guessing a behaviour
+     * for either combination would produce a machine that hangs with no
+     * bugcheck rather than an error.
+     */
+    if (runtime->eptpSwitchArmed &&
+        (flags &
+            (KSWORD_ARK_HVM_CONTROL_FLAG_ENABLE_LOCAL_EPT |
+             KSWORD_ARK_HVM_CONTROL_FLAG_ENABLE_VMFUNC)) != 0UL) {
+        /* Return the exact unsupported-control failure. */
+        return STATUS_NOT_SUPPORTED;
+    }
+    /*
+     * VM functions are refused the same way, and additionally require the
+     * list to exist.  Arming the control without a list would leave guest
+     * VMFUNC reading entries the driver never wrote.
+     */
+    if ((flags & KSWORD_ARK_HVM_CONTROL_FLAG_ENABLE_VMFUNC) != 0UL &&
+        (runtime->featureFlags &
+            (KSWORD_ARK_HVM_FEATURE_EPTP_SWITCHING |
+             KSWORD_ARK_HVM_FEATURE_EPTP_LIST_READY)) !=
+            (KSWORD_ARK_HVM_FEATURE_EPTP_SWITCHING |
+             KSWORD_ARK_HVM_FEATURE_EPTP_LIST_READY)) {
+        /* Return the exact unsupported-control failure. */
+        return STATUS_NOT_SUPPORTED;
+    }
+    /*
+     * Per-processor EPT is refused rather than downgraded, for the same
+     * reason as #VE and VMFUNC: a caller that asked for per-processor
+     * isolation and silently got a shared hierarchy would install views on a
+     * multicore box believing each flip is local, which is exactly the
+     * corruption the flag exists to prevent.
+     */
+    if ((flags & KSWORD_ARK_HVM_CONTROL_FLAG_ENABLE_LOCAL_EPT) != 0UL &&
+        !runtime->localEptArmed) {
+        /* Return the exact unsupported-control failure. */
+        return STATUS_NOT_SUPPORTED;
+    }
+    /*
+     * VMFUNC publishes ONE EPTP list that every processor shares, and the
+     * guest selects entries from it by index.  Per-processor hierarchies mean
+     * the same index would name a different hierarchy on each processor, so
+     * the two mechanisms cannot describe the same machine.
+     */
+    if ((flags & KSWORD_ARK_HVM_CONTROL_FLAG_ENABLE_LOCAL_EPT) != 0UL &&
+        (flags & KSWORD_ARK_HVM_CONTROL_FLAG_ENABLE_VMFUNC) != 0UL) {
+        /* Return the exact conflicting-request failure. */
+        return STATUS_INVALID_PARAMETER;
+    }
+    /*
+     * Nested VMX composes its own EPT pointer from the guest hypervisor's
+     * hierarchy and ours.  Handing it a per-processor root would make that
+     * composition processor-dependent, which nothing downstream expects.
+     */
+    if ((flags & KSWORD_ARK_HVM_CONTROL_FLAG_ENABLE_LOCAL_EPT) != 0UL &&
+        (flags & KSWORD_ARK_HVM_CONTROL_FLAG_ENABLE_NESTED_VMX) != 0UL) {
+        /* Return the exact conflicting-request failure. */
+        return STATUS_INVALID_PARAMETER;
+    }
+    /*
+     * ALLOW_ONCE temporarily edits the shared EPT leaf.  Refuse start unless
+     * the complete target topology is one VCPU and both restoration controls
+     * are available.  Ordinary tripwire rules remain valid on any topology.
+     */
+    for (ruleIndex = 0UL;
+         ruleIndex < KSWORD_ARK_HVM_MAX_EPT_RULES;
+         ++ruleIndex) {
+        const KswHvmEptRuleSlot* rule =
+            &runtime->eptRules[ruleIndex];
+
+        /* Skip inactive rules and strict devirtualization tripwires. */
+        if (!rule->active ||
+            (rule->flags &
+                KSWORD_ARK_HVM_EPT_RULE_FLAG_ALLOW_ONCE) == 0UL) {
+            /* Continue to the next immutable pre-start rule. */
+            continue;
+        }
+        /*
+         * Reject every SHARED-leaf temporary grant on a multicore target.
+         * With per-processor hierarchies the leaf is no longer shared, so the
+         * topology clause - and only that clause - stops applying.  The
+         * capability clause is unchanged: single-context INVEPT and the
+         * Monitor Trap Flag are required either way.
+         */
+        if ((runtime->processorCount != 1UL && !localEptRequested) ||
+            (runtime->featureFlags &
+                (KSWORD_ARK_HVM_FEATURE_INVEPT_SINGLE |
+                 KSWORD_ARK_HVM_FEATURE_MONITOR_TRAP_FLAG)) !=
+                (KSWORD_ARK_HVM_FEATURE_INVEPT_SINGLE |
+                 KSWORD_ARK_HVM_FEATURE_MONITOR_TRAP_FLAG)) {
+            /* Return before host-stack allocation or any VMX transition. */
+            return STATUS_NOT_SUPPORTED;
+        }
+    }
+    /*
+     * Views installed on a multicore box are only safe while this residency
+     * actually gives each processor its own hierarchy.  The predicate is
+     * deliberately a property of installed state alone - it does not consult
+     * the arm latch, because a start that simply omits the flag must still be
+     * refused.  Making the latch part of the condition would turn the single
+     * thing standing between an installed view and a shared-leaf flip into
+     * something a caller can switch off.
+     */
+    if (runtime->eptViewCount != 0UL &&
+        runtime->processorCount != 1UL &&
+        !localEptRequested &&
+        !kswordArkHvmEptViewAllSwitchBackedLocked(runtime)) {
+        /* Return before host-stack allocation or any VMX transition. */
+        return STATUS_NOT_SUPPORTED;
+    }
+    /*
+     * A view backed by the EPTP-switching hierarchy needs no extra refusal
+     * here: the exit path services it by writing this processor's own
+     * EPT_POINTER, and every case that cannot be served that way - an access
+     * no single hierarchy can represent, or a switch that would not advance
+     * RIP - is refused by the planner and fails closed exactly like a failed
+     * leaf flip.
+     *
+     * The temporary refusal that used to sit here was removed together with
+     * that wiring; it existed only while the hierarchies were built but never
+     * loaded.
+     *
+     * This paragraph was true and the gate directly above it still refused
+     * anyway, for months, because it was written before that backend existed
+     * and nobody rechecked it when this comment was added. The gate now asks
+     * kswordArkHvmEptViewAllSwitchBackedLocked - which reads the installed
+     * records rather than any latch, so the two can never drift apart again.
+     *
+     * The records, not the latch, on purpose. The predicate that matters is
+     * "can any installed view flip a shared leaf", and only the records answer
+     * it directly. Asking whether the switching backend is armed happens to
+     * give the same answer today, but it is an inference across three separate
+     * facts, and if any of them ever stops holding the gate opens onto a
+     * shared-leaf flip on a multicore box - silent data corruption with no
+     * exit, no event and no bugcheck.
+     */
+    /* Serialize passive-level context construction against power teardown. */
+    if (InterlockedCompareExchange(
+            &runtime->residentContextPreparing,
+            1L,
+            0L) != 0L) {
+        return STATUS_DEVICE_BUSY;
+    }
+    /* Allocate every nonpaged host-stack context before raising IRQL. */
+    /* Host stacks and nested contexts are allocated before quiescence. */
+    kswordArkHvmMetricsStamp(KSW_HVM_TIME_RESOURCES_BEGIN);
+    status = kswordArkHvmResidentPrepareContexts(
+        runtime,
+        flags);
+    /* Stop before VMX entry when context preparation fails. */
+    if (!NT_SUCCESS(status)) {
+        InterlockedExchange(
+            &runtime->residentContextPreparing,
+            0L);
+        /* Return the exact context preparation failure. */
+        return status;
+    }
+    /*
+     * Build the private hierarchies here: after the contexts exist, before
+     * any processor can enter VMX.  All-or-nothing on purpose - a processor
+     * bound to a half-built hierarchy would walk into whatever the unfinished
+     * tables happened to contain.
+     *
+     * The caller holds the runtime push lock exclusive across this whole
+     * routine, so nothing here may acquire it.
+     */
+    if (localEptRequested) {
+        ULONGLONG leafBases[KSW_HVM_MAX_LOCAL_LEAVES] = { 0 };
+        ULONG leafCount = 0UL;
+
+        status = kswordArkHvmEptLocalCollectLeaves(
+            runtime,
+            leafBases,
+            KSW_HVM_MAX_LOCAL_LEAVES,
+            &leafCount);
+        if (!NT_SUCCESS(status)) {
+            (void)kswordArkHvmResidentReleaseContexts();
+            InterlockedExchange(
+                &runtime->residentContextPreparing,
+                0L);
+            /* Return the exact leaf-collection failure. */
+            return status;
+        }
+        /*
+         * No flippable leaf means nothing would ever be written privately,
+         * so building hierarchies would cost pages and change no behavior.
+         * Every Context->EptLocal stays NULL and the run is byte-for-byte
+         * the shared-hierarchy run.
+         */
+        if (leafCount != 0UL) {
+            KswHvmEptLocal* localArray = NULL;
+            ULONG built = 0UL;
+            ULONG index = 0UL;
+
+            localArray = (KswHvmEptLocal*)
+                kswordArkAllocateNonPagedPool(
+                    (SIZE_T)gKswordHvmResident.processorCount *
+                        sizeof(KswHvmEptLocal),
+                    KSW_HVM_EPT_LOCAL_ARRAY_POOL_TAG);
+            if (localArray == NULL) {
+                (void)kswordArkHvmResidentReleaseContexts();
+                InterlockedExchange(
+                    &runtime->residentContextPreparing,
+                    0L);
+                /* Return the exact nonpaged-resource failure. */
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            RtlZeroMemory(
+                localArray,
+                (SIZE_T)gKswordHvmResident.processorCount *
+                    sizeof(KswHvmEptLocal));
+            for (index = 0UL;
+                 index < gKswordHvmResident.processorCount;
+                 ++index) {
+                status = kswordArkHvmEptLocalBuild(
+                    runtime,
+                    leafBases,
+                    leafCount,
+                    &localArray[index]);
+                if (!NT_SUCCESS(status)) {
+                    /* Stop at the first failure; the tail stays zeroed. */
+                    break;
+                }
+                built += 1UL;
+            }
+            /*
+             * Prove the result independently of how it was built.  A mistake
+             * shared between the build and a replay of the build would
+             * survive both, so this walks each private root from the top.
+             */
+            if (NT_SUCCESS(status)) {
+                status = kswordArkHvmEptLocalVerify(
+                    runtime,
+                    localArray,
+                    gKswordHvmResident.processorCount,
+                    leafBases,
+                    leafCount);
+            }
+            if (!NT_SUCCESS(status)) {
+                for (index = 0UL; index < built; ++index) {
+                    kswordArkHvmEptLocalRelease(&localArray[index]);
+                }
+                ExFreePool(localArray);
+                (void)kswordArkHvmResidentReleaseContexts();
+                InterlockedExchange(
+                    &runtime->residentContextPreparing,
+                    0L);
+                /* Return the exact build or verification failure. */
+                return status;
+            }
+            /* Publish only after every hierarchy is built AND verified. */
+            for (index = 0UL;
+                 index < gKswordHvmResident.processorCount;
+                 ++index) {
+                gKswordHvmResident.processors[index].eptLocal =
+                    &localArray[index];
+            }
+            gKswordHvmResident.eptLocalArray = localArray;
+            gKswordHvmResident.eptLocalCount =
+                gKswordHvmResident.processorCount;
+        }
+    }
+    /* Own the transition phase without holding its state lock over the IPI. */
+    kswordArkHvmMetricsStamp(KSW_HVM_TIME_RESOURCES_END);
+    status = kswordArkHvmAcquireResidentTransition(runtime);
+    if (!NT_SUCCESS(status)) {
+        (void)kswordArkHvmResidentReleaseContexts();
+        InterlockedExchange(
+            &runtime->residentContextPreparing,
+            0L);
+        return status;
+    }
+    /* A power callback may have arrived while host stacks were allocated. */
+    if (InterlockedCompareExchange(
+            &runtime->powerTransitionPending,
+            0L,
+            0L) != 0L ||
+        InterlockedCompareExchange(
+            &runtime->powerTransitionGeneration,
+            0L,
+            0L) != powerGeneration) {
+        /* Release the fully stopped contexts without attempting VMX entry. */
+        (void)kswordArkHvmResidentReleaseContexts();
+        InterlockedExchange(
+            &runtime->residentContextPreparing,
+            0L);
+        kswordArkHvmReleaseResidentTransition(runtime);
+        return STATUS_POWER_STATE_INVALID;
+    }
+    /* Prevent image unload before the first processor can enter VMX. */
+    guardStatus = kswordArkHvmArmUnloadGuard(runtime);
+    if (!NT_SUCCESS(guardStatus)) {
+        /* No processor entered VMX, so every prepared host stack is releasable. */
+        (void)kswordArkHvmResidentReleaseContexts();
+        InterlockedExchange(
+            &runtime->residentContextPreparing,
+            0L);
+        kswordArkHvmReleaseResidentTransition(runtime);
+        return guardStatus;
+    }
+    /* Publish starting state before any processor enters VMX non-root. */
+    kswordArkHvmStateSet(runtime, KSWORD_ARK_HVM_STATE_RESIDENT_STARTING);
+    /*
+     * Clear any stop request left over from a previous fail-closed exit.
+     *
+     * It is per-runtime and set from a VM-exit handler, so nothing else can
+     * clear it: the processor that set it is on its way out, and the ones that
+     * consume it are leaving too.  Clearing here - after the starting state is
+     * published and before the first processor enters VMX non-root - is the one
+     * point where no processor is resident and no exit can be in flight.
+     * Miss it and the next START devirtualizes every processor on its first
+     * exit, which would look exactly like "residency refuses to hold".
+     */
+    InterlockedExchange(&runtime->residentFaultStopRequested, 0L);
+    /* Enter VMX non-root on every active processor. */
+    status = kswordArkHvmResidentRendezvous(
+        KSW_HVM_RENDEZVOUS_START,
+        runtime->eptPointer,
+        &successCount);
+    /* Require every prepared processor to report resident success. */
+    if (!NT_SUCCESS(status) ||
+        successCount != (LONG)runtime->processorCount ||
+        InterlockedCompareExchange(
+            &runtime->residentProcessorCount,
+            0L,
+            0L) != (LONG)runtime->processorCount ||
+        InterlockedCompareExchange(
+            &runtime->powerTransitionPending,
+            0L,
+            0L) != 0L) {
+        /* Convert a count mismatch or a concurrent power event to a failure. */
+        if (NT_SUCCESS(status)) {
+            status = InterlockedCompareExchange(
+                    &runtime->powerTransitionPending,
+                    0L,
+                    0L) != 0L
+                ? STATUS_POWER_STATE_INVALID
+                : STATUS_HV_OPERATION_FAILED;
+        }
+
+        /* Publish rollback-required state before stopping partial residency. */
+        kswordArkHvmStateSet(runtime, KSWORD_ARK_HVM_STATE_ROLLBACK_REQUIRED);
+        /* Stop every processor that entered VMX non-root successfully. */
+        rollbackStatus = kswordArkHvmResidentRendezvous(
+            KSW_HVM_RENDEZVOUS_STOP,
+            runtime->eptPointer,
+            NULL);
+        /* Preserve every live or uncertain resident context after rollback. */
+        if (!NT_SUCCESS(rollbackStatus) ||
+            InterlockedCompareExchange(
+                &runtime->residentProcessorCount,
+                0L,
+                0L) != 0L) {
+            /* Publish explicit partial implementation after failed rollback. */
+            runtime->residentImplementation =
+                KSWORD_ARK_HVM_IMPLEMENTATION_PARTIAL;
+            /* Preserve the authoritative rollback failure. */
+            if (NT_SUCCESS(rollbackStatus)) {
+                status = STATUS_HV_OPERATION_FAILED;
+            } else {
+                status = rollbackStatus;
+            }
+            /* Keep the unload guard and host stacks while safety is uncertain. */
+            kswordArkHvmStateClear(
+                runtime,
+                KSWORD_ARK_HVM_STATE_RESIDENT_STARTING);
+            InterlockedExchange(
+                &runtime->residentContextPreparing,
+                0L);
+            kswordArkHvmReleaseResidentTransition(runtime);
+            return status;
+        }
+        /* Release host stacks only after rollback reached zero active CPUs. */
+        (void)kswordArkHvmResidentReleaseContexts();
+        /* Restore unload only outside a power transition. */
+        if (InterlockedCompareExchange(
+                &runtime->powerTransitionPending,
+                0L,
+                0L) == 0L) {
+            guardStatus = kswordArkHvmDisarmUnloadGuard(runtime);
+        }
+        /* Clear transient state after a complete, verified rollback. */
+        kswordArkHvmStateClear(
+            runtime,
+            KSWORD_ARK_HVM_STATE_RESIDENT_STARTING |
+                KSWORD_ARK_HVM_STATE_RESIDENT_ACTIVE |
+                KSWORD_ARK_HVM_STATE_RESIDENT_STOPPING |
+                KSWORD_ARK_HVM_STATE_ROLLBACK_REQUIRED);
+        runtime->residentImplementation =
+            runtime->residentStartAllowed
+                ? KSWORD_ARK_HVM_IMPLEMENTATION_CAPABILITY_ONLY
+                : KSWORD_ARK_HVM_IMPLEMENTATION_UNSUPPORTED;
+        if (!NT_SUCCESS(guardStatus)) {
+            /* A stuck unload slot is fail-closed and requires intervention. */
+            kswordArkHvmStateSet(
+                runtime,
+                KSWORD_ARK_HVM_STATE_FAULTED |
+                    KSWORD_ARK_HVM_STATE_ROLLBACK_REQUIRED);
+            runtime->residentImplementation =
+                KSWORD_ARK_HVM_IMPLEMENTATION_PARTIAL;
+            status = guardStatus;
+        }
+        InterlockedExchange(
+            &runtime->residentContextPreparing,
+            0L);
+        kswordArkHvmReleaseResidentTransition(runtime);
+        /* Return the authoritative all-processor start failure. */
+        return status;
+    }
+    /* Clear transient starting state after full all-processor success. */
+    kswordArkHvmStateClear(runtime, KSWORD_ARK_HVM_STATE_RESIDENT_STARTING);
+    /* Publish resident active only after every target processor succeeds. */
+    kswordArkHvmStateSet(runtime, KSWORD_ARK_HVM_STATE_RESIDENT_ACTIVE);
+    /*
+     * Publish whether the #VE control is armed on this residency.  It says
+     * the control is on, not that any #VE can be delivered: suppress-#VE on
+     * every leaf and the latched-busy information area both still stand
+     * between the control and an actual guest exception.
+     */
+    if ((flags & KSWORD_ARK_HVM_CONTROL_FLAG_ENABLE_VE) != 0UL) {
+        kswordArkHvmStateSet(runtime, KSWORD_ARK_HVM_STATE_VE_ACTIVE);
+    }
+    /* Publish whether guest code can switch views with a single VMFUNC. */
+    if ((flags & KSWORD_ARK_HVM_CONTROL_FLAG_ENABLE_VMFUNC) != 0UL) {
+        kswordArkHvmStateSet(runtime, KSWORD_ARK_HVM_STATE_VMFUNC_ACTIVE);
+    }
+    /*
+     * Record whether this residency is nested.  Callers must be able to tell
+     * the two apart: under an outer hypervisor every VMX operation is emulated,
+     * so timings, available capabilities and failure modes all differ from
+     * bare metal.  Presenting them as the same result would make any
+     * measurement taken here misleading.
+     */
+    if ((runtime->featureFlags &
+            KSWORD_ARK_HVM_FEATURE_HYPERVISOR_PRESENT) != 0ULL) {
+        /* Publish the degraded nested-residency marker. */
+        kswordArkHvmStateSet(runtime, KSWORD_ARK_HVM_STATE_RESIDENT_NESTED);
+    } else {
+        /* Clear any marker left by an earlier nested run. */
+        kswordArkHvmStateClear(runtime, KSWORD_ARK_HVM_STATE_RESIDENT_NESTED);
+    }
+    /* Clear stale rollback evidence after complete startup. */
+    kswordArkHvmStateClear(runtime, KSWORD_ARK_HVM_STATE_ROLLBACK_REQUIRED);
+    /* Publish active resident implementation maturity. */
+    runtime->residentImplementation =
+        KSWORD_ARK_HVM_IMPLEMENTATION_ACTIVE;
+    /* Publish implemented resident and multicore features. */
+    runtime->featureFlags |=
+        KSWORD_ARK_HVM_FEATURE_RESIDENT_VMM |
+        KSWORD_ARK_HVM_FEATURE_MULTICORE_RENDEZVOUS;
+    /* Context construction is complete before exposing active residency. */
+    InterlockedExchange(
+        &runtime->residentContextPreparing,
+        0L);
+    kswordArkHvmReleaseResidentTransition(runtime);
+    /* Describe one lifecycle event after full residency succeeds. */
+    eventRow.type = KSWORD_ARK_HVM_EVENT_TYPE_LIFECYCLE;
+    /* Publish successful resident start status. */
+    eventRow.status = STATUS_SUCCESS;
+    /* Publish the complete lifecycle event. */
+    kswordArkHvmEventPublish(&eventRow);
+    /* Complete the full resident start successfully. */
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+kswordArkHvmResidentStop(
+    _Inout_ KswHvmRuntime* runtime
+    )
+{
+    NTSTATUS status = STATUS_SUCCESS;
+    NTSTATUS guardStatus = STATUS_SUCCESS;
+    KSWORD_ARK_HVM_EVENT_ROW eventRow = { 0 };
+
+    /* Reject a missing runtime before lifecycle mutation. */
+    if (runtime == NULL) {
+        /* Return the exact caller-contract failure. */
+        return STATUS_INVALID_PARAMETER;
+    }
+    /* Power/unload callbacks use the same vendor-selected stop operation. */
+    if (kswordHvmBackend(runtime->backendId) != NULL) {
+        return kswordHvmBackend(runtime->backendId)->stop(runtime);
+    }
+    /* Serialize devirtualization through the wait-aware transition phase. */
+    status = kswordArkHvmAcquireResidentTransition(runtime);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+    /*
+     * Retire every armed first-touch watch before residency ends.
+     *
+     * A watch is a claim about a window in which something was watching.  Once
+     * this returns, nothing is, so a watch that stayed armed across the gap
+     * would answer "never touched" for a period it did not observe - a
+     * fabricated negative, and the most damaging kind of wrong answer this
+     * feature can give.  Done here rather than after the rendezvous because
+     * the permissions have to be restored while the processors can still be
+     * invalidated, and because an idempotent stop must clear them too.
+     */
+    kswordArkHvmEptInvalidateWatchesLocked(runtime);
+    /* Treat a fully stopped lifecycle as idempotent success. */
+    if (InterlockedCompareExchange(
+            &runtime->residentProcessorCount,
+            0L,
+            0L) == 0L) {
+        /* A power callback must not free contexts still being constructed. */
+        if (InterlockedCompareExchange(
+                &runtime->residentContextPreparing,
+                0L,
+                0L) == 0L) {
+            /* Release stopped contexts retained after a prior fault. */
+            (void)kswordArkHvmResidentReleaseContexts();
+        }
+        /* Clear protocol-visible resident active state. */
+        kswordArkHvmStateClear(
+            runtime,
+            KSWORD_ARK_HVM_STATE_RESIDENT_ACTIVE |
+                KSWORD_ARK_HVM_STATE_RESIDENT_STOPPING |
+                KSWORD_ARK_HVM_STATE_VE_ACTIVE |
+                KSWORD_ARK_HVM_STATE_VMFUNC_ACTIVE |
+                KSWORD_ARK_HVM_STATE_VMFUNC_ACTIVE |
+                KSWORD_ARK_HVM_STATE_ROLLBACK_REQUIRED);
+        /* Preserve the fail-closed public maturity after an idempotent stop. */
+        runtime->residentImplementation =
+            runtime->residentStartAllowed
+                ? KSWORD_ARK_HVM_IMPLEMENTATION_CAPABILITY_ONLY
+                : KSWORD_ARK_HVM_IMPLEMENTATION_UNSUPPORTED;
+        /* Keep unload disabled throughout an active non-S0 transition. */
+        if (InterlockedCompareExchange(
+                &runtime->powerTransitionPending,
+                0L,
+                0L) == 0L) {
+            guardStatus = kswordArkHvmDisarmUnloadGuard(runtime);
+        }
+        if (!NT_SUCCESS(guardStatus)) {
+            kswordArkHvmStateSet(
+                runtime,
+                KSWORD_ARK_HVM_STATE_FAULTED |
+                    KSWORD_ARK_HVM_STATE_ROLLBACK_REQUIRED);
+            runtime->residentImplementation =
+                KSWORD_ARK_HVM_IMPLEMENTATION_PARTIAL;
+            kswordArkHvmReleaseResidentTransition(runtime);
+            return guardStatus;
+        }
+        kswordArkHvmReleaseResidentTransition(runtime);
+        /* Complete the idempotent stop successfully. */
+        return STATUS_SUCCESS;
+    }
+    /* Publish stopping state before issuing private stop VMCALLs. */
+    kswordArkHvmStateSet(runtime, KSWORD_ARK_HVM_STATE_RESIDENT_STOPPING);
+    /* Request devirtualization on every active processor. */
+    status = kswordArkHvmResidentRendezvous(
+        KSW_HVM_RENDEZVOUS_STOP,
+        runtime->eptPointer,
+        NULL);
+    /* Preserve host stacks and rollback state while any processor remains live. */
+    if (!NT_SUCCESS(status) ||
+        InterlockedCompareExchange(
+            &runtime->residentProcessorCount,
+            0L,
+            0L) != 0L) {
+        /* Publish explicit rollback-required state. */
+        kswordArkHvmStateSet(runtime, KSWORD_ARK_HVM_STATE_ROLLBACK_REQUIRED);
+        /* Publish explicit partial maturity rather than active success. */
+        runtime->residentImplementation =
+            KSWORD_ARK_HVM_IMPLEMENTATION_PARTIAL;
+        /* Clear transient stopping state after the failed rendezvous. */
+        kswordArkHvmStateClear(runtime, KSWORD_ARK_HVM_STATE_RESIDENT_STOPPING);
+        kswordArkHvmReleaseResidentTransition(runtime);
+        /* Return the authoritative stop or incomplete rollback failure. */
+        return NT_SUCCESS(status)
+            ? STATUS_HV_OPERATION_FAILED
+            : status;
+    }
+    /* Release host stacks after every CPU completes VMXOFF. */
+    (void)kswordArkHvmResidentReleaseContexts();
+    /* Clear all resident lifecycle state after complete rollback. */
+    kswordArkHvmStateClear(
+        runtime,
+        KSWORD_ARK_HVM_STATE_RESIDENT_ACTIVE |
+            KSWORD_ARK_HVM_STATE_RESIDENT_STOPPING |
+            KSWORD_ARK_HVM_STATE_VE_ACTIVE |
+            KSWORD_ARK_HVM_STATE_VMFUNC_ACTIVE |
+            KSWORD_ARK_HVM_STATE_ROLLBACK_REQUIRED);
+    /* Preserve the configured lifecycle maturity without claiming active. */
+    runtime->residentImplementation =
+        runtime->residentStartAllowed
+            ? KSWORD_ARK_HVM_IMPLEMENTATION_CAPABILITY_ONLY
+            : KSWORD_ARK_HVM_IMPLEMENTATION_UNSUPPORTED;
+    /* Keep unload disabled until S0 resume clears the transition gate. */
+    if (InterlockedCompareExchange(
+            &runtime->powerTransitionPending,
+            0L,
+            0L) == 0L) {
+        guardStatus = kswordArkHvmDisarmUnloadGuard(runtime);
+    }
+    if (!NT_SUCCESS(guardStatus)) {
+        kswordArkHvmStateSet(
+            runtime,
+            KSWORD_ARK_HVM_STATE_FAULTED |
+                KSWORD_ARK_HVM_STATE_ROLLBACK_REQUIRED);
+        runtime->residentImplementation =
+            KSWORD_ARK_HVM_IMPLEMENTATION_PARTIAL;
+        kswordArkHvmReleaseResidentTransition(runtime);
+        return guardStatus;
+    }
+    kswordArkHvmReleaseResidentTransition(runtime);
+    /* Describe one successful resident stop lifecycle event. */
+    eventRow.type = KSWORD_ARK_HVM_EVENT_TYPE_LIFECYCLE;
+    /* Publish successful resident stop status. */
+    eventRow.status = STATUS_SUCCESS;
+    /* Publish the complete lifecycle event. */
+    kswordArkHvmEventPublish(&eventRow);
+    /* Complete the full resident stop successfully. */
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+kswordArkHvmResidentInvalidateEpt(
+    _In_ ULONGLONG eptPointer
+    )
+{
+    KswHvmRuntime* runtime =
+        gKswordHvmResident.runtime;
+    LONG successCount = 0L;
+    NTSTATUS status;
+
+    /* Treat a stopped resident lifecycle as requiring no invalidation. */
+    if (runtime == NULL ||
+        InterlockedCompareExchange(
+            &runtime->residentProcessorCount,
+            0L,
+            0L) == 0L) {
+        /* Complete the no-op invalidation successfully. */
+        return STATUS_SUCCESS;
+    }
+    /* Require the exact active EPT context identity. */
+    if (eptPointer == 0ULL ||
+        eptPointer != runtime->eptPointer) {
+        /* Return the explicit EPT identity mismatch. */
+        return STATUS_INVALID_PARAMETER;
+    }
+    /* Execute one private INVEPT hypercall on every active processor. */
+    status = kswordArkHvmResidentRendezvous(
+        KSW_HVM_RENDEZVOUS_INVEPT,
+        eptPointer,
+        &successCount);
+    /* No allocation may be freed on an incomplete all-processor drain. */
+    if (NT_SUCCESS(status) && successCount != (LONG)runtime->processorCount) {
+        /* Keep callers' retired backing pinned when a participant is absent. */
+        return STATUS_HV_OPERATION_FAILED;
+    }
+    /* Preserve the first failed participant's status. */
+    return status;
+}
+
+VOID kswordArkHvmResidentNestedRoots(KSWORD_ARK_HVM_NESTED_PAGE_RESPONSE* response)
+{
+    ULONG index;
+    response->rootCount = 0UL;
+    for (index = 0UL; index < KSWORD_ARK_HVM_MAX_PROCESSORS; ++index) {
+        KswHvmResidentVcpu* context = &gKswordHvmResident.processors[index];
+        ULONGLONG root;
+        ULONG existing;
+        if (InterlockedCompareExchange(&context->active, 0L, 0L) == 0L) { continue; }
+        root = (ULONGLONG)InterlockedCompareExchange64(
+            (volatile LONG64*)&context->nested.shadowEpt.l1EptPointer, 0LL, 0LL);
+        if (root == 0ULL) { continue; }
+        for (existing = 0UL; existing < response->rootCount; ++existing) {
+            if (response->ept12Roots[existing] == root) { break; }
+        }
+        if (existing == response->rootCount) {
+            response->ept12Roots[response->rootCount++] = root;
+        }
+    }
+}
+
+#else
+
+VOID KswordARKHvmResidentMetrics(KSWORD_ARK_HVM_METRICS_RESPONSE* Response)
+{
+    /* Nested VMX counters are unavailable on this architecture. */
+    Response->shadowProcessorCount = 0UL;
+}
+
+
+VOID KswordARKHvmResidentNestedRoots(KSWORD_ARK_HVM_NESTED_PAGE_RESPONSE* Response)
+{
+    Response->rootCount = 0UL;
+}
+
+NTSTATUS
+KswordARKHvmResidentStart(
+    _Inout_ KSW_HVM_RUNTIME* Runtime,
+    _In_ ULONG Flags
+    )
+{
+    /* Keep non-x64 builds explicit and warning-free. */
+    UNREFERENCED_PARAMETER(Runtime);
+    /* Keep non-x64 builds explicit and warning-free. */
+    UNREFERENCED_PARAMETER(Flags);
+    /* Return the explicit architecture boundary. */
+    return STATUS_NOT_SUPPORTED;
+}
+
+NTSTATUS
+KswordARKHvmResidentStop(
+    _Inout_ KSW_HVM_RUNTIME* Runtime
+    )
+{
+    /* Keep non-x64 builds explicit and warning-free. */
+    UNREFERENCED_PARAMETER(Runtime);
+    /* Return the explicit architecture boundary. */
+    return STATUS_NOT_SUPPORTED;
+}
+
+NTSTATUS
+KswordARKHvmResidentInvalidateEpt(
+    _In_ ULONGLONG EptPointer
+    )
+{
+    /* Keep non-x64 builds explicit and warning-free. */
+    UNREFERENCED_PARAMETER(EptPointer);
+    /* Return the explicit architecture boundary. */
+    return STATUS_NOT_SUPPORTED;
+}
+
+NTSTATUS
+KswordARKHvmConfigureResidentVmcsFromAsm(
+    _Inout_ KSW_HVM_RESIDENT_VCPU* Context
+    )
+{
+    /* Keep non-x64 builds explicit and warning-free. */
+    UNREFERENCED_PARAMETER(Context);
+    /* Return the explicit architecture boundary. */
+    return STATUS_NOT_SUPPORTED;
+}
+
+NTSTATUS
+KswordARKHvmWriteResidentGuestSspFromAsm(
+    _Inout_ KSW_HVM_RESIDENT_VCPU* Context
+    )
+{
+    /* Keep non-x64 builds explicit and warning-free. */
+    UNREFERENCED_PARAMETER(Context);
+    /* Return the explicit architecture boundary. */
+    return STATUS_NOT_SUPPORTED;
+}
+
+BOOLEAN
+KswordARKHvmResidentDeactivateCurrent(
+    _Inout_ KSW_HVM_RESIDENT_VCPU* Context,
+    _In_ ULONG InstructionLength,
+    _In_ BOOLEAN Faulted
+    )
+{
+    /* Keep non-x64 builds explicit and warning-free. */
+    UNREFERENCED_PARAMETER(Context);
+    /* Keep non-x64 builds explicit and warning-free. */
+    UNREFERENCED_PARAMETER(InstructionLength);
+    /* Keep non-x64 builds explicit and warning-free. */
+    UNREFERENCED_PARAMETER(Faulted);
+    /* Report that no processor was devirtualized. */
+    return FALSE;
+}
+
+KSW_HVM_RESIDENT_VCPU*
+KswordARKHvmResidentFindCurrent(
+    VOID
+    )
+{
+    /* Report that resident VMX is unavailable on this architecture. */
+    return NULL;
+}
+
+#endif

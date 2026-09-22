@@ -1,19 +1,19 @@
-# 用文本控制台 + 串口日志重开 TinyCore，把内核自己的话取出来。
+# Reboot TinyCore using a text console and serial logs to retrieve the kernel's own output.
 #
-# 为什么要这条路：到目前为止关于"它停在哪"的每一个结论都是从 VMCS 字段反推的 ——
-# 退出原因、RIP、描述符表。那能告诉我 L2 停在 0xFFFFFFFF81C721CA 的 HLT 上，
-# 不能告诉我 Linux 自己以为发生了什么。而默认菜单项 "Boot TinyCorePure64" 还要
-# 起 X，屏幕因此是一整片 1024x768 的黑，连内核打印都看不到。
+# Why this path: Every conclusion so far about "where it stopped" has been inferred from VMCS fields —
+# Exit reason, RIP, and descriptor tables show that L2 stopped at the HLT at 0xFFFFFFFF81C721CA,
+# It cannot tell me what Linux thinks happened. The default menu item "Boot TinyCorePure64" also requires
+# Starting X results in a solid 1024x768 black screen, making even kernel prints invisible.
 #
-# 两处改动都只作用在引导参数上，不动虚拟机硬件配置：
-#   1. 选第三项 "Boot Core (command line only)"，不起 X；
-#   2. TAB 进编辑行，追加 console=ttyS0,115200n8，让内核同时往串口打印。
-# 串口早就配好了（serial0.fileName = C:\vmware\hltprobe.log），是上一轮探针留下的。
+# Both modifications apply only to boot parameters, leaving the virtual machine hardware configuration unchanged:
+#   1. Select the third option "Boot Core (command line only)" without starting X;
+#   2. Press TAB to enter the edit line, append console=ttyS0,115200n8 to make the kernel print to the serial port simultaneously.
+# The serial port was already configured (serial0.fileName = C:\vmware\hltprobe.log) by the probe from the previous round.
 param(
     [string] $VMName = 'KSword-HVM-Target',
     [string] $SerialLog = 'C:\vmware\hltprobe.log',
     [int]    $WaitSeconds = 120,
-    # 额外追加的内核参数，例如 'nosmp'。只能用小写与数字，大写要走 Shift 位。
+    # Additional kernel parameters to append, e.g., 'nosmp'. Only lowercase letters and digits are allowed; uppercase requires the Shift key.
     [string] $Append = ''
 )
 
@@ -25,7 +25,7 @@ $cred = New-Object PSCredential('felix',
     (ConvertTo-SecureString 'password' -AsPlainText -Force))
 $s = New-PSSession -VMName $VMName -Credential $cred
 
-# 串口是追加写的，先清掉，否则读到的是上一轮探针的字节。
+# Note: The serial port is appended to; clear it first, otherwise you will read bytes from the previous probe run.
 Invoke-Command -Session $s -ArgumentList $SerialLog -ScriptBlock {
     param($log)
     # Keep the virtual CPU execution layer alive while VMware destroys its VM.
@@ -37,7 +37,7 @@ Invoke-Command -Session $s -ArgumentList $SerialLog -ScriptBlock {
     $ctl = 'C:\ksword\hvm_ctl.exe'
 
     if (@(Get-Process -Name 'vmware-vmx' -ErrorAction SilentlyContinue).Count -gt 0) {
-        # 保留自己启动的进程句柄，避免 Start-Process 返回的对象在退出后丢失 ExitCode。
+        # Retain the handle to the process started by this script to prevent the object returned by Start-Process from losing its ExitCode after termination.
         $stopInfo = New-Object Diagnostics.ProcessStartInfo
         $stopInfo.FileName = $vmrun
         $stopInfo.Arguments = "-T ws stop `"$vmxPath`" hard"
@@ -46,12 +46,12 @@ Invoke-Command -Session $s -ArgumentList $SerialLog -ScriptBlock {
         $stopping = New-Object Diagnostics.Process
         $stopping.StartInfo = $stopInfo
         try {
-            if (-not $stopping.Start()) { throw '无法启动 vmrun stop' }
+            if (-not $stopping.Start()) { throw 'Failed to start vmrun stop' }
             if (-not $stopping.WaitForExit(30000)) {
                 $stopping.Kill()
-                throw 'vmrun stop 超时；保留 Windows、VMware 与常驻状态供检查'
+                throw 'vmrun stop timeout; retain Windows, VMware, and resident state for inspection'
             }
-            if ($stopping.ExitCode -ne 0) { throw "vmrun stop 失败：$($stopping.ExitCode)" }
+            if ($stopping.ExitCode -ne 0) { throw "vmrun stop failed: $($stopping.ExitCode)" }
         } finally {
             $stopping.Dispose()
         }
@@ -63,7 +63,7 @@ Invoke-Command -Session $s -ArgumentList $SerialLog -ScriptBlock {
         $waited++
     }
     if (@(Get-Process -Name 'vmware-vmx' -ErrorAction SilentlyContinue).Count -ne 0) {
-        throw 'VMware 来宾未停止，禁止重新启动常驻或覆盖串口日志'
+        throw 'VMware guest not stopped, prohibiting restart of resident hypervisor or overwriting serial port logs'
     }
     # Reclaim a revoked page only after all VMware vCPUs have disappeared.
     & $ctl --json nested-page-remove | Out-Null
@@ -73,25 +73,25 @@ Invoke-Command -Session $s -ArgumentList $SerialLog -ScriptBlock {
     if ($stop.ExitCode -ne 0 -or $null -eq $state.residentProcessorCount -or
         $state.residentProcessorCount -ne 0 -or
         $state.stateNames -contains 'ROLLBACK_REQUIRED') {
-        throw '常驻未完整停止，保留 VMware 与 Windows 当前状态，禁止继续拆除'
+        throw 'Resident hypervisor not fully stopped, preserve current VMware and Windows state, prohibit further teardown'
     }
     Get-Process -Name 'vmware' -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Seconds 2
-    # 常驻起回来，并且必须是隐藏 hypervisor 的那一版，否则 VMware 的身份门直接拒绝。
+    # Must be running and must be the version with the hidden hypervisor; otherwise, VMware's identity gate will directly reject it.
     $state = (& $ctl --json status) | ConvertFrom-Json
     if ($state.featureNames -notcontains 'EPTP_SWITCH_ARMED') {
         foreach ($command in @('teardown', 'prepare-eptpsw', 'self-test')) {
             & $ctl $command | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "$command 失败" }
+            if ($LASTEXITCODE -ne 0) { throw "$command failed" }
         }
     }
     & $ctl resident-nested-hidehv | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw '嵌套常驻启动失败' }
+    if ($LASTEXITCODE -ne 0) { throw 'Nested resident startup failed' }
     $state = (& $ctl --json status) | ConvertFrom-Json
     $view = (& $ctl --json cpuid-view) | ConvertFrom-Json
     if ($null -eq $state.residentProcessorCount -or $state.residentProcessorCount -le 0 -or
         $state.featureNames -notcontains 'EPTP_SWITCH_ARMED' -or -not $view.hidden) {
-        throw '嵌套常驻或 EPTP 换页后端未生效'
+        throw 'Nested resident hypervisor or EPTP page-switching backend not active'
     }
     & sc.exe stop vmx86 | Out-Null
     Start-Sleep -Seconds 1
@@ -106,15 +106,15 @@ Invoke-Command -Session $s -ArgumentList $SerialLog -ScriptBlock {
     "vmware-vmx = " + @(Get-Process -Name 'vmware-vmx' -ErrorAction SilentlyContinue).Count
 }
 
-# X11 keysym：可打印 ASCII 就是它自己的码，方向键和 TAB 走 0xFF 段。
+# X11 keysym: printable ASCII characters use their own codes, while arrow keys and TAB use the 0xFF range.
 $down = 0xFF54
 $tab = 0xFF09
 $enter = 0xFF0D
-# ignore_loglevel：菜单给的是 loglevel=3，只印到 KERN_ERR，正好把"它停在哪"
-# 那一段全滤掉。追加在后面就够，不必改前面的参数。
+# ignore_loglevel: The menu provides loglevel=3, which only prints up to KERN_ERR, exactly enough to determine where it stopped.
+# Filter out that entire section. Appending it to the end is sufficient; there is no need to modify the preceding parameters.
 $text = ' console=ttyS0,115200n8 ignore_loglevel'
 if ($Append) { $text += ' ' + $Append }
-# 大写字母要带 Shift（0x10000 位），否则 ttyS0 会变成 ttys0 —— 见 VNC 脚本。
+# Uppercase letters require Shift (bit 0x10000); otherwise ttyS0 becomes ttys0 — see VNC script.
 $keys = @($down, $down, $tab) +
         ($text.ToCharArray() | ForEach-Object {
             $c = [int][char]$_
@@ -135,15 +135,15 @@ Invoke-Command -Session $s -FilePath $vncScript `
 
 $out = Invoke-Command -Session $s -ArgumentList $SerialLog -ScriptBlock {
     param($log)
-    if (-not (Test-Path $log)) { return '(串口文件不存在)' }
-    # vmware-vmx 一直开着这个文件，ReadAllBytes 会被拒；必须自己开共享读。
+    if (-not (Test-Path $log)) { return '(Serial file does not exist)' }
+    # vmware-vmx keeps this file open; ReadAllBytes will be denied; must open with shared read access.
     $fs = New-Object IO.FileStream($log, [IO.FileMode]::Open,
         [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
     try {
         $b = New-Object byte[] $fs.Length
         [void]$fs.Read($b, 0, $b.Length)
     } finally { $fs.Dispose() }
-    "串口共 $($b.Length) 字节`n" +
+    "Serial port has $($b.Length) bytes`n" +
         (-join ($b | ForEach-Object {
             if ($_ -ge 32 -and $_ -lt 127) { [char]$_ }
             elseif ($_ -eq 10) { "`n" }

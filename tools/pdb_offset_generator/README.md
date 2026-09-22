@@ -37,16 +37,16 @@ Launcher identity list explicitly:
 ```powershell
 py -3.12 tools\pdb_offset_generator\ksword_profile_release_sync.py `
   --source "$corpusRoot\profiles\ark_dyndata" `
-  --release-root "Ksword5.1\x64\Release" `
+  --release-root "artifacts/bin\x64\Release" `
   --pack-only --emit-pack --pack-version 4 `
-  --pack-output "Ksword5.1\Ksword5.1\profiles\ark_dyndata_pack_v4.json" `
-  --manifest "Ksword5.1\Ksword5.1\profiles\ark_dyndata_manifest.json" `
+  --pack-output "apps\desktop\profiles\ark_dyndata_pack_v4.json" `
+  --manifest "apps\desktop\profiles\ark_dyndata_manifest.json" `
   --report "$corpusRoot\logs\ark_dyndata_publish_report.launcher-intake.json"
 
-py -3.12 Launcher\tools\generate_support_manifest.py `
-  --source Launcher\support_manifest_source.json `
-  --pack Ksword5.1\Ksword5.1\profiles\ark_dyndata_pack_v4.json `
-  --output Launcher\launcher_support_manifest.json
+py -3.12 apps/launcher\tools\generate_support_manifest.py `
+  --source apps/launcher\support_manifest_source.json `
+  --pack apps\desktop\profiles\ark_dyndata_pack_v4.json `
+  --output apps/launcher\launcher_support_manifest.json
 ```
 
 The offline generator builds KswordARK dynamic-offset JSON profiles from Microsoft public symbols.
@@ -150,9 +150,9 @@ Use:
 ```powershell
 python tools\pdb_offset_generator\ksword_profile_release_sync.py `
   --source D:\KswordKernelCorpus\profiles\ark_dyndata `
-  --release-root Ksword5.1\x64\Release `
+  --release-root artifacts/bin\x64\Release `
   --pack-only --emit-pack --pack-version 4 `
-  --pack-output Ksword5.1\x64\Release\profiles\ark_dyndata_pack_v4.json `
+  --pack-output artifacts/bin\x64\Release\profiles\ark_dyndata_pack_v4.json `
   --clean-target
 ```
 
@@ -227,7 +227,7 @@ local `ntoskrnl.exe` identity:
 
 ```powershell
 python tools\pdb_offset_generator\ksword_active_process_links_audit.py `
-  --pack Ksword5.1\x64\Release\profiles\ark_dyndata_pack_v4.json `
+  --pack artifacts/bin\x64\Release\profiles\ark_dyndata_pack_v4.json `
   --kernel C:\Windows\System32\ntoskrnl.exe
 ```
 
@@ -254,7 +254,7 @@ kernel primitive types.
 Current repository deep library:
 
 ```text
-Ksword5.1\Ksword5.1\profiles\pdb_deep_offsets\ntkrnlmp_f923da2d238e7c7ce180b962b19a3781_age5_deep_offsets.json
+apps\desktop\profiles\pdb_deep_offsets\ntkrnlmp_f923da2d238e7c7ce180b962b19a3781_age5_deep_offsets.json
 ```
 
 Important identity note: `llvm-pdbutil dump -summary` may report a PDB internal
@@ -275,7 +275,7 @@ python tools\pdb_offset_generator\ksword_ntos_pdb_deep_offsets.py `
   --output-dir D:\Temp\ksword_pdb_deep_offsets `
   --json-name ntkrnlmp_f923da2d238e7c7ce180b962b19a3781_age5_deep_offsets.json `
   --csv-name ntkrnlmp_f923da2d238e7c7ce180b962b19a3781_age5_deep_offsets.csv `
-  --repo-json Ksword5.1\Ksword5.1\profiles\pdb_deep_offsets\ntkrnlmp_f923da2d238e7c7ce180b962b19a3781_age5_deep_offsets.json `
+  --repo-json apps\desktop\profiles\pdb_deep_offsets\ntkrnlmp_f923da2d238e7c7ce180b962b19a3781_age5_deep_offsets.json `
   --dump-types-cache D:\Temp\ksword_pdb_deep_offsets\ntkrnlmp_f923da2d238e7c7ce180b962b19a3781_age5_types.txt
 ```
 

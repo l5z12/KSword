@@ -27,10 +27,10 @@ assert json.loads(strings[1]) == '\ufffd\ufffd'
 assert all(line.isascii() for line in strings)
 commands = subprocess.check_output([str(cli), '--json', 'commands'])
 assert commands.isascii()
-# 期望条数从目录源码现算，不写死。
+# Calculate expected count from directory source code instead of hardcoding.
 #
-# 写死的 62 在远端加进 AMD 探针命令时没人同步，这个测试从那以后一直是红的，
-# 而红得毫无信息量——它想守的是「JSON 输出与目录一致」，不是「目录恰好 62 条」。
+# The hardcoded 62 was never synchronized when AMD probe commands were added remotely; this test has been red ever since.
+# The red text is meaningless—it aims to enforce 'JSON output matches the catalog', not 'the catalog has exactly 62 entries'.
 EXPECTED_COMMANDS = len(re.findall(
     r'^\s*\{\s*"(?:\\.|[^"\\])*",\s*"(?:\\.|[^"\\])*",',
     (HERE / 'HvmCommandCatalog.c').read_text(encoding='utf-8-sig')

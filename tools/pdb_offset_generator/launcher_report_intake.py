@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate and import one extracted Ksword Launcher report directory.
+"""Validate and import one extracted Ksword apps/launcher report directory.
 
 The default mode is read-only.  ``--commit`` stages every PE/PDB/profile first
 and only writes the canonical corpus after all validation steps succeed.
@@ -44,7 +44,7 @@ class IntakeError(RuntimeError):
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Validate/import an extracted Ksword Launcher report")
+    parser = argparse.ArgumentParser(description="Validate/import an extracted Ksword apps/launcher report")
     parser.add_argument("report_dir", type=Path, help="Extracted 'Compress and send' directory")
     parser.add_argument("--corpus-root", type=Path, default=DEFAULT_CORPUS_ROOT)
     parser.add_argument("--llvm-pdbutil", type=Path, default=DEFAULT_LLVM_PDBUTIL)
@@ -249,7 +249,7 @@ def report_validation_diagnostics(
 ) -> tuple[list[str], list[str]]:
     """Separate report-fatal attachment failures from legacy optional omissions.
 
-    An older Launcher emitted every inspected module in report.json but copied
+    An older apps/launcher emitted every inspected module in report.json but copied
     only collection candidates.  LXCORE is neither compatibility-required nor a
     collection-only module, so its missing attachment is a known report-bundle
     omission and cannot contribute a profile.  It is retained as a warning;

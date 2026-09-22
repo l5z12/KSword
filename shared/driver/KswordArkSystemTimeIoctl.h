@@ -1,5 +1,5 @@
 /*
- * 参考机制的许可证与归档说明：
+ * License and archival notes for the referenced mechanism:
  * third_party/SystemWideTransmission/LICENSE.txt
  * third_party/SystemWideTransmission/NOTICE.md
  */
@@ -8,8 +8,8 @@
 #include "KswordArkProcessIoctl.h"
 
 /*
- * 系统全局变速协议只描述 R3/R0 之间的稳定数据契约。
- * 内核地址仅用于诊断展示，R3 不得直接读写这些地址。
+ * The system global rate-change protocol describes only the stable data contract between R3 and R0.
+ * Kernel addresses are for diagnostic display only; R3 must not directly read or write these addresses.
  */
 #define KSWORD_ARK_SYSTEM_TIME_PROTOCOL_VERSION 3UL
 
@@ -30,34 +30,34 @@
         METHOD_BUFFERED, \
         FILE_WRITE_ACCESS)
 
-/* 倍率上限用于限制计数器增量溢出和系统失稳范围。 */
+/* The multiplier limit prevents counter increment overflow and system instability. */
 #define KSWORD_ARK_SYSTEM_TIME_MIN_FACTOR 2UL
 #define KSWORD_ARK_SYSTEM_TIME_MAX_FACTOR 64UL
 
-/* 控制命令统一覆盖加速、减速和恢复原始计时路径。 */
+/* Control commands uniformly override acceleration, deceleration, and restoration to the original timing path. */
 #define KSWORD_ARK_SYSTEM_TIME_COMMAND_RESET     1UL
 #define KSWORD_ARK_SYSTEM_TIME_COMMAND_SPEED_UP  2UL
 #define KSWORD_ARK_SYSTEM_TIME_COMMAND_SLOW_DOWN 3UL
 
 /*
- * ORIGINAL_COMPAT 按系统版本特征直接定位 HAL 计数器描述符。
- * GUARDED 使用相同接管原理，但在返回目标前额外验证描述符和函数槽。
+ * ORIGINAL_COMPAT directly locates the HAL counter descriptor based on system version characteristics.
+ * GUARDED uses the same takeover principle but performs additional validation of the descriptor and function slot before returning the target.
  */
 #define KSWORD_ARK_SYSTEM_TIME_RESOLUTION_ORIGINAL_COMPAT 1UL
 #define KSWORD_ARK_SYSTEM_TIME_RESOLUTION_GUARDED         2UL
 
 /*
- * HYPERV_SHARED_QPC 同时接管 Hyper-V 用户共享 QPC 页和内核 HAL 回调。
- * HAL_COMPAT 保留原有关闭用户快速旁路并接管 HAL 回调的兼容路径。
+ * HYPERV_SHARED_QPC takes over both the Hyper-V user-shared QPC page and the kernel HAL callback.
+ * HAL_COMPAT preserves the legacy path that originally disabled user fast-path bypass and took over HAL callbacks.
  */
 #define KSWORD_ARK_SYSTEM_TIME_BACKEND_HYPERV_SHARED_QPC 1UL
 #define KSWORD_ARK_SYSTEM_TIME_BACKEND_HAL_COMPAT        2UL
 
-/* UI_CONFIRMED 表示 R3 已完成持久警告之外的本次双重确认。 */
+/* UI_CONFIRMED indicates that R3 has completed this dual confirmation beyond the persistent warning. */
 #define KSWORD_ARK_SYSTEM_TIME_CONTROL_FLAG_UI_CONFIRMED 0x00000001UL
 #define KSWORD_ARK_SYSTEM_TIME_CONFIRMATION_TOKEN        0x54494D45UL
 
-/* 状态位描述当前解析、接管、旁路修正和冲突情况。 */
+/* Status bits describe current parsing, takeover, bypass correction, and conflict states. */
 #define KSWORD_ARK_SYSTEM_TIME_STATE_INITIALIZED          0x00000001UL
 #define KSWORD_ARK_SYSTEM_TIME_STATE_SUPPORTED            0x00000002UL
 #define KSWORD_ARK_SYSTEM_TIME_STATE_ACTIVE               0x00000004UL
@@ -73,7 +73,7 @@
 #define KSWORD_ARK_SYSTEM_TIME_STATE_HYPERV_SHARED_PAGE     0x00001000UL
 #define KSWORD_ARK_SYSTEM_TIME_STATE_HYPERV_ACTIVE          0x00002000UL
 
-/* 运行时状态码与 NTSTATUS 分离，便于旧 UI 稳定解释失败原因。 */
+/* Runtime status codes are separated from NTSTATUS to allow legacy UIs to stably interpret failure reasons. */
 #define KSWORD_ARK_SYSTEM_TIME_STATUS_OK                    0UL
 #define KSWORD_ARK_SYSTEM_TIME_STATUS_INVALID_REQUEST       1UL
 #define KSWORD_ARK_SYSTEM_TIME_STATUS_CONFIRMATION_REQUIRED 2UL
@@ -89,7 +89,7 @@
 #define KSWORD_ARK_SYSTEM_TIME_STATUS_HYPERV_VALIDATION_FAILED 12UL
 #define KSWORD_ARK_SYSTEM_TIME_STATUS_HYPERV_WRITE_FAILED   13UL
 
-/* 查询请求保持固定大小，后续版本可通过 flags 扩展只读诊断。 */
+/* The query request maintains a fixed size; future versions can extend read-only diagnostics via flags. */
 typedef struct _KSWORD_ARK_QUERY_SYSTEM_TIME_REQUEST
 {
     unsigned long version;
@@ -99,8 +99,8 @@ typedef struct _KSWORD_ARK_QUERY_SYSTEM_TIME_REQUEST
 } KSWORD_ARK_QUERY_SYSTEM_TIME_REQUEST;
 
 /*
- * 查询响应同时返回用户可见状态与有限的解析证据。
- * counterValue 是接管后的连续虚拟计数器快照，不是系统墙上时间。
+ * Query response returns both user-visible status and limited parsed evidence.
+ * counterValue is a snapshot of the continuous virtual counter after takeover, not the system wall-clock time.
  */
 typedef struct _KSWORD_ARK_QUERY_SYSTEM_TIME_RESPONSE
 {
@@ -129,8 +129,8 @@ typedef struct _KSWORD_ARK_QUERY_SYSTEM_TIME_RESPONSE
 } KSWORD_ARK_QUERY_SYSTEM_TIME_RESPONSE;
 
 /*
- * expectedGeneration 防止页面使用过期状态覆盖其他控制者的操作。
- * RESET 始终允许恢复，不要求 confirmationToken。
+ * expectedGeneration prevents pages from using stale states to overwrite operations by other controllers.
+ * RESET always allows recovery without requiring a confirmationToken.
  */
 typedef struct _KSWORD_ARK_CONTROL_SYSTEM_TIME_REQUEST
 {
@@ -145,7 +145,7 @@ typedef struct _KSWORD_ARK_CONTROL_SYSTEM_TIME_REQUEST
     unsigned long backend;
 } KSWORD_ARK_CONTROL_SYSTEM_TIME_REQUEST;
 
-/* 控制响应返回动作前后状态，R3 可立即更新页面而无需猜测。 */
+/* The control response returns the state before and after the action; R3 can update the page immediately without guessing. */
 typedef struct _KSWORD_ARK_CONTROL_SYSTEM_TIME_RESPONSE
 {
     unsigned long version;

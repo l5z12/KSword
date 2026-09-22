@@ -1,15 +1,15 @@
-// 把一份 v4 profile 清单打成 KswordCLI `dyn apply-profile-v4 --blob` 吃的原始包。
+// Package a v4 profile manifest into the raw blob consumed by KswordCLI `dyn apply-profile-v4 --blob`.
 //
-// 为什么要它：pack JSON 的解析目前只在 GUI 里（用 Qt 的 JSON），CLI 用不了。
-// 于是在只有驱动和 CLI 的靶机上，**没有任何办法把 PDB profile 下进驱动** ——
-// 实测后果就是 `_EPROCESS.VadRoot` 一直是 Unavailable，VAD 视图看着像"这个 build
-// 没有偏移表"，其实是"偏移表在包里、只是没人 apply"。
+// Why it's needed: JSON parsing for packing is currently only available in the GUI (using Qt's JSON); the CLI cannot use it.
+// Thus, on a target machine with only the driver and CLI, **there is no way to load the PDB profile into the
+// driver** — the practical consequence is that `_EPROCESS.VadRoot` remains Unavailable. The VAD view appears to say
+// "this build lacks an offset table," but the reality is "the offset table is in the package, just not applied."
 //
-// 分工刻意这样切：**二进制布局只在这里出现一次**，直接用产品头文件里的结构体填，
-// 不在别处按字节手抄一遍（手抄的那份迟早和头文件走散，而且走散时不报错）。
-// JSON 那一半交给 Python，它只产出纯文本清单。
+// The split is intentional: **binary layout appears only here**. Populate directly from the product header's structs; do not
+// manually copy byte-by-byte elsewhere (the manual copy will inevitably drift from the header, and drift goes undetected).
+// The JSON portion is handled by Python; it only outputs a plain text manifest.
 //
-// 清单格式（每行一条，# 开头是注释）：
+// Manifest format (one entry per line, lines starting with # are comments):
 //   profile      <profileName>
 //   pdbName      <name>
 //   pdbGuid      <32 hex>
@@ -18,17 +18,17 @@
 //   machine      <n>
 //   timeDateStamp <n>
 //   sizeOfImage  <n>
-//   imageBase    <n>          （0 表示不声明）
+//   imageBase <n> (0 indicates no declaration)
 //   classId      <n>
 //   flags        <n>
 //   group <groupId> <flags> <requiredItemCount> <optionalItemCount> <groupName>
 //   item  <itemId> <itemKind> <flags> <capabilityGroupId> <valueLow> <valueHigh> <aux0..aux3>
-//   field <fieldId> <offset>        （legacy/v1 用）
+//   field <fieldId> <offset> (for legacy/v1)
 //
-// 两种包：`--v4`（默认）打 APPLY_DYN_PROFILE_V4，`--v1` 打 APPLY_DYN_PROFILE。
-// **两个都要发**：v4 的条目进的是独立的 v4 存储（消息是 "accepted for safe storage"），
-// 它不写 `State->Kernel.*`；而 injection_vad.c 读的正是后者，只有 v1 apply 会填。
-// 只发 v4 的话，apply 会报 113/113 全成功，而 `_EPROCESS.VadRoot` 依然是 Unavailable。
+// Two package types: `--v4` (default) sets APPLY_DYN_PROFILE_V4, while `--v1` sets APPLY_DYN_PROFILE.
+// **Both must be sent**: v4 entries go into an independent v4 store (the message is 'accepted for safe storage'); they do
+// not write to `State->Kernel.*`. The injection_vad.c module reads exactly the latter, which is only populated by v1 apply.
+// If only v4 is sent, apply reports success for both 113/113, yet `_EPROCESS.VadRoot` remains Unavailable.
 
 #include <Windows.h>
 
@@ -43,19 +43,19 @@
 
 namespace
 {
-    void CopyNarrow(char* const destination, const std::size_t capacity, const std::string& text)
+    void copyNarrow(char* const destination, const std::size_t capacity, const std::string& text)
     {
         std::memset(destination, 0, capacity);
-        const std::size_t count = text.size() < (capacity - 1U) ? text.size() : (capacity - 1U);
-        std::memcpy(destination, text.c_str(), count);
+        const std::size_t kCount = text.size() < (capacity - 1U) ? text.size() : (capacity - 1U);
+        std::memcpy(destination, text.c_str(), kCount);
     }
 
-    void CopyWide(wchar_t* const destination, const std::size_t capacity, const std::string& text)
+    void copyWide(wchar_t* const destination, const std::size_t capacity, const std::string& text)
     {
         std::memset(destination, 0, capacity * sizeof(wchar_t));
-        const int written = ::MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, destination,
+        const int kWritten = ::MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, destination,
                                                   static_cast<int>(capacity));
-        if (written <= 0)
+        if (kWritten <= 0)
         {
             destination[0] = L'\0';
         }
@@ -77,7 +77,7 @@ int main(int argc, char** argv)
                     sizeof(KSW_DYN_PROFILE_FIELD_PACKET));
         return 2;
     }
-    const bool legacyMode = (argc > 3) && (std::strcmp(argv[3], "--v1") == 0);
+    const bool kLegacyMode = (argc > 3) && (std::strcmp(argv[3], "--v1") == 0);
 
     std::ifstream manifest(argv[1]);
     if (!manifest.is_open())
@@ -122,7 +122,7 @@ int main(int argc, char** argv)
             stream >> group.groupId >> group.flags >> group.requiredItemCount >>
                 group.optionalItemCount;
             std::getline(stream >> std::ws, name);
-            CopyNarrow(group.groupName, KSW_DYN_V4_CAPABILITY_NAME_CHARS, name);
+            copyNarrow(group.groupName, KSW_DYN_V4_CAPABILITY_NAME_CHARS, name);
             groups.push_back(group);
         }
         else if (key == "item")
@@ -146,36 +146,36 @@ int main(int argc, char** argv)
         }
     }
 
-    if (legacyMode)
+    if (kLegacyMode)
     {
         if (legacyFields.empty() || legacyFields.size() > KSW_DYN_PROFILE_MAX_FIELDS)
         {
             std::printf("legacy field count invalid: %zu\n", legacyFields.size());
             return 5;
         }
-        const std::size_t legacyBytes = KSW_APPLY_DYN_PROFILE_REQUEST_HEADER_SIZE +
+        const std::size_t kLegacyBytes = KSW_APPLY_DYN_PROFILE_REQUEST_HEADER_SIZE +
                                         legacyFields.size() * sizeof(KSW_DYN_PROFILE_FIELD_PACKET);
-        std::vector<unsigned char> legacyBuffer(legacyBytes, 0U);
-        auto* const legacy =
+        std::vector<unsigned char> legacyBuffer(kLegacyBytes, 0U);
+        auto* const kLegacy =
             reinterpret_cast<KSW_APPLY_DYN_PROFILE_REQUEST*>(legacyBuffer.data());
-        legacy->size = static_cast<unsigned long>(legacyBytes);
-        legacy->version = KSWORD_ARK_DYNDATA_PROTOCOL_VERSION;
-        legacy->flags = requestFlags;
-        legacy->fieldCount = static_cast<unsigned long>(legacyFields.size());
-        legacy->ntoskrnl.present = 1UL;
-        legacy->ntoskrnl.classId = classId;
-        legacy->ntoskrnl.machine = machine;
-        legacy->ntoskrnl.timeDateStamp = timeDateStamp;
-        legacy->ntoskrnl.sizeOfImage = sizeOfImage;
-        legacy->ntoskrnl.imageBase = imageBase;
-        CopyWide(legacy->ntoskrnl.moduleName, KSW_DYN_MODULE_NAME_CHARS, moduleName);
-        CopyNarrow(legacy->profileName, KSW_DYN_PROFILE_NAME_CHARS, profileName);
-        CopyNarrow(legacy->pdbName, KSW_DYN_PDB_NAME_CHARS, pdbName);
-        CopyNarrow(legacy->pdbGuid, KSW_DYN_PDB_GUID_CHARS, pdbGuid);
-        legacy->pdbAge = pdbAge;
+        kLegacy->size = static_cast<unsigned long>(kLegacyBytes);
+        kLegacy->version = KSWORD_ARK_DYNDATA_PROTOCOL_VERSION;
+        kLegacy->flags = requestFlags;
+        kLegacy->fieldCount = static_cast<unsigned long>(legacyFields.size());
+        kLegacy->ntoskrnl.present = 1UL;
+        kLegacy->ntoskrnl.classId = classId;
+        kLegacy->ntoskrnl.machine = machine;
+        kLegacy->ntoskrnl.timeDateStamp = timeDateStamp;
+        kLegacy->ntoskrnl.sizeOfImage = sizeOfImage;
+        kLegacy->ntoskrnl.imageBase = imageBase;
+        copyWide(kLegacy->ntoskrnl.moduleName, KSW_DYN_MODULE_NAME_CHARS, moduleName);
+        copyNarrow(kLegacy->profileName, KSW_DYN_PROFILE_NAME_CHARS, profileName);
+        copyNarrow(kLegacy->pdbName, KSW_DYN_PDB_NAME_CHARS, pdbName);
+        copyNarrow(kLegacy->pdbGuid, KSW_DYN_PDB_GUID_CHARS, pdbGuid);
+        kLegacy->pdbAge = pdbAge;
         for (std::size_t index = 0U; index < legacyFields.size(); ++index)
         {
-            legacy->fields[index] = legacyFields[index];
+            kLegacy->fields[index] = legacyFields[index];
         }
         std::ofstream legacyOutput(argv[2], std::ios::binary | std::ios::trunc);
         if (!legacyOutput.is_open())
@@ -185,7 +185,7 @@ int main(int argc, char** argv)
         }
         legacyOutput.write(reinterpret_cast<const char*>(legacyBuffer.data()),
                            static_cast<std::streamsize>(legacyBuffer.size()));
-        std::printf("wrote %zu bytes (v1): fields=%zu profile='%s'\n", legacyBytes,
+        std::printf("wrote %zu bytes (v1): fields=%zu profile='%s'\n", kLegacyBytes,
                     legacyFields.size(), profileName.c_str());
         return 0;
     }
@@ -198,35 +198,35 @@ int main(int argc, char** argv)
         return 5;
     }
 
-    const std::size_t bytes =
+    const std::size_t kBytes =
         KSW_APPLY_DYN_PROFILE_V4_REQUEST_HEADER_SIZE + items.size() * sizeof(KSW_DYN_V4_ITEM_PACKET);
-    std::vector<unsigned char> buffer(bytes, 0U);
-    auto* const request = reinterpret_cast<KSW_APPLY_DYN_PROFILE_V4_REQUEST*>(buffer.data());
-    request->size = static_cast<unsigned long>(bytes);
-    request->version = KSW_DYN_V4_PROTOCOL_VERSION;
-    request->flags = requestFlags;
-    request->itemCount = static_cast<unsigned long>(items.size());
-    request->capabilityGroupCount = static_cast<unsigned long>(groups.size());
+    std::vector<unsigned char> buffer(kBytes, 0U);
+    auto* const kRequest = reinterpret_cast<KSW_APPLY_DYN_PROFILE_V4_REQUEST*>(buffer.data());
+    kRequest->size = static_cast<unsigned long>(kBytes);
+    kRequest->version = KSW_DYN_V4_PROTOCOL_VERSION;
+    kRequest->flags = requestFlags;
+    kRequest->itemCount = static_cast<unsigned long>(items.size());
+    kRequest->capabilityGroupCount = static_cast<unsigned long>(groups.size());
 
-    request->module.image.present = 1UL;
-    request->module.image.classId = classId;
-    request->module.image.machine = machine;
-    request->module.image.timeDateStamp = timeDateStamp;
-    request->module.image.sizeOfImage = sizeOfImage;
-    request->module.image.imageBase = imageBase;
-    CopyWide(request->module.image.moduleName, KSW_DYN_MODULE_NAME_CHARS, moduleName);
-    CopyNarrow(request->module.pdb.pdbName, KSW_DYN_PDB_NAME_CHARS, pdbName);
-    CopyNarrow(request->module.pdb.pdbGuid, KSW_DYN_PDB_GUID_CHARS, pdbGuid);
-    request->module.pdb.pdbAge = pdbAge;
-    CopyNarrow(request->module.profileName, KSW_DYN_V4_PROFILE_NAME_CHARS, profileName);
+    kRequest->module.image.present = 1UL;
+    kRequest->module.image.classId = classId;
+    kRequest->module.image.machine = machine;
+    kRequest->module.image.timeDateStamp = timeDateStamp;
+    kRequest->module.image.sizeOfImage = sizeOfImage;
+    kRequest->module.image.imageBase = imageBase;
+    copyWide(kRequest->module.image.moduleName, KSW_DYN_MODULE_NAME_CHARS, moduleName);
+    copyNarrow(kRequest->module.pdb.pdbName, KSW_DYN_PDB_NAME_CHARS, pdbName);
+    copyNarrow(kRequest->module.pdb.pdbGuid, KSW_DYN_PDB_GUID_CHARS, pdbGuid);
+    kRequest->module.pdb.pdbAge = pdbAge;
+    copyNarrow(kRequest->module.profileName, KSW_DYN_V4_PROFILE_NAME_CHARS, profileName);
 
     for (std::size_t index = 0U; index < groups.size(); ++index)
     {
-        request->capabilityGroups[index] = groups[index];
+        kRequest->capabilityGroups[index] = groups[index];
     }
     for (std::size_t index = 0U; index < items.size(); ++index)
     {
-        request->items[index] = items[index];
+        kRequest->items[index] = items[index];
     }
 
     std::ofstream output(argv[2], std::ios::binary | std::ios::trunc);
@@ -239,7 +239,7 @@ int main(int argc, char** argv)
                  static_cast<std::streamsize>(buffer.size()));
     output.close();
 
-    std::printf("wrote %zu bytes: items=%zu groups=%zu profile='%s'\n", bytes, items.size(),
+    std::printf("wrote %zu bytes: items=%zu groups=%zu profile='%s'\n", kBytes, items.size(),
                 groups.size(), profileName.c_str());
     return 0;
 }

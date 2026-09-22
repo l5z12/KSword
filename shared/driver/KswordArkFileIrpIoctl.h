@@ -5,15 +5,15 @@
 
 // ============================================================
 // KswordArkFileIrpIoctl.h
-// 作用：
-// - 定义"自建 IRP 直发文件系统栈"的唯一 R3/R0 协议；
-// - 目录枚举接口复用 KSWORD_ARK_DIRECTORY_ENTRY 行格式，只改变请求下发的栈层，
-//   让 R3 能把 IRP 视图与 ZwQueryDirectoryFile 视图逐行对比；
-// - 通用提交接口允许构造全部 28 个 IRP_MJ_*，写语义与危险 major 要求显式令牌，
-//   由 R0 再执行一次目标类型与参数预检。
-// 说明：
-// - 本协议只向"由 FILE_OBJECT 解析出的设备栈"发送 IRP，不接受 R3 直接传入
-//   任意 DEVICE_OBJECT 地址，避免把内核裸指针交给用户态构造。
+// Purpose:
+// - Defines the unique R3/R0 protocol for "custom IRP direct dispatch to file system stack";
+// - The directory enumeration interface reuses the KSWORD_ARK_DIRECTORY_ENTRY line format, changing only
+//   the request stack layer so R3 can compare the IRP view with the ZwQueryDirectoryFile view line by line.
+// - The generic submit interface allows constructing all 28 IRP_MJ_* operations. Write semantics and dangerous
+//   major codes require an explicit token, and R0 performs a second pre-check of the target type and parameters.
+// Notes:
+// - This protocol only sends IRPs to the device stack resolved from the FILE_OBJECT; it does not accept arbitrary
+//   DEVICE_OBJECT addresses directly from R3, preventing raw kernel pointers from being passed to user mode for construction.
 // ============================================================
 
 #define KSWORD_ARK_FILE_IRP_PROTOCOL_VERSION 1UL
@@ -36,14 +36,14 @@
         FILE_WRITE_ACCESS)
 
 // ------------------------------------------------------------
-// 目标栈层
+// Target stack layer
 // ------------------------------------------------------------
-// RELATED：IoGetRelatedDeviceObject(FileObject)，等价于 Zw* 进入的栈顶，
-//          结果应与 IOCTL_KSWORD_ARK_ENUM_DIRECTORY 一致，用作对照基线。
-// BASE_FS：IoGetBaseFileSystemDeviceObject(FileObject)，跳过挂在文件系统之上的
-//          legacy filter 层，直达文件系统基础设备。
-// VPB_FS ：VPB->DeviceObject，直连当前卷已挂载的文件系统设备对象。
-// DEVICE ：FileObject->DeviceObject，卷设备本身（不做文件系统语义解析）。
+// RELATED: IoGetRelatedDeviceObject(FileObject), equivalent to the top of the stack entered by Zw*
+//          calls. The result must match IOCTL_KSWORD_ARK_ENUM_DIRECTORY and serves as a baseline for comparison.
+// BASE_FS: Calls IoGetBaseFileSystemDeviceObject(FileObject) to skip legacy filter
+//          layers above the file system and reach the base file system device directly.
+// VPB_FS: VPB->DeviceObject, directly connected to the file system device object of the currently mounted volume.
+// DEVICE: FileObject->DeviceObject, representing the volume device itself (without parsing file system semantics).
 #define KSWORD_ARK_FILE_IRP_LAYER_RELATED 0UL
 #define KSWORD_ARK_FILE_IRP_LAYER_BASE_FS 1UL
 #define KSWORD_ARK_FILE_IRP_LAYER_VPB_FS  2UL
@@ -51,18 +51,18 @@
 #define KSWORD_ARK_FILE_IRP_LAYER_MAX     3UL
 
 // ------------------------------------------------------------
-// 请求标志
+// Request flags
 // ------------------------------------------------------------
-// UI_CONFIRMED：写语义或危险 major 必须置位，且 confirmationToken 必须匹配。
-// SKIP_CLEANUP_CLOSE：表达"调用方打算自己配对 CLEANUP/CLOSE"的意图。R0 出于
-//          防泄漏考虑仍然无条件收尾——一次 IOCTL 返回后 R3 已无法再引用该内核
-//          文件对象，跳过收尾等于永久泄漏文件对象与卷引用。该标志目前只影响
-//          R3 侧的语义标注，不改变 R0 的释放行为。
-// OPEN_REPARSE_POINT：CREATE 阶段附加 FILE_OPEN_REPARSE_POINT。
-// DIRECTORY_INTENT：CREATE 阶段附加 FILE_DIRECTORY_FILE。
-// RESTART_SCAN：DIRECTORY_CONTROL 阶段置 SL_RESTART_SCAN。
-// RETURN_SINGLE_ENTRY：DIRECTORY_CONTROL 阶段置 SL_RETURN_SINGLE_ENTRY。
-// USE_RAW_CREATE_ONLY：只执行 CREATE 并返回结果，不发送后续 major。
+// UI_CONFIRMED: Write semantics or dangerous major operations must set this flag, and confirmationToken must match.
+// SKIP_CLEANUP_CLOSE: Expresses the caller's intent to pair CLEANUP/CLOSE themselves. R0 still
+//          unconditionally performs cleanup to prevent leaks—once an IOCTL returns, R3 can no longer reference the
+//          kernel file object; skipping cleanup would permanently leak the file object and volume reference. This
+//          flag currently only affects R3-side semantic annotation and does not change R0's release behavior.
+// OPEN_REPARSE_POINT: Attach FILE_OPEN_REPARSE_POINT during the CREATE phase.
+// DIRECTORY_INTENT: Attaches FILE_DIRECTORY_FILE during the CREATE phase.
+// RESTART_SCAN: Set SL_RESTART_SCAN during the DIRECTORY_CONTROL phase.
+// RETURN_SINGLE_ENTRY: Set SL_RETURN_SINGLE_ENTRY during the DIRECTORY_CONTROL phase.
+// USE_RAW_CREATE_ONLY: Execute only CREATE and return the result without sending subsequent major functions.
 #define KSWORD_ARK_FILE_IRP_FLAG_UI_CONFIRMED       0x00000001UL
 #define KSWORD_ARK_FILE_IRP_FLAG_SKIP_CLEANUP_CLOSE 0x00000002UL
 #define KSWORD_ARK_FILE_IRP_FLAG_OPEN_REPARSE_POINT 0x00000004UL
@@ -83,7 +83,7 @@
      KSWORD_ARK_FILE_IRP_FLAG_ALLOW_DANGEROUS)
 
 // ------------------------------------------------------------
-// 协议级状态（与 IRP 自身的 NTSTATUS 分开，避免把通信成功当成语义成功）
+// Protocol-level status (separate from the IRP's own NTSTATUS to avoid conflating communication success with semantic success).
 // ------------------------------------------------------------
 #define KSWORD_ARK_FILE_IRP_STATUS_OK                  0UL
 #define KSWORD_ARK_FILE_IRP_STATUS_INVALID_REQUEST     1UL
@@ -99,7 +99,7 @@
 #define KSWORD_ARK_FILE_IRP_STATUS_MAX                 10UL
 
 // ------------------------------------------------------------
-// 阶段标志：告诉 R3 本次实际走完了哪些阶段，未置位的阶段状态字段无意义。
+// Stage flags: indicate which stages R3 actually completed; unset stage status fields are meaningless.
 // ------------------------------------------------------------
 #define KSWORD_ARK_FILE_IRP_STAGE_CREATE     0x00000001UL
 #define KSWORD_ARK_FILE_IRP_STAGE_OPERATION  0x00000002UL
@@ -108,7 +108,7 @@
 #define KSWORD_ARK_FILE_IRP_STAGE_CANCELLED  0x00000010UL
 #define KSWORD_ARK_FILE_IRP_STAGE_OUTPUT_TRUNCATED 0x00000020UL
 
-// 写语义 major 与非文件系统 major 都要求 UI_CONFIRMED + 该令牌。
+// Write semantics require UI_CONFIRMED + this token for both major and non-filesystem major.
 #define KSWORD_ARK_FILE_IRP_CONFIRMATION_TOKEN 0x4B495250UL
 
 #define KSWORD_ARK_FILE_IRP_PATH_MAX_CHARS 1024U
@@ -119,8 +119,8 @@
 #define KSWORD_ARK_FILE_IRP_MAX_TIMEOUT_MS     60000UL
 #define KSWORD_ARK_FILE_IRP_MAJOR_COUNT 28UL
 
-// KSWORD_ARK_FILE_IRP_SUBMIT_REQUEST：一次"打开 → 发送目标 major → 收尾"的完整描述。
-// 各 major 只读取自己需要的字段，未使用字段必须为 0，便于 R0 做严格拒绝。
+// KSWORD_ARK_FILE_IRP_SUBMIT_REQUEST: A complete description of an 'open → send target major → cleanup' sequence.
+// Each major version reads only the fields it needs; unused fields must be 0 to allow R0 to strictly reject invalid requests.
 typedef struct _KSWORD_ARK_FILE_IRP_SUBMIT_REQUEST
 {
     unsigned long version;
@@ -129,44 +129,44 @@ typedef struct _KSWORD_ARK_FILE_IRP_SUBMIT_REQUEST
     unsigned long confirmationToken;
 
     unsigned long majorFunction;      // IRP_MJ_*（0..27）。
-    unsigned long minorFunction;      // IRP_MN_*，不适用时为 0。
+    unsigned long minorFunction;      // IRP_MN_*; use 0 if not applicable.
     unsigned long targetLayer;        // KSWORD_ARK_FILE_IRP_LAYER_*。
-    unsigned long timeoutMs;          // 0 表示使用默认超时。
+    unsigned long timeoutMs;          // 0 indicates using the default timeout.
 
-    unsigned long desiredAccess;      // CREATE 阶段 ACCESS_MASK。
-    unsigned long shareAccess;        // CREATE 阶段共享位。
-    unsigned long createDisposition;  // CREATE 阶段 FILE_OPEN/FILE_CREATE/...
-    unsigned long createOptions;      // CREATE 阶段 FILE_* 选项。
-    unsigned long fileAttributes;     // CREATE 阶段属性。
+    unsigned long desiredAccess;      // ACCESS_MASK during CREATE phase.
+    unsigned long shareAccess;        // Share access bits during CREATE phase.
+    unsigned long createDisposition;  // CREATE phase: FILE_OPEN/FILE_CREATE/...
+    unsigned long createOptions;      // FILE_* options during CREATE phase.
+    unsigned long fileAttributes;     // Attributes during CREATE phase.
 
     unsigned long informationClass;   // QUERY/SET_INFORMATION、DIRECTORY_CONTROL、
-                                      // QUERY/SET_VOLUME_INFORMATION 的信息类。
-    unsigned long controlCode;        // DEVICE_CONTROL / FILE_SYSTEM_CONTROL 的控制码。
-    unsigned long securityInformation;// QUERY/SET_SECURITY 的 SECURITY_INFORMATION。
+                                      // Information class for QUERY/SET_VOLUME_INFORMATION.
+    unsigned long controlCode;        // Control codes for DEVICE_CONTROL / FILE_SYSTEM_CONTROL.
+    unsigned long securityInformation;// SECURITY_INFORMATION for QUERY/SET_SECURITY.
 
-    unsigned long inputBytes;         // 紧跟结构体的内联输入长度。
-    unsigned long outputBytes;        // 期望的输出缓冲长度。
-    unsigned long lockKey;            // LOCK_CONTROL 的 Key。
+    unsigned long inputBytes;         // Inline input length immediately following the structure.
+    unsigned long outputBytes;        // Expected output buffer length.
+    unsigned long lockKey;            // Key for LOCK_CONTROL.
     unsigned long reserved0;
 
-    unsigned long long byteOffset;    // READ/WRITE/LOCK_CONTROL 的起始偏移。
-    unsigned long long lockLength;    // LOCK_CONTROL 的字节数。
+    unsigned long long byteOffset;    // Starting offset for READ/WRITE/LOCK_CONTROL.
+    unsigned long long lockLength;    // Byte count for LOCK_CONTROL.
 
-    unsigned short pathLengthChars;   // NT 路径字符数，不含结尾 NUL。
-    unsigned short patternLengthChars;// DIRECTORY_CONTROL 的文件名通配符字符数。
+    unsigned short pathLengthChars;   // Number of characters in the NT path, excluding the trailing NUL.
+    unsigned short patternLengthChars;// Number of wildcard characters in the file name for DIRECTORY_CONTROL.
     unsigned long reserved1;
 
     wchar_t path[KSWORD_ARK_FILE_IRP_PATH_MAX_CHARS];
     wchar_t pattern[KSWORD_ARK_FILE_IRP_NAME_MAX_CHARS];
-    unsigned char inputData[1];       // 变长；实际长度由 inputBytes 决定。
+    unsigned char inputData[1];       // Variable length; actual length is determined by inputBytes.
 } KSWORD_ARK_FILE_IRP_SUBMIT_REQUEST,
   *PKSWORD_ARK_FILE_IRP_SUBMIT_REQUEST;
 
 #define KSWORD_ARK_FILE_IRP_SUBMIT_REQUEST_HEADER_SIZE \
     ((unsigned long)FIELD_OFFSET(KSWORD_ARK_FILE_IRP_SUBMIT_REQUEST, inputData))
 
-// KSWORD_ARK_FILE_IRP_SUBMIT_RESPONSE：固定头 + 变长输出数据。
-// 每个阶段的 NTSTATUS 单独保留，UI 才能区分"打开失败"与"目标 major 被拒绝"。
+// KSWORD_ARK_FILE_IRP_SUBMIT_RESPONSE: Fixed header followed by variable-length output data.
+// Keep NTSTATUS for each stage separately so the UI can distinguish between 'open failed' and 'target major rejected'.
 typedef struct _KSWORD_ARK_FILE_IRP_SUBMIT_RESPONSE
 {
     unsigned long version;
@@ -177,21 +177,21 @@ typedef struct _KSWORD_ARK_FILE_IRP_SUBMIT_RESPONSE
     unsigned long majorFunction;
     unsigned long minorFunction;
     unsigned long targetLayer;
-    unsigned long outputBytes;        // 实际写入 outputData 的字节数。
+    unsigned long outputBytes;        // Actual number of bytes written to outputData.
 
     long createStatus;
     long operationStatus;
     long cleanupStatus;
     long closeStatus;
 
-    unsigned long long information;   // 目标 major 的 IoStatus.Information。
+    unsigned long long information;   // IoStatus.Information for the target major.
     unsigned long long fileObjectAddress;
     unsigned long long targetDeviceAddress;
     unsigned long long targetDriverAddress;
     unsigned long long relatedDeviceAddress;
     unsigned long long baseFsDeviceAddress;
     unsigned long long vpbDeviceAddress;
-    unsigned long long dispatchAddress; // 目标驱动上该 major 的 MajorFunction 入口。
+    unsigned long long dispatchAddress; // The MajorFunction entry point for this major number on the target driver.
 
     unsigned long targetStackSize;
     unsigned long targetDeviceFlags;
@@ -200,7 +200,7 @@ typedef struct _KSWORD_ARK_FILE_IRP_SUBMIT_RESPONSE
 
     wchar_t driverName[KSWORD_ARK_FILE_IRP_NAME_MAX_CHARS];
     wchar_t deviceName[KSWORD_ARK_FILE_IRP_NAME_MAX_CHARS];
-    unsigned char outputData[1];      // 变长；实际长度由 outputBytes 决定。
+    unsigned char outputData[1];      // Variable length; actual length is determined by outputBytes.
 } KSWORD_ARK_FILE_IRP_SUBMIT_RESPONSE,
   *PKSWORD_ARK_FILE_IRP_SUBMIT_RESPONSE;
 
@@ -208,19 +208,19 @@ typedef struct _KSWORD_ARK_FILE_IRP_SUBMIT_RESPONSE
     ((unsigned long)FIELD_OFFSET(KSWORD_ARK_FILE_IRP_SUBMIT_RESPONSE, outputData))
 
 // ------------------------------------------------------------
-// IRP 直发目录枚举
+// IRP direct dispatch directory enumeration
 // ------------------------------------------------------------
-// 复用 KSWORD_ARK_DIRECTORY_ENTRY 行格式与分页语义，只增加 targetLayer；
-// R3 用同一路径分别取 RELATED 与 BASE_FS/VPB_FS 两份结果做差集，
-// 差集即"只有绕过过滤层才能看见"的条目。
+// Reuse KSWORD_ARK_DIRECTORY_ENTRY row format and pagination semantics, only adding targetLayer;
+// R3 uses the same path to fetch RELATED and BASE_FS/VPB_FS results separately; the
+// difference set represents entries visible only by bypassing the filter layer.
 //
-// 能力边界（必须如实告知调用方）：
-// 本接口只让 IRP_MJ_DIRECTORY_CONTROL 绕过过滤层，IRP_MJ_CREATE 仍走
-// I/O 管理器的正常路径。手工构造 FILE_OBJECT 去绕过 CREATE 会让 NTFS 在
-// 后续目录查询里判不出 UserDirectoryOpen 并返回 STATUS_INVALID_PARAMETER，
-// 因此打开阶段退回托管路径。也就是说：在目录查询完成时改写条目链表这类
-// 隐藏手法能被发现，只在 CREATE 上做拦截的则发现不了。
-// 需要连 CREATE 一起绕过时请用 IOCTL_KSWORD_ARK_FILE_IRP_SUBMIT 自行构造。
+// Capability boundary (must truthfully inform the caller):
+// This interface allows only IRP_MJ_DIRECTORY_CONTROL to bypass the filter layer; IRP_MJ_CREATE still follows the
+// normal I/O manager path. Manually constructing a FILE_OBJECT to bypass CREATE causes NTFS to fail to detect
+// UserDirectoryOpen during subsequent directory queries, returning STATUS_INVALID_PARAMETER. Therefore, the open
+// phase falls back to the managed path. In other words: hiding techniques that modify entry lists after directory
+// queries are completed can be detected, but interception performed solely at CREATE cannot be detected.
+// Use IOCTL_KSWORD_ARK_FILE_IRP_SUBMIT to construct manually when bypassing requires handling CREATE together.
 typedef struct _KSWORD_ARK_FILE_IRP_ENUM_DIRECTORY_REQUEST
 {
     unsigned long version;
@@ -239,15 +239,15 @@ typedef struct _KSWORD_ARK_FILE_IRP_ENUM_DIRECTORY_RESPONSE
 {
     unsigned long version;
     unsigned long size;
-    unsigned long queryStatus;        // 复用 KSWORD_ARK_DIRECTORY_ENUM_STATUS_*。
-    unsigned long responseFlags;      // 复用 KSWORD_ARK_DIRECTORY_ENUM_RESPONSE_FLAG_*。
+    unsigned long queryStatus;        // Reuse KSWORD_ARK_DIRECTORY_ENUM_STATUS_*.
+    unsigned long responseFlags;      // Reuses KSWORD_ARK_DIRECTORY_ENUM_RESPONSE_FLAG_*.
     unsigned long rowSize;
     unsigned long rowCount;
     unsigned long startIndex;
     unsigned long nextIndex;
     long openStatus;
     long lastStatus;
-    unsigned long targetLayer;        // R0 实际使用的栈层，可能因不可用而回退。
+    unsigned long targetLayer;        // The actual stack layer used in R0, which may fall back if unavailable.
     unsigned long fileSystemNameLengthChars;
     unsigned long long targetDeviceAddress;
     unsigned long long targetDriverAddress;

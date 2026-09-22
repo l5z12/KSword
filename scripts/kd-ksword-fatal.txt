@@ -45,7 +45,7 @@ $$ folder and will NOT find a symbol-store layout.
 $$
 $$ Start-KswordVmDebugger.ps1 / the launch command also pass -y with the same
 $$ local-only value; this line only appends the driver's own PDB directory.
-.sympath+ C:\Users\Felix\CLionProjects\KSword\Ksword5.1\x64\Release\KswordARKDriver
+.sympath+ C:\Users\Felix\CLionProjects\KSword\artifacts/bin\x64\Release\drivers/ark
 
 .echo === break once when the driver loads, so symbols can be verified ===
 sxe ld:KswordARK.sys

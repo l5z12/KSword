@@ -1,0 +1,133 @@
+<RCC>
+    <qresource prefix="/Ksword5"/>
+    <qresource prefix="/Image">
+        <file>Resource/Logo/MainLogo.png</file>
+        <file>Resource/Logo/KswordHome-En.png</file>
+        <file>Resource/Logo/KswordHome-ZH.png</file>
+        <file>Resource/Logo/OB_BUFF.png</file>
+        <file>Resource/Logo/WangWei_CM..jpg</file>
+    </qresource>
+    <qresource prefix="/Data">
+        <file alias="startup_registry_locations.txt">startup_dock/startup_registry_locations.txt</file>
+    </qresource>
+    <qresource prefix="/Icon">
+        <!-- Log panel icons, all from the Resource/Icon library. -->
+        <file alias="log_export.svg">Resource/Icon/file/file_export_line.svg</file>
+        <file alias="reg_import.svg">Resource/Icon/file/file_import_line.svg</file>
+        <file alias="log_clear.svg">Resource/Icon/system/delete_2_line.svg</file>
+        <file alias="log_copy.svg">Resource/Icon/file/copy_line.svg</file>
+        <file alias="log_clipboard.svg">Resource/Icon/file/clipboard_line.svg</file>
+        <file alias="log_track.svg">Resource/Icon/editor/list_search_line.svg</file>
+        <file alias="log_cancel_track.svg">Resource/Icon/system/close_line.svg</file>
+        <file alias="filter_funnel.svg">Resource/Icon/business/filter_line.svg</file>
+        <!-- Crosshair for the memory page button that selects a process by dragging onto its window.
+             The previous codeeditor_goto down-arrow icon did not communicate this interaction. -->
+        <file alias="window_picker_aim.svg">Resource/Icon/map/aiming_line.svg</file>
+        <file alias="plus.svg">Resource/Icon/system/plus_line.svg</file>
+        <file alias="ks_control_check_white.svg">Resource/Icon/system/ks_control_check_white.svg</file>
+        <file alias="ks_control_check_black.svg">Resource/Icon/system/ks_control_check_black.svg</file>
+        <file alias="ks_control_dash_white.svg">Resource/Icon/system/ks_control_dash_white.svg</file>
+        <file alias="ks_control_dash_black.svg">Resource/Icon/system/ks_control_dash_black.svg</file>
+        <file alias="ks_control_radio_white.svg">Resource/Icon/system/ks_control_radio_white.svg</file>
+        <file alias="ks_control_radio_black.svg">Resource/Icon/system/ks_control_radio_black.svg</file>
+        <file alias="ks_control_down_white.svg">Resource/Icon/system/ks_control_down_white.svg</file>
+        <file alias="ks_control_down_black.svg">Resource/Icon/system/ks_control_down_black.svg</file>
+        <file alias="ks_control_up_white.svg">Resource/Icon/system/ks_control_up_white.svg</file>
+        <file alias="ks_control_up_black.svg">Resource/Icon/system/ks_control_up_black.svg</file>
+        <file alias="ks_control_up_muted.svg">Resource/Icon/system/ks_control_up_muted.svg</file>
+        <file alias="ks_control_down_muted.svg">Resource/Icon/system/ks_control_down_muted.svg</file>
+
+        <!-- Process panel icons. -->
+        <file alias="process_main.svg">Resource/Icon/system/process_line.svg</file>
+        <file alias="process_threads.svg">Resource/Icon/logo/threads_line.svg</file>
+        <file alias="process_refresh.svg">Resource/Icon/system/refresh_3_line.svg</file>
+        <file alias="process_settings.svg">Resource/Icon/system/settings_2_line.svg</file>
+        <file alias="process_tree.svg">Resource/Icon/nature/tree_line.svg</file>
+        <file alias="process_list.svg">Resource/Icon/system/scrollable_list_line.svg</file>
+        <file alias="process_start.svg">Resource/Icon/media/play_line.svg</file>
+        <file alias="process_pause.svg">Resource/Icon/media/pause_line.svg</file>
+        <file alias="process_copy_cell.svg">Resource/Icon/file/copy_line.svg</file>
+        <file alias="process_copy_row.svg">Resource/Icon/file/clipboard_line.svg</file>
+        <file alias="process_terminate.svg">Resource/Icon/system/close_circle_line.svg</file>
+        <file alias="process_suspend.svg">Resource/Icon/media/pause_circle_line.svg</file>
+        <file alias="process_resume.svg">Resource/Icon/media/play_circle_line.svg</file>
+        <file alias="service_apply.svg">Resource/Icon/system/check_line.svg</file>
+        <file alias="startup_hidden.svg">Resource/Icon/system/eye_close_line.svg</file>
+        <file alias="startup_image_hijack.svg">Resource/Icon/file/file_security_line.svg</file>
+        <file alias="process_critical.svg">Resource/Icon/system/safe_shield_line.svg</file>
+        <file alias="process_uncritical.svg">Resource/Icon/system/shield_line.svg</file>
+        <file alias="process_open_folder.svg">Resource/Icon/file/folder_open_line.svg</file>
+        <file alias="process_priority.svg">Resource/Icon/system/settings_2_line.svg</file>
+        <file alias="process_details.svg">Resource/Icon/file/file_info_line.svg</file>
+        <file alias="process_performance.svg">Resource/Icon/development/performance_line.svg</file>
+        <file alias="process_hotkey.svg">Resource/Icon/development/hotkey_line.svg</file>
+        <file alias="knowledge_book.svg">Resource/Icon/education/book_2_line.svg</file>
+        <file alias="sound_source.svg">Resource/Icon/device/speaker_line.svg</file>
+        <file alias="system_time.svg">Resource/Icon/system/time_duration_line.svg</file>
+        <file alias="virtual_location.svg">Resource/Icon/map/map_pin_line.svg</file>
+        <file alias="disk_storage.svg">Resource/Icon/device/storage_line.svg</file>
+        <file alias="disk_save.svg">Resource/Icon/file/save_line.svg</file>
+        <file alias="disk_warning.svg">Resource/Icon/file/file_warning_line.svg</file>
+        <file alias="disk_analyze.svg">Resource/Icon/device/scan_line.svg</file>
+        <file alias="disk_volume.svg">Resource/Icon/design/layout_grid_line.svg</file>
+        <file alias="disk_health.svg">Resource/Icon/system/heartbeat_line.svg</file>
+        <file alias="disk_tools.svg">Resource/Icon/system/tool_line.svg</file>
+        <file alias="desktop_switch.svg">Resource/Icon/system/switch_line.svg</file>
+        <file alias="desktop_create.svg">Resource/Icon/system/add_square_line.svg</file>
+        <file alias="window_picker_target.svg">Resource/Icon/business/target_line.svg</file>
+        <file alias="titlebar_capture_allowed.svg">Resource/Icon/system/eye_line.svg</file>
+        <file alias="titlebar_capture_protected.svg">Resource/Icon/system/eye_close_line.svg</file>
+        <file alias="titlebar_pin_line.svg">Resource/Icon/file/pin_line.svg</file>
+        <file alias="titlebar_pin_fill.svg">Resource/Icon/file/pin_fill.svg</file>
+        <file alias="titlebar_minimize.svg">Resource/Icon/system/minimize_line.svg</file>
+        <file alias="titlebar_maximize.svg">Resource/Icon/media/fullscreen_line.svg</file>
+        <file alias="titlebar_restore.svg">Resource/Icon/system/restore_line.svg</file>
+        <file alias="titlebar_close.svg">Resource/Icon/system/close_line.svg</file>
+
+        <!-- Handle panel icons. -->
+        <file alias="handle_refresh.svg">Resource/Icon/system/refresh_3_line.svg</file>
+        <file alias="handle_copy.svg">Resource/Icon/file/copy_line.svg</file>
+        <file alias="handle_copy_row.svg">Resource/Icon/file/clipboard_line.svg</file>
+        <file alias="handle_close.svg">Resource/Icon/system/close_circle_line.svg</file>
+
+        <!-- Additional navigation and search icons for the file module. -->
+        <file alias="file_nav_back.svg">Resource/Icon/arrow/left_line.svg</file>
+        <file alias="file_nav_forward.svg">Resource/Icon/arrow/right_line.svg</file>
+        <file alias="file_nav_up.svg">Resource/Icon/arrow/arrow_up_line.svg</file>
+        <file alias="detail_node_collapsed.svg">Resource/Icon/arrow/right_small_line.svg</file>
+        <file alias="detail_node_expanded.svg">Resource/Icon/arrow/down_small_line.svg</file>
+        <file alias="file_regex.svg">Resource/Icon/editor/formula_line.svg</file>
+        <file alias="file_case.svg">Resource/Icon/editor/AZ_sort_ascending_letters_line.svg</file>
+        <file alias="file_find.svg">Resource/Icon/editor/list_search_line.svg</file>
+        <file alias="file_owner.svg">Resource/Icon/user/user_security_line.svg</file>
+
+        <!-- Icons for the appearance page in settings. -->
+        <file alias="settings_theme_system.svg">Resource/Icon/device/computer_line.svg</file>
+        <file alias="settings_theme_light.svg">Resource/Icon/weather/sun_line.svg</file>
+        <file alias="settings_theme_dark.svg">Resource/Icon/weather/moon_line.svg</file>
+        <file alias="settings_background_browse.svg">Resource/Icon/file/folder_open_line.svg</file>
+        <file alias="settings_background_reset.svg">Resource/Icon/design/background_line.svg</file>
+
+        <!-- Status icons for the VirusTotal report view. -->
+        <file alias="vt_status_suspicious.svg">Resource/Icon/online_scan/vt_status_suspicious.svg</file>
+        <file alias="vt_status_undetected.svg">Resource/Icon/online_scan/vt_status_undetected.svg</file>
+        <file alias="vt_status_safe.svg">Resource/Icon/online_scan/vt_status_safe.svg</file>
+        <file alias="vt_status_threat.svg">Resource/Icon/online_scan/vt_status_threat.svg</file>
+
+        <!-- Text editor toolbar icons: use SVG resources throughout; do not fall back to MainLogo. -->
+        <file alias="codeeditor_new.svg">Resource/Icon/file/file_new_line.svg</file>
+        <file alias="codeeditor_open.svg">Resource/Icon/file/folder_open_line.svg</file>
+        <file alias="codeeditor_save.svg">Resource/Icon/file/save_line.svg</file>
+        <file alias="codeeditor_save_as.svg">Resource/Icon/file/file_export_line.svg</file>
+        <file alias="codeeditor_undo.svg">Resource/Icon/arrow/back_line.svg</file>
+        <file alias="codeeditor_redo.svg">Resource/Icon/arrow/forward_line.svg</file>
+        <file alias="codeeditor_cut.svg">Resource/Icon/design/scissors_line.svg</file>
+        <file alias="codeeditor_copy.svg">Resource/Icon/file/copy_line.svg</file>
+        <file alias="codeeditor_paste.svg">Resource/Icon/file/paste_line.svg</file>
+        <file alias="codeeditor_find.svg">Resource/Icon/file/search_line.svg</file>
+        <file alias="codeeditor_replace.svg">Resource/Icon/system/refresh_2_line.svg</file>
+        <file alias="codeeditor_goto.svg">Resource/Icon/arrow/arrow_down_line.svg</file>
+        <file alias="codeeditor_wrap.svg">Resource/Icon/editor/text_area_line.svg</file>
+        <file alias="codeeditor_structured.svg">Resource/Icon/design/layout_grid_line.svg</file>
+    </qresource>
+</RCC>

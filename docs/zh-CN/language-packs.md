@@ -1,0 +1,77 @@
+# KSword 多语言语言包规范
+
+[English](../language-packs.md)
+
+KSword 主程序从可执行文件同级的 `languages/` 目录加载 UTF-8 JSON 语言包。开发环境也会探测仓库中的 `apps/desktop/languages/`。语言包无需重新编译即可新增或更新，但应用启动后新增的文件需要重启才能进入语言列表。
+
+界面设置中的 `ui_language` 默认值为 `system`。设置页的“跟随系统”、原生启动画面、首次启动流程、Qt 启动期弹窗以及全局 `QMessageBox` 标准按钮都使用同一个最终语言解析结果。
+
+## 文件格式
+
+每种语言对应一个 `.json` 文件。文件名仅用于管理，语言身份由 `id` 决定：
+
+```json
+{
+  "schema": "ksword-language-pack",
+  "format_version": 1,
+  "id": "en-US",
+  "name": "English (United States)",
+  "native_name": "English",
+  "author": "KSword Team",
+  "text_direction": "ltr",
+  "fallback": "zh-CN",
+  "translations": {
+    "menu.settings": "Settings"
+  },
+  "context_translations": {
+    "process.menu.copy_cell": "Copy cell"
+  }
+}
+```
+
+字段约束：
+
+- `schema` 必须为 `ksword-language-pack`。
+- `format_version` 当前必须为 `1`。
+- `id` 使用 BCP 47 风格标识，例如 `en-US`、`zh-CN`、`ja-JP`。
+- `name` 是英文名称，`native_name` 是该语言的本地名称。
+- `text_direction` 可为 `ltr` 或 `rtl`，省略时为 `ltr`。
+- `fallback` 可选，缺键时继续从指定语言包读取；循环引用会被截断。
+- `translations` 的键和值都必须是字符串。键是稳定的语义 ID，不使用界面原文。
+- `context_translations` 的键和值都必须是字符串。键必须描述原文所在的控件、列、菜单或绘图位置；同一个原文在不同位置必须使用不同键。它由 `LanguageManager::contextText` 读取。
+- `source_translations` 仅为旧语言包保留，运行时不再使用。禁止依赖它对任意控件、日志级别、表格数据或协议字段做全局替换。
+
+单个语言包最大 32 MiB。格式错误、元数据不完整或包含非字符串翻译的包会被忽略。同一 `id` 出现多次时，仅采用搜索优先级最高的文件。
+
+## 语言选择与回退顺序
+
+`ui_language` 为 `system`、空值或未知地区语言时，最终语言包严格按以下顺序解析：
+
+1. 精确地区语言包，例如系统语言 `pt-BR` 先匹配 `pt-BR`。
+2. 基础语言：先匹配 `pt`，若没有纯基础语言包，再匹配已校验的同基础语言地区包。
+3. `en-US`。
+4. 产品指定兜底 `zh-CN`。
+
+发行版应始终包含 `en-US` 与 `zh-CN`。若自定义或损坏的安装同时缺少二者，程序才会以首个通过校验的语言包维持界面可用；这不是正常发行回退路径。上述顺序决定“使用哪个语言包”，语言包内部某个键缺失时则继续使用该包自己的 `fallback` 链，两者不要混淆。
+
+## 扩展流程
+
+1. 复制 `languages/en-US.json` 并修改文件名和元数据。
+2. 翻译 `translations` 和 `context_translations` 中的值，不修改键；`source_translations` 仅保留旧包兼容数据，不再作为运行时翻译来源。
+3. 对尚未翻译的语义/上下文键，可暂时删除并通过 `fallback` 使用其它语言。
+4. 将文件放入 `apps/desktop/languages/`，重新构建后会自动复制到输出目录。
+5. 在设置的“界面语言”下拉框选择新语言并应用，检查主菜单、Dock 标题和设置页。
+
+新增界面文本时，优先使用稳定语义键并同时在 `zh-CN.json` 和 `en-US.json` 增加同一键，再通过 `LanguageManager::bindText`、`bindToolTip`、`bindPlaceholder`、`bindSuffix`、`bindTab`、`bindTabToolTip`、`bindComboBoxItem`、`bindWindowTitle` 或 `contextText` 绑定原文所在位置。中文包的 fallback 就是历史源码原文，不能改写中文显示。代码内的 fallback 文案用于语言包缺失或损坏时保持界面可用，不能代替语言包条目。
+
+语言包只允许在原文所在位置逐条翻译：`contextText` 的 fallback 与控件/绘图调用点绑定，不能把一个语言包条目的值作为另一个字符串的片段进行全局替换；这会把“简体中文”错误拼成“简体Medium文”，也会把 `Debug` 级别误翻译成“调试模式”。需要显示语言名称等元数据时，使用独立语义键，例如 `language.name.zh-CN`，不要把多个名称拼接后交给自动翻译。
+
+## 完整性审计
+
+仓库根目录的 `tools/i18n_language_pack.py` 会提取 C++ 和 UI 文件中的用户可见字符串，并校验中英文 `translations` / `context_translations` 是否缺项、占位符和换行是否一致。旧 `source_translations` 不再作为运行时或审计正确性依据。
+
+```powershell
+python tools\i18n_language_pack.py audit --source-root artifacts/bin\Ksword5.1 --zh-pack apps\desktop\languages\zh-CN.json --en-pack apps\desktop\languages\en-US.json
+```
+
+新增或修改界面文案后，在原文所在的控件、菜单、表格列或绘图调用点添加稳定的 `context_translations` 键，并分别人工填写英文和简体中文值；不要使用按源字符串批量替换或自动翻译。完成后运行 `audit` 检查双语键、占位符和换行。`sync` 只用于生成源字符串报告，不会改写任何语言包。Release 构建默认在编译前执行同一审计；只有临时诊断时才可通过 `/p:KswordSkipI18nAudit=true` 跳过，提交前不得跳过。

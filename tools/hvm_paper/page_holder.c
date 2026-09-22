@@ -13,7 +13,7 @@
 #include <unistd.h>
 
 int main(int argc, char **argv) {
-    const char prefix[] = "{\"product\":\"research-fixture\",\"price\":1250,\"padding\":\"";
+    const char kPrefix[] = "{\"product\":\"research-fixture\",\"price\":1250,\"padding\":\"";
     uint64_t first = 0, entry = 0;
     char *page;
     int fd, pm, i, duration;
@@ -24,7 +24,7 @@ int main(int argc, char **argv) {
     page = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (page == MAP_FAILED) { perror("mmap"); return 5; }
     memset(page, ' ', 4096);
-    memcpy(page, prefix, sizeof(prefix) - 1);
+    memcpy(page, kPrefix, sizeof(kPrefix) - 1);
     memcpy(page + 4093, "\"}\n", 3);
     if (msync(page, 4096, MS_SYNC) || mlock(page, 4096)) { perror("resident"); return 6; }
     pm = open("/proc/self/pagemap", O_RDONLY);

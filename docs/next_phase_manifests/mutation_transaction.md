@@ -68,31 +68,31 @@ Transaction and audit records include:
 
 Public R0 header:
 
-- `KswordARKDriver/include/ark/ark_mutation.h`
+- `drivers/ark/include/ark/ark_mutation.h`
 
 Feature backend:
 
-- `KswordARKDriver/src/features/mutation/mutation_transaction.h`
-- `KswordARKDriver/src/features/mutation/mutation_transaction.c`
+- `drivers/ark/src/features/mutation/mutation_transaction.h`
+- `drivers/ark/src/features/mutation/mutation_transaction.c`
 
 Future IOCTL handlers:
 
-- `KswordARKDriver/src/features/mutation/mutation_ioctl.c`
+- `drivers/ark/src/features/mutation/mutation_ioctl.c`
 
 Handler names for later registry integration:
 
-- `KswordARKMutationIoctlPrepare`
-- `KswordARKMutationIoctlCommit`
-- `KswordARKMutationIoctlRollback`
-- `KswordARKMutationIoctlQueryAudit`
+- `kswordArkMutationIoctlPrepare`
+- `kswordArkMutationIoctlCommit`
+- `kswordArkMutationIoctlRollback`
+- `kswordArkMutationIoctlQueryAudit`
 
 Backend entry names:
 
-- `KswordARKMutationInitialize`
-- `KswordARKMutationPrepare`
-- `KswordARKMutationCommit`
-- `KswordARKMutationRollback`
-- `KswordARKMutationQueryAudit`
+- `kswordArkMutationInitialize`
+- `kswordArkMutationPrepare`
+- `kswordArkMutationCommit`
+- `kswordArkMutationRollback`
+- `kswordArkMutationQueryAudit`
 
 ## Default refusal policy
 
@@ -114,10 +114,10 @@ The implementation does not bypass PatchGuard, does not modify CR0 WP, does not 
 
 The next integration session should:
 
-1. Include `driver/KswordArkMutationIoctl.h` from `KswordARKDriver/include/ark/ark_ioctl.h` only when registering the feature.
-2. Add handler declarations and table entries in `KswordARKDriver/src/dispatch/ioctl_registry.c` for the four mutation IOCTLs.
+1. Include `driver/KswordArkMutationIoctl.h` from `drivers/ark/include/ark/ark_ioctl.h` only when registering the feature.
+2. Add handler declarations and table entries in `drivers/ark/src/dispatch/ioctl_registry.c` for the four mutation IOCTLs.
 3. Add the new `.c/.h` files to `KswordARKDriver.vcxproj` and `.vcxproj.filters`.
-4. Route future inline hook restore through `KswordARKMutationPrepare` and `KswordARKMutationCommit` instead of direct patch calls.
+4. Route future inline hook restore through `kswordArkMutationPrepare` and `kswordArkMutationCommit` instead of direct patch calls.
 5. Route future PPL byte restore through `ProcessProtectionBytes` transactions.
 6. Route future callback unlink work through `CallbackEntryUnlinkPlan` first, then add a separate reviewed write backend only after plan validation and safety policy semantics are finalized.
 7. Keep `ArkDriverClient` and UI Dock disconnected until the transaction IOCTLs are registered and separately reviewed.

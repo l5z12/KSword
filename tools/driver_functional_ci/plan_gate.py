@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""KswordARK 驱动功能矩阵计划的静态门禁。
+"""Static gate for the KswordARK driver functional matrix plan.
 
-输入是仓库根目录与 ``driver_test_plan.json``。处理过程复用
-``tools/ioctl_audit/ksword_ioctl_audit.py`` 的解析器读取 ``shared/driver`` 协议头和
-中央注册表，再逐条核对计划：每个已注册 IOCTL 必须被“执行”或“排除”恰好一次；
-危险模式命中的 IOCTL 必须落在排除清单里；每条用例引用的 KswordCLI 子命令和变量
-占位符都必须真实存在。返回值是进程退出码，0 表示计划与驱动现状一致。
+Input: repository root directory and ``driver_test_plan.json``. The process reuses the parser from
+``tools/ioctl_audit/ksword_ioctl_audit.py`` to read the ``shared/driver`` protocol header and the central registry,
+then validates the plan item by item: each registered IOCTL must be either 'executed' or 'excluded' exactly once.
+IOCTLs triggered in dangerous mode must be on the exclusion list; every apps/cli subcommand and variable placeholder referenced by a
+test case must actually exist. The return value is the process exit code, where 0 indicates the plan matches the driver's current state.
 
-这个门禁不需要驱动测试机，可以在普通 Windows/Linux runner 上运行；它保证
-``DriverFunctionalMatrix.ps1`` 真正跑到的那份计划不会随驱动演进而悄悄失真。
+This gate does not require a driver test machine and can run on standard Windows/Linux runners; it ensures that
+the plan actually executed by ``DriverFunctionalMatrix.ps1`` does not silently drift as the driver evolves.
 """
 
 from __future__ import annotations
@@ -30,29 +30,29 @@ GAP_REASON = "no-cli-path"
 
 
 def load_auditor(root: Path):
-    """载入既有 IOCTL 审计脚本，复用它的头文件/注册表解析实现。
+    """Load the existing IOCTL audit script to reuse its header and registry parsing implementations.
 
-    输入是仓库根目录。处理过程按路径加载模块，不修改被载入模块的任何状态。
-    返回值是模块对象，供调用方读取 IOCTL 定义与注册表行。
+    Input: repository root directory. The process loads modules by path without modifying the state of any loaded module.
+    Returns the module object for the caller to read IOCTL definitions and registry entries.
     """
 
     path = root / "tools" / "ioctl_audit" / "ksword_ioctl_audit.py"
     spec = importlib.util.spec_from_file_location("ksword_ioctl_audit", path)
     if spec is None or spec.loader is None:
-        raise RuntimeError(f"无法载入 IOCTL 审计模块：{path}")
+        raise RuntimeError(f"Failed to load IOCTL audit module: {path}")
     module = importlib.util.module_from_spec(spec)
-    # dataclasses(slots=True) 会回查 sys.modules，动态载入前必须先登记模块名。
+    # dataclasses(slots=True) checks sys.modules; the module name must be registered before dynamic loading.
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
 
 def registered_ioctls(root: Path, prefix: str) -> set[str]:
-    """返回中央注册表里真实登记的 IOCTL 短名集合。
+    """Returns the set of registered IOCTL short names from the central registry.
 
-    输入是仓库根目录与协议前缀。处理过程解析共享协议头，再与
-    ``ioctl_registry.c`` 的表行求交，只保留两边都存在的条目。
-    返回值是去掉前缀的短名集合。
+    Input is the repository root directory and protocol prefix. The process parses shared protocol
+    headers, then intersects with rows in `ioctl_registry.c`, retaining only entries present in both.
+    Return value is a set of short names with prefixes removed.
     """
 
     auditor = load_auditor(root)
@@ -64,13 +64,13 @@ def registered_ioctls(root: Path, prefix: str) -> set[str]:
 
 
 def cli_commands(root: Path) -> tuple[set[tuple[str, str]], dict[str, set[str]]]:
-    """解析 KswordCLI 内置 help 元数据，得到命令表与「Backed by」映射。
+    """Parse apps/cli built-in help metadata to obtain the command table and 'Backed by' mapping.
 
-    输入是仓库根目录。处理过程只做正则提取，不编译也不执行 CLI。
-    返回值是 (family, subcommand) 集合，以及短名 IOCTL 到命令族的反向映射。
+    Input is the repository root. The processing performs only regex extraction without compiling or executing the CLI.
+    Return value: A set of (family, subcommand) pairs, plus a reverse mapping from short IOCTL names to command families.
     """
 
-    source = (root / "KswordCLI" / "KswordCLI.cpp").read_text(encoding="utf-8", errors="replace")
+    source = (root / 'apps/cli/KswordCLI.cpp').read_text(encoding="utf-8", errors="replace")
     row_re = re.compile(
         r'\{\s*L"([a-z0-9]+)",\s*L"([a-z0-9-]*)",\s*L"[^"]*",\s*L"[^"]*",\s*L"[^"]*",\s*L"([^"]*)"\s*\}'
     )
@@ -84,61 +84,61 @@ def cli_commands(root: Path) -> tuple[set[tuple[str, str]], dict[str, set[str]]]
 
 
 def fail(errors: list[str], message: str) -> None:
-    """记录一条门禁失败原因。
+    """Record a gate failure reason.
 
-    输入是错误列表与描述文本。处理过程只追加，不做去重或排序。
-    返回值为空；调用方在全部检查结束后统一输出。
+    Input: error list and description text. Processing: only appends; no deduplication or sorting.
+    Returns empty; the caller outputs all errors after completing all checks.
     """
 
     errors.append(message)
 
 
 def check_structure(plan: dict[str, Any], errors: list[str]) -> None:
-    """校验计划文件本身的结构约束。
+    """Validate structural constraints of the plan file itself.
 
-    输入是已解析的计划与错误累加列表。处理过程检查 id 唯一性、tier/expect 枚举、
-    步骤形状、cleanup 形状以及排除项的原因码格式。返回值为空。
+    Input is a parsed plan and error accumulation list. The processing checks ID uniqueness,
+    tier/expect enums, step shapes, cleanup shapes, and exclusion reason code formats. Returns void.
     """
 
     seen: set[str] = set()
     for case in plan["cases"]:
         cid = case.get("id", "")
         if not cid:
-            fail(errors, "存在缺少 id 的用例。")
+            fail(errors, "There are test cases missing an id.")
             continue
         if cid in seen:
-            fail(errors, f"用例 id 重复：{cid}")
+            fail(errors, f"Test case ID duplicate: {cid}")
         seen.add(cid)
         if case.get("tier") not in TIERS:
-            fail(errors, f"{cid}: tier 必须是 {sorted(TIERS)} 之一。")
+            fail(errors, f"{cid}: tier must be one of {sorted(TIERS)}.")
         if case.get("expect") not in EXPECTATIONS:
-            fail(errors, f"{cid}: expect 必须是 {sorted(EXPECTATIONS)} 之一。")
+            fail(errors, f"{cid}: expect must be one of {sorted(EXPECTATIONS)}.")
         timeout = case.get("timeoutSeconds")
         if not isinstance(timeout, int) or timeout <= 0:
-            fail(errors, f"{cid}: timeoutSeconds 必须是正整数。")
+            fail(errors, f"{cid}: timeoutSeconds must be a positive integer.")
         steps = case.get("steps")
         if not isinstance(steps, list) or not steps:
-            fail(errors, f"{cid}: steps 必须是非空数组。")
+            fail(errors, f"{cid}: steps must be a non-empty array.")
             continue
         for group in ("steps", "cleanup"):
             for step in case.get(group, []):
                 if not isinstance(step, list) or not step or not all(isinstance(x, str) for x in step):
-                    fail(errors, f"{cid}: {group} 中存在非法步骤 {step!r}。")
+                    fail(errors, f"{cid}: {group} contains an invalid step {step!r}.")
 
     for row in plan["excluded"]:
         name = row.get("ioctl", "")
         reason = row.get("reason", "")
         if not REASON_RE.match(reason or ""):
-            fail(errors, f"{name}: 排除原因码 {reason!r} 必须是 kebab-case。")
+            fail(errors, f"{name}: exclusion reason code {reason!r} must be kebab-case.")
         if not row.get("detail"):
-            fail(errors, f"{name}: 排除项必须写明 detail，说明为什么 CI 不能执行它。")
+            fail(errors, f"{name}: Exclusion items must specify a detail explaining why CI cannot execute them.")
 
 
 def check_coverage(plan: dict[str, Any], registered: set[str], errors: list[str]) -> dict[str, Any]:
-    """核对计划对已注册 IOCTL 的覆盖是否完整且互斥。
+    """Verify that the plan fully and mutually exclusively covers registered IOCTLs.
 
-    输入是计划、注册表短名集合与错误列表。处理过程分别汇总执行集合与排除集合，
-    检查缺口、越界名称与重复归类。返回值是供报告使用的统计字典。
+    Input: plan, set of registry short names, and error list. Process: aggregate execution and exclusion sets,
+    check gaps, out-of-bounds names, and duplicate classifications. Return: statistical dictionary for reporting.
     """
 
     covered: dict[str, list[str]] = {}
@@ -148,15 +148,15 @@ def check_coverage(plan: dict[str, Any], registered: set[str], errors: list[str]
     excluded = {row["ioctl"]: row for row in plan["excluded"]}
 
     for name in sorted(set(covered) & set(excluded)):
-        fail(errors, f"{name}: 同时出现在用例和排除清单里，归类必须唯一。")
+        fail(errors, f"{name}: Appears in both test cases and exclusion list; classification must be unique.")
 
     unknown = sorted((set(covered) | set(excluded)) - registered)
     for name in unknown:
-        fail(errors, f"{name}: 计划引用了未注册的 IOCTL，可能是改名或删除后的残留。")
+        fail(errors, f"{name}: Plan references an unregistered IOCTL, possibly a leftover after renaming or deletion.")
 
     missing = sorted(registered - set(covered) - set(excluded))
     for name in missing:
-        fail(errors, f"{name}: 新增 IOCTL 未进入功能矩阵计划，请补一条用例或写明排除原因。")
+        fail(errors, f"{name}: New IOCTL not included in the functional matrix plan; please add a test case or specify the exclusion reason.")
 
     return {
         "registered": len(registered),
@@ -171,11 +171,11 @@ def check_coverage(plan: dict[str, Any], registered: set[str], errors: list[str]
 
 def check_danger_policy(plan: dict[str, Any], registered: set[str], stats: dict[str, Any],
                         errors: list[str]) -> list[str]:
-    """执行「不许手贱」的静态防线。
+    """Enforce the 'no meddling' static defense line.
 
-    输入是计划、注册表集合、覆盖统计与错误列表。处理过程用 mustExcludePatterns
-    逐个匹配已注册 IOCTL，命中者必须落在排除清单中；确需放行的必须在
-    patternWaivers 里写明理由。返回值是命中危险模式的 IOCTL 列表。
+    Input is the plan, registry set, coverage stats, and error list. The process matches registered IOCTLs
+    against mustExcludePatterns one by one; any hit must be in the exclusion list. Any necessary exceptions
+    must be documented in patternWaivers. Returns the list of IOCTLs that hit dangerous patterns.
     """
 
     policy = plan["policy"]
@@ -192,22 +192,22 @@ def check_danger_policy(plan: dict[str, Any], registered: set[str], stats: dict[
         if not reason:
             fail(
                 errors,
-                f"{name}: 命中危险操作模式却被排进了执行计划。"
-                f"这类 IOCTL 的崩溃会归因于测试输入而不是驱动缺陷，必须排除，"
-                f"或在 policy.patternWaivers 写明豁免理由。",
+                f"{name}: Hit dangerous operation mode but was scheduled for execution."
+                f"Crashes from such IOCTLs are attributed to test inputs rather than driver defects and must be excluded,"
+                f"or specify the waiver reason in policy.patternWaivers.",
             )
         else:
             cases = ", ".join(stats["coveredMap"].get(name, []))
-            print(f"  [waiver] {name}: {reason} (用例: {cases})")
+            print(f"  [waiver] {name}: {reason} (Test Case: {cases})")
     return dangerous
 
 
 def check_gap_budget(plan: dict[str, Any], stats: dict[str, Any], errors: list[str]) -> dict[str, int]:
-    """检查覆盖缺口没有超出既定预算。
+    """Check if coverage gaps exceed the budget.
 
-    输入是计划、覆盖统计与错误列表。处理过程按原因码统计排除数量，并把
-    ``no-cli-path`` 这类“缺口而非安全排除”与 policy.gapBudget 比较。
-    返回值是原因码到数量的映射。
+    Input is the plan, coverage statistics, and error list. The process counts excluded items by reason code and
+    compares gaps like ``no-cli-path`` (which are gaps rather than security exclusions) against policy.gapBudget.
+    Return value is a mapping from reason codes to counts.
     """
 
     counts: dict[str, int] = {}
@@ -218,17 +218,17 @@ def check_gap_budget(plan: dict[str, Any], stats: dict[str, Any], errors: list[s
         if actual > budget:
             fail(
                 errors,
-                f"排除原因 {reason} 有 {actual} 项，超过预算 {budget}。"
-                f"新增缺口必须先补 CLI 入口，或显式上调预算并说明原因。",
+                f"Excluded reasons {reason} has {actual} items, exceeding budget {budget}."
+                f"New gaps must first be addressed by adding a CLI entry point, or explicitly increase the budget and explain the reason.",
             )
     return counts
 
 
 def check_commands(plan: dict[str, Any], root: Path, errors: list[str]) -> None:
-    """核对每条步骤都对应真实存在的 KswordCLI 子命令。
+    """Verify that each step corresponds to an existing apps/cli subcommand.
 
-    输入是计划、仓库根目录与错误列表。处理过程比对 CLI 内置 help 元数据，
-    并对声明为 no-cli-path 的排除项做反向验证。返回值为空。
+    Inputs are the plan, repository root, and error list. The process compares CLI built-in help metadata
+    and performs reverse validation on items declared as no-cli-path. The return value is empty.
     """
 
     commands, backed = cli_commands(root)
@@ -239,9 +239,9 @@ def check_commands(plan: dict[str, Any], root: Path, errors: list[str]) -> None:
                 family = step[0]
                 sub = step[1] if len(step) > 1 and not step[1].startswith("--") else ""
                 if family not in families:
-                    fail(errors, f"{case['id']}: 命令族 {family!r} 不在 KswordCLI help 元数据里。")
+                    fail(errors, f"{case['id']}: Command family {family!r} is not in apps/cli help metadata.")
                 elif (family, sub) not in commands:
-                    fail(errors, f"{case['id']}: KswordCLI 没有子命令 {family} {sub!r}。")
+                    fail(errors, f"{case['id']}: apps/cli has no subcommand {family} {sub!r}.")
 
     for name, row in ((r["ioctl"], r) for r in plan["excluded"]):
         if row["reason"] != GAP_REASON:
@@ -249,17 +249,17 @@ def check_commands(plan: dict[str, Any], root: Path, errors: list[str]) -> None:
         if name in backed:
             fail(
                 errors,
-                f"{name}: 被标成 {GAP_REASON}，但 KswordCLI help 元数据声明 "
-                f"{sorted(backed[name])} 命令族由它支撑，应改为可执行用例。",
+                f"{name}: Marked as {GAP_REASON}, but apps/cli help metadata declares "
+                f"{sorted(backed[name])} command family is supported by it, should be changed to executable test case.",
             )
 
 
 def check_variables(plan: dict[str, Any], errors: list[str]) -> None:
-    """核对占位符与 requires 都在 variables 里有定义。
+    """Verify that placeholders and 'requires' are both defined in 'variables'.
 
-    输入是计划与错误列表。处理过程扫描全部步骤文本里的 ``{var}`` 占位符，
-    以及 requires 声明，逐一与 variables 字典比对，并要求 requires 覆盖所有
-    非常量占位符。返回值为空。
+    Input is a plan and error list. The process scans all `{var}` placeholders and `requires`
+    declarations in the step text, compares them one-by-one with the `variables` dictionary,
+    and requires that `requires` covers all non-constant placeholders. Returns empty.
     """
 
     declared = set(plan["variables"])
@@ -270,12 +270,12 @@ def check_variables(plan: dict[str, Any], errors: list[str]) -> None:
                 for token in step:
                     used.update(PLACEHOLDER_RE.findall(token))
         for name in sorted(used - declared):
-            fail(errors, f"{case['id']}: 使用了未声明的变量 {{{name}}}。")
+            fail(errors, f"{case['id']}: Used undeclared variable {{{name}}}.")
         for name in case.get("requires", []):
             if name not in declared:
-                fail(errors, f"{case['id']}: requires 引用了未声明的变量 {name}。")
+                fail(errors, f"{case['id']}: requires referencing an undeclared variable {name}.")
             if name not in used:
-                fail(errors, f"{case['id']}: requires 声明了 {name}，但步骤里没有用到它。")
+                fail(errors, f"{case['id']}: requires {name} to be declared, but it is not used in the steps.")
 
     guards = set(plan["policy"]["targetGuards"])
     for case in plan["cases"]:
@@ -283,36 +283,36 @@ def check_variables(plan: dict[str, Any], errors: list[str]) -> None:
         if guard is None:
             continue
         if guard not in guards:
-            fail(errors, f"{case['id']}: targetGuard {guard!r} 未在 policy.targetGuards 中定义。")
+            fail(errors, f"{case['id']}: targetGuard {guard!r} is not defined in policy.targetGuards.")
 
 
 def render_report(plan: dict[str, Any], stats: dict[str, Any], counts: dict[str, int],
                   dangerous: list[str]) -> str:
-    """生成人可读的覆盖报告。
+    """Generate human-readable coverage reports.
 
-    输入是计划、覆盖统计、原因码计数与危险模式命中列表。处理过程只做文本拼装。
-    返回值是 Markdown 文本，供 CI 作为构件上传。
+    Input includes the plan, coverage statistics, reason code counts, and a list of hazardous pattern hits. The processing step performs only text concatenation.
+    Return value is Markdown text, intended for CI to upload as an artifact.
     """
 
     probe = [c for c in plan["cases"] if c["tier"] == "probe"]
     guarded = [c for c in plan["cases"] if c["tier"] == "guarded"]
     lines = [
-        "# KswordARK 驱动功能矩阵覆盖报告",
+        "# KswordARK driver functional matrix coverage report",
         "",
-        f"- 已注册 IOCTL：{stats['registered']}",
-        f"- 计划执行：{stats['covered']}",
-        f"- 计划排除：{stats['excluded']}",
-        f"- 用例总数：{len(plan['cases'])}（probe {len(probe)} / guarded {len(guarded)}）",
-        f"- 命中危险操作模式并被强制排除：{len(dangerous)}",
+        f"- Registered IOCTLs: {stats['registered']}",
+        f"- Plan execution: {stats['covered']}",
+        f"- Plan excluded: {stats['excluded']}",
+        f"- Total test cases: {len(plan['cases'])} (probe {len(probe)} / guarded {len(guarded)})",
+        f"- Dangerous operations excluded: {len(dangerous)}",
         "",
-        "## 排除原因分布",
+        "## Exclusion Cause Distribution",
         "",
-        "| 原因 | 数量 |",
+        "| Reason | Count |",
         "| --- | ---: |",
     ]
     for reason in sorted(counts):
         lines.append(f"| {reason} | {counts[reason]} |")
-    lines += ["", "## 排除明细", "", "| IOCTL | 原因 | 说明 |", "| --- | --- | --- |"]
+    lines += ["", "## Exclusion Details", "", "| IOCTL | Reason | Description |", "| --- | --- | --- |"]
     for row in sorted(plan["excluded"], key=lambda r: (r["reason"], r["ioctl"])):
         lines.append(f"| {row['ioctl']} | {row['reason']} | {row['detail']} |")
     lines.append("")
@@ -320,11 +320,11 @@ def render_report(plan: dict[str, Any], stats: dict[str, Any], counts: dict[str,
 
 
 def force_utf8_output() -> None:
-    """把标准输出/错误切到 UTF-8。
+    """Switch standard output/error to UTF-8.
 
-    输入无。处理过程在流支持 reconfigure 时改写编码，失败时静默跳过。
-    返回值为空。GitHub 的 Windows runner 默认给 Python 的是 cp1252，
-    直接打印中文诊断会抛 UnicodeEncodeError，把通过的门禁误判成失败。
+    No input. If the stream supports reconfigure, rewrite the encoding; otherwise, silently skip on failure.
+    Return value is null. GitHub's Windows runner defaults Python to cp1252; directly printing
+    Chinese diagnostics throws UnicodeEncodeError, causing passed gates to be misjudged as failures.
     """
 
     for stream in (sys.stdout, sys.stderr):
@@ -338,24 +338,24 @@ def force_utf8_output() -> None:
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
-    """解析命令行参数。
+    """Parse command-line arguments.
 
-    输入是参数列表或 None。处理过程只声明选项，不做文件访问。
-    返回值是 argparse 命名空间。
+    Input is a parameter list or None. The process only declares options without accessing files.
+    Return value: argparse namespace.
     """
 
-    parser = argparse.ArgumentParser(description="KswordARK 驱动功能矩阵计划门禁")
-    parser.add_argument("--repo-root", default=".", help="仓库根目录")
-    parser.add_argument("--plan", default=None, help="计划文件路径，默认使用仓库内置计划")
-    parser.add_argument("--out", default=None, help="可选的 Markdown 覆盖报告输出路径")
+    parser = argparse.ArgumentParser(description="KswordARK driver functional matrix plan gate")
+    parser.add_argument("--repo-root", default=".", help="Repository root directory")
+    parser.add_argument("--plan", default=None, help="Path to the plan file; defaults to the repository's built-in plan")
+    parser.add_argument("--out", default=None, help="Optional Markdown override report output path")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """门禁入口。
+    """Gate entry.
 
-    输入是命令行参数。处理过程依次执行结构、覆盖、危险策略、缺口预算、命令与变量
-    检查，并按需写出报告。返回值是退出码，非零表示计划需要修正。
+    Input is command-line arguments. The process sequentially executes structure, coverage, dangerous policy, gap budget, and command/variable
+    checks, then generates reports as needed. The return value is an exit code; a non-zero value indicates the plan requires correction.
     """
 
     force_utf8_output()
@@ -384,11 +384,11 @@ def main(argv: list[str] | None = None) -> int:
           f"cases={len(plan['cases'])} dangerous={len(dangerous)}")
     if errors:
         print("")
-        print("驱动功能矩阵计划门禁失败：")
+        print("Driver functional matrix plan gate check failed:")
         for message in errors:
             print(f"  - {message}")
         return 1
-    print("驱动功能矩阵计划与当前 IOCTL 注册表一致。")
+    print("The driver function matrix plan is consistent with the current IOCTL registry.")
     return 0
 
 

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <Filter Include="apps">
+      <UniqueIdentifier>{EEA92753-ED22-55D8-9481-BE5AE57C5053}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\desktop">
+      <UniqueIdentifier>{1126DAEA-98F7-5B1B-8301-CBD7598957CE}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\desktop\monitor_dock">
+      <UniqueIdentifier>{6712581F-71B3-542E-B0E9-C5D84DE3740A}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="KswordMonitorTests.cpp" />
+    <ClCompile Include="..\..\..\apps\desktop\monitor_dock\EtwFilterConfig.cpp">
+      <Filter>apps\desktop\monitor_dock</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\apps\desktop\monitor_dock\EtwFilterConfig.h">
+      <Filter>apps\desktop\monitor_dock</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

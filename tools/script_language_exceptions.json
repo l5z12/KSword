@@ -1,0 +1,160 @@
+{
+  "scripts/release/update_release_info.ps1": {
+    "reason": "Legacy release-type input aliases; prompts and diagnostics use English.",
+    "lines": [
+      "'正式' { return 'normal' }",
+      "'正式版' { return 'normal' }",
+      "'普通' { return 'normal' }",
+      "'普通版' { return 'normal' }",
+      "'预览' { return 'preview' }",
+      "'预览版' { return 'preview' }",
+      "'开发' { return 'dev' }",
+      "'开发版' { return 'dev' }"
+    ]
+  },
+  "scripts/Clear-KswordVmCheckpoints.ps1": {
+    "reason": "Match localized Hyper-V merge status.",
+    "lines": [
+      "$merging = @(Get-VM -Name $VMName | Where-Object { $_.Status -match 'Merg|合并' })"
+    ]
+  },
+  "scripts/Configure-KswordHyperVGuest.ps1": {
+    "reason": "Match the localized Windows already-a-member error.",
+    "lines": [
+      "if (\"$($_.Exception.Message)\" -match '已经|already') { Write-Host \"  Already a member\" }"
+    ]
+  },
+  "scripts/Deploy-KswordDriverToVm.ps1": {
+    "reason": "Match localized Hyper-V merge status and disk-space errors.",
+    "lines": [
+      "(Get-VM -Name $VMName).Status -match 'Merg|合并') {",
+      "if (\"$($_.Exception.Message)\" -match '0x80070070|磁盘空间不足|not enough space') {"
+    ]
+  },
+  "scripts/Invoke-KswordHvmControl.ps1": {
+    "reason": "Match localized Hyper-V merge status and disk-space errors.",
+    "lines": [
+      "(Get-VM -Name $VMName).Status -match 'Merg|合并') {",
+      "if (\"$($_.Exception.Message)\" -match '0x80070070|磁盘空间不足|not enough space') {"
+    ]
+  },
+  "scripts/Sign-KswordArkDriverTest.ps1": {
+    "reason": "Match localized certificate import errors.",
+    "lines": [
+      "if ($joinedOutput -match 'ImportCertObject|0x80090011|NTE_NOT_FOUND|Access is denied|拒绝访问|找不到对象') {"
+    ]
+  },
+  "tools/acceptance_record.py": {
+    "reason": "Preserve the existing acceptance record schema behind English CLI names.",
+    "lines": [
+      "\"not-started\": \"未开始\",",
+      "\"in-progress\": \"开发中\",",
+      "\"implemented\": \"已实现\","
+    ]
+  },
+  "tools/generate_cli_docs.py": {
+    "reason": "Generate the language-switch link in bilingual documentation.",
+    "lines": [
+      "lines = [\"# CLI reference\", \"\", \"[简体中文](zh-CN/cli.md) · [Documentation index](README.md)\", \"\","
+    ]
+  },
+  "tools/hvm_ctl/test_command_parity.py": {
+    "reason": "Unicode path argument regression fixture.",
+    "lines": [
+      "([\"inject-dll\", \"42\", \"10000\", \"0\", \"C:/HVM test/中文 测试.dll\"], [42, 0x10000, 0, 0]),"
+    ]
+  },
+  "tools/hvm_ctl/test_json_output.py": {
+    "reason": "Exact existing CLI output and Unicode JSON escaping fixtures.",
+    "lines": [
+      "assert status['nestedLastRefusalSiteText'] == '没有拒绝过'",
+      "assert json.loads(strings[0]) == '没有拒绝过\"\\\\\\n\\t😀'"
+    ]
+  },
+  "tools/hvm_paper/test_anonymous.py": {
+    "reason": "Unicode text anonymization regression fixture.",
+    "lines": [
+      "text = 'Felix KSword-HVM-Target DESKTOP-KJE7JPM\\r\\n中文\\r\\n'"
+    ]
+  },
+  "tools/i18n_language_pack.py": {
+    "reason": "Exact attribution literals and localized source text recognized by the i18n audit.",
+    "lines": [
+      "== \"Mapleleaf,存钱买油条（云舟API）,Extrella_Explorer,NtKrnl64,一花一树叶,hzh\"",
+      "or source_text == \"一个臭写C++的\"",
+      "or \"$verdict = if($lower -match 'audit|审计|\" in source_text"
+    ]
+  },
+  "tools/test_i18n_language_pack.py": {
+    "reason": "Chinese string and include-name fixtures for the localization parser.",
+    "lines": [
+      "'  # include \"界面/窗口.h\"\\n'",
+      "'#define LABEL \"显示窗口\"\\n'",
+      "[(\"显示窗口\", 5), (\"MainWindow.BackgroundSupport.h\", 6)],",
+      "\"第一段：%1\"",
+      "\"；第二段：%2\");",
+      "(\"第一段：%1；第二段：%2\", 3),",
+      "source = 'QStringList values{QStringLiteral(\"甲\"), QStringLiteral(\"乙\")};'",
+      "QStringLiteral(\"功能\"));",
+      "translated(\"dialog.action.accept\", \"确定\");"
+    ]
+  },
+  "tools/tests/test_check.py": {
+    "reason": "Unicode file-name regression fixture.",
+    "lines": [
+      "for name, contents in ((\"中文 文件.json\", '\\ufeff{\"ok\": true}'), (\"bad.json\", \"[\"), (\"also bad.json\", \"{\")):"
+    ]
+  },
+  "tools/tests/test_ci_changes.py": {
+    "reason": "Unicode Git path regression fixture.",
+    "lines": [
+      "paths = [\"artifacts/bin/中文 文件.cpp\", \" leading space.json\", 'a\"b.json', \"with\\nnewline.json\"]"
+    ]
+  },
+  "tools/tests/test_comment_language_audit.py": {
+    "reason": "Chinese comment and runtime-string fixtures for the language audit.",
+    "lines": [
+      "self.assertFalse(audit.has_chinese_prose('For example, `中文` must round-trip.'))",
+      "self.assertTrue(audit.has_chinese_prose('中文 explanation of `中文`.'))",
+      "self.assertTrue(audit.has_chinese_prose('```中文```'))",
+      "source = ('auto text = u8\"中文 // text\";\\n'",
+      "'auto raw = LR\"tag(中文 \" /* text */)tag\";\\n'",
+      "\"auto quote = '\\\\''; auto size = 10'000; // 中文\\n\"",
+      "'/* 中文\\ncontinued */\\n')",
+      "[(3, '// 中文'), (4, '/* 中文\\ncontinued */')],",
+      "source = '// English \\\\\\n中文\\nconst char* text = \"中文\";\\n'",
+      "self.assertEqual([(1, '// English \\\\\\n中文')], list(audit.comments(Path('test.h'), source)))",
+      "source = ('\"\"\"中文 module\"\"\"\\n'",
+      "'message = \"中文 # literal\"\\n'",
+      "'# 中文 comment\\n'",
+      "'    \"\"\"中文 function\"\"\"\\n'",
+      "'    return \"中文\"\\n')",
+      "[(1, '中文 module'), (3, '# 中文 comment'), (5, '中文 function')],",
+      "source = '<item title=\"中文\">中文<![CDATA[<!-- 中文 -->]]></item>\\n<!-- 中文 -->'",
+      "self.assertEqual([(2, ' 中文 ')], list(audit.comments(Path('test.qrc'), source)))",
+      "(root / 'test.cpp').write_text('// 中文\\n', encoding='utf-8')",
+      "(root / 'broken.py').write_text('\"\"\"中文', encoding='utf-8')"
+    ]
+  },
+  "tools/tests/test_docs_audit.py": {
+    "reason": "Bilingual documentation link fixtures.",
+    "lines": [
+      "(root / \"README.md\").write_text('[中文](docs/zh.md) [Broken](missing.md) [Escape](../outside.md)')",
+      "(root / \"README.md\").write_text('[中文](docs/zh.md)')"
+    ]
+  },
+  "tools/validate_kernel_knowledge.py": {
+    "reason": "Exact headings and stale markers in Chinese knowledge documents.",
+    "lines": [
+      "\"### 对象关系图\",",
+      "\"### 生命周期\",",
+      "\"### 公开与私有边界\",",
+      "\"### 只读观察路径\",",
+      "\"### 版本、权限与 IRQL\",",
+      "\"### 正确与错误处理\",",
+      "\"### Ksword 字段解释\",",
+      "\"### 证据不能证明什么\",",
+      "for stale_marker in (\"[部分]\", \"[待补]\"):"
+    ]
+  }
+}

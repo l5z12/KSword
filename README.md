@@ -1,12 +1,12 @@
 <div align="right">
-  <a href="./docs/readme_zh.md">简体中文</a> |
+  <a href="docs/zh-CN/README.md">简体中文</a> |
   <strong>English</strong>
 </div>
 
 <div align="center">
 
 <img
-  src="./Ksword5.1/Ksword5.1/Resource/Logo/KswordHome-En.png"
+  src="apps/desktop/Resource/Logo/KswordHome-En.png"
   alt="KSword ARK Logo"
   width="520"
 />
@@ -74,6 +74,8 @@ On top of that, there is a full set of system tools: memory search & hex editing
 All audit pages are read-only by default. Anything that modifies the system (driver unload, disk write, protection-level change, etc.) is behind a separate button with a confirmation dialog and undo where possible. When a kernel offset or feature isn't available on the current build, the UI says so instead of guessing.
 
 Source-available under the [KSword Community Source License v1.6](LICENSE) (not OSI-approved — see [License](#license)).
+
+Want to contribute? Start with the [contribution guide](CONTRIBUTING.md), [developer setup](docs/development.md), and [documentation index](docs/README.md). Primary guides have English and Chinese versions.
 
 ## Quick Start
 
@@ -267,7 +269,7 @@ Full write-up: [嵌套虚拟化架构](docs/next/嵌套虚拟化架构.md).
 
 <br>
 
-See also [docs/OpenArk功能对照与TODO.md](docs/OpenArk功能对照与TODO.md) for the OpenArk comparison.
+See also [OpenArk comparison (Chinese)](docs/research/openark-comparison.zh-CN.md) for the OpenArk comparison.
 
 | Dock | Contents |
 |---|---|
@@ -295,62 +297,54 @@ Auxiliary: task progress panel, log output with GUID call-chain tracing, immedia
 
 ## Repository Layout
 
+See the [layout and filename rules](docs/repository-layout.md).
+
 ```
-Ksword5.1/              Full Qt app
-KswordARKLight/          Lightweight Win32 edition
-KswordARKDriver/         Kernel driver
-Launcher/                Startup helper
-KswordCLI/               CLI (docs: docs/CLI使用文档.md)
-KswordSetup/             Optional installer
-Taskbar/                 Top AppBar (S O S Enter quick launch)
-KswordHUD/               HUD overlay
-APIMonitor_x64/          API monitoring helper
+apps/desktop/            Full Qt app
+apps/ark_light/          Lightweight Win32 edition
+drivers/ark/         Kernel driver
+apps/launcher/                Startup helper
+apps/cli/               CLI (docs: docs/cli.md)
+apps/setup/             Optional installer
+apps/taskbar/                 Top AppBar (S O S Enter quick launch)
+apps/hud/               HUD overlay
+integrations/api_monitor/          API monitoring helper
 shared/driver/           Shared IOCTL protocol headers
-tools/                   PDB offset generator, build tools
-docs/                    Technical docs
+tests/native/            Offline native regression projects
+tools/                   Source checks, generators, developer commands
+scripts/                 Setup, runtime, and acceptance scripts
+build/msbuild/           Shared MSBuild configuration
+docs/                    English guides, assets, and research
+docs/zh-CN/              Chinese documentation copies
 ```
 
 Website: [KSwordDEV/Website](https://github.com/KSwordDEV/Website)
 
 ## Building
 
-Requirements: Windows 10/11, VS 2022 (MSVC), Qt 6.9.3 msvc2022_64 (not needed for Light/Launcher), WDK (driver only).
+Start with the offline tests or CLI. On Windows, install Visual Studio 2022's
+Desktop development with C++ workload (MSVC v143 and Windows SDK), then run:
 
 ```powershell
-.\Setup-QtPaths.ps1 -QtDir 'C:\Qt\6.9.3\msvc2022_64'
-
-$msbuild = 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe'
-& $msbuild '.\Ksword5.1\Ksword5.1.sln' /t:Build /p:Configuration=Debug /p:Platform=x64 /m
+uv run --python 3.12 python tools/dev.py doctor
+uv run --python 3.12 python tools/dev.py test
+uv run --python 3.12 python tools/dev.py test --target cli
 ```
 
-Light only: `& $msbuild '.\KswordARKLight\KswordARKLight.vcxproj' /t:Build /p:Configuration=Release /p:Platform=x64 /m`
-
-No WDK? Build the user-mode projects and reuse an existing driver binary for the release.
-
-<details>
-<summary>Build troubleshooting</summary>
-
-<br>
-
-**LNK1000 / IMAGE::BuildImage on the main app** — do a one-off clean rebuild with WPO and LTCG off. Don't make it permanent. Check exit code and that `Ksword5.1\x64\Release\Ksword5.1.exe` exists and is non-zero.
-
-**WDK ApiValidator fails after the driver links** — usually arch mismatch. Run standalone:
-
-```powershell
-$solutionDir = (Resolve-Path '.\Ksword5.1').Path + '\'
-$apiValidatorX64 = 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64'
-& $msbuild '.\KswordARKDriver\KswordARKDriver.vcxproj' /t:ApiValidator `
-  /p:Configuration=Release /p:Platform=x64 /p:SolutionDir=$solutionDir `
-  /p:ApiValidator_ApiExtractorExePath=$apiValidatorX64 /m:1 /v:minimal
-```
-
-</details>
+These targets need no Qt, WDK, driver, or private release data. Python 3.12+
+users can replace `uv run --python 3.12 python` with `python`.
+For the Qt desktop, dependency discovery, build troubleshooting, and the inputs
+required by apps/launcher/ARKLight, see the [build guide](docs/development.md).
 
 ## Contributing
 
-Protocol headers in `shared/driver/`, UI talks to the driver through `ArkDriverClient` only, kernel offsets come from verified PDB/DynData profiles (never hardcoded), new files go in `.vcxproj` + `.vcxproj.filters`.
+Bug reports, docs, translations, tests, and code contributions are welcome in
+English or Chinese. The [contribution guide](CONTRIBUTING.md) walks through a
+first PR and lists small, independently testable areas. The
+[code map](docs/maintenance.md) explains where changes belong.
 
-Details: [CONTRIBUTING.md](CONTRIBUTING.md) · [AGENTS.md](AGENTS.md)
+Run `python tools/check.py` for the source checks used by CI (Python 3.12+, no Qt
+or WDK needed). Build and test the affected component before submitting a change.
 
 <details>
 <summary>Protocol reference</summary>
@@ -373,7 +367,7 @@ All headers under `shared/driver/`.
 
 ## Docs
 
-[CLI使用文档](docs/CLI使用文档.md) · [功能技术文档](docs/功能技术文档.md) · [内核知识中心](docs/内核知识中心.md) · [IOCTL audit](docs/driver_ioctl_audit.md) · [OpenArk对照](docs/OpenArk功能对照与TODO.md) · [动态偏移接入](docs/动态偏移功能接入步骤.md) · [PDB/R0 audit prep](docs/pdb_r0_audit_prep/) · [插件系统](docs/插件系统规范.md) · [多语言规范](docs/多语言语言包规范.md)
+[Documentation index](docs/README.md) · [CLI reference](docs/cli.md) · [Kernel knowledge](docs/kernel-knowledge.md) · [IOCTL audit](docs/ioctl-audit.md) · [DynData integration](docs/dyndata.md) · [Plugin specification](docs/plugins.md) · [Language packs](docs/language-packs.md)
 
 Virtualization (HVM): [嵌套虚拟化架构](docs/next/嵌套虚拟化架构.md) · [EPT切换后端设计](docs/next/EPT切换后端设计.md) · [嵌套下的跨核TLB失效](docs/next/嵌套下的跨核TLB失效.md) · [隐蔽Hook安全边界决策](docs/next/隐蔽Hook安全边界决策.md) · [自动化测试](docs/next/自动化测试.md) · [VM测试机搭建](docs/next/VM测试机搭建.md)
 

@@ -19,17 +19,11 @@ import ksword_profile_release_sync as release_sync
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CATALOG = (
     ROOT
-    / "Ksword5.1"
-    / "Ksword5.1"
-    / "ArkDriverClient"
-    / "ArkRuntimeDynDataCatalog.inc"
+    / 'shared/ark_client/ArkRuntimeDynDataCatalog.inc'
 )
 DEFAULT_RUNTIME_SOURCE = (
     ROOT
-    / "Ksword5.1"
-    / "Ksword5.1"
-    / "ArkDriverClient"
-    / "ArkRuntimeDynData.cpp"
+    / 'shared/ark_client/ArkRuntimeDynData.cpp'
 )
 
 FIELD_RE = re.compile(

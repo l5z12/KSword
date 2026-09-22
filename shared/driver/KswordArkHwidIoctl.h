@@ -4,10 +4,10 @@
 
 // ============================================================
 // KswordArkHwidIoctl.h
-// 作用：
-// - 定义 EASY-HWID-SPOOFER Dispatch 派遣函数方案的 R3/R0 协议；
-// - 只覆盖“修改驱动程序 MajorFunction 派遣函数”路径；
-// - 不定义 SMBIOS 物理内存扫描/修改、卷引导扇区直写或 storport 内存直改协议。
+// Purpose:
+// - Define the R3/R0 protocol for the EASY-HWID-SPOOFER dispatch function scheme.
+// - Only override the path for 'modifying the driver's MajorFunction dispatch function'.
+// - Does not define protocols for SMBIOS physical memory scan/modify, volume boot sector direct write, or storport memory direct modification.
 // ============================================================
 
 #define KSWORD_ARK_HWID_DISPATCH_PROTOCOL_VERSION 1UL

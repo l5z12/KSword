@@ -1,8 +1,8 @@
-# 宿主侧 A/B：同样的空闲条件，比较"不开隐藏"与"开隐藏"两种常驻。
+# Host-side A/B: Under identical idle conditions, compare the two resident modes: 'hidden mode off' vs. 'hidden mode on'.
 #
-# 12:42:55 那次 0xA 发生在机器空闲、没人登录、VMware 没跑的时候，栈上没有我们的帧。
-# 这一轮要回答的只有一个问题：**隐藏模式会不会把机器弄崩**。所以两相只差那一位，
-# 其余全部相同，而且由宿主计时与判活 —— 来宾崩了宿主还在。
+# 12:42:55: The 0xA incident occurred when the machine was idle, no user was logged in, and VMware was not running; our frames were absent from the stack.
+# This round answers only one question: **Will hidden mode crash the machine**? Thus, the two phases differ by only that one bit,
+# Everything else remains identical, with the host handling timing and liveness checks—the guest may crash while the host continues.
 param([int] $PhaseSeconds = 300)
 
 $ErrorActionPreference = 'Continue'
@@ -37,7 +37,7 @@ function Ctl($verb) {
 function RunPhase($name, $verb) {
     Note ('--- ' + $name + ' ---')
     $boot0 = GuestBoot
-    Note ('  开机时刻 ' + $boot0)
+    Note ('  Boot time ' + $boot0)
 
     $r = Ctl 'status'
     $st = $null
@@ -52,8 +52,8 @@ function RunPhase($name, $verb) {
     if ($st -and -not ($st.stateNames -contains 'SELF_TEST_PASSED')) { $null = Ctl 'self-test' }
 
     $r = Ctl $verb
-    if ($null -eq $r -or $r.Exit -ne 0) { Note ('  ' + $verb + ' 起不来，exit=' + $(if ($r) { $r.Exit } else { 'N/A' })); return 'BRINGUP_FAILED' }
-    Note ('  ' + $verb + ' 已起')
+    if ($null -eq $r -or $r.Exit -ne 0) { Note ('  ' + $verb + '  failed to start, exit=' + $(if ($r) { $r.Exit } else { 'N/A' })); return 'BRINGUP_FAILED' }
+    Note ('  ' + $verb + '  started')
     $cv = Ctl 'cpuid-view'
     if ($cv) { Note ('  cpuid-view ' + $cv.Out.Trim()) }
 
@@ -61,18 +61,18 @@ function RunPhase($name, $verb) {
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 20
         $b = GuestBoot
-        if ($null -eq $b) { Note '  **来宾不应答**'; return 'UNRESPONSIVE' }
-        if ([math]::Abs(($b - $boot0).TotalSeconds) -ge 2) { Note ('  **来宾重启过** ' + $boot0 + ' -> ' + $b); return 'REBOOTED' }
+        if ($null -eq $b) { Note '  **Guest does not respond**'; return 'UNRESPONSIVE' }
+        if ([math]::Abs(($b - $boot0).TotalSeconds) -ge 2) { Note ('  **Guest has rebooted** ' + $boot0 + ' -> ' + $b); return 'REBOOTED' }
     }
-    Note ('  ' + $PhaseSeconds + ' 秒内没有重启，没有失联')
+    Note ('  ' + $PhaseSeconds + '  seconds passed without restart or disconnection')
     return 'SURVIVED'
 }
 
 [IO.File]::WriteAllText('C:\Users\Felix\CLionProjects\KSword\docs\next\logs\abtest.log', '')
-Note '=== A/B 开始 ==='
-$a = RunPhase 'A 相：不开隐藏 (resident-nested)' 'resident-nested'
-Note ('A 相结果 ' + $a)
-$b = RunPhase 'B 相：开隐藏 (resident-nested-hidehv)' 'resident-nested-hidehv'
-Note ('B 相结果 ' + $b)
+Note '=== A/B Start ==='
+$a = RunPhase 'Phase A: No hidden (resident-nested)' 'resident-nested'
+Note ('Phase A result ' + $a)
+$b = RunPhase 'Phase B: Enable hidden (resident-nested-hidehv)' 'resident-nested-hidehv'
+Note ('Phase B result ' + $b)
 $null = Ctl 'stop'
-Note ('=== 完  A=' + $a + '  B=' + $b + ' ===')
+Note ('=== Done A=' + $a + ' B=' + $b + ' ===')

@@ -1,0 +1,154 @@
+/*++
+
+Module Name:
+
+    hvm_nested_decode.h
+
+Abstract:
+
+    Decodes the VM-exit instruction-information field into the operand that a
+    VMX instruction named.  Every nested VMX instruction except VMXOFF,
+    VMLAUNCH and VMRESUME carries an operand, so this decode is the shared
+    prerequisite for all of them.
+
+Environment:
+
+    Kernel-mode Driver Framework.
+
+--*/
+
+#pragma once
+
+#include "hvm_internal.h"
+
+/* Forward-declare the VM-exit register frame without creating include cycles. */
+struct KswHvmGprFrame;
+
+/*
+ * Name the two instruction-information layouts.
+ *
+ * Intel gives VMREAD and VMWRITE a different field layout from the rest: they
+ * can name a register instead of memory, and they spend bits 6:3 and 31:28 on
+ * the two register operands that the memory-only instructions leave undefined.
+ * Decoding one with the other's layout reads undefined bits as if they meant
+ * something, so the caller states which one it has.
+ */
+#define KSW_HVM_VMX_OPERAND_LAYOUT_MEMORY_ONLY 0UL
+#define KSW_HVM_VMX_OPERAND_LAYOUT_VMREAD_WRITE 1UL
+/*
+ * INVEPT and INVVPID: memory operand plus a register holding the type.
+ *
+ * Their memory operand decodes exactly like the memory-only group, but bits
+ * 31:28 - undefined for that group - carry the second register operand.  A
+ * separate layout rather than always reading those bits, because reading
+ * undefined bits for VMXON or VMCLEAR would produce a register number out of
+ * nothing.
+ */
+#define KSW_HVM_VMX_OPERAND_LAYOUT_INVALIDATION 2UL
+
+/* Preserve one decoded VMX instruction operand. */
+typedef struct KswHvmVmxOperand
+{
+    /* Record whether the instruction named a register instead of memory. */
+    BOOLEAN isRegister;
+    /* Record the architectural register number when IsRegister is set. */
+    UCHAR primaryRegister;
+    /* Record the second register operand, used only by VMREAD and VMWRITE. */
+    UCHAR secondaryRegister;
+    /* Record the operand address width in bytes: 2, 4 or 8. */
+    UCHAR addressSizeBytes;
+    /* Record the segment register index the operand was relative to. */
+    ULONG segmentRegister;
+    /* Record the computed guest linear address when IsRegister is clear. */
+    ULONGLONG linearAddress;
+} KswHvmVmxOperand;
+
+EXTERN_C_START
+
+/*
+ * Read one guest general-purpose register by its architectural number.
+ *
+ * Returns 0 on success, non-zero when the register could not be produced.
+ *
+ * This is exported rather than kept private because every nested instruction
+ * that writes a result back to a register needs the same number-to-storage
+ * mapping, and a second copy of that mapping is a second chance to get the
+ * RSP hole wrong.
+ */
+UCHAR
+kswordArkHvmNestedReadGpr(
+    _In_ const struct KswHvmGprFrame* frame,
+    _In_ ULONG registerNumber,
+    _Out_ ULONGLONG* value
+    );
+
+/* Write one guest general-purpose register by its architectural number. */
+UCHAR
+kswordArkHvmNestedWriteGpr(
+    _Inout_ struct KswHvmGprFrame* frame,
+    _In_ ULONG registerNumber,
+    _In_ ULONGLONG value
+    );
+
+/*
+ * Forward declaration of the per-processor physical window.
+ *
+ * Declared rather than included so this header keeps naming only what the
+ * decoder needs; the definition lives in hvm_phys_window.h, which the
+ * implementation includes.
+ */
+struct KswHvmPhysWindow;
+
+/*
+ * Read or write eight bytes of guest memory at a guest linear address.
+ *
+ * Returns STATUS_SUCCESS only when the access was actually performed.
+ *
+ * These are the VM-exit-safe accessors.  kswordArkHvmMemoryTranslate is not
+ * one: it reads page-table entries through a shared window guarded by
+ * KeAcquireSpinLock, and taking a spin lock in VMX root means either an IRQL
+ * claim we cannot honour or a wait on a processor that may itself be in root
+ * mode.  That module belongs to the IOCTL path.
+ *
+ * Window is the calling processor's physical window.  It is not optional in
+ * practice - without one there is no way to resolve the address and the call
+ * refuses - but it is typed optional because the resident context is allowed
+ * to come up without a window, and a caller that lost the race must get a
+ * refusal rather than a fault.
+ *
+ * The address is resolved through the **guest's** page tables, not by
+ * dereferencing it.  A guest that runs its own address space - which is what
+ * every hypervisor underneath us does - has kernel-half addresses that exist
+ * in no Windows address space, and dereferencing one from root mode is a
+ * bugcheck.  That is not hypothetical; see the walk's own comment.
+ */
+NTSTATUS
+kswordArkHvmNestedReadGuestQword(
+    _Inout_opt_ struct KswHvmPhysWindow* window,
+    _In_ ULONGLONG linearAddress,
+    _Out_ ULONGLONG* value
+    );
+
+/* Write eight bytes of guest memory at a guest linear address. */
+NTSTATUS
+kswordArkHvmNestedWriteGuestQword(
+    _Inout_opt_ struct KswHvmPhysWindow* window,
+    _In_ ULONGLONG linearAddress,
+    _In_ ULONGLONG value
+    );
+
+/*
+ * Decode the operand of the VMX instruction that caused the current exit.
+ *
+ * Reads the VM-exit instruction-information and exit-qualification fields of
+ * the *current* VMCS, so it is only valid from inside a VM-exit handler.
+ * Returns STATUS_SUCCESS only when every field it needed was actually read.
+ */
+NTSTATUS
+kswordArkHvmNestedDecodeOperand(
+    _In_ const struct KswHvmGprFrame* frame,
+    _In_ ULONG layout,
+    _Out_ KswHvmVmxOperand* operand
+    );
+
+EXTERN_C_END

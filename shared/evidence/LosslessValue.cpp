@@ -2,12 +2,12 @@
 
 #include <limits>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 namespace {
 
 constexpr char kHexDigits[] = "0123456789ABCDEF";
 
-bool HexDigitValue(char c, std::uint32_t& out) noexcept {
+bool hexDigitValue(char c, std::uint32_t& out) noexcept {
     if (c >= '0' && c <= '9') {
         out = static_cast<std::uint32_t>(c - '0');
         return true;
@@ -23,14 +23,14 @@ bool HexDigitValue(char c, std::uint32_t& out) noexcept {
     return false;
 }
 
-bool ParseHexBody(std::string_view text, std::uint64_t& out) noexcept {
+bool parseHexBody(std::string_view text, std::uint64_t& out) noexcept {
     if (text.empty() || text.size() > 16U) {
         return false;
     }
     std::uint64_t value = 0U;
-    for (const char c : text) {
+    for (const char kC : text) {
         std::uint32_t digit = 0U;
-        if (!HexDigitValue(c, digit)) {
+        if (!hexDigitValue(kC, digit)) {
             return false;
         }
         value = (value << 4U) | digit;
@@ -39,21 +39,21 @@ bool ParseHexBody(std::string_view text, std::uint64_t& out) noexcept {
     return true;
 }
 
-bool ParseDecimalBody(std::string_view text, std::uint64_t& out) noexcept {
+bool parseDecimalBody(std::string_view text, std::uint64_t& out) noexcept {
     if (text.empty()) {
         return false;
     }
     constexpr std::uint64_t kMax = (std::numeric_limits<std::uint64_t>::max)();
     std::uint64_t value = 0U;
-    for (const char c : text) {
-        if (c < '0' || c > '9') {
+    for (const char kC : text) {
+        if (kC < '0' || kC > '9') {
             return false;
         }
-        const std::uint64_t digit = static_cast<std::uint64_t>(c - '0');
-        if (value > (kMax - digit) / 10U) {
-            return false; // 溢出：拒绝，不截断
+        const std::uint64_t kDigit = static_cast<std::uint64_t>(kC - '0');
+        if (value > (kMax - kDigit) / 10U) {
+            return false; // Overflow: Reject, do not truncate.
         }
-        value = value * 10U + digit;
+        value = value * 10U + kDigit;
     }
     out = value;
     return true;
@@ -61,14 +61,14 @@ bool ParseDecimalBody(std::string_view text, std::uint64_t& out) noexcept {
 
 } // namespace
 
-std::string FormatU64(std::uint64_t value, U64Format format) {
-    if (format == U64Format::HexAddress) {
+std::string formatU64(std::uint64_t value, U64Format format) {
+    if (format == U64Format::kHexAddress) {
         std::string text(18U, '0');
         text[0] = '0';
         text[1] = 'x';
         for (std::size_t i = 0U; i < 16U; ++i) {
-            const std::uint32_t shift = static_cast<std::uint32_t>((15U - i) * 4U);
-            text[2U + i] = kHexDigits[(value >> shift) & 0xFULL];
+            const std::uint32_t kShift = static_cast<std::uint32_t>((15U - i) * 4U);
+            text[2U + i] = kHexDigits[(value >> kShift) & 0xFULL];
         }
         return text;
     }
@@ -90,55 +90,55 @@ std::string FormatU64(std::uint64_t value, U64Format format) {
     return text;
 }
 
-std::string FormatOptionalU64(const OptionalU64& value, U64Format format) {
+std::string formatOptionalU64(const OptionalU64& value, U64Format format) {
     if (!value.present) {
         return std::string();
     }
-    return FormatU64(value.value, format);
+    return formatU64(value.value, format);
 }
 
-bool ParseU64(std::string_view text, std::uint64_t& out) noexcept {
+bool parseU64(std::string_view text, std::uint64_t& out) noexcept {
     if (text.size() > 2U && text[0] == '0' && (text[1] == 'x' || text[1] == 'X')) {
-        return ParseHexBody(text.substr(2U), out);
+        return parseHexBody(text.substr(2U), out);
     }
-    return ParseDecimalBody(text, out);
+    return parseDecimalBody(text, out);
 }
 
-bool ParseOptionalU64(std::string_view text, OptionalU64& out) noexcept {
+bool parseOptionalU64(std::string_view text, OptionalU64& out) noexcept {
     if (text.empty()) {
         out = OptionalU64::unset();
         return true;
     }
     std::uint64_t value = 0U;
-    if (!ParseU64(text, value)) {
+    if (!parseU64(text, value)) {
         return false;
     }
     out = OptionalU64::of(value);
     return true;
 }
 
-std::string FormatI64(std::int64_t value) {
+std::string formatI64(std::int64_t value) {
     if (value < 0) {
-        // 先转成无符号再取反，避免 INT64_MIN 取负的未定义行为。
-        const std::uint64_t magnitude = ~static_cast<std::uint64_t>(value) + 1ULL;
-        return std::string("-") + FormatU64(magnitude, U64Format::Decimal);
+        // Convert to unsigned first, then negate, to avoid undefined behavior when negating INT64_MIN.
+        const std::uint64_t kMagnitude = ~static_cast<std::uint64_t>(value) + 1ULL;
+        return std::string("-") + formatU64(kMagnitude, U64Format::kDecimal);
     }
-    return FormatU64(static_cast<std::uint64_t>(value), U64Format::Decimal);
+    return formatU64(static_cast<std::uint64_t>(value), U64Format::kDecimal);
 }
 
-bool ParseI64(std::string_view text, std::int64_t& out) noexcept {
+bool parseI64(std::string_view text, std::int64_t& out) noexcept {
     if (text.empty()) {
         return false;
     }
-    const bool negative = text[0] == '-';
-    const std::string_view body = negative ? text.substr(1U) : text;
+    const bool kNegative = text[0] == '-';
+    const std::string_view kBody = kNegative ? text.substr(1U) : text;
     std::uint64_t magnitude = 0U;
-    if (!ParseDecimalBody(body, magnitude)) {
+    if (!parseDecimalBody(kBody, magnitude)) {
         return false;
     }
     constexpr std::uint64_t kPositiveMax =
         static_cast<std::uint64_t>((std::numeric_limits<std::int64_t>::max)());
-    if (negative) {
+    if (kNegative) {
         if (magnitude > kPositiveMax + 1ULL) {
             return false;
         }
@@ -156,4 +156,4 @@ bool ParseI64(std::string_view text, std::int64_t& out) noexcept {
     return true;
 }
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

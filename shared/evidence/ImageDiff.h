@@ -1,16 +1,16 @@
 #pragma once
 
-// I 模块差异引擎 —— I-04（热补丁与未知合法变化）、I-05（差异定位和上下文）、
-// I-06（跳转目标和所有者）、I-09（扫描覆盖和竞态）、I-10（磁盘参考的可信度）。
+// I module difference engine — I-04 (hot patches and unknown legitimate changes), I-05 (difference localization and context),
+// I-06 (jump targets and owners), I-09 (scan coverage and race conditions), I-10 (credibility of disk references).
 //
-// 输入是 PeImageMap 产出的"归一化后的磁盘映像"和现场读到的映像字节，输出是逐条
-// 可回溯的差异事实。设计上刻意不提供的东西，同样是判据的一部分：
-//   * 没有 isMalicious / isSuspicious 之类的字段。跨模块跳转、RWX、微软签名都不是
-//     结论，只是事实；结论层只有 AnalysisConclusion 四态。
-//   * 没有"按模块整体豁免"的入口。ExplanationRule 只能作用在具体 RVA 范围上，
-//     且命中时必须记下 ruleId + ruleVersion，否则一次签名校验就能让整份驱动永久放行。
-//   * 读不到的字节永远是缺失标记，不补 00 后参与比较 —— 补 0 会把"没读到"伪装成
-//     "读到了 0"，进而变成一条凭空的差异或一次凭空的"一致"。
+// Input: normalized disk image produced by PeImageMap and raw image bytes read from the scene.
+// Output: traceable difference facts. Deliberately omitted items are also part of the criteria:
+//   * No fields like isMalicious or isSuspicious exist. Cross-module jumps, RWX, and Microsoft signatures
+//     are not conclusions, but facts; the conclusion layer only has the four states of AnalysisConclusion.
+//   * There is no entry point for 'module-wide exemption'. ExplanationRule can only apply to specific RVA ranges, and upon a match,
+//     ruleId and ruleVersion must be recorded; otherwise, a single signature verification could permanently allow an entire driver.
+//   * Bytes that cannot be read are always treated as missing markers and are not padded with 00 for comparison.
+//     Padding with 0 would disguise "unread" as "read 0", potentially creating a spurious difference or a spurious match.
 //
 // C++20、Qt-free、Win32-free。
 
@@ -25,23 +25,23 @@
 #include <string>
 #include <vector>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 
 // ---------------------------------------------------------------------------
-// I-05：现场字节与读取状态
+// I-05: On-site bytes and read status.
 // ---------------------------------------------------------------------------
 
-// 三态而不是 optional：读不到和没去读是两回事，前者是失败证据，后者是覆盖缺口。
+// Three states instead of optional: failing to read and not attempting to read are distinct; the former is failure evidence, the latter is a coverage gap.
 enum class ByteReadStatus {
-    Read,
-    Unreadable,
-    NotCollected,
+    kRead,
+    kUnreadable,
+    kNotCollected,
 };
 
-const char* ByteReadStatusName(ByteReadStatus status) noexcept;
+const char* byteReadStatusName(ByteReadStatus status) noexcept;
 
-// 现场读到的一段映像字节。status 与 bytes 平行等长；status != Read 时 bytes 的值
-// 无意义，调用方必须先看 status。窗口之外一律 NotCollected。
+// A segment of image bytes read from the live system. status and bytes are parallel and equal in length; when status != Read,
+// the value in bytes is meaningless, and the caller must check status first. Anything outside the window is marked NotCollected.
 struct LiveImageBytes final {
     std::uint32_t baseRva = 0;
     std::vector<std::uint8_t> bytes;
@@ -51,139 +51,139 @@ struct LiveImageBytes final {
     RvaRange window() const noexcept;
 
     ByteReadStatus statusAt(std::uint32_t rva) const noexcept;
-    // 只有 status == Read 才返回 true 并写 out；其余情况 out 不被修改。
+    // Returns true and writes to out only if status == Read; otherwise, out remains unmodified.
     bool byteAt(std::uint32_t rva, std::uint8_t& out) const noexcept;
 
-    // 构造辅助：整段按 Read 填入。
+    // Construction helper: fill the entire segment with Read.
     static LiveImageBytes fromBytes(std::uint32_t baseRva, std::vector<std::uint8_t> data);
-    // 把一段标成不可读/未采集。范围超出窗口的部分被忽略。
+    // Mark a range as unreadable/uncollected. Portions exceeding the window are ignored.
     void markRange(const RvaRange& range, ByteReadStatus newStatus) noexcept;
 };
 
 // ---------------------------------------------------------------------------
-// I-04：解释规则
+// I-04: Explanation rule
 // ---------------------------------------------------------------------------
 
-// I-04：一条解释规则的最大跨度。热补丁、已发布补丁、跳板这类"有具体依据"的改动
-// 都是指令级的，64 KiB 已经远超真实需要。设这条与参考映像无关的硬上限，是为了让
-// 无映像上下文的 API（usable()）也无法被一条 range={0,0xFFFFFFFF} 的规则绕过 ——
-// 那等于给整份驱动永久放行，正是 I-04 通过条件明令禁止的。
+// I-04: Maximum span for a single explanation rule. Changes with concrete basis, such as hot patches, released patches,
+// and pivots, are instruction-level; 64 KiB far exceeds actual needs. Setting this hard limit unrelated to the reference
+// image prevents APIs without image context (usable()) from being bypassed by a rule like range={0,0xFFFFFFFF}, which
+// would effectively grant permanent access to the entire driver—a scenario explicitly prohibited by the I-04 condition.
 inline constexpr std::uint32_t kExplanationRuleMaxSpanBytes = 0x10000U;
 
-// 一条解释规则只覆盖一个具体 RVA 范围。没有"整模块"重载，也不打算有。
+// An explanation rule covers only a specific RVA range. There is no 'whole-module' overload, nor is one planned.
 struct ExplanationRule final {
     std::string ruleId;
     std::uint32_t ruleVersion = 0;
     RvaRange range;
-    std::string evidenceText;   // 依据来源（例如某个已发布补丁的编号），不是结论
+    std::string evidenceText;   // Based on the source (e.g., a published patch number), not the conclusion.
 
-    // 结构性判据，不看参考映像。真正生效的是 AdmitExplanationRule —— 它还要求
-    // 范围落在参考映像的某一个节（或 PE 头）里面。
+    // Structural criterion: ignore the reference image. The effective rule is admitExplanationRule,
+    // which also requires the range to fall within a section (or PE header) of the reference image.
     bool usable() const noexcept {
         return !ruleId.empty() && !range.empty() && range.length <= kExplanationRuleMaxSpanBytes;
     }
 };
 
-// 规则准入结论。拒绝原因分开列，UI 才能说清"这条规则为什么没生效"。
+// Rule admission conclusion. Rejection reasons are listed separately so the UI can clearly explain why a specific rule did not take effect.
 enum class RuleAdmission {
-    Accepted,
-    Unusable,               // ruleId 为空 / 范围为空 / 跨度超过硬上限
-    CoversWholeImage,       // 覆盖或超过整个参考映像 —— 整模块豁免
-    NotScopedToOneSection,  // 范围没有完整落在某一个已映射节或 PE 头区间内
+    kAccepted,
+    kUnusable,               // ruleId is null / range is empty / span exceeds hard limit
+    kCoversWholeImage,       // Covers or exceeds the entire reference image — full module exemption.
+    kNotScopedToOneSection,  // The range does not fully fall within a single mapped section or PE header interval.
 };
 
-const char* RuleAdmissionName(RuleAdmission admission) noexcept;
+const char* ruleAdmissionName(RuleAdmission admission) noexcept;
 
-// I-04：豁免必须精确到范围。一条规则要生效，必须整段落在参考映像的某一个已映射
-// 节（或 PE 头）之内 —— 跨节的"依据"没有可核对的对象，覆盖整份映像的规则更是
-// 直接的整模块放行。被拒的规则不参与匹配，并在报告里留下限制键。
-RuleAdmission AdmitExplanationRule(const PeImageMap& reference,
+// I-04: Exemptions must be scoped precisely. For a rule to take effect, it must lie entirely within a single mapped section (or
+// PE header) of the reference image. Cross-section 'basis' has no verifiable target, and rules covering the entire image amount
+// to a direct module-wide bypass. Rejected rules do not participate in matching and leave a restriction key in the report.
+RuleAdmission admitExplanationRule(const PeImageMap& reference,
                                    const ExplanationRule& rule) noexcept;
 
-// 只有当规则范围**完全包含**待判范围、且该规则通过了 AdmitExplanationRule 时才算
-// 命中。部分覆盖不算 —— 否则一条覆盖一个字节的规则就能解释掉一整段改写。
-const ExplanationRule* FindExplanationRule(const PeImageMap& reference,
+// A match occurs only if the rule range **fully contains** the range being checked AND the rule passes admitExplanationRule.
+// Partial coverage does not count — otherwise, a rule covering a single byte could explain an entire rewritten segment.
+const ExplanationRule* findExplanationRule(const PeImageMap& reference,
                                            const std::vector<ExplanationRule>& rules,
                                            const RvaRange& span) noexcept;
 
 enum class DiffExplanation {
-    Unexplained,  // 默认状态。没有具体依据就停在这里
-    Explained,    // 命中了某条规则的具体 RVA 范围
+    kUnexplained,  // Default state. Stop here without specific evidence.
+    kExplained,    // RVA range where a specific rule was matched.
 };
 
-const char* DiffExplanationName(DiffExplanation explanation) noexcept;
+const char* diffExplanationName(DiffExplanation explanation) noexcept;
 
 // ---------------------------------------------------------------------------
-// I-05：差异条目
+// I-05: Diff entry
 // ---------------------------------------------------------------------------
 
 enum class DiffKind {
-    ByteDifference,    // 双方都可读且字节不同
-    MissingLiveBytes,  // 现场读不到 —— 既不是差异也不是"相同"
+    kByteDifference,    // Both readable and bytes differ
+    kMissingLiveBytes,  // Cannot read from live state — neither a difference nor 'same'.
 };
 
-const char* DiffKindName(DiffKind kind) noexcept;
+const char* diffKindName(DiffKind kind) noexcept;
 
-// 折叠前的原始子范围。折叠只是显示层的合并，原始范围必须能展开。
+// The original sub-range before folding. Folding is merely a merge at the display layer; the original range must be expandable.
 struct DiffSubRange final {
     std::uint32_t rva = 0;
     std::uint32_t length = 0;
     std::vector<std::uint8_t> referenceBytes;
-    std::vector<std::uint8_t> liveBytes;  // readStatus != Read 时为空，绝不补 00
+    std::vector<std::uint8_t> liveBytes;  // Empty when readStatus != Read; never pad with 00.
 };
 
-// I-05 要求每条差异带"前后少量反汇编"。本层是 Qt-free / Win32-free 的纯字节层，
-// 不含解码器，因此 decoded 恒为 false，文本由上层填。结构上必须能区分：
-//   * 没尝试解码（attempted == false）—— 覆盖缺口；
-//   * 尝试过但解不出来（attempted && !decoded）—— 失败证据，必须带原因键。
-// 两者塌成同一个空串就等于把"没查"伪装成"查了没有"。
+// I-05 requires each difference to include "a small amount of disassembly before and after". This layer is a pure byte layer without Qt or
+// Win32, and contains no decoder, so decoded is always false; text is filled by the upper layer. The structure must be able to distinguish:
+//   * Decoding was not attempted (attempted == false) — covers the gap;
+//   * Attempted but failed to decode (attempted && !decoded) — failure evidence; must include a reason key.
+// If both collapse into the same empty string, it disguises 'not checked' as 'checked and found nothing'.
 struct DisassemblyContext final {
     bool attempted = false;
     bool decoded = false;
-    std::string beforeText;   // 仅 decoded 时有意义
-    std::string afterText;    // 仅 decoded 时有意义
-    // attempted 且未解码时必须非空的 i18n 键。缺失是显式状态，不是空串。
+    std::string beforeText;   // Meaningful only when decoded.
+    std::string afterText;    // Meaningful only when decoded.
+    // Nonempty i18n key required when attempted but not decoded. Missing is an explicit state, not an empty string.
     std::string unavailableReasonKey;
 
     bool notAttempted() const noexcept { return !attempted; }
     bool attemptedButUndecoded() const noexcept { return attempted && !decoded; }
 };
 
-// 本层唯一能给出的"尝试过但解不出来"原因：这一层根本没有解码器。
+// The only "attempted but failed" reason this layer can provide: no decoder exists in this layer.
 inline constexpr const char* kDisassemblyUnavailableNoDecoder =
     "integrity.disassembly.noDecoderInThisLayer";
 
 struct ImageDiffEntry final {
-    DiffKind kind = DiffKind::ByteDifference;
-    // I-05：这条差异属于哪一个模块实例。同名不同版本、同路径重载都靠它区分；
-    // 空身份意味着调用方没提供，不代表"就是当前模块"。
+    DiffKind kind = DiffKind::kByteDifference;
+    // I-05: The module instance to which this difference belongs. It distinguishes between same-name different versions and same-path overloads.
+    // Null identity means the caller did not provide one; it does not imply "the current module".
     DriverInstanceId module;
-    std::string sectionName;                       // 头部为 "(headers)"，间隙为空串
+    std::string sectionName;                       // Header is "(headers)"; gap is an empty string.
     std::size_t sectionIndex = kInvalidSectionIndex;
     std::uint32_t rva = 0;
     std::uint64_t va = 0;                          // reference.loadedBase + rva
     std::uint32_t length = 0;
-    ByteReadStatus readStatus = ByteReadStatus::Read;
-    DiffExplanation explanation = DiffExplanation::Unexplained;
-    std::string ruleId;                            // 仅 Explained 时非空
+    ByteReadStatus readStatus = ByteReadStatus::kRead;
+    DiffExplanation explanation = DiffExplanation::kUnexplained;
+    std::string ruleId;                            // Non-empty only when Explained.
     std::uint32_t ruleVersion = 0;
     std::string ruleEvidence;
-    std::string evidenceSource;                    // 这条差异的证据来源串
+    std::string evidenceSource;                    // The evidence source string for this difference.
 
     std::vector<std::uint8_t> referenceBytes;
     std::vector<std::uint8_t> liveBytes;
-    bool byteEvidenceTruncated = false;            // 超过 maxBytesPerEntry 时为 true
+    bool byteEvidenceTruncated = false;            // true when exceeding maxBytesPerEntry
 
-    // I-05：反汇编上下文。它的状态**绝不**影响上面的原始字节证据 —— 解不出指令
-    // 不代表读不到字节。
+    // I-05: Disassembly context. Its state **must never** affect the raw byte evidence
+    // above; failing to decode an instruction does not mean the bytes are unreadable.
     DisassemblyContext disassembly;
 
-    std::vector<DiffSubRange> subRanges;           // 未折叠的原始子范围
-    bool collapsed = false;                        // 由多个子范围折叠而来
+    std::vector<DiffSubRange> subRanges;           // Unfolded original sub-ranges
+    bool collapsed = false;                        // Collapsed from multiple sub-ranges.
 };
 
 // ---------------------------------------------------------------------------
-// I-09：覆盖统计与模块身份复核
+// I-09: Coverage statistics and module identity verification.
 // ---------------------------------------------------------------------------
 
 struct CountTriplet final {
@@ -191,8 +191,8 @@ struct CountTriplet final {
     std::uint64_t succeeded = 0;
     std::uint64_t failed = 0;
     std::uint64_t excluded = 0;
-    // 命中上限而**从未被扫描**的部分。它既不是"尝试过失败了"，也不是"被判为
-    // 不可比较排除掉了"，混进任何一个桶都会让账目对不上（F-06）。
+    // Portions that hit the limit and were **never scanned**. They are neither "attempted but failed" nor
+    // "excluded as incomparable"; mixing any of these into a bucket will cause the accounting to be off (F-06).
     std::uint64_t notAttempted = 0;
 };
 
@@ -203,76 +203,76 @@ struct ScanCoverageStats final {
     std::uint32_t pageSize = 4096;
 };
 
-void AccumulateStats(ScanCoverageStats& accumulator, const ScanCoverageStats& one) noexcept;
+void accumulateStats(ScanCoverageStats& accumulator, const ScanCoverageStats& one) noexcept;
 
 enum class ModuleStalenessVerdict {
-    Same,          // 读前读后身份确认一致
-    Stale,         // 已卸载 / 换版 / 换基址 —— 旧地址不得继续用于解释
-    Unverifiable,  // 身份信息不足，既不能确认也不能否定
+    kSame,          // Identity confirmation before and after read is consistent.
+    kStale,         // Unloaded, replaced by a different version, or rebased: do not interpret using old addresses.
+    kUnverifiable,  // Insufficient identity: neither confirmable nor negatable.
 };
 
-const char* ModuleStalenessVerdictName(ModuleStalenessVerdict verdict) noexcept;
+const char* moduleStalenessVerdictName(ModuleStalenessVerdict verdict) noexcept;
 
-// 复用 ObjectIdentity 的 MatchDriverInstance，并额外加两条本模块专有的判据：
-//   * 读后拿不到任何可用身份 -> Stale。读到一半模块消失时保守判过期，方向上安全。
-//   * 同一启动周期内基址变化 -> Stale。同基址重载的反面，旧 RVA→VA 映射已失效。
-ModuleStalenessVerdict CheckModuleStillSame(const DriverInstanceId& before,
+// Reuse ObjectIdentity's matchDriverInstance, plus two additional module-specific criteria: check for null.
+//   * If no usable identity can be obtained after reading -> Stale. Conservatively mark as expired if the module disappears mid-read; this direction is safe.
+//   * Base address change within the same boot cycle -> Stale. The inverse of reloading with the same base; the old RVA-to-VA mapping is now invalid.
+ModuleStalenessVerdict checkModuleStillSame(const DriverInstanceId& before,
                                             const DriverInstanceId& after) noexcept;
 
 // ---------------------------------------------------------------------------
-// I-10：比较依据
+// I-10: Comparison basis
 // ---------------------------------------------------------------------------
 
 enum class ReferenceSourceKind {
-    LocalDisk,          // 本机磁盘上的同名文件
-    UserSelectedImage,  // 用户显式选择的参考映像
-    SavedSnapshot,      // 已保存的会话快照
+    kLocalDisk,          // Same-named file on the local disk
+    kUserSelectedImage,  // User explicitly selected reference image.
+    kSavedSnapshot,      // Saved session snapshot.
 };
 
-const char* ReferenceSourceKindName(ReferenceSourceKind kind) noexcept;
+const char* referenceSourceKindName(ReferenceSourceKind kind) noexcept;
 
 struct ReferenceSource final {
-    ReferenceSourceKind kind = ReferenceSourceKind::LocalDisk;
-    std::string description;  // 路径 / 快照 id 等可核对的标识
-    FileIdentity identity;    // 可用时填；空身份意味着"同名不等于同版本"
+    ReferenceSourceKind kind = ReferenceSourceKind::kLocalDisk;
+    std::string description;  // Verifiable identifiers such as path or snapshot ID
+    FileIdentity identity;    // Fill if available; an empty identity means 'same name does not equal same version'.
 };
 
-// 返回 i18n 键。三种来源的键集合各不相同，但**都不包含**"与磁盘一致所以安全"这类
-// 结论 —— 字节一致只说明与该参考一致，参考本身可能已被篡改。
-std::vector<std::string> BuildTrustNotes(const ReferenceSource& source);
+// Returns i18n keys. The key sets for the three sources differ, but **none include** conclusions like "consistent with disk,
+// therefore secure" — byte consistency only indicates agreement with the reference, which itself may have been tampered with.
+std::vector<std::string> buildTrustNotes(const ReferenceSource& source);
 
 // ---------------------------------------------------------------------------
-// 差异引擎
+// Diff engine
 // ---------------------------------------------------------------------------
 
 struct ImageDiffOptions final {
-    // 空表示使用 reference.rawBackedRanges（头 + 各已映射节的 raw 支撑区，尚未减去
-    // 不可比较范围）。引擎随后减去排除集合并把差额记入 coverage.skipped。
+    // Empty means using reference.rawBackedRanges (header + raw backing regions of all mapped sections, before subtracting
+    // incomparable ranges). The engine then subtracts the exclusion set and records the difference in coverage.skipped.
     std::vector<RvaRange> compareRanges;
-    // 调用方额外排除的范围。典型用法：重定位无法精确应用时传
+    // Additional excluded ranges by the caller. Typical usage: pass when relocations cannot be applied precisely.
     // PeImageMap::relocation.touchedRanges。
     std::vector<RvaRange> excludedRanges;
     std::vector<ExplanationRule> rules;
     ReferenceSource reference;
     std::string evidenceSource;
-    // I-05：写进每条差异的模块实例。留空表示调用方没提供身份。
+    // I-05: Write the module instance for each difference. Empty indicates the caller did not provide an identity.
     DriverInstanceId module;
-    // I-05：是否请求反汇编上下文。本层没有解码器，置 true 只会得到
-    // attempted && !decoded + 一个明确的原因键 —— 这正是要能表达的状态。
+    // I-05: Whether to request disassembly context. This layer has no decoder; setting true yields only
+    // attempted && !decoded plus an explicit reason key—exactly the state that needs to be expressible.
     bool attemptDisassembly = false;
 
-    // I-05 折叠：间隔不超过该值的同属性差异合并成一条，子范围仍完整保留。
+    // I-05 Collapse: merge differences with the same attribute into a single entry if the gap does not exceed this value; sub-ranges remain fully preserved.
     std::uint32_t collapseGapBytes = 0;
     std::size_t maxEntries = 4096;
     std::uint32_t maxBytesPerEntry = 256;
     std::uint32_t pageSize = 4096;
-    ModuleStalenessVerdict staleness = ModuleStalenessVerdict::Same;
+    ModuleStalenessVerdict staleness = ModuleStalenessVerdict::kSame;
 };
 
 struct ImageDiffReport final {
     std::vector<ImageDiffEntry> entries;
 
-    // 被判为不可比较而排除的范围（畸形节 + 不支持的重定位 + 调用方指定）。
+    // Ranges excluded as incomparable (malformed sections + unsupported relocations + caller-specified).
     std::vector<RvaRange> excludedRanges;
 
     std::size_t byteDifferenceEntries = 0;
@@ -280,19 +280,19 @@ struct ImageDiffReport final {
     std::size_t unexplainedEntries = 0;
     std::size_t missingEntries = 0;
 
-    std::uint64_t comparedBytes = 0;     // 双方都可读并真正比较过的字节
+    std::uint64_t comparedBytes = 0;     // Bytes readable and actually compared by both parties
     std::uint64_t differingBytes = 0;
     std::uint64_t unreadableBytes = 0;
     std::uint64_t notCollectedBytes = 0;
     std::uint64_t excludedBytes = 0;
-    // 有效比较集合里因为命中上限而从未被扫描的字节。恒等式：
+    // Bytes in the valid comparison set that were never scanned due to hitting the limit. Identity:
     //   comparedBytes + unreadableBytes + notCollectedBytes + notAttemptedBytes
-    //     + excludedBytes == 请求集合的字节总数
+    //     + excludedBytes == Total bytes in the request set
     std::uint64_t notAttemptedBytes = 0;
 
-    // F-06：真正生效的两个上限都要暴露。停住扫描的是片段数上限（pieceLimit），
-    // 条目数上限（entryLimit）只决定折叠后保留多少条 —— 报告里只写后者会让
-    // 调用方以为约束是 maxEntries。
+    // F-06: Both effective limits must be exposed. The scan stops at the piece limit (pieceLimit);
+    // the entry limit (entryLimit) only determines how many entries are retained after folding.
+    // Reporting only the latter would mislead the caller into thinking the constraint is maxEntries.
     std::uint64_t entryLimit = 0;
     std::uint64_t pieceLimit = 0;
     bool scanStoppedAtPieceLimit = false;
@@ -300,24 +300,24 @@ struct ImageDiffReport final {
     CollectionOutcome outcome;
     CoverageAccount coverage;
     ScanCoverageStats stats;
-    AnalysisConclusion conclusion = AnalysisConclusion::NoEvidence;
+    AnalysisConclusion conclusion = AnalysisConclusion::kNoEvidence;
 
     ReferenceSource reference;
-    std::vector<std::string> trustNotes;      // 只由 reference 决定
-    std::vector<std::string> limitationKeys;  // 覆盖缺口 / 过期 / 重定位 / 规则被拒
-    // I-04：被 AdmitExplanationRule 拒掉的规则数。丢弃必须可见，否则调用方会
-    // 以为豁免生效了。
+    std::vector<std::string> trustNotes;      // Determined solely by the reference.
+    std::vector<std::string> limitationKeys;  // Coverage gaps / expiration / relocation / rules rejected
+    // I-04: Number of rules rejected by admitExplanationRule. Discards must
+    // be visible; otherwise, callers may assume exemptions took effect.
     std::size_t rejectedRuleCount = 0;
     bool limitHit = false;
-    ModuleStalenessVerdict staleness = ModuleStalenessVerdict::Same;
+    ModuleStalenessVerdict staleness = ModuleStalenessVerdict::kSame;
 };
 
-ImageDiffReport CompareImage(const PeImageMap& reference,
+ImageDiffReport compareImage(const PeImageMap& reference,
                              const LiveImageBytes& live,
                              const ImageDiffOptions& options);
 
 // ---------------------------------------------------------------------------
-// I-06：跳转目标与所有者
+// I-06: Jump target and owner
 // ---------------------------------------------------------------------------
 
 struct ModuleRange final {
@@ -331,61 +331,61 @@ struct ModuleRange final {
 };
 
 enum class TargetOwnerKind {
-    InsideModule,
-    OutsideKnownModules,  // 不在任何已知模块区间内。这是事实，不是"恶意"
+    kInsideModule,
+    kOutsideKnownModules,  // Outside any known module range. This is a fact, not 'malicious'.
 };
 
-const char* TargetOwnerKindName(TargetOwnerKind kind) noexcept;
+const char* targetOwnerKindName(TargetOwnerKind kind) noexcept;
 
 struct TargetOwner final {
-    TargetOwnerKind kind = TargetOwnerKind::OutsideKnownModules;
+    TargetOwnerKind kind = TargetOwnerKind::kOutsideKnownModules;
     std::string moduleName;
     OptionalU64 moduleBase;
     OptionalU64 offset;
 };
 
-TargetOwner ResolveTargetOwner(std::uint64_t address,
+TargetOwner resolveTargetOwner(std::uint64_t address,
                                const std::vector<ModuleRange>& modules);
 
-// 调用方在某个地址上看到的东西。离线测试直接给夹具，现场由反汇编/读内存填。
+// What the caller sees at a specific address. Offline tests provide fixtures directly; live environments fill via disassembly/memory read.
 enum class FollowStepKind {
-    ResolvedCode,        // 普通代码，跟随到此为止
-    DirectBranch,        // 目标已确定的直接跳转/调用，继续跟随
-    IndirectUnresolved,  // 间接跳转，目标指针取不到
-    ExportForwarder,     // 导出转发（"DLL.Export"），与上一条是两码事
-    TargetUnreadable,    // 该地址的字节读不出来
+    kResolvedCode,        // Ordinary code, following up to this point.
+    kDirectBranch,        // Direct jump/call with a determined target; continue following.
+    kIndirectUnresolved,  // Indirect jump; target pointer cannot be resolved.
+    kExportForwarder,     // Export forwarding ("DLL.Export"), which is distinct from the previous item.
+    kTargetUnreadable,    // Bytes at this address are unreadable.
 };
 
-const char* FollowStepKindName(FollowStepKind kind) noexcept;
+const char* followStepKindName(FollowStepKind kind) noexcept;
 
 struct BranchStep final {
-    FollowStepKind kind = FollowStepKind::TargetUnreadable;
-    std::uint64_t target = 0;         // 仅 DirectBranch 有效
-    std::uint32_t bytesConsumed = 0;  // 解码消耗的字节，计入 maxBytes 预算
-    std::string forwarderText;        // 仅 ExportForwarder 有效
+    FollowStepKind kind = FollowStepKind::kTargetUnreadable;
+    std::uint64_t target = 0;         // Valid only for DirectBranch.
+    std::uint32_t bytesConsumed = 0;  // Bytes consumed during decoding, counted against the maxBytes budget.
+    std::string forwarderText;        // Valid only for ExportForwarder.
 };
 
 using BranchResolver = std::function<BranchStep(std::uint64_t address)>;
 
-// 每种终止原因单独一个值。导出转发与未解析间接目标刻意不合并 —— 前者是已知的
-// 正常机制，后者是"我们没查出来"，混在一起会让覆盖率虚高。
+// Each termination reason has a distinct value. Export forwarding and unresolved indirect targets are deliberately not merged — the
+// former is a known normal mechanism, while the latter means "we failed to resolve it"; merging them would artificially inflate coverage.
 enum class FollowTermination {
-    Resolved,
-    DepthExhausted,
-    ByteBudgetExhausted,
-    CycleDetected,
-    TargetUnreadable,
-    OutsideKnownModules,
-    IndirectUnresolved,
-    ExportForwarder,
+    kResolved,
+    kDepthExhausted,
+    kByteBudgetExhausted,
+    kCycleDetected,
+    kTargetUnreadable,
+    kOutsideKnownModules,
+    kIndirectUnresolved,
+    kExportForwarder,
 };
 
-const char* FollowTerminationName(FollowTermination termination) noexcept;
+const char* followTerminationName(FollowTermination termination) noexcept;
 
 struct FollowNode final {
     std::uint64_t address = 0;
     TargetOwner owner;
-    FollowStepKind step = FollowStepKind::TargetUnreadable;
+    FollowStepKind step = FollowStepKind::kTargetUnreadable;
     std::string forwarderText;
 };
 
@@ -395,17 +395,17 @@ struct FollowOptions final {
 };
 
 struct FollowResult final {
-    FollowTermination termination = FollowTermination::TargetUnreadable;
+    FollowTermination termination = FollowTermination::kTargetUnreadable;
     std::vector<FollowNode> path;
     std::uint32_t depthUsed = 0;
     std::uint64_t bytesUsed = 0;
-    // 只陈述事实：路径上出现过模块归属变化。跨模块本身不等于恶意。
+    // State only the fact: a module ownership change occurred along the path. Crossing module boundaries does not imply malicious intent.
     bool crossedModuleBoundary = false;
 };
 
-FollowResult FollowBranchTarget(std::uint64_t startAddress,
+FollowResult followBranchTarget(std::uint64_t startAddress,
                                 const std::vector<ModuleRange>& modules,
                                 const BranchResolver& resolver,
                                 const FollowOptions& options = FollowOptions{});
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

@@ -6,7 +6,7 @@ This note is preparation for a stable, PDB-backed R0 audit workflow. The current
 
 - Repository root: `D:\Projects\Ksword5.1`
 - PDB cache root: `E:\KswordPDB\PDB\pdb-cache\amd64`
-- Script location: `D:\Projects\Ksword5.1\tools\pdb_audit_prep\pdb_inventory.py`
+- Script location: `D:\Projects\artifacts/bin\tools\pdb_audit_prep\pdb_inventory.py`
 - Output directory: `D:\Temp\ksword_pdb_audit_prep\pdb_inventory`
 
 No main project source, project files, shared protocol files, driver files, or build outputs were modified for this prep pass.
@@ -81,13 +81,13 @@ Full tool output:
 Script:
 
 ```text
-D:\Projects\Ksword5.1\tools\pdb_audit_prep\pdb_inventory.py
+D:\Projects\artifacts/bin\tools\pdb_audit_prep\pdb_inventory.py
 ```
 
 Primary command used for this pass:
 
 ```powershell
-python D:\Projects\Ksword5.1\tools\pdb_audit_prep\pdb_inventory.py `
+python D:\Projects\artifacts/bin\tools\pdb_audit_prep\pdb_inventory.py `
   --llvm-pdbutil D:\Software\VS\VC\Tools\Llvm\x64\bin\llvm-pdbutil.exe `
   --validate-globals
 ```
@@ -117,13 +117,13 @@ The inventory script proves stream availability, but it does not produce
 extractor-shaped evidence. A second read-only prototype now exists:
 
 ```text
-D:\Projects\Ksword5.1\tools\pdb_audit_prep\pdb_extract_probe.py
+D:\Projects\artifacts/bin\tools\pdb_audit_prep\pdb_extract_probe.py
 ```
 
 Command used for the current probe:
 
 ```powershell
-python D:\Projects\Ksword5.1\tools\pdb_audit_prep\pdb_extract_probe.py `
+python D:\Projects\artifacts/bin\tools\pdb_audit_prep\pdb_extract_probe.py `
   --timeout-seconds 8 `
   --public-line-limit 400 `
   --public-symbol-limit 20

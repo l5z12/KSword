@@ -4,10 +4,10 @@
 
 // ============================================================
 // KswordArkSafetyIoctl.h
-// 作用：
-// - 定义 Phase-15 危险操作统一治理协议；
-// - R0 通过中央 safety policy 决策危险操作；
-// - R3 可查询策略、开启高级模式、逐步切换到显式二次确认模式。
+// Purpose:
+// - Define the Phase-15 unified governance protocol for dangerous operations;
+// - R0 decides on dangerous operations via the central safety policy.
+// - R3 can query policies, enable advanced mode, and gradually switch to explicit secondary confirmation mode.
 // ============================================================
 
 #define KSWORD_ARK_SAFETY_PROTOCOL_VERSION 1UL

@@ -1,9 +1,9 @@
 #pragma once
 
-// F-10 取消与并发、M-10 扫描预算、F-09 会话数据与现场分开。
+// F-10: Decouple from concurrency; M-10: Scan budget; F-09: Session data separated from live evidence.
 //
-// 这里只有纯策略，不含线程、Qt 或 Win32：任务 id 单调、旧结果不回填、预算命中
-// 即停并保留部分结果、非法范围直接拒绝。UI 线程模型各自实现，判据共用这一份。
+// Pure policy only: no threads, Qt, or Win32. Task IDs are monotonic; old results are not backfilled; budget hit triggers immediate stop while
+// retaining partial results; invalid ranges are rejected directly. UI thread models are implemented separately, sharing this single set of criteria.
 
 #include "EvidenceEnvelope.h"
 #include "LosslessValue.h"
@@ -11,38 +11,38 @@
 #include <cstdint>
 #include <string>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 
 // ---------------------------------------------------------------------------
-// F-10：同一视图只接纳最新请求。
+// F-10: Only the latest request is accepted in the same view.
 // ---------------------------------------------------------------------------
 enum class TaskState {
-    Pending,
-    Running,
-    Cancelling,   // 已请求取消，后台仍在安全边界内收尾（不得伪报已清理）
-    Cancelled,
-    Completed,
-    Failed,
+    kPending,
+    kRunning,
+    kCancelling,   // Cancellation requested; background cleanup continues within safety bounds (do not falsely report cleared).
+    kCancelled,
+    kCompleted,
+    kFailed,
 };
 
-const char* TaskStateName(TaskState state) noexcept;
+const char* taskStateName(TaskState state) noexcept;
 
-// 终态之外都表示后台仍可能持有资源。
-bool TaskStateIsTerminal(TaskState state) noexcept;
+// States other than terminal indicate background may still hold resources.
+bool taskStateIsTerminal(TaskState state) noexcept;
 
-// LatestRequestGate：给一个视图用。generation 单调递增；只有最新一代的结果
-// 允许回填，晚到的旧结果一律丢弃（A 后完成也不覆盖 B）。
+// LatestRequestGate: For a view. Generation is monotonically increasing; only the latest generation's results are
+// allowed to be backfilled. Late-arriving older results are discarded (A completing after B does not overwrite B).
 class LatestRequestGate final {
 public:
-    // 开新请求，返回本次的 generation。
+    // Start a new request and return the current generation.
     std::uint64_t begin() noexcept { return ++generation_; }
 
     std::uint64_t current() const noexcept { return generation_; }
 
-    // 结果回来时问一次：是不是最新一代？
+    // Ask once when results return: Is this the latest generation?
     bool accepts(std::uint64_t generation) const noexcept { return generation == generation_; }
 
-    // 取消当前请求：generation 前进，任何在途结果都不再被接纳。
+    // Cancel current request: increment generation; any in-flight results are no longer accepted.
     void cancelCurrent() noexcept { ++generation_; }
 
 private:
@@ -50,63 +50,63 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// M-10：扫描范围与预算。
+// M-10: Scan range and budget.
 // ---------------------------------------------------------------------------
 enum class RangeValidation {
-    Ok,
-    EmptyRange,        // begin == end
-    Reversed,          // begin > end
-    Overflow,          // begin + length 溢出 64 位
-    ExceedsApproved,   // 越出用户已批准的范围
+    kOk,
+    kEmptyRange,        // begin == end
+    kReversed,          // begin > end
+    kOverflow,          // begin + length overflows 64-bit.
+    kExceedsApproved,   // Exceeds the user-approved range
 };
 
-const char* RangeValidationName(RangeValidation validation) noexcept;
+const char* rangeValidationName(RangeValidation validation) noexcept;
 
 struct AddressRange final {
     std::uint64_t begin = 0;
     std::uint64_t length = 0;
-    // M-10：(begin,end) 入口发现 end < begin 时置位。用 (begin,length) 表达范围时，
-    // 调用方自算 length 会把逆序压成回绕（或压成一个合法的小长度），Reversed 就永远
-    // 产不出来。这一位把"用户给反了"原样带到 ValidateRange。
+    // M-10: Set when the (begin, end) entry is detected with end < begin. When expressing a range as (begin,
+    // length), the caller calculating length can wrap the reversed order into a valid small length, making Reversed
+    // impossible to generate. This bit carries the "user provided reversed" state directly to validateRange.
     bool reversed = false;
 
-    bool endAddress(std::uint64_t& out) const noexcept;  // 溢出或逆序返回 false
+    bool endAddress(std::uint64_t& out) const noexcept;  // Returns false on overflow or reverse order.
 
-    // 端点构造。end < begin -> 标记 reversed（length 留 0），ValidateRange 报 Reversed。
-    // end == begin -> 空范围，ValidateRange 报 EmptyRange。
+    // Endpoint construction. If end < begin, mark as reversed (length remains 0), and validateRange reports Reversed.
+    // end == begin indicates an empty range; validateRange reports EmptyRange.
     static AddressRange fromBeginEnd(std::uint64_t begin, std::uint64_t end) noexcept;
 };
 
-// approved.length == 0 表示"调用方没有限定到具体范围"。那不等于"允许扫全 64 位
-// 地址空间"：无批准窗口时单次请求长度仍有硬天花板，越过即 ExceedsApproved。
+// approved.length == 0 means "the caller did not restrict to a specific range". This does not equal "allow scanning the full 64-bit address
+// space": when no approved window exists, a single request still has a hard ceiling on length; exceeding it results in ExceedsApproved.
 inline constexpr std::uint64_t kUnapprovedScanCeilingBytes = 1ULL << 32;  // 4 GiB
 
-// approved 为空长度表示"未限制到具体范围"，此时做自身合法性校验 + 上面的天花板。
-RangeValidation ValidateRange(const AddressRange& request, const AddressRange& approved) noexcept;
+// An empty approved length indicates 'no restriction to a specific range', triggering self-validity checks plus the upper ceiling.
+RangeValidation validateRange(const AddressRange& request, const AddressRange& approved) noexcept;
 
-// ScanBudget：字节、页和时间三条独立上限，任一命中即停止并保留已完成部分。
+// ScanBudget: three independent limits for bytes, pages, and time; stops and retains completed portion upon any limit hit.
 struct ScanBudget final {
     OptionalU64 maxBytes;
     OptionalU64 maxPages;
     OptionalU64 maxItems;
     OptionalU64 maxDurationNanos;
 
-    // 全部未设置表示无界 —— 生产路径不应出现，构造点必须显式给上限。
+    // No flags set implies unbounded — this should never occur in production paths; constructors must explicitly set an upper limit.
     bool bounded() const noexcept;
 };
 
 enum class BudgetStop {
-    Continue,
-    BytesExhausted,
-    PagesExhausted,
-    ItemsExhausted,
-    TimeExhausted,
-    Cancelled,
+    kContinue,
+    kBytesExhausted,
+    kPagesExhausted,
+    kItemsExhausted,
+    kTimeExhausted,
+    kCancelled,
 };
 
-const char* BudgetStopName(BudgetStop stop) noexcept;
+const char* budgetStopName(BudgetStop stop) noexcept;
 
-// 扫描进度。每处理一批就更新，命中上限时 shouldStop() 给出具体原因。
+// Scan progress. Update after processing each batch; when the limit is hit, shouldStop() provides the specific reason.
 struct ScanProgress final {
     std::uint64_t bytesDone = 0;
     std::uint64_t pagesDone = 0;
@@ -115,43 +115,43 @@ struct ScanProgress final {
     bool cancelRequested = false;
 };
 
-BudgetStop EvaluateBudget(const ScanBudget& budget, const ScanProgress& progress) noexcept;
+BudgetStop evaluateBudget(const ScanBudget& budget, const ScanProgress& progress) noexcept;
 
-// 把一次有界扫描的结果翻译成 F-06 的账目：命中上限 -> Partial + limitHit。
-CollectionOutcome OutcomeForStop(BudgetStop stop) noexcept;
-void ApplyStopToCoverage(BudgetStop stop, const ScanBudget& budget, CoverageAccount& coverage);
+// Translate the result of a bounded scan into F-06 accounting: hitting the limit maps to Partial + limitHit.
+CollectionOutcome outcomeForStop(BudgetStop stop) noexcept;
+void applyStopToCoverage(BudgetStop stop, const ScanBudget& budget, CoverageAccount& coverage);
 
 // ---------------------------------------------------------------------------
-// F-09：离线会话与现场数据分开。
+// F-09: Offline sessions and live data are separated.
 // ---------------------------------------------------------------------------
 enum class DataOrigin {
-    Live,     // 当前现场采集，可被新快照替换
-    Session,  // 已保存会话，禁止被后台刷新覆盖
+    kLive,     // Current live collection, replaceable by new snapshots.
+    kSession,  // Saved session; prevent background refresh from overwriting it.
 };
 
-// 现场刷新到达时的判定：会话数据永远拒绝被覆盖，现场数据只接受更新的快照。
+// Judgment upon arrival at the live refresh: session data is never allowed to be overwritten, while live data only accepts updated snapshots.
 enum class RefreshDecision {
-    Apply,
-    RejectSessionIsImmutable,
-    RejectStaleSnapshot,
-    RejectNotLatestRequest,
+    kApply,
+    kRejectSessionIsImmutable,
+    kRejectStaleSnapshot,
+    kRejectNotLatestRequest,
 };
 
-const char* RefreshDecisionName(RefreshDecision decision) noexcept;
+const char* refreshDecisionName(RefreshDecision decision) noexcept;
 
-RefreshDecision DecideRefresh(DataOrigin origin,
+RefreshDecision decideRefresh(DataOrigin origin,
                               std::uint64_t currentSnapshotId,
                               std::uint64_t incomingSnapshotId,
                               bool isLatestRequest) noexcept;
 
-// F-09：离线结果跳转现场必须显式重新校验对象身份。
+// F-09: Offline result navigation to the current site must explicitly re-verify object identity.
 enum class LiveNavigationDecision {
-    Allow,              // 现场存在且身份确认一致
-    RejectObjectExited, // 对象已退出
-    RejectIdentityMismatch,  // 同 PID/地址但身份不匹配（PID 复用）
-    RejectIdentityUnverifiable,  // 身份信息不足以确认
+    kAllow,              // Present on-site and identity confirmed consistent
+    kRejectObjectExited, // Object has exited.
+    kRejectIdentityMismatch,  // Same PID/address but identity mismatch (PID reuse).
+    kRejectIdentityUnverifiable,  // Identity information is insufficient for verification.
 };
 
-const char* LiveNavigationDecisionName(LiveNavigationDecision decision) noexcept;
+const char* liveNavigationDecisionName(LiveNavigationDecision decision) noexcept;
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

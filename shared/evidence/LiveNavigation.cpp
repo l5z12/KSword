@@ -1,78 +1,78 @@
 #include "LiveNavigation.h"
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 
-LiveNavigationDecision ResolveProcessNavigation(const ProcessInstanceId& saved,
+LiveNavigationDecision resolveProcessNavigation(const ProcessInstanceId& saved,
                                                 const LiveResolution& live) noexcept {
     if (!live.found) {
-        return LiveNavigationDecision::RejectObjectExited;
+        return LiveNavigationDecision::kRejectObjectExited;
     }
-    switch (MatchProcessInstance(saved, live.liveProcess)) {
-    case MatchResult::Confirmed:
-        return LiveNavigationDecision::Allow;
-    case MatchResult::NoMatch:
-        // 同 PID 但创建时间/启动周期不同：PID 已被复用，绝不把操作交给新进程。
-        return LiveNavigationDecision::RejectIdentityMismatch;
-    case MatchResult::Candidate:
+    switch (matchProcessInstance(saved, live.liveProcess)) {
+    case MatchResult::kConfirmed:
+        return LiveNavigationDecision::kAllow;
+    case MatchResult::kNoMatch:
+        // Same PID but different creation time or startup cycle: the PID has been reused. Never delegate operations to the new process.
+        return LiveNavigationDecision::kRejectIdentityMismatch;
+    case MatchResult::kCandidate:
         break;
     }
-    return LiveNavigationDecision::RejectIdentityUnverifiable;
+    return LiveNavigationDecision::kRejectIdentityUnverifiable;
 }
 
-const char* NavigationPageName(NavigationPage page) noexcept {
+const char* navigationPageName(NavigationPage page) noexcept {
     switch (page) {
-    case NavigationPage::Unknown:    return "Unknown";
-    case NavigationPage::RiskCenter: return "RiskCenter";
-    case NavigationPage::Driver:     return "Driver";
-    case NavigationPage::Process:    return "Process";
-    case NavigationPage::Thread:     return "Thread";
-    case NavigationPage::Memory:     return "Memory";
-    case NavigationPage::Network:    return "Network";
-    case NavigationPage::Timeline:   return "Timeline";
-    case NavigationPage::File:       return "File";
-    case NavigationPage::Handle:     return "Handle";
-    case NavigationPage::Registry:   return "Registry";
+    case NavigationPage::kUnknown:    return "Unknown";
+    case NavigationPage::kRiskCenter: return "RiskCenter";
+    case NavigationPage::kDriver:     return "Driver";
+    case NavigationPage::kProcess:    return "Process";
+    case NavigationPage::kThread:     return "Thread";
+    case NavigationPage::kMemory:     return "Memory";
+    case NavigationPage::kNetwork:    return "Network";
+    case NavigationPage::kTimeline:   return "Timeline";
+    case NavigationPage::kFile:       return "File";
+    case NavigationPage::kHandle:     return "Handle";
+    case NavigationPage::kRegistry:   return "Registry";
     }
     return "Unknown";
 }
 
-const char* NavigationOutcomeName(NavigationOutcome outcome) noexcept {
+const char* navigationOutcomeName(NavigationOutcome outcome) noexcept {
     switch (outcome) {
-    case NavigationOutcome::Delivered:         return "Delivered";
-    case NavigationOutcome::TargetPageMissing:  return "TargetPageMissing";
-    case NavigationOutcome::ObjectNotPresent:   return "ObjectNotPresent";
-    case NavigationOutcome::IdentityUnusable:   return "IdentityUnusable";
-    case NavigationOutcome::EvidenceIdMissing:  return "EvidenceIdMissing";
-    case NavigationOutcome::EvidenceNotSaved:   return "EvidenceNotSaved";
+    case NavigationOutcome::kDelivered:         return "Delivered";
+    case NavigationOutcome::kTargetPageMissing:  return "TargetPageMissing";
+    case NavigationOutcome::kObjectNotPresent:   return "ObjectNotPresent";
+    case NavigationOutcome::kIdentityUnusable:   return "IdentityUnusable";
+    case NavigationOutcome::kEvidenceIdMissing:  return "EvidenceIdMissing";
+    case NavigationOutcome::kEvidenceNotSaved:   return "EvidenceNotSaved";
     }
     return "ObjectNotPresent";
 }
 
-NavigationOutcome DecideNavigation(const NavigationRequest& request,
+NavigationOutcome decideNavigation(const NavigationRequest& request,
                                    bool targetPageAvailable,
                                    bool objectPresentInPage,
                                    bool evidencePresentInSession) noexcept {
-    // F-12：身份门槛无条件生效。requireExactMatch 说的是锚点精度，不是"要不要校验
-    // 身份"；把它当开关会让 requireExactMatch=false 的调用拿一个空主键照样 Delivered。
+    // F-12: The identity threshold applies unconditionally. requireExactMatch refers to anchor precision, not whether to validate
+    // identity; treating it as a switch would allow calls with requireExactMatch=false to deliver a result with an empty primary key.
     if (!request.object.navigable()) {
-        return NavigationOutcome::IdentityUnusable;
+        return NavigationOutcome::kIdentityUnusable;
     }
-    // F-12：导航必须带证据 id，否则跳过去也回不到原始证据。空 id 早先直接短路掉了
-    // 下面这条检查（`!empty() && ...`），"没带证据"反而比"带了但没保存"更容易过关。
+    // F-12: Navigation requires an evidence ID; otherwise, skipping to a target makes it impossible to return to the original evidence. Previously, an empty
+    // ID short-circuited the subsequent check (`!empty() && ...`), allowing "missing evidence" to pass more easily than "evidence provided but not saved."
     if (request.evidenceId.empty()) {
-        return NavigationOutcome::EvidenceIdMissing;
+        return NavigationOutcome::kEvidenceIdMissing;
     }
     if (!evidencePresentInSession) {
-        // M-08：离线会话里没保存的数据不能悄悄现场补齐。
-        return NavigationOutcome::EvidenceNotSaved;
+        // M-08: Data not saved in an offline session cannot be silently patched in the live context.
+        return NavigationOutcome::kEvidenceNotSaved;
     }
     if (!targetPageAvailable) {
-        return NavigationOutcome::TargetPageMissing;
+        return NavigationOutcome::kTargetPageMissing;
     }
     if (!objectPresentInPage) {
-        return NavigationOutcome::ObjectNotPresent;
+        return NavigationOutcome::kObjectNotPresent;
     }
-    return NavigationOutcome::Delivered;
+    return NavigationOutcome::kDelivered;
 }
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

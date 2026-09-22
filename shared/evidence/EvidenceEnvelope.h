@@ -1,11 +1,11 @@
 #pragma once
 
-// 证据 envelope —— F-04 来源和时间、F-05 可用性与结论分离、F-06 不完整采集的账目、
-// F-11 来源可信度边界。
+// Evidence envelope — F-04 source and timestamp, F-05 separation of availability and conclusion, F-06 accounting for incomplete collection,
+// F-11: Source trust boundary.
 //
-// 这一层只描述"采集这件事本身"，不描述采集到的对象。任何模块（I/X/M/T/N/S/D/C/G）
-// 产出结果时都带一份 envelope，UI、导出和报告据此区分"采集失败"、"分析无法判断"
-// 和"正确的空集合"。
+// This layer describes only the act of collection itself, not the collected objects. Every module
+// (I/X/M/T/N/S/D/C/G) includes an envelope with its results; UI, export, and reporting use this
+// to distinguish between 'collection failure', 'analysis inconclusive', and 'correct empty set'.
 
 #include "LosslessValue.h"
 
@@ -13,32 +13,32 @@
 #include <string>
 #include <vector>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 
 // ---------------------------------------------------------------------------
-// F-05：采集状态。与分析结论是两个字段，任何一方都不能推出另一方。
+// F-05: Collection status. It is separate from the analysis conclusion; neither field can be inferred from the other.
 // ---------------------------------------------------------------------------
 enum class CollectionStatus {
-    NotCollected,  // 根本没跑
-    Success,       // 跑完且覆盖了请求范围（可以是正确的空集合）
-    Partial,       // 跑了但没覆盖全部请求范围
-    Unsupported,   // 当前驱动/OS/硬件不提供该能力
-    AccessDenied,  // 权限不足
-    Timeout,       // 超时
-    Error,         // 其它失败
+    kNotCollected,  // Not collected at all
+    kSuccess,       // Completed and covering the requested range (which may be a correct empty set).
+    kPartial,       // Executed but did not cover the full request scope.
+    kUnsupported,   // Current driver/OS/hardware does not support this capability.
+    kAccessDenied,  // Access denied
+    kTimeout,       // Timeout
+    kError,         // Other failures
 };
 
-const char* CollectionStatusName(CollectionStatus status) noexcept;
+const char* collectionStatusName(CollectionStatus status) noexcept;
 
-// 只有 Success/Partial 才携带真实观测；其余状态下的"空"不是"不存在"。
-bool StatusCarriesObservation(CollectionStatus status) noexcept;
+// Only Success/Partial states carry real observations; 'empty' in other states does not mean 'non-existent'.
+bool statusCarriesObservation(CollectionStatus status) noexcept;
 
-// F-05：失败必须保留原始错误码及说明，不得用默认 0/空串/"正常"补齐。
+// F-05: On failure, preserve the original error code and description; do not pad with default 0, empty string, or "success".
 struct CollectionOutcome final {
-    CollectionStatus status = CollectionStatus::NotCollected;
-    OptionalU64 nativeCode;  // NTSTATUS / Win32 / HRESULT 原值，未知即 unset
+    CollectionStatus status = CollectionStatus::kNotCollected;
+    OptionalU64 nativeCode;  // Original NTSTATUS / Win32 / HRESULT value; unset if unknown.
     std::string nativeCodeDomain;  // "NTSTATUS" / "WIN32" / "HRESULT" / ""
-    std::string message;           // 来源给的原文，不是我们编的解释
+    std::string message;           // Original text from the source, not an explanation we generated.
 
     static CollectionOutcome success() noexcept;
     static CollectionOutcome notCollected() noexcept;
@@ -49,24 +49,24 @@ struct CollectionOutcome final {
 };
 
 // ---------------------------------------------------------------------------
-// F-05：分析结论。没有证据时不能生成"正常"。
+// F-05: Analysis conclusion. "Normal" cannot be generated when there is no evidence.
 // ---------------------------------------------------------------------------
 enum class AnalysisConclusion {
-    NoEvidence,             // 没有可用观测 —— 不是"正常"
-    NoDifferenceObserved,   // 有覆盖足够的观测且未发现矛盾 —— 不是"系统安全"
-    DifferenceObserved,     // 观测到差异
-    Indeterminate,          // 有观测但不足以判断
+    kNoEvidence,             // No observations available — not "normal".
+    kNoDifferenceObserved,   // Sufficient coverage observed with no contradictions — not "system secure"
+    kDifferenceObserved,     // Difference observed
+    kIndeterminate,          // Observed but insufficient to determine
 };
 
-const char* AnalysisConclusionName(AnalysisConclusion conclusion) noexcept;
+const char* analysisConclusionName(AnalysisConclusion conclusion) noexcept;
 
 // ---------------------------------------------------------------------------
-// F-06：不完整采集的账目。
+// F-06: Incomplete collection account.
 // ---------------------------------------------------------------------------
 struct CoverageAccount final {
-    OptionalU64 requestedBegin;  // 请求范围（地址/序号/时间，由调用方定义单位）
+    OptionalU64 requestedBegin;  // Requested range (address/sequence/time; units defined by the caller).
     OptionalU64 requestedEnd;
-    OptionalU64 processedBegin;  // 实际处理到的范围
+    OptionalU64 processedBegin;  // Actual range processed
     OptionalU64 processedEnd;
 
     std::uint64_t succeeded = 0;
@@ -74,128 +74,128 @@ struct CoverageAccount final {
     std::uint64_t skipped = 0;
     std::uint64_t truncated = 0;
 
-    bool limitHit = false;          // 命中上限而提前停止
-    OptionalU64 limit;              // 生效的上限值
-    // F-06：用户主动取消与"命中上限"是两个不同的停止原因，不能共用 limitHit —— 否则
-    // 一次取消会在账目里被表述成"命中了一个不知道是多少的上限"，"原因"这一维就丢了。
+    bool limitHit = false;          // Stop early due to limit hit
+    OptionalU64 limit;              // Effective upper limit
+    // F-06: User-initiated cancellation and 'limit hit' are distinct stop reasons and must not share limitHit;
+    // otherwise, a single cancellation would be recorded as 'hitting an unknown limit', losing the 'reason' dimension.
     bool cancelled = false;
-    // F-06：上面四个计数器是裸 u64，没有"未知"这一态。有些来源只报总数不报明细
-    // （例如 ETW 只给 EventsLost 总计），此时把未知项按 0 汇总进 failed/skipped，
-    // 等于把"不知道丢了多少"写成"一条都没丢"。置这一位表示**至少有一项计数来源
-    // 未知**，账目里的数字只是下界，不是全貌。
+    // F-06: The four counters above are raw u64 values without an "unknown" state. Some sources report only totals without
+    // details (e.g., ETW provides only a total for EventsLost). In such cases, summing unknown items as 0 into failed/skipped
+    // effectively writes "zero items lost" instead of "unknown how many were lost". Setting this flag indicates **at least
+    // one counting source is unknown**; the numbers in the ledger are merely a lower bound, not the full picture.
     bool countsIncomplete = false;
-    OptionalU64 totalKnown;         // 对象总数。未知就是 unset，不能拿已返回数冒充
+    OptionalU64 totalKnown;         // Total object count. 'Unknown' means unset; do not substitute with the number of already returned items.
 
-    // F-06：完整覆盖需要**正面证据**，空账目不是完整覆盖。
-    // 判定：先看否定项（命中上限 / 被取消 / 有失败、跳过、截断），再要求下面两条
-    // 正面证据至少成立一条：
-    //   (a) 范围口径：requested/processed 四个端点**同时**在场，且处理范围完全盖住
-    //       请求范围。少一个端点就无从校验边界，不算数。
-    //   (b) 数量口径：声明了 totalKnown，且 succeeded 已经不少于它。
-    // 两条都缺 —— 即"什么都没填" —— 返回 false：未知覆盖 ≠ 完整覆盖。
-    // 不变式：fullyCovered() 为真时 describeRemaining() 绝不返回 "remaining:unknown"。
+    // F-06: Full coverage requires **positive evidence**; empty accounts are not full coverage.
+    // Decision: First check for negative conditions (hit upper limit, cancelled, failure, skip,
+    // or truncation), then require at least one of the following two positive evidences to hold:
+    //   (a) Scope criteria: All four endpoints (requested/processed) must be present **simultaneously**, and the processed range
+    //       must fully cover the requested range. Missing any endpoint makes boundary validation impossible, so it doesn't count.
+    //   (b) Quantity semantics: totalKnown is declared, and succeeded is already not less than it.
+    // Both are missing (i.e., "nothing filled in") → return false: unknown coverage ≠ complete coverage.
+    // Invariant: When fullyCovered() is true, describeRemaining() never returns "remaining:unknown".
     bool fullyCovered() const noexcept;
 
-    // UI/报告用的剩余量说明；无法判断时返回明确的"未知"文案键而不是 0。
-    // F-06 要求"剩余范围及原因可见"，因此停止原因（cancelled / limit-hit / truncated）
-    // 优先于纯数量表述输出。
+    // Remaining amount description for UI/reports; returns a clear "unknown" text key instead of 0 when undeterminable.
+    // F-06 requires "remaining range and reason to be visible", so the stop reason (cancelled
+    // / limit-hit / truncated) takes precedence over pure quantity descriptions in output.
     std::string describeRemaining() const;
 };
 
 // ---------------------------------------------------------------------------
-// F-11：来源可信度边界。
+// F-11: Source trust boundary.
 // ---------------------------------------------------------------------------
 enum class SourceOrigin {
-    Unknown,
-    LiveKernel,    // 同一台正在运行的 Windows 内核
-    LiveUserMode,  // 同一台机器的 R3 接口
-    ExternalFile,  // 磁盘上的外部文件（映像、策略、配置）
-    OfflineSample, // 已保存的会话/快照/转储
+    kUnknown,
+    kLiveKernel,    // Same running Windows kernel instance.
+    kLiveUserMode,  // R3 interface on the same machine
+    kExternalFile,  // External files on disk (images, policies, configurations)
+    kOfflineSample, // Saved session/snapshot/dump
 };
 
-const char* SourceOriginName(SourceOrigin origin) noexcept;
+const char* sourceOriginName(SourceOrigin origin) noexcept;
 
-// F-04 + X-01：collector 身份。sourceGroup 表示"底层证据来源"，同一个 collector
-// 的两层包装必须共用同一个 sourceGroup，否则会被当成两个独立来源。
+// F-04 + X-01: collector identity. sourceGroup represents the "underlying evidence source"; two layers of wrapping
+// for the same collector must share the same sourceGroup, otherwise they are treated as two independent sources.
 struct SourceRef final {
-    std::string collectorId;              // 稳定标识，例如 "r0.process.enum"
-    std::uint32_t collectorVersion = 0;   // 该 collector 的解析/协议版本
-    std::string sourceGroup;              // 独立来源分组键
-    SourceOrigin origin = SourceOrigin::Unknown;
-    std::string dependsOn;                // 依赖链描述，例如 "ArkDriverClient/IOCTL 0x..."
+    std::string collectorId;              // Stable identifier, e.g., "r0.process.enum"
+    std::uint32_t collectorVersion = 0;   // The parsing/protocol version of this collector
+    std::string sourceGroup;              // Independent source group key
+    SourceOrigin origin = SourceOrigin::kUnknown;
+    std::string dependsOn;                // Dependency chain description, e.g., "ArkDriverClient/IOCTL 0x..."
 };
 
 enum class CaptureMode {
-    Unknown,
-    Snapshot,   // 一次性快照
-    Streaming,  // 持续采集
-    Replay,     // 从已保存数据重放
+    kUnknown,
+    kSnapshot,   // One-time snapshot
+    kStreaming,  // Continuous collection
+    kReplay,     // Replay from saved data
 };
 
-const char* CaptureModeName(CaptureMode mode) noexcept;
+const char* captureModeName(CaptureMode mode) noexcept;
 
-// F-04：UTC 与单调时钟分别使用。跨启动周期禁止直接比较单调值。
+// F-04: UTC and monotonic clocks are used separately. Direct comparison of monotonic values across boot cycles is prohibited.
 struct CaptureWindow final {
     OptionalU64 startUtc100ns;
     OptionalU64 endUtc100ns;
-    OptionalU64 startMonotonic;   // QPC ticks，只在同一 bootId 内可比
+    OptionalU64 startMonotonic;   // QPC ticks, comparable only within the same bootId.
     OptionalU64 endMonotonic;
     OptionalU64 monotonicFrequency;
 
     std::string machineId;
-    std::string bootId;    // 启动周期标识；跨 bootId 的单调值不可相减
-    std::string sessionId; // 本次采集会话
-    CaptureMode mode = CaptureMode::Unknown;
+    std::string bootId;    // Boot cycle identifier; do not subtract monotonic values with different bootId values.
+    std::string sessionId; // Current collection session
+    CaptureMode mode = CaptureMode::kUnknown;
 };
 
-// F-04：两个单调时间戳只有在同一启动周期内才可相减。
-bool MonotonicComparable(const CaptureWindow& a, const CaptureWindow& b) noexcept;
+// F-04: Two monotonic timestamps can only be subtracted if they are within the same boot cycle.
+bool monotonicComparable(const CaptureWindow& a, const CaptureWindow& b) noexcept;
 
-// 返回 false 表示不可比较（不同 boot / 缺频率 / 缺值），out 不被修改。
-bool MonotonicDeltaNanos(const CaptureWindow& window,
+// Returns false if incomparable (different boot / missing frequency / missing value); out is not modified.
+bool monotonicDeltaNanos(const CaptureWindow& window,
                          std::uint64_t earlierTicks,
                          std::uint64_t laterTicks,
                          std::int64_t& outNanos) noexcept;
 
 // ---------------------------------------------------------------------------
-// 组合体
+// Aggregate
 // ---------------------------------------------------------------------------
 struct EvidenceEnvelope final {
     SourceRef source;
     CaptureWindow window;
     CollectionOutcome outcome;
     CoverageAccount coverage;
-    std::string evidenceId;  // 本批结果的稳定 id，供导航与报告引用（F-12）
+    std::string evidenceId;  // Stable ID for this batch of results, used for navigation and report references (F-12).
 
-    // F-05 核心约束：没有观测就不能得出"未发现差异"。
-    // differenceFound 只在 StatusCarriesObservation 为真时才被采纳。
+    // F-05 core constraint: Without observations, do not conclude that "no differences were found".
+    // differenceFound is only accepted when statusCarriesObservation is true.
     AnalysisConclusion deriveConclusion(bool differenceFound) const noexcept;
 };
 
-// F-11：多个视图一致只说明这些视图未发现矛盾。该函数产出的是覆盖与信任说明的
-// 结构化事实，调用方据此渲染；它绝不产出"系统安全"/"不存在 rootkit"结论。
+// F-11: Consistency across multiple views only indicates that no contradictions were found in those views. This function produces structured facts
+// covering coverage and trust statements for the caller to render; it never produces conclusions like "system is secure" or "no rootkit exists."
 struct TrustStatement final {
     std::size_t viewCount = 0;
     std::size_t independentSourceGroupCount = 0;
     bool allFromSameLiveKernel = false;
     bool anyIncompleteCoverage = false;
 
-    // F-11 要求区分"同一台正在运行的 Windows 内核 / 外部文件 / 离线样本"三类来源。
-    // 单个 allFromSameLiveKernel 只表达得出"是不是全部来自本机内核"，它为 false 时
-    // 没有任何字段能说明另一半来自哪里，因此按 SourceOrigin 逐类计数。
+    // F-11 requires distinguishing between three sources: 'same running Windows kernel', 'external files', and 'offline samples'.
+    // The single `allFromSameLiveKernel` flag only indicates whether everything originates from the local kernel. When
+    // false, no field specifies the origin of the remainder, so counts are performed per category based on `SourceOrigin`.
     std::size_t unknownOriginViewCount = 0;
     std::size_t liveKernelViewCount = 0;
     std::size_t liveUserModeViewCount = 0;
     std::size_t externalFileViewCount = 0;
     std::size_t offlineSampleViewCount = 0;
-    std::size_t distinctOriginCount = 0;   // 参与本次结论的来源类别数
+    std::size_t distinctOriginCount = 0;   // Count of source categories involved in this conclusion
 
-    std::vector<std::string> limitationKeys;  // i18n 键，UI 负责翻译
+    std::vector<std::string> limitationKeys;  // i18n key; UI handles translation
 
-    // 便捷读取：某一类来源出现过几次。UI 渲染"这份结论有多少来自离线样本"用。
+    // Convenient read: count occurrences of a source type. Used by UI to render "how much of this conclusion comes from offline samples".
     std::size_t originViewCount(SourceOrigin origin) const noexcept;
 };
 
-TrustStatement BuildTrustStatement(const std::vector<EvidenceEnvelope>& envelopes);
+TrustStatement buildTrustStatement(const std::vector<EvidenceEnvelope>& envelopes);
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

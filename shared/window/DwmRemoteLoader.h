@@ -17,7 +17,7 @@ namespace ks::dwm_order::transport
 
     // Uses the target process identity. Keep deployment handles until loading ends,
     // including when the initiating call times out.
-    LoadResult LoadAgent(void* process, std::uint32_t processId, const std::wstring& path,
+    LoadResult loadAgent(void* process, std::uint32_t processId, const std::wstring& path,
         std::shared_ptr<void> lease = {});
 
     // Private x64 ABI shared with OtherDock/DwmRemoteLoader.asm.

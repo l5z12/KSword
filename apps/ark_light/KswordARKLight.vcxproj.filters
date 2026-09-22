@@ -1,0 +1,1497 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <Filter Include="app">
+      <UniqueIdentifier>{87A96A8D-6604-5F28-BE56-A026FE71E4F1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps">
+      <UniqueIdentifier>{A9890CDD-5ACA-5485-880B-E690F9C3217B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\desktop">
+      <UniqueIdentifier>{1520487C-442A-51E5-8A8E-67A785E95B21}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\desktop\Resource">
+      <UniqueIdentifier>{F0B79CE5-D004-55A5-A327-6E5036593323}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\desktop\Resource\Logo">
+      <UniqueIdentifier>{F0A9E4FF-A618-5D5A-BC2C-AE333C3A4360}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core">
+      <UniqueIdentifier>{5216AEB7-4D58-52BE-B907-1D70657BEB26}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="docking">
+      <UniqueIdentifier>{89DC787E-E7CB-57F9-AA50-9E741E9F6FF2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features">
+      <UniqueIdentifier>{C8924EA6-8C6C-5729-9DD1-DD691CAE910D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\audit_common">
+      <UniqueIdentifier>{0517B4FE-E18A-5517-A9A0-ED64568F02C1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\driver">
+      <UniqueIdentifier>{0DEC9067-2868-5635-AF4B-B5C2F3A0E06D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\file">
+      <UniqueIdentifier>{7CBBABE8-0E0E-5670-8857-476150B6630F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\handle">
+      <UniqueIdentifier>{52C17C59-00CF-5B76-8E3D-B7167A94DE63}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\hardware">
+      <UniqueIdentifier>{BAE47366-C1E7-5CCE-AF9D-120A764FDF73}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\hardware_stats">
+      <UniqueIdentifier>{364686AA-4056-5BBE-84B7-D47D04E633F1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\kernel">
+      <UniqueIdentifier>{91EDCBC0-2C0C-5D28-BC6F-4F08E5F34A79}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\memory">
+      <UniqueIdentifier>{7F847879-CDDC-546A-AFF7-64E716ACDC68}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\misc">
+      <UniqueIdentifier>{E5D8B91B-52C7-5E95-9C7F-F336B6BD0C0F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\monitor">
+      <UniqueIdentifier>{E518EECB-038D-50A0-9A7C-09AACAC7BA6B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\net_tools">
+      <UniqueIdentifier>{634B1E26-2D0A-5BBE-BE8E-B18BD005ED47}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\network">
+      <UniqueIdentifier>{DB0915F4-CFD9-566C-A3B6-A054A70DB17E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\privilege">
+      <UniqueIdentifier>{EEDFF728-C585-5402-A33F-C5BC58B1FE62}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\process">
+      <UniqueIdentifier>{D16A5A88-D6AF-592D-A17A-2CFAD94D113D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\process_detail">
+      <UniqueIdentifier>{54341F5C-8758-50F0-ADD5-97021D89ECC7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\registry">
+      <UniqueIdentifier>{D4676266-1ACF-5845-92CD-BBBBAAC6FE4E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\service">
+      <UniqueIdentifier>{E85532BC-E728-52EC-A425-8B1373F9257D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\startup">
+      <UniqueIdentifier>{F1BCB150-FB8F-59B5-9076-1B8562655C85}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\sys_tools">
+      <UniqueIdentifier>{EA2AF50D-BCD4-5E64-8DFF-5A0EDCC34A72}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\window">
+      <UniqueIdentifier>{CBE18303-385E-54E2-B382-98CB20C64655}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\window_tools">
+      <UniqueIdentifier>{87E5BA03-4953-5FB2-912B-646A40426DA6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared">
+      <UniqueIdentifier>{EB65F970-0288-504B-AA6E-6179879C878C}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared\ark_client">
+      <UniqueIdentifier>{C4233764-B2C1-5450-8463-1D7289DC3C4D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared\driver">
+      <UniqueIdentifier>{2F65AFC3-4FC6-58BC-A062-78555C0FB256}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared\platform">
+      <UniqueIdentifier>{EB08B96A-1C29-5119-899F-B527444C4D94}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared\platform\file">
+      <UniqueIdentifier>{0F7CC715-75C8-59D3-B021-DB46FCCB9655}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared\platform\process">
+      <UniqueIdentifier>{F17D82E4-6163-5139-AFA5-4EED788FE462}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared\platform\service">
+      <UniqueIdentifier>{2907898D-23E1-5B52-94F9-D8EBC3DFD895}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared\platform\string">
+      <UniqueIdentifier>{8F9237B2-9AD9-5632-9F00-A78744CDF04A}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ui">
+      <UniqueIdentifier>{11FA0058-328D-510B-B213-000AC4238012}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="KswordARKLight.rc" />
+    <ClInclude Include="resource.h" />
+    <ClCompile Include="app\Main.cpp">
+      <Filter>app</Filter>
+    </ClCompile>
+    <ClCompile Include="app\MainWindow.cpp">
+      <Filter>app</Filter>
+    </ClCompile>
+    <ClInclude Include="app\MainWindow.h">
+      <Filter>app</Filter>
+    </ClInclude>
+    <Image Include="..\desktop\Resource\Logo\KswordLogo.ico">
+      <Filter>apps\desktop\Resource\Logo</Filter>
+    </Image>
+    <Image Include="..\desktop\Resource\Logo\Mainlogo.png">
+      <Filter>apps\desktop\Resource\Logo</Filter>
+    </Image>
+    <ClCompile Include="core\Common.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClInclude Include="core\Common.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClCompile Include="core\DriverLease.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClInclude Include="core\DriverLease.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\DriverLeasePolicy.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClCompile Include="core\DriverService.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClInclude Include="core\DriverService.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClCompile Include="core\EntityRef.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClInclude Include="core\EntityRef.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClCompile Include="core\NtApi.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClInclude Include="core\NtApi.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClCompile Include="core\PathUtils.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClInclude Include="core\PathUtils.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClCompile Include="core\Privilege.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClInclude Include="core\Privilege.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\Win32Lean.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClCompile Include="core\WorkspaceConfig.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClInclude Include="core\WorkspaceConfig.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClCompile Include="docking\DockManager.cpp">
+      <Filter>docking</Filter>
+    </ClCompile>
+    <ClInclude Include="docking\DockManager.h">
+      <Filter>docking</Filter>
+    </ClInclude>
+    <ClCompile Include="features\FeatureRegistry.cpp">
+      <Filter>features</Filter>
+    </ClCompile>
+    <ClInclude Include="features\FeatureRegistry.h">
+      <Filter>features</Filter>
+    </ClInclude>
+    <ClInclude Include="features\audit_common\AuditCommon.h">
+      <Filter>features\audit_common</Filter>
+    </ClInclude>
+    <ClCompile Include="features\audit_common\AuditFormatting.cpp">
+      <Filter>features\audit_common</Filter>
+    </ClCompile>
+    <ClInclude Include="features\audit_common\AuditFormatting.h">
+      <Filter>features\audit_common</Filter>
+    </ClInclude>
+    <ClCompile Include="features\audit_common\AuditStatus.cpp">
+      <Filter>features\audit_common</Filter>
+    </ClCompile>
+    <ClInclude Include="features\audit_common\AuditStatus.h">
+      <Filter>features\audit_common</Filter>
+    </ClInclude>
+    <ClCompile Include="features\audit_common\AuditSummaryPanel.cpp">
+      <Filter>features\audit_common</Filter>
+    </ClCompile>
+    <ClInclude Include="features\audit_common\AuditSummaryPanel.h">
+      <Filter>features\audit_common</Filter>
+    </ClInclude>
+    <ClCompile Include="features\audit_common\AuditTable.cpp">
+      <Filter>features\audit_common</Filter>
+    </ClCompile>
+    <ClInclude Include="features\audit_common\AuditTable.h">
+      <Filter>features\audit_common</Filter>
+    </ClInclude>
+    <ClCompile Include="features\driver\DriverActions.cpp">
+      <Filter>features\driver</Filter>
+    </ClCompile>
+    <ClInclude Include="features\driver\DriverActions.h">
+      <Filter>features\driver</Filter>
+    </ClInclude>
+    <ClCompile Include="features\driver\DriverDebugOutputView.cpp">
+      <Filter>features\driver</Filter>
+    </ClCompile>
+    <ClInclude Include="features\driver\DriverDebugOutputView.h">
+      <Filter>features\driver</Filter>
+    </ClInclude>
+    <ClCompile Include="features\driver\DriverEnumerator.cpp">
+      <Filter>features\driver</Filter>
+    </ClCompile>
+    <ClInclude Include="features\driver\DriverEnumerator.h">
+      <Filter>features\driver</Filter>
+    </ClInclude>
+    <ClCompile Include="features\driver\DriverFeature.cpp">
+      <Filter>features\driver</Filter>
+    </ClCompile>
+    <ClInclude Include="features\driver\DriverFeature.h">
+      <Filter>features\driver</Filter>
+    </ClInclude>
+    <ClCompile Include="features\driver\DriverModel.cpp">
+      <Filter>features\driver</Filter>
+    </ClCompile>
+    <ClInclude Include="features\driver\DriverModel.h">
+      <Filter>features\driver</Filter>
+    </ClInclude>
+    <ClCompile Include="features\driver\DriverObjectView.cpp">
+      <Filter>features\driver</Filter>
+    </ClCompile>
+    <ClInclude Include="features\driver\DriverObjectView.h">
+      <Filter>features\driver</Filter>
+    </ClInclude>
+    <ClCompile Include="features\driver\DriverOverviewView.cpp">
+      <Filter>features\driver</Filter>
+    </ClCompile>
+    <ClInclude Include="features\driver\DriverOverviewView.h">
+      <Filter>features\driver</Filter>
+    </ClInclude>
+    <ClCompile Include="features\driver\DriverUnloadedView.cpp">
+      <Filter>features\driver</Filter>
+    </ClCompile>
+    <ClInclude Include="features\driver\DriverUnloadedView.h">
+      <Filter>features\driver</Filter>
+    </ClInclude>
+    <ClCompile Include="features\file\FileActions.cpp">
+      <Filter>features\file</Filter>
+    </ClCompile>
+    <ClInclude Include="features\file\FileActions.h">
+      <Filter>features\file</Filter>
+    </ClInclude>
+    <ClCompile Include="features\file\FileFeature.cpp">
+      <Filter>features\file</Filter>
+    </ClCompile>
+    <ClInclude Include="features\file\FileFeature.h">
+      <Filter>features\file</Filter>
+    </ClInclude>
+    <ClCompile Include="features\file\FileSystemEnumerator.cpp">
+      <Filter>features\file</Filter>
+    </ClCompile>
+    <ClInclude Include="features\file\FileSystemEnumerator.h">
+      <Filter>features\file</Filter>
+    </ClInclude>
+    <ClCompile Include="features\file\FileView.cpp">
+      <Filter>features\file</Filter>
+    </ClCompile>
+    <ClInclude Include="features\file\FileView.h">
+      <Filter>features\file</Filter>
+    </ClInclude>
+    <ClCompile Include="features\file\PathNavigator.cpp">
+      <Filter>features\file</Filter>
+    </ClCompile>
+    <ClInclude Include="features\file\PathNavigator.h">
+      <Filter>features\file</Filter>
+    </ClInclude>
+    <ClCompile Include="features\handle\HandleClient.cpp">
+      <Filter>features\handle</Filter>
+    </ClCompile>
+    <ClInclude Include="features\handle\HandleClient.h">
+      <Filter>features\handle</Filter>
+    </ClInclude>
+    <ClCompile Include="features\handle\HandleFeature.cpp">
+      <Filter>features\handle</Filter>
+    </ClCompile>
+    <ClInclude Include="features\handle\HandleFeature.h">
+      <Filter>features\handle</Filter>
+    </ClInclude>
+    <ClCompile Include="features\handle\HandlePage.cpp">
+      <Filter>features\handle</Filter>
+    </ClCompile>
+    <ClInclude Include="features\handle\HandlePage.h">
+      <Filter>features\handle</Filter>
+    </ClInclude>
+    <ClCompile Include="features\hardware\HardwareEnumerator.cpp">
+      <Filter>features\hardware</Filter>
+    </ClCompile>
+    <ClInclude Include="features\hardware\HardwareEnumerator.h">
+      <Filter>features\hardware</Filter>
+    </ClInclude>
+    <ClCompile Include="features\hardware\HardwareFeature.cpp">
+      <Filter>features\hardware</Filter>
+    </ClCompile>
+    <ClInclude Include="features\hardware\HardwareFeature.h">
+      <Filter>features\hardware</Filter>
+    </ClInclude>
+    <ClCompile Include="features\hardware\HardwareHwidDispatchView.cpp">
+      <Filter>features\hardware</Filter>
+    </ClCompile>
+    <ClInclude Include="features\hardware\HardwareHwidDispatchView.h">
+      <Filter>features\hardware</Filter>
+    </ClInclude>
+    <ClCompile Include="features\hardware\HardwareModel.cpp">
+      <Filter>features\hardware</Filter>
+    </ClCompile>
+    <ClInclude Include="features\hardware\HardwareModel.h">
+      <Filter>features\hardware</Filter>
+    </ClInclude>
+    <ClCompile Include="features\hardware\HardwareView.cpp">
+      <Filter>features\hardware</Filter>
+    </ClCompile>
+    <ClInclude Include="features\hardware\HardwareView.h">
+      <Filter>features\hardware</Filter>
+    </ClInclude>
+    <ClCompile Include="features\hardware_stats\BusDeviceView.cpp">
+      <Filter>features\hardware_stats</Filter>
+    </ClCompile>
+    <ClInclude Include="features\hardware_stats\BusDeviceView.h">
+      <Filter>features\hardware_stats</Filter>
+    </ClInclude>
+    <ClCompile Include="features\hardware_stats\DeviceTopologyEnumerator.cpp">
+      <Filter>features\hardware_stats</Filter>
+    </ClCompile>
+    <ClInclude Include="features\hardware_stats\DeviceTopologyEnumerator.h">
+      <Filter>features\hardware_stats</Filter>
+    </ClInclude>
+    <ClCompile Include="features\hardware_stats\DiskActivityView.cpp">
+      <Filter>features\hardware_stats</Filter>
+    </ClCompile>
+    <ClInclude Include="features\hardware_stats\DiskActivityView.h">
+      <Filter>features\hardware_stats</Filter>
+    </ClInclude>
+    <ClCompile Include="features\hardware_stats\HardwareStatsModel.cpp">
+      <Filter>features\hardware_stats</Filter>
+    </ClCompile>
+    <ClInclude Include="features\hardware_stats\HardwareStatsModel.h">
+      <Filter>features\hardware_stats</Filter>
+    </ClInclude>
+    <ClCompile Include="features\hardware_stats\PerformanceSampler.cpp">
+      <Filter>features\hardware_stats</Filter>
+    </ClCompile>
+    <ClInclude Include="features\hardware_stats\PerformanceSampler.h">
+      <Filter>features\hardware_stats</Filter>
+    </ClInclude>
+    <ClCompile Include="features\hardware_stats\PerformanceView.cpp">
+      <Filter>features\hardware_stats</Filter>
+    </ClCompile>
+    <ClInclude Include="features\hardware_stats\PerformanceView.h">
+      <Filter>features\hardware_stats</Filter>
+    </ClInclude>
+    <ClCompile Include="features\hardware_stats\UsbTopologyView.cpp">
+      <Filter>features\hardware_stats</Filter>
+    </ClCompile>
+    <ClInclude Include="features\hardware_stats\UsbTopologyView.h">
+      <Filter>features\hardware_stats</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelAtomTableFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelAtomTableFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelBaseNamedObjectsFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelBaseNamedObjectsFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelCallbackEnumerationFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelCallbackEnumerationFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelCallbackEventReceiver.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelCallbackEventReceiver.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelCallbackInterceptFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelCallbackInterceptFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelCatalog.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelCatalog.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelCommunicationEndpointFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelCommunicationEndpointFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelDeviceDriverObjectsFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelDeviceDriverObjectsFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelDriverStatusFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelDriverStatusFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelDynDataFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelDynDataFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelDynDataProfiles.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelDynDataProfiles.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelFacade.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelFacade.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelIatEatHookFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelIatEatHookFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelInlineHookFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelInlineHookFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelModel.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelModel.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelNamedPipeFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelNamedPipeFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelNativeQueries.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelNativeQueries.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelNtQueryLegacyFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelNtQueryLegacyFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelObjectDirectoryRecursiveFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelObjectDirectoryRecursiveFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelObjectNamespaceFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelObjectNamespaceFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelObjectTypeMatrixFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelObjectTypeMatrixFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelPage.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelPage.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelPageLayout.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelPageLayout.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelR0ExtendedFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelR0ExtendedFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelShadowSsdtFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelShadowSsdtFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelSsdtFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelSsdtFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\kernel\KernelSymbolicLinkFeature.cpp">
+      <Filter>features\kernel</Filter>
+    </ClCompile>
+    <ClInclude Include="features\kernel\KernelSymbolicLinkFeature.h">
+      <Filter>features\kernel</Filter>
+    </ClInclude>
+    <ClCompile Include="features\memory\DriverMemoryClient.cpp">
+      <Filter>features\memory</Filter>
+    </ClCompile>
+    <ClInclude Include="features\memory\DriverMemoryClient.h">
+      <Filter>features\memory</Filter>
+    </ClInclude>
+    <ClCompile Include="features\memory\DriverMemoryModel.cpp">
+      <Filter>features\memory</Filter>
+    </ClCompile>
+    <ClInclude Include="features\memory\DriverMemoryModel.h">
+      <Filter>features\memory</Filter>
+    </ClInclude>
+    <ClCompile Include="features\memory\DriverMemoryView.cpp">
+      <Filter>features\memory</Filter>
+    </ClCompile>
+    <ClInclude Include="features\memory\DriverMemoryView.h">
+      <Filter>features\memory</Filter>
+    </ClInclude>
+    <ClCompile Include="features\memory\MemoryFeature.cpp">
+      <Filter>features\memory</Filter>
+    </ClCompile>
+    <ClInclude Include="features\memory\MemoryFeature.h">
+      <Filter>features\memory</Filter>
+    </ClInclude>
+    <ClCompile Include="features\memory\MemoryInspection.cpp">
+      <Filter>features\memory</Filter>
+    </ClCompile>
+    <ClInclude Include="features\memory\MemoryInspection.h">
+      <Filter>features\memory</Filter>
+    </ClInclude>
+    <ClCompile Include="features\memory\MemorySnapshot.cpp">
+      <Filter>features\memory</Filter>
+    </ClCompile>
+    <ClInclude Include="features\memory\MemorySnapshot.h">
+      <Filter>features\memory</Filter>
+    </ClInclude>
+    <ClCompile Include="features\memory\MemoryWritePlan.cpp">
+      <Filter>features\memory</Filter>
+    </ClCompile>
+    <ClInclude Include="features\memory\MemoryWritePlan.h">
+      <Filter>features\memory</Filter>
+    </ClInclude>
+    <ClCompile Include="features\misc\MiscFeature.cpp">
+      <Filter>features\misc</Filter>
+    </ClCompile>
+    <ClInclude Include="features\misc\MiscFeature.h">
+      <Filter>features\misc</Filter>
+    </ClInclude>
+    <ClCompile Include="features\monitor\EtwEventModel.cpp">
+      <Filter>features\monitor</Filter>
+    </ClCompile>
+    <ClInclude Include="features\monitor\EtwEventModel.h">
+      <Filter>features\monitor</Filter>
+    </ClInclude>
+    <ClCompile Include="features\monitor\EtwFilterDialog.cpp">
+      <Filter>features\monitor</Filter>
+    </ClCompile>
+    <ClInclude Include="features\monitor\EtwFilterDialog.h">
+      <Filter>features\monitor</Filter>
+    </ClInclude>
+    <ClCompile Include="features\monitor\EtwFilterModel.cpp">
+      <Filter>features\monitor</Filter>
+    </ClCompile>
+    <ClInclude Include="features\monitor\EtwFilterModel.h">
+      <Filter>features\monitor</Filter>
+    </ClInclude>
+    <ClCompile Include="features\monitor\EtwMonitorView.cpp">
+      <Filter>features\monitor</Filter>
+    </ClCompile>
+    <ClInclude Include="features\monitor\EtwMonitorView.h">
+      <Filter>features\monitor</Filter>
+    </ClInclude>
+    <ClCompile Include="features\monitor\EtwSessionController.cpp">
+      <Filter>features\monitor</Filter>
+    </ClCompile>
+    <ClInclude Include="features\monitor\EtwSessionController.h">
+      <Filter>features\monitor</Filter>
+    </ClInclude>
+    <ClCompile Include="features\monitor\MonitorFeature.cpp">
+      <Filter>features\monitor</Filter>
+    </ClCompile>
+    <ClInclude Include="features\monitor\MonitorFeature.h">
+      <Filter>features\monitor</Filter>
+    </ClInclude>
+    <ClCompile Include="features\net_tools\NetToolsActions.cpp">
+      <Filter>features\net_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\net_tools\NetToolsActions.h">
+      <Filter>features\net_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\net_tools\NetToolsConnectionView.cpp">
+      <Filter>features\net_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\net_tools\NetToolsConnectionView.h">
+      <Filter>features\net_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\net_tools\NetToolsDiagnosticView.cpp">
+      <Filter>features\net_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\net_tools\NetToolsDiagnosticView.h">
+      <Filter>features\net_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\net_tools\NetToolsDiagnostics.cpp">
+      <Filter>features\net_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\net_tools\NetToolsDiagnostics.h">
+      <Filter>features\net_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\net_tools\NetToolsEnumerator.cpp">
+      <Filter>features\net_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\net_tools\NetToolsEnumerator.h">
+      <Filter>features\net_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\net_tools\NetToolsFirewallView.cpp">
+      <Filter>features\net_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\net_tools\NetToolsFirewallView.h">
+      <Filter>features\net_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\net_tools\NetToolsModel.cpp">
+      <Filter>features\net_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\net_tools\NetToolsModel.h">
+      <Filter>features\net_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\network\NetworkFeature.cpp">
+      <Filter>features\network</Filter>
+    </ClCompile>
+    <ClInclude Include="features\network\NetworkFeature.h">
+      <Filter>features\network</Filter>
+    </ClInclude>
+    <ClCompile Include="features\network\NetworkModel.cpp">
+      <Filter>features\network</Filter>
+    </ClCompile>
+    <ClInclude Include="features\network\NetworkModel.h">
+      <Filter>features\network</Filter>
+    </ClInclude>
+    <ClCompile Include="features\network\NetworkView.cpp">
+      <Filter>features\network</Filter>
+    </ClCompile>
+    <ClInclude Include="features\network\NetworkView.h">
+      <Filter>features\network</Filter>
+    </ClInclude>
+    <ClCompile Include="features\privilege\PrivilegeActions.cpp">
+      <Filter>features\privilege</Filter>
+    </ClCompile>
+    <ClInclude Include="features\privilege\PrivilegeActions.h">
+      <Filter>features\privilege</Filter>
+    </ClInclude>
+    <ClCompile Include="features\privilege\PrivilegeEnumerator.cpp">
+      <Filter>features\privilege</Filter>
+    </ClCompile>
+    <ClInclude Include="features\privilege\PrivilegeEnumerator.h">
+      <Filter>features\privilege</Filter>
+    </ClInclude>
+    <ClCompile Include="features\privilege\PrivilegeFeature.cpp">
+      <Filter>features\privilege</Filter>
+    </ClCompile>
+    <ClInclude Include="features\privilege\PrivilegeFeature.h">
+      <Filter>features\privilege</Filter>
+    </ClInclude>
+    <ClCompile Include="features\privilege\PrivilegeModel.cpp">
+      <Filter>features\privilege</Filter>
+    </ClCompile>
+    <ClInclude Include="features\privilege\PrivilegeModel.h">
+      <Filter>features\privilege</Filter>
+    </ClInclude>
+    <ClCompile Include="features\privilege\PrivilegeView.cpp">
+      <Filter>features\privilege</Filter>
+    </ClCompile>
+    <ClInclude Include="features\privilege\PrivilegeView.h">
+      <Filter>features\privilege</Filter>
+    </ClInclude>
+    <ClCompile Include="features\process\ProcessActions.cpp">
+      <Filter>features\process</Filter>
+    </ClCompile>
+    <ClInclude Include="features\process\ProcessActions.h">
+      <Filter>features\process</Filter>
+    </ClInclude>
+    <ClCompile Include="features\process\ProcessColumns.cpp">
+      <Filter>features\process</Filter>
+    </ClCompile>
+    <ClInclude Include="features\process\ProcessColumns.h">
+      <Filter>features\process</Filter>
+    </ClInclude>
+    <ClCompile Include="features\process\ProcessEnumerator.cpp">
+      <Filter>features\process</Filter>
+    </ClCompile>
+    <ClInclude Include="features\process\ProcessEnumerator.h">
+      <Filter>features\process</Filter>
+    </ClInclude>
+    <ClCompile Include="features\process\ProcessFeature.cpp">
+      <Filter>features\process</Filter>
+    </ClCompile>
+    <ClInclude Include="features\process\ProcessFeature.h">
+      <Filter>features\process</Filter>
+    </ClInclude>
+    <ClCompile Include="features\process\ProcessModel.cpp">
+      <Filter>features\process</Filter>
+    </ClCompile>
+    <ClInclude Include="features\process\ProcessModel.h">
+      <Filter>features\process</Filter>
+    </ClInclude>
+    <ClCompile Include="features\process\ProcessView.cpp">
+      <Filter>features\process</Filter>
+    </ClCompile>
+    <ClInclude Include="features\process\ProcessView.h">
+      <Filter>features\process</Filter>
+    </ClInclude>
+    <ClCompile Include="features\process_detail\ProcessDetailCollector.cpp">
+      <Filter>features\process_detail</Filter>
+    </ClCompile>
+    <ClInclude Include="features\process_detail\ProcessDetailCollector.h">
+      <Filter>features\process_detail</Filter>
+    </ClInclude>
+    <ClCompile Include="features\process_detail\ProcessDetailFeature.cpp">
+      <Filter>features\process_detail</Filter>
+    </ClCompile>
+    <ClInclude Include="features\process_detail\ProcessDetailFeature.h">
+      <Filter>features\process_detail</Filter>
+    </ClInclude>
+    <ClCompile Include="features\process_detail\ProcessDetailPage.Action.cpp">
+      <Filter>features\process_detail</Filter>
+    </ClCompile>
+    <ClCompile Include="features\process_detail\ProcessDetailPage.DetailPlugin.cpp">
+      <Filter>features\process_detail</Filter>
+    </ClCompile>
+    <ClCompile Include="features\process_detail\ProcessDetailPage.EvidencePeb.cpp">
+      <Filter>features\process_detail</Filter>
+    </ClCompile>
+    <ClCompile Include="features\process_detail\ProcessDetailPage.HotkeyKeyboard.cpp">
+      <Filter>features\process_detail</Filter>
+    </ClCompile>
+    <ClCompile Include="features\process_detail\ProcessDetailPage.Module.cpp">
+      <Filter>features\process_detail</Filter>
+    </ClCompile>
+    <ClCompile Include="features\process_detail\ProcessDetailPage.Thread.cpp">
+      <Filter>features\process_detail</Filter>
+    </ClCompile>
+    <ClCompile Include="features\process_detail\ProcessDetailPage.Token.cpp">
+      <Filter>features\process_detail</Filter>
+    </ClCompile>
+    <ClCompile Include="features\process_detail\ProcessDetailPage.cpp">
+      <Filter>features\process_detail</Filter>
+    </ClCompile>
+    <ClInclude Include="features\process_detail\ProcessDetailPage.h">
+      <Filter>features\process_detail</Filter>
+    </ClInclude>
+    <ClInclude Include="features\process_detail\ProcessDetailTypes.h">
+      <Filter>features\process_detail</Filter>
+    </ClInclude>
+    <ClCompile Include="features\registry\RegistryActions.cpp">
+      <Filter>features\registry</Filter>
+    </ClCompile>
+    <ClInclude Include="features\registry\RegistryActions.h">
+      <Filter>features\registry</Filter>
+    </ClInclude>
+    <ClCompile Include="features\registry\RegistryFeature.cpp">
+      <Filter>features\registry</Filter>
+    </ClCompile>
+    <ClInclude Include="features\registry\RegistryFeature.h">
+      <Filter>features\registry</Filter>
+    </ClInclude>
+    <ClCompile Include="features\registry\RegistryModel.cpp">
+      <Filter>features\registry</Filter>
+    </ClCompile>
+    <ClInclude Include="features\registry\RegistryModel.h">
+      <Filter>features\registry</Filter>
+    </ClInclude>
+    <ClCompile Include="features\registry\RegistrySearchModel.cpp">
+      <Filter>features\registry</Filter>
+    </ClCompile>
+    <ClInclude Include="features\registry\RegistrySearchModel.h">
+      <Filter>features\registry</Filter>
+    </ClInclude>
+    <ClCompile Include="features\registry\RegistrySearchView.cpp">
+      <Filter>features\registry</Filter>
+    </ClCompile>
+    <ClInclude Include="features\registry\RegistrySearchView.h">
+      <Filter>features\registry</Filter>
+    </ClInclude>
+    <ClCompile Include="features\registry\RegistryView.cpp">
+      <Filter>features\registry</Filter>
+    </ClCompile>
+    <ClInclude Include="features\registry\RegistryView.h">
+      <Filter>features\registry</Filter>
+    </ClInclude>
+    <ClCompile Include="features\service\ServiceActions.cpp">
+      <Filter>features\service</Filter>
+    </ClCompile>
+    <ClInclude Include="features\service\ServiceActions.h">
+      <Filter>features\service</Filter>
+    </ClInclude>
+    <ClCompile Include="features\service\ServiceEnumerator.cpp">
+      <Filter>features\service</Filter>
+    </ClCompile>
+    <ClInclude Include="features\service\ServiceEnumerator.h">
+      <Filter>features\service</Filter>
+    </ClInclude>
+    <ClCompile Include="features\service\ServiceFeature.cpp">
+      <Filter>features\service</Filter>
+    </ClCompile>
+    <ClInclude Include="features\service\ServiceFeature.h">
+      <Filter>features\service</Filter>
+    </ClInclude>
+    <ClCompile Include="features\service\ServiceModel.cpp">
+      <Filter>features\service</Filter>
+    </ClCompile>
+    <ClInclude Include="features\service\ServiceModel.h">
+      <Filter>features\service</Filter>
+    </ClInclude>
+    <ClCompile Include="features\service\ServiceView.cpp">
+      <Filter>features\service</Filter>
+    </ClCompile>
+    <ClInclude Include="features\service\ServiceView.h">
+      <Filter>features\service</Filter>
+    </ClInclude>
+    <ClCompile Include="features\startup\StartupActions.cpp">
+      <Filter>features\startup</Filter>
+    </ClCompile>
+    <ClInclude Include="features\startup\StartupActions.h">
+      <Filter>features\startup</Filter>
+    </ClInclude>
+    <ClCompile Include="features\startup\StartupEnumerator.cpp">
+      <Filter>features\startup</Filter>
+    </ClCompile>
+    <ClInclude Include="features\startup\StartupEnumerator.h">
+      <Filter>features\startup</Filter>
+    </ClInclude>
+    <ClCompile Include="features\startup\StartupFeature.cpp">
+      <Filter>features\startup</Filter>
+    </ClCompile>
+    <ClInclude Include="features\startup\StartupFeature.h">
+      <Filter>features\startup</Filter>
+    </ClInclude>
+    <ClCompile Include="features\startup\StartupModel.cpp">
+      <Filter>features\startup</Filter>
+    </ClCompile>
+    <ClInclude Include="features\startup\StartupModel.h">
+      <Filter>features\startup</Filter>
+    </ClInclude>
+    <ClCompile Include="features\startup\StartupView.cpp">
+      <Filter>features\startup</Filter>
+    </ClCompile>
+    <ClInclude Include="features\startup\StartupView.h">
+      <Filter>features\startup</Filter>
+    </ClInclude>
+    <ClCompile Include="features\sys_tools\ContextMenuScanner.cpp">
+      <Filter>features\sys_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\sys_tools\ContextMenuScanner.h">
+      <Filter>features\sys_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\sys_tools\ContextMenuView.cpp">
+      <Filter>features\sys_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\sys_tools\ContextMenuView.h">
+      <Filter>features\sys_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\sys_tools\EventLogReader.cpp">
+      <Filter>features\sys_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\sys_tools\EventLogReader.h">
+      <Filter>features\sys_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\sys_tools\EventLogView.cpp">
+      <Filter>features\sys_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\sys_tools\EventLogView.h">
+      <Filter>features\sys_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\sys_tools\FileHolderScanner.cpp">
+      <Filter>features\sys_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\sys_tools\FileHolderScanner.h">
+      <Filter>features\sys_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\sys_tools\FileHolderView.cpp">
+      <Filter>features\sys_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\sys_tools\FileHolderView.h">
+      <Filter>features\sys_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\sys_tools\IoctlDecoder.cpp">
+      <Filter>features\sys_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\sys_tools\IoctlDecoder.h">
+      <Filter>features\sys_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\sys_tools\IoctlDecoderView.cpp">
+      <Filter>features\sys_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\sys_tools\IoctlDecoderView.h">
+      <Filter>features\sys_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\sys_tools\SysToolsFeature.cpp">
+      <Filter>features\sys_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\sys_tools\SysToolsFeature.h">
+      <Filter>features\sys_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\sys_tools\SystemTimeInfo.cpp">
+      <Filter>features\sys_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\sys_tools\SystemTimeInfo.h">
+      <Filter>features\sys_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\sys_tools\SystemTimeView.cpp">
+      <Filter>features\sys_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\sys_tools\SystemTimeView.h">
+      <Filter>features\sys_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\window\Win32kTimerEvidenceModel.cpp">
+      <Filter>features\window</Filter>
+    </ClCompile>
+    <ClInclude Include="features\window\Win32kTimerEvidenceModel.h">
+      <Filter>features\window</Filter>
+    </ClInclude>
+    <ClCompile Include="features\window\WindowActions.cpp">
+      <Filter>features\window</Filter>
+    </ClCompile>
+    <ClInclude Include="features\window\WindowActions.h">
+      <Filter>features\window</Filter>
+    </ClInclude>
+    <ClCompile Include="features\window\WindowEnumerator.cpp">
+      <Filter>features\window</Filter>
+    </ClCompile>
+    <ClInclude Include="features\window\WindowEnumerator.h">
+      <Filter>features\window</Filter>
+    </ClInclude>
+    <ClCompile Include="features\window\WindowFeature.cpp">
+      <Filter>features\window</Filter>
+    </ClCompile>
+    <ClInclude Include="features\window\WindowFeature.h">
+      <Filter>features\window</Filter>
+    </ClInclude>
+    <ClCompile Include="features\window\WindowModel.cpp">
+      <Filter>features\window</Filter>
+    </ClCompile>
+    <ClInclude Include="features\window\WindowModel.h">
+      <Filter>features\window</Filter>
+    </ClInclude>
+    <ClCompile Include="features\window\WindowView.cpp">
+      <Filter>features\window</Filter>
+    </ClCompile>
+    <ClInclude Include="features\window\WindowView.h">
+      <Filter>features\window</Filter>
+    </ClInclude>
+    <ClCompile Include="features\window_tools\WindowToolsCaptureView.cpp">
+      <Filter>features\window_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\window_tools\WindowToolsCaptureView.h">
+      <Filter>features\window_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\window_tools\WindowToolsClipboardView.cpp">
+      <Filter>features\window_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\window_tools\WindowToolsClipboardView.h">
+      <Filter>features\window_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\window_tools\WindowToolsCommon.cpp">
+      <Filter>features\window_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\window_tools\WindowToolsCommon.h">
+      <Filter>features\window_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\window_tools\WindowToolsHierarchyView.cpp">
+      <Filter>features\window_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\window_tools\WindowToolsHierarchyView.h">
+      <Filter>features\window_tools</Filter>
+    </ClInclude>
+    <ClCompile Include="features\window_tools\WindowToolsHotkeyView.cpp">
+      <Filter>features\window_tools</Filter>
+    </ClCompile>
+    <ClInclude Include="features\window_tools\WindowToolsHotkeyView.h">
+      <Filter>features\window_tools</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\KswordArkLogProtocol.h">
+      <Filter>shared</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverAlpc.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverAudit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverAuditSupport.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverBlind.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverBugcheck.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverCallback.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverCallbackTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverCapabilities.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverCapabilities.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverCapability.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverClient.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverClient.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDebugOutput.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverDebugOutputTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDeviceAudit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDispatch.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverDriverControlTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDynData.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverDynDataTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDynDataV4.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverError.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverError.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverFile.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverFileTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverFirmware.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverHandle.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverHvm.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverHvmTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverHwid.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverI8042Audit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverImage.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverIoTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverIoctlRegistry.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverKernel.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverKernelBaseline.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverKernelTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverKeyboard.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverMemory.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverMemoryTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverMutation.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverMutationTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverNetworkAudit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverNetworkEvents.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverNetworkSupport.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverNetworkTraffic.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverNetworkTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverObjectAudit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverObjectTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverPiDdb.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverPlatformAudit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverPlatformTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverPower.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcess.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessControl.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessEnumeration.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessInjection.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessSecurity.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverProcessTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverRegistry.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverRegistryTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverResponseSupport.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverSection.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverSecurityAudit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverSecurityTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverStorageAudit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverStorageForensics.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverStorageTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverSystemTime.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverThreadControl.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverVirtualization.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverWin32kAudit.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverWindowTypes.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverWorkQueue.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\ark_client\ArkRuntimeDynData.cpp">
+      <Filter>shared\ark_client</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\ark_client\ArkRuntimeDynData.h">
+      <Filter>shared\ark_client</Filter>
+    </ClInclude>
+    <None Include="..\..\shared\ark_client\ArkRuntimeDynDataCatalog.inc">
+      <Filter>shared\ark_client</Filter>
+    </None>
+    <ClInclude Include="..\..\shared\driver\KswordArkAlpcIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkCallbackIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkCapabilityIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkDeviceAuditIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkDynDataIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkFileIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkFilterIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkHwidIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkKernelIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkKernelObjectIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkKeyboardIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkMemoryIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkMutationIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkNetworkIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkPreflightIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkProcessIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkRedirectIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkRegistryIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkSafetyIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkSectionIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkSecurityAuditIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkStorageIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkThreadIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkTrustIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\driver\KswordArkWslSiloIoctl.h">
+      <Filter>shared\driver</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\platform\file\PeAnalyzer.cpp">
+      <Filter>shared\platform\file</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\platform\file\PeAnalyzer.h">
+      <Filter>shared\platform\file</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\platform\process\Process.cpp">
+      <Filter>shared\platform\process</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\platform\process\Process.h">
+      <Filter>shared\platform\process</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\shared\platform\service\Service.cpp">
+      <Filter>shared\platform\service</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\platform\string\String.cpp">
+      <Filter>shared\platform\string</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\shared\platform\string\String.h">
+      <Filter>shared\platform\string</Filter>
+    </ClInclude>
+    <ClInclude Include="ui\AsyncTask.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\Controls.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\Controls.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\EntityNavigation.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\EntityNavigation.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\EvidenceSession.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\EvidenceSession.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\EvidenceSessionView.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\EvidenceSessionView.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\ExportUtil.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\ExportUtil.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\FilterBar.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\FilterBar.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\IconUtil.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\IconUtil.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\ListViewUtil.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\ListViewUtil.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\LoadingOverlay.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\LoadingOverlay.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\MenuUtil.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\MenuUtil.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClInclude Include="ui\ModuleDescriptor.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\NumericSortKey.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\NumericSortKey.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\PlaceholderPage.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\PlaceholderPage.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\SplitterUtil.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\SplitterUtil.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\TabUtil.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\TabUtil.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\TextFindSupport.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\TextFindSupport.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\Theme.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\Theme.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\TreeViewUtil.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\TreeViewUtil.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\VirtualListView.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\VirtualListView.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClCompile Include="ui\WorkspaceHost.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClInclude Include="ui\WorkspaceHost.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

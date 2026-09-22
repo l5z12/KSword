@@ -1,0 +1,9 @@
+// AppIcon.rc:
+// - Provide a native Win32 application icon for the Ksword5.1 executable.
+// - Explorer/Taskbar/File Properties reads resources from here, not from qrc;
+// - The release script replaces the ICO path on the next line based on the marker.
+
+#include <windows.h>
+
+// RELEASE_APP_ICON_FILE_MARKER
+IDI_APP_ICON ICON "Resource/Logo/KswordLogo.ico"

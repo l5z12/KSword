@@ -279,7 +279,7 @@ TYPE_SIZE_MAP: dict[str, str] = {
     "PiDdbTypeSize": "_PIDDB_CACHE_ENTRY",
 }
 
-# v4-only module items. v4Items 统一携带结构偏移、类型大小和位域元数据。
+# v4-only module items. v4Items uniformly carry structure offsets, type sizes, and bitfield metadata.
 V4_FIELD_MAP: dict[str, tuple[str, str]] = {
     "KprcbTimerTable": ("_KPRCB", "TimerTable"),
     "KtimerTableTimerEntries": ("_KTIMER_TABLE", "TimerEntries"),
@@ -333,8 +333,8 @@ V4_TYPE_SIZE_MAP: dict[str, str] = {
     "WqWorkItemTypeSize": "_WORK_QUEUE_ITEM",
 }
 
-# CI 的哈希缓存条目不是稳定公开 ABI，不同 PDB 会使用不同的内部类型名。
-# 生成器只接受 PDB 中真实存在的候选类型/成员，不在 R0 侧猜固定偏移。
+# CI hash cache entries are not a stable public ABI; different PDBs may use different internal type names.
+# The generator accepts only candidate types/members that actually exist in the PDB; it does not guess fixed offsets on the R0 side.
 V4_CI_FIELD_ALIASES: dict[str, tuple[tuple[str, str], ...]] = {
     "CiHashEntryNext": (
         ("_MINCRYPT_HASH_BUCKET_ENTRY", "Next"),
@@ -451,8 +451,8 @@ V4_ITEM_DEFINITIONS: dict[str, tuple[int, str, int]] = {
     "WqEthreadTcb": (1323, "StructOffset", 5),
 }
 
-# CI 缓存的最小安全遍历只依赖两个全局、Next、DriverName 和类型大小。
-# 其余列仅在对应 PDB 确实公开字段时进入配置，UI 对缺失列显示“-”。
+# The CI cache's minimum safe traversal relies on two global fields, Next, DriverName, and type size.
+# Remaining columns are included in the configuration only if the corresponding PDB actually exposes the fields; the UI displays '-' for missing columns.
 V4_OPTIONAL_ITEM_NAMES: set[str] = {
     "CiHashEntryTimeDateStamp",
     "CiHashEntryLoadStatus",
@@ -1797,7 +1797,7 @@ def v4_group_ids_for_module(module_class: str | None) -> set[int]:
     """Return the v4 capability groups that belong to one module profile."""
     normalized = (module_class or "").strip().lower()
     if not normalized:
-        # 保留旧的纯类型解析调用语义；CI 组必须额外提供 PE/symbol 上下文。
+        # Preserve the legacy pure type parsing call semantics; CI groups must additionally provide PE/symbol context.
         return {2, 3}
     if normalized in {"ntoskrnl", "ntoskrnl.exe"}:
         return {2, 5}
@@ -2093,7 +2093,7 @@ def refresh_v4_profile(
     )
     normalized_module_class = module_class.strip().lower()
     if normalized_module_class in {"ci", "ntoskrnl"}:
-        # 仅刷新类型时没有 symbol dump；保留旧生成流程已按同一身份写入的 GlobalRva。
+        # Only refreshing types lacks a symbol dump; preserve the old generation flow's GlobalRva written under the same identity.
         previous_items = profile.get("v4Items")
         if isinstance(previous_items, list):
             preserved_names = (

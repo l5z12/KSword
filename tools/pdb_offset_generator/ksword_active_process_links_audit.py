@@ -4,7 +4,7 @@ Audit KswordARK ActiveProcessLinks DynData profile coverage.
 
 Inputs:
 - A compact DynData v4 pack JSON, normally the uncompressed generator output
-  Ksword5.1\\Ksword5.1\\profiles\\ark_dyndata_pack_v4.json.
+  apps\\desktop\\profiles\\ark_dyndata_pack_v4.json.
 - A local ntoskrnl.exe image used only for PE identity matching.
 
 Processing:
@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_PACK = Path(r"Ksword5.1\Ksword5.1\profiles\ark_dyndata_pack_v4.json")
+DEFAULT_PACK = Path(r"apps\desktop\profiles\ark_dyndata_pack_v4.json")
 DEFAULT_KERNEL = Path(r"C:\Windows\System32\ntoskrnl.exe")
 ACTIVE_PROCESS_LINKS_NAMES = {"EpActiveProcessLinks", "_EPROCESS.ActiveProcessLinks"}
 ACTIVE_PROCESS_LINKS_ITEM_ID = 58

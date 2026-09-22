@@ -4,7 +4,7 @@
 
 ## 能力发布原则
 
-`START_RESIDENT` 不是 UI 布尔开关。只有 `KswordARKHvmEnableResidentLifecycle` 在 `WdfDriverCreate` 之后成功捕获 KMDF 最终 `DriverUnload`，并完成电源与 processor-change 回调注册，才能同时发布：
+`START_RESIDENT` 不是 UI 布尔开关。只有 `kswordArkHvmEnableResidentLifecycle` 在 `WdfDriverCreate` 之后成功捕获 KMDF 最终 `DriverUnload`，并完成电源与 processor-change 回调注册，才能同时发布：
 
 - `KSWORD_ARK_HVM_FEATURE_RESIDENT_VMM`
 - `KSWORD_ARK_HVM_FEATURE_MULTICORE_RENDEZVOUS`
@@ -15,7 +15,7 @@
 
 ## Intel-only 与硬件门
 
-常驻启动必须精确匹配 `GenuineIntel`。AMD 与其它 CPU vendor 在 `KswordARKHvmReadCapabilities` 返回 unsupported，不得由 UI、确认偏好或控制 flag 绕过。还必须满足：
+常驻启动必须精确匹配 `GenuineIntel`。AMD 与其它 CPU vendor 在 `kswordArkHvmReadCapabilities` 返回 unsupported，不得由 UI、确认偏好或控制 flag 绕过。还必须满足：
 
 - VMX 与已锁定的 `IA32_FEATURE_CONTROL`；
 - VMX outside SMX；

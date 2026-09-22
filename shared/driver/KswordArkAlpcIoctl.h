@@ -4,10 +4,10 @@
 
 // ============================================================
 // KswordArkAlpcIoctl.h
-// 作用：
-// - 定义 R3/R0 ALPC Port 查询协议；
-// - 输入只允许 PID + HandleValue，禁止把内核对象地址作为操作凭据；
-// - 所有 ALPC_PORT 私有字段都通过 DynData capability 门控。
+// Purpose:
+// - Defines the R3/R0 ALPC Port query protocol;
+// - Input: Only PID + HandleValue are allowed; kernel object addresses are prohibited as operation credentials.
+// - All ALPC_PORT private fields are gated via the DynData capability.
 // ============================================================
 
 #define KSWORD_ARK_ALPC_PROTOCOL_VERSION 1UL

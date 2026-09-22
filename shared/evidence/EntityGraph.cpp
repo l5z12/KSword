@@ -3,395 +3,395 @@
 #include <algorithm>
 #include <utility>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 namespace {
 
-// 主键分隔符沿用 ObjectIdentity.cpp 的约定：这两个字节不会出现在路径、GUID 或
-// 数字里，"a|b" 与 "a" + "|b" 不会撞键。
+// The primary key separator follows the convention in ObjectIdentity.cpp: these two bytes
+// do not appear in paths, GUIDs, or numbers, ensuring 'a|b' and 'a' + '|b' do not collide.
 constexpr char kFieldSep = '\x1F';
 constexpr char kGroupSep = '\x1E';
 
-void AppendField(std::string& key, const std::string& value) {
+void appendField(std::string& key, const std::string& value) {
     key.push_back(kFieldSep);
     key.append(value);
 }
 
-void AppendField(std::string& key, const OptionalU64& value, U64Format format) {
+void appendField(std::string& key, const OptionalU64& value, U64Format format) {
     key.push_back(kFieldSep);
     if (value.present) {
-        key.append(FormatU64(value.value, format));
+        key.append(formatU64(value.value, format));
     }
 }
 
-void AppendField(std::string& key, std::uint64_t value) {
+void appendField(std::string& key, std::uint64_t value) {
     key.push_back(kFieldSep);
-    key.append(FormatU64(value, U64Format::Decimal));
+    key.append(formatU64(value, U64Format::kDecimal));
 }
 
-void SortUnique(std::vector<std::string>& values) {
+void sortUnique(std::vector<std::string>& values) {
     std::sort(values.begin(), values.end());
     values.erase(std::unique(values.begin(), values.end()), values.end());
 }
 
-void MergeSortedUnique(std::vector<std::string>& target, const std::vector<std::string>& extra) {
+void mergeSortedUnique(std::vector<std::string>& target, const std::vector<std::string>& extra) {
     target.insert(target.end(), extra.begin(), extra.end());
-    SortUnique(target);
+    sortUnique(target);
 }
 
-// 弱身份的字段转储。宁可把同一个对象拆成两个节点，也不把两个对象合成一个
-// （G-02：地址复用、名字重用都必须分开）。
-void AppendProcessFields(std::string& key, const ProcessInstanceId& id) {
-    AppendField(key, id.bootId);
-    AppendField(key, id.pid, U64Format::Decimal);
-    AppendField(key, id.createTime100ns, U64Format::Decimal);
-    AppendField(key, id.eprocessAddress, U64Format::HexAddress);
-    AppendField(key, id.imageName);
+// Weak identity field dump. Prefer splitting the same object into two nodes rather
+// than merging two objects (G-02: address reuse and name reuse must be separated).
+void appendProcessFields(std::string& key, const ProcessInstanceId& id) {
+    appendField(key, id.bootId);
+    appendField(key, id.pid, U64Format::kDecimal);
+    appendField(key, id.createTime100ns, U64Format::kDecimal);
+    appendField(key, id.eprocessAddress, U64Format::kHexAddress);
+    appendField(key, id.imageName);
 }
 
-void AppendWeakFields(std::string& key, const NodeIdentity& id) {
+void appendWeakFields(std::string& key, const NodeIdentity& id) {
     switch (id.kind) {
-    case ObjectKind::Process:
-        AppendProcessFields(key, id.process);
+    case ObjectKind::kProcess:
+        appendProcessFields(key, id.process);
         break;
-    case ObjectKind::Thread:
-        AppendProcessFields(key, id.thread.process);
-        AppendField(key, id.thread.tid, U64Format::Decimal);
-        AppendField(key, id.thread.createTime100ns, U64Format::Decimal);
-        AppendField(key, id.thread.ethreadAddress, U64Format::HexAddress);
+    case ObjectKind::kThread:
+        appendProcessFields(key, id.thread.process);
+        appendField(key, id.thread.tid, U64Format::kDecimal);
+        appendField(key, id.thread.createTime100ns, U64Format::kDecimal);
+        appendField(key, id.thread.ethreadAddress, U64Format::kHexAddress);
         break;
-    case ObjectKind::Driver:
-    case ObjectKind::Module:
-        AppendField(key, id.driver.bootId);
-        AppendField(key, id.driver.imagePath);
-        AppendField(key, id.driver.imageBase, U64Format::HexAddress);
-        AppendField(key, id.driver.imageSize, U64Format::Decimal);
-        AppendField(key, id.driver.timeDateStamp, U64Format::Decimal);
-        AppendField(key, id.driver.checksum, U64Format::Decimal);
-        AppendField(key, id.driver.pdbSignature);
-        AppendField(key, id.driver.loadOrderIndex, U64Format::Decimal);
+    case ObjectKind::kDriver:
+    case ObjectKind::kModule:
+        appendField(key, id.driver.bootId);
+        appendField(key, id.driver.imagePath);
+        appendField(key, id.driver.imageBase, U64Format::kHexAddress);
+        appendField(key, id.driver.imageSize, U64Format::kDecimal);
+        appendField(key, id.driver.timeDateStamp, U64Format::kDecimal);
+        appendField(key, id.driver.checksum, U64Format::kDecimal);
+        appendField(key, id.driver.pdbSignature);
+        appendField(key, id.driver.loadOrderIndex, U64Format::kDecimal);
         break;
-    case ObjectKind::File:
-        AppendField(key, id.file.path);
-        AppendField(key, id.file.volumeSerial, U64Format::Decimal);
-        AppendField(key, id.file.fileId);
-        AppendField(key, id.file.sizeBytes, U64Format::Decimal);
-        AppendField(key, id.file.lastWriteUtc100ns, U64Format::Decimal);
-        AppendField(key, id.file.contentHash);
+    case ObjectKind::kFile:
+        appendField(key, id.file.path);
+        appendField(key, id.file.volumeSerial, U64Format::kDecimal);
+        appendField(key, id.file.fileId);
+        appendField(key, id.file.sizeBytes, U64Format::kDecimal);
+        appendField(key, id.file.lastWriteUtc100ns, U64Format::kDecimal);
+        appendField(key, id.file.contentHash);
         break;
-    case ObjectKind::Handle:
-        AppendProcessFields(key, id.handle.owner);
-        AppendField(key, id.handle.handleValue, U64Format::Decimal);
-        AppendField(key, id.handle.objectAddress, U64Format::HexAddress);
-        AppendField(key, id.handle.typeName);
+    case ObjectKind::kHandle:
+        appendProcessFields(key, id.handle.owner);
+        appendField(key, id.handle.handleValue, U64Format::kDecimal);
+        appendField(key, id.handle.objectAddress, U64Format::kHexAddress);
+        appendField(key, id.handle.typeName);
         break;
-    case ObjectKind::Connection:
-        AppendField(key, id.connection.bootId);
-        AppendField(key, static_cast<std::uint64_t>(id.connection.protocol));
-        AppendField(key, id.connection.localAddress);
-        AppendField(key, static_cast<std::uint64_t>(id.connection.localPort));
-        AppendField(key, id.connection.remoteAddress);
-        AppendField(key, static_cast<std::uint64_t>(id.connection.remotePort));
-        AppendField(key, id.connection.observedFirstUtc100ns, U64Format::Decimal);
-        AppendField(key, id.connection.observedLastUtc100ns, U64Format::Decimal);
-        AppendProcessFields(key, id.connection.owner);
+    case ObjectKind::kConnection:
+        appendField(key, id.connection.bootId);
+        appendField(key, static_cast<std::uint64_t>(id.connection.protocol));
+        appendField(key, id.connection.localAddress);
+        appendField(key, static_cast<std::uint64_t>(id.connection.localPort));
+        appendField(key, id.connection.remoteAddress);
+        appendField(key, static_cast<std::uint64_t>(id.connection.remotePort));
+        appendField(key, id.connection.observedFirstUtc100ns, U64Format::kDecimal);
+        appendField(key, id.connection.observedLastUtc100ns, U64Format::kDecimal);
+        appendProcessFields(key, id.connection.owner);
         break;
-    case ObjectKind::Device:
-    case ObjectKind::Service:
-    case ObjectKind::Unknown:
+    case ObjectKind::kDevice:
+    case ObjectKind::kService:
+    case ObjectKind::kUnknown:
         break;
     }
-    // bootId / name / instanceTag 对每一类都追加：Device、Service 与非系统对象只有
-    // 这三样，其它类别多带上也只会增加区分度，不会把两个对象合到一起。
-    AppendField(key, id.bootId);
-    AppendField(key, id.name);
-    AppendField(key, id.instanceTag);
+    // Append bootId, name, and instanceTag for each category: Devices, Services, and non-system objects only have these
+    // three. Adding more fields for other categories only increases distinction and will not merge two objects together.
+    appendField(key, id.bootId);
+    appendField(key, id.name);
+    appendField(key, id.instanceTag);
 }
 
-// 名字/启动周期这类弱字段的三态比较，语义与 ObjectIdentity.cpp 一致。
-enum class WeakCompare { Equal, Differ, Missing };
+// Three-state comparison for weak fields like name/boot cycle follows the semantics in ObjectIdentity.cpp.
+enum class WeakCompare { kEqual, kDiffer, kMissing };
 
-WeakCompare CompareText(const std::string& a, const std::string& b) noexcept {
+WeakCompare compareText(const std::string& a, const std::string& b) noexcept {
     if (a.empty() || b.empty()) {
-        return WeakCompare::Missing;
+        return WeakCompare::kMissing;
     }
-    return a == b ? WeakCompare::Equal : WeakCompare::Differ;
+    return a == b ? WeakCompare::kEqual : WeakCompare::kDiffer;
 }
 
-const RelationCoverage& EmptyCoverage() {
-    static const RelationCoverage kEmpty;  // 默认即 NotCollected
+const RelationCoverage& emptyCoverage() {
+    static const RelationCoverage kEmpty;  // Default state is NotCollected.
     return kEmpty;
 }
 
-const std::vector<std::size_t>& EmptyIndexList() {
+const std::vector<std::size_t>& emptyIndexList() {
     static const std::vector<std::size_t> kEmpty;
     return kEmpty;
 }
 
-// G-05 / G-03 共用：一次采集是否**正面证明**了"这一环确实没有数据"。
-// 需要两件事同时成立：状态是 Success，且账目给出了正面覆盖证据。
-bool CoverageProvesAbsence(const RelationCoverage& coverage) {
-    return coverage.outcome.status == CollectionStatus::Success && coverage.coverage.fullyCovered();
+// G-05 / G-03 Shared: Whether a single collection positively proves that 'this link indeed has no data'.
+// Both conditions must hold: status is Success, and the coverage provides positive evidence of full coverage.
+bool coverageProvesAbsence(const RelationCoverage& coverage) {
+    return coverage.outcome.status == CollectionStatus::kSuccess && coverage.coverage.fullyCovered();
 }
 
 } // namespace
 
 // ---------------------------------------------------------------------------
-// 枚举名
+// Enum name
 // ---------------------------------------------------------------------------
-const char* EdgeKindName(EdgeKind kind) noexcept {
+const char* edgeKindName(EdgeKind kind) noexcept {
     switch (kind) {
-    case EdgeKind::Unknown:          return "Unknown";
-    case EdgeKind::Owns:             return "owns";
-    case EdgeKind::Loads:            return "loads";
-    case EdgeKind::Maps:             return "maps";
-    case EdgeKind::Opens:            return "opens";
-    case EdgeKind::CandidateOwner:   return "candidate-owner";
-    case EdgeKind::TemporalNeighbor: return "temporal-neighbor";
-    case EdgeKind::DeviceOf:         return "device-of";
-    case EdgeKind::ImageOf:          return "image-of";
-    case EdgeKind::ServiceOf:        return "service-of";
-    case EdgeKind::TimelineEntry:    return "timeline-entry";
+    case EdgeKind::kUnknown:          return "Unknown";
+    case EdgeKind::kOwns:             return "owns";
+    case EdgeKind::kLoads:            return "loads";
+    case EdgeKind::kMaps:             return "maps";
+    case EdgeKind::kOpens:            return "opens";
+    case EdgeKind::kCandidateOwner:   return "candidate-owner";
+    case EdgeKind::kTemporalNeighbor: return "temporal-neighbor";
+    case EdgeKind::kDeviceOf:         return "device-of";
+    case EdgeKind::kImageOf:          return "image-of";
+    case EdgeKind::kServiceOf:        return "service-of";
+    case EdgeKind::kTimelineEntry:    return "timeline-entry";
     }
     return "Unknown";
 }
 
-bool EdgeKindAllowsConfirmed(EdgeKind kind) noexcept {
-    // candidate-owner 按定义就是"归属只有候选级证据"。它若能是 Confirmed，这一类
-    // 与 owns 就没有区别了 —— 那正是"不同关系用一条相关边混掉"的另一种形态。
-    return kind != EdgeKind::CandidateOwner && kind != EdgeKind::Unknown;
+bool edgeKindAllowsConfirmed(EdgeKind kind) noexcept {
+    // By definition, 'candidate-owner' means 'ownership supported only by candidate-level evidence'. If it could be Confirmed, this
+    // category would be indistinguishable from 'owns'—another form of 'mixing different relationships into a single related edge'.
+    return kind != EdgeKind::kCandidateOwner && kind != EdgeKind::kUnknown;
 }
 
-bool EdgeKindIsSymmetric(EdgeKind kind) noexcept {
-    return kind == EdgeKind::TemporalNeighbor;
+bool edgeKindIsSymmetric(EdgeKind kind) noexcept {
+    return kind == EdgeKind::kTemporalNeighbor;
 }
 
-const char* EdgeDirectionName(EdgeDirection direction) noexcept {
+const char* edgeDirectionName(EdgeDirection direction) noexcept {
     switch (direction) {
-    case EdgeDirection::Unknown:   return "Unknown";
-    case EdgeDirection::FromTo:    return "FromTo";
-    case EdgeDirection::Symmetric: return "Symmetric";
+    case EdgeDirection::kUnknown:   return "Unknown";
+    case EdgeDirection::kFromTo:    return "FromTo";
+    case EdgeDirection::kSymmetric: return "Symmetric";
     }
     return "Unknown";
 }
 
-const char* EdgeCertaintyName(EdgeCertainty certainty) noexcept {
+const char* edgeCertaintyName(EdgeCertainty certainty) noexcept {
     switch (certainty) {
-    case EdgeCertainty::Unknown:   return "Unknown";
-    case EdgeCertainty::Candidate: return "Candidate";
-    case EdgeCertainty::Confirmed: return "Confirmed";
+    case EdgeCertainty::kUnknown:   return "Unknown";
+    case EdgeCertainty::kCandidate: return "Candidate";
+    case EdgeCertainty::kConfirmed: return "Confirmed";
     }
     return "Unknown";
 }
 
-const char* TemporalValidityName(TemporalValidity validity) noexcept {
+const char* temporalValidityName(TemporalValidity validity) noexcept {
     switch (validity) {
-    case TemporalValidity::Unknown:         return "Unknown";
-    case TemporalValidity::Valid:           return "Valid";
-    case TemporalValidity::NotValid:        return "NotValid";
-    case TemporalValidity::IntervalInvalid: return "IntervalInvalid";
+    case TemporalValidity::kUnknown:         return "Unknown";
+    case TemporalValidity::kValid:           return "Valid";
+    case TemporalValidity::kNotValid:        return "NotValid";
+    case TemporalValidity::kIntervalInvalid: return "IntervalInvalid";
     }
     return "Unknown";
 }
 
-const char* NodeCategoryName(NodeCategory category) noexcept {
+const char* nodeCategoryName(NodeCategory category) noexcept {
     switch (category) {
-    case NodeCategory::SystemObject:  return "SystemObject";
-    case NodeCategory::TimelineEntry: return "TimelineEntry";
-    case NodeCategory::EvidenceRecord:return "EvidenceRecord";
+    case NodeCategory::kSystemObject:  return "SystemObject";
+    case NodeCategory::kTimelineEntry: return "TimelineEntry";
+    case NodeCategory::kEvidenceRecord:return "EvidenceRecord";
     }
     return "SystemObject";
 }
 
-const char* NodeLifecycleName(NodeLifecycle lifecycle) noexcept {
+const char* nodeLifecycleName(NodeLifecycle lifecycle) noexcept {
     switch (lifecycle) {
-    case NodeLifecycle::Unknown:  return "Unknown";
-    case NodeLifecycle::Observed: return "Observed";
-    case NodeLifecycle::Ended:    return "Ended";
+    case NodeLifecycle::kUnknown:  return "Unknown";
+    case NodeLifecycle::kObserved: return "Observed";
+    case NodeLifecycle::kEnded:    return "Ended";
     }
     return "Unknown";
 }
 
-const char* NodeAdmissionName(NodeAdmission admission) noexcept {
+const char* nodeAdmissionName(NodeAdmission admission) noexcept {
     switch (admission) {
-    case NodeAdmission::AcceptedNew:                     return "AcceptedNew";
-    case NodeAdmission::AcceptedMerged:                  return "AcceptedMerged";
-    case NodeAdmission::AcceptedMergedLifecycleConflict: return "AcceptedMergedLifecycleConflict";
-    case NodeAdmission::RejectedNoIdentity:              return "RejectedNoIdentity";
-    case NodeAdmission::RejectedIdentityConflict:        return "RejectedIdentityConflict";
+    case NodeAdmission::kAcceptedNew:                     return "AcceptedNew";
+    case NodeAdmission::kAcceptedMerged:                  return "AcceptedMerged";
+    case NodeAdmission::kAcceptedMergedLifecycleConflict: return "AcceptedMergedLifecycleConflict";
+    case NodeAdmission::kRejectedNoIdentity:              return "RejectedNoIdentity";
+    case NodeAdmission::kRejectedIdentityConflict:        return "RejectedIdentityConflict";
     }
     return "RejectedNoIdentity";
 }
 
-bool NodeAdmissionAccepted(NodeAdmission admission) noexcept {
+bool nodeAdmissionAccepted(NodeAdmission admission) noexcept {
     switch (admission) {
-    case NodeAdmission::AcceptedNew:
-    case NodeAdmission::AcceptedMerged:
-    case NodeAdmission::AcceptedMergedLifecycleConflict:
+    case NodeAdmission::kAcceptedNew:
+    case NodeAdmission::kAcceptedMerged:
+    case NodeAdmission::kAcceptedMergedLifecycleConflict:
         return true;
-    case NodeAdmission::RejectedNoIdentity:
-    case NodeAdmission::RejectedIdentityConflict:
+    case NodeAdmission::kRejectedNoIdentity:
+    case NodeAdmission::kRejectedIdentityConflict:
         return false;
     }
     return false;
 }
 
-const char* EdgeAdmissionName(EdgeAdmission admission) noexcept {
+const char* edgeAdmissionName(EdgeAdmission admission) noexcept {
     switch (admission) {
-    case EdgeAdmission::Accepted:                        return "Accepted";
-    case EdgeAdmission::DemotedMissingEvidence:          return "DemotedMissingEvidence";
-    case EdgeAdmission::DemotedCandidateOwnerKind:       return "DemotedCandidateOwnerKind";
-    case EdgeAdmission::DemotedTemporalDirectionDropped: return "DemotedTemporalDirectionDropped";
-    case EdgeAdmission::RejectedUnknownKind:             return "RejectedUnknownKind";
-    case EdgeAdmission::RejectedUnknownDirection:        return "RejectedUnknownDirection";
-    case EdgeAdmission::RejectedMissingEndpoint:         return "RejectedMissingEndpoint";
-    case EdgeAdmission::RejectedDuplicateId:             return "RejectedDuplicateId";
-    case EdgeAdmission::RejectedInvalidInterval:         return "RejectedInvalidInterval";
+    case EdgeAdmission::kAccepted:                        return "Accepted";
+    case EdgeAdmission::kDemotedMissingEvidence:          return "DemotedMissingEvidence";
+    case EdgeAdmission::kDemotedCandidateOwnerKind:       return "DemotedCandidateOwnerKind";
+    case EdgeAdmission::kDemotedTemporalDirectionDropped: return "DemotedTemporalDirectionDropped";
+    case EdgeAdmission::kRejectedUnknownKind:             return "RejectedUnknownKind";
+    case EdgeAdmission::kRejectedUnknownDirection:        return "RejectedUnknownDirection";
+    case EdgeAdmission::kRejectedMissingEndpoint:         return "RejectedMissingEndpoint";
+    case EdgeAdmission::kRejectedDuplicateId:             return "RejectedDuplicateId";
+    case EdgeAdmission::kRejectedInvalidInterval:         return "RejectedInvalidInterval";
     }
     return "RejectedUnknownKind";
 }
 
-bool EdgeAdmissionAccepted(EdgeAdmission admission) noexcept {
+bool edgeAdmissionAccepted(EdgeAdmission admission) noexcept {
     switch (admission) {
-    case EdgeAdmission::Accepted:
-    case EdgeAdmission::DemotedMissingEvidence:
-    case EdgeAdmission::DemotedCandidateOwnerKind:
-    case EdgeAdmission::DemotedTemporalDirectionDropped:
+    case EdgeAdmission::kAccepted:
+    case EdgeAdmission::kDemotedMissingEvidence:
+    case EdgeAdmission::kDemotedCandidateOwnerKind:
+    case EdgeAdmission::kDemotedTemporalDirectionDropped:
         return true;
-    case EdgeAdmission::RejectedUnknownKind:
-    case EdgeAdmission::RejectedUnknownDirection:
-    case EdgeAdmission::RejectedMissingEndpoint:
-    case EdgeAdmission::RejectedDuplicateId:
-    case EdgeAdmission::RejectedInvalidInterval:
+    case EdgeAdmission::kRejectedUnknownKind:
+    case EdgeAdmission::kRejectedUnknownDirection:
+    case EdgeAdmission::kRejectedMissingEndpoint:
+    case EdgeAdmission::kRejectedDuplicateId:
+    case EdgeAdmission::kRejectedInvalidInterval:
         return false;
     }
     return false;
 }
 
-const char* EndpointRoleName(EndpointRole role) noexcept {
+const char* endpointRoleName(EndpointRole role) noexcept {
     switch (role) {
-    case EndpointRole::From: return "From";
-    case EndpointRole::To:   return "To";
+    case EndpointRole::kFrom: return "From";
+    case EndpointRole::kTo:   return "To";
     }
     return "To";
 }
 
-const char* ChainKindName(ChainKind kind) noexcept {
+const char* chainKindName(ChainKind kind) noexcept {
     switch (kind) {
-    case ChainKind::ProcessSubjects:      return "ProcessSubjects";
-    case ChainKind::DeviceToService:      return "DeviceToService";
-    case ChainKind::ConnectionToTimeline: return "ConnectionToTimeline";
+    case ChainKind::kProcessSubjects:      return "ProcessSubjects";
+    case ChainKind::kDeviceToService:      return "DeviceToService";
+    case ChainKind::kConnectionToTimeline: return "ConnectionToTimeline";
     }
     return "ProcessSubjects";
 }
 
-const char* StepAvailabilityName(StepAvailability availability) noexcept {
+const char* stepAvailabilityName(StepAvailability availability) noexcept {
     switch (availability) {
-    case StepAvailability::Present:                    return "Present";
-    case StepAvailability::MissingNoData:              return "MissingNoData";
-    case StepAvailability::MissingCoverageIncomplete:  return "MissingCoverageIncomplete";
-    case StepAvailability::MissingNotCollected:        return "MissingNotCollected";
-    case StepAvailability::MissingUnsupported:         return "MissingUnsupported";
-    case StepAvailability::MissingAccessDenied:        return "MissingAccessDenied";
-    case StepAvailability::MissingCollectionFailed:    return "MissingCollectionFailed";
-    case StepAvailability::MissingIdentityUnusable:    return "MissingIdentityUnusable";
-    case StepAvailability::MissingPreviousStepMissing: return "MissingPreviousStepMissing";
+    case StepAvailability::kPresent:                    return "Present";
+    case StepAvailability::kMissingNoData:              return "MissingNoData";
+    case StepAvailability::kMissingCoverageIncomplete:  return "MissingCoverageIncomplete";
+    case StepAvailability::kMissingNotCollected:        return "MissingNotCollected";
+    case StepAvailability::kMissingUnsupported:         return "MissingUnsupported";
+    case StepAvailability::kMissingAccessDenied:        return "MissingAccessDenied";
+    case StepAvailability::kMissingCollectionFailed:    return "MissingCollectionFailed";
+    case StepAvailability::kMissingIdentityUnusable:    return "MissingIdentityUnusable";
+    case StepAvailability::kMissingPreviousStepMissing: return "MissingPreviousStepMissing";
     }
     return "MissingNotCollected";
 }
 
-bool StepIsMissing(StepAvailability availability) noexcept {
-    return availability != StepAvailability::Present;
+bool stepIsMissing(StepAvailability availability) noexcept {
+    return availability != StepAvailability::kPresent;
 }
 
-const char* IsolationStateName(IsolationState state) noexcept {
+const char* isolationStateName(IsolationState state) noexcept {
     switch (state) {
-    case IsolationState::NotIsolated:           return "NotIsolated";
-    case IsolationState::OwnerMissing:          return "OwnerMissing";
-    case IsolationState::ObjectUnloaded:        return "ObjectUnloaded";
-    case IsolationState::SourceNotCollected:    return "SourceNotCollected";
-    case IsolationState::ObservedInconsistency: return "ObservedInconsistency";
+    case IsolationState::kNotIsolated:           return "NotIsolated";
+    case IsolationState::kOwnerMissing:          return "OwnerMissing";
+    case IsolationState::kObjectUnloaded:        return "ObjectUnloaded";
+    case IsolationState::kSourceNotCollected:    return "SourceNotCollected";
+    case IsolationState::kObservedInconsistency: return "ObservedInconsistency";
     }
     return "SourceNotCollected";
 }
 
-const char* EntityListOrderName(EntityListOrder order) noexcept {
+const char* entityListOrderName(EntityListOrder order) noexcept {
     switch (order) {
-    case EntityListOrder::ByNodeId:              return "ByNodeId";
-    case EntityListOrder::ByDisplayText:         return "ByDisplayText";
-    case EntityListOrder::ByKind:                return "ByKind";
-    case EntityListOrder::ByEdgeCountDescending: return "ByEdgeCountDescending";
+    case EntityListOrder::kByNodeId:              return "ByNodeId";
+    case EntityListOrder::kByDisplayText:         return "ByDisplayText";
+    case EntityListOrder::kByKind:                return "ByKind";
+    case EntityListOrder::kByEdgeCountDescending: return "ByEdgeCountDescending";
     }
     return "ByNodeId";
 }
 
 // ---------------------------------------------------------------------------
-// G-02：节点身份
+// G-02: Node identity
 // ---------------------------------------------------------------------------
 IdentityStrength NodeIdentity::strength() const noexcept {
-    if (category != NodeCategory::SystemObject) {
-        // 时间线/证据记录不是系统对象，没有生命周期身份可谈。有记录 id 就是弱身份。
-        return name.empty() ? IdentityStrength::Unusable : IdentityStrength::Weak;
+    if (category != NodeCategory::kSystemObject) {
+        // Timelines and evidence records are not system objects, so they have no lifecycle identity. A record ID constitutes a weak identity.
+        return name.empty() ? IdentityStrength::kUnusable : IdentityStrength::kWeak;
     }
     switch (kind) {
-    case ObjectKind::Process:    return process.strength();
-    case ObjectKind::Thread:     return thread.strength();
-    case ObjectKind::Driver:
-    case ObjectKind::Module:     return driver.strength();
-    case ObjectKind::File:       return file.strength();
-    case ObjectKind::Handle:     return handle.strength();
-    case ObjectKind::Connection: return connection.strength();
-    case ObjectKind::Device:
-    case ObjectKind::Service:
-        // F-03 没有为设备/服务定义生命周期身份，因此它们的强度封顶在 Weak。
-        // 这一条必须显式写出来，不能让它们看起来和进程一样可靠。
-        return name.empty() ? IdentityStrength::Unusable : IdentityStrength::Weak;
-    case ObjectKind::Unknown:
+    case ObjectKind::kProcess:    return process.strength();
+    case ObjectKind::kThread:     return thread.strength();
+    case ObjectKind::kDriver:
+    case ObjectKind::kModule:     return driver.strength();
+    case ObjectKind::kFile:       return file.strength();
+    case ObjectKind::kHandle:     return handle.strength();
+    case ObjectKind::kConnection: return connection.strength();
+    case ObjectKind::kDevice:
+    case ObjectKind::kService:
+        // F-03 does not define a lifecycle identity for devices/services, so their strength is capped at Weak.
+        // This case must be explicitly written out; do not let it appear as reliable as a process.
+        return name.empty() ? IdentityStrength::kUnusable : IdentityStrength::kWeak;
+    case ObjectKind::kUnknown:
         break;
     }
-    return name.empty() ? IdentityStrength::Unusable : IdentityStrength::Weak;
+    return name.empty() ? IdentityStrength::kUnusable : IdentityStrength::kWeak;
 }
 
 std::string NodeIdentity::crossSessionKey() const {
-    if (category != NodeCategory::SystemObject) {
+    if (category != NodeCategory::kSystemObject) {
         return std::string();
     }
     switch (kind) {
-    case ObjectKind::Process:    return process.crossSessionKey();
-    case ObjectKind::Thread:     return thread.crossSessionKey();
-    case ObjectKind::Driver:
-    case ObjectKind::Module:     return driver.crossSessionKey();
-    case ObjectKind::File:       return file.crossSessionKey();
-    case ObjectKind::Handle:     return handle.crossSessionKey();
-    case ObjectKind::Connection: return connection.crossSessionKey();
-    case ObjectKind::Device:
-    case ObjectKind::Service:
-    case ObjectKind::Unknown:
+    case ObjectKind::kProcess:    return process.crossSessionKey();
+    case ObjectKind::kThread:     return thread.crossSessionKey();
+    case ObjectKind::kDriver:
+    case ObjectKind::kModule:     return driver.crossSessionKey();
+    case ObjectKind::kFile:       return file.crossSessionKey();
+    case ObjectKind::kHandle:     return handle.crossSessionKey();
+    case ObjectKind::kConnection: return connection.crossSessionKey();
+    case ObjectKind::kDevice:
+    case ObjectKind::kService:
+    case ObjectKind::kUnknown:
         break;
     }
     return std::string();
 }
 
 std::string NodeIdentity::nodeKey() const {
-    std::string key(NodeCategoryName(category));
+    std::string key(nodeCategoryName(category));
     key.push_back(kGroupSep);
-    key.append(ObjectKindName(kind));
+    key.append(objectKindName(kind));
     key.push_back(kGroupSep);
 
-    const std::string strong = crossSessionKey();
-    if (!strong.empty()) {
-        // 强身份：instanceTag 不参与，否则同一个对象会被拆成两个节点。
+    const std::string kStrong = crossSessionKey();
+    if (!kStrong.empty()) {
+        // Strong identity: instanceTag is excluded; otherwise, the same object would be split into two nodes.
         key.append("strong");
         key.push_back(kGroupSep);
-        key.append(strong);
+        key.append(kStrong);
         return key;
     }
-    if (strength() == IdentityStrength::Unusable && instanceTag.empty()) {
-        // 既没有可用身份，调用方也没有给判别标签 —— 这样的节点无法与任何别的
-        // 观察区分开，进图只会制造假的"同一个对象"。
+    if (strength() == IdentityStrength::kUnusable && instanceTag.empty()) {
+        // Neither a valid identity nor a discriminator label is provided; such nodes cannot be distinguished from
+        // any other observation, and adding them to the graph would falsely imply they represent the same object.
         return std::string();
     }
     key.append("weak");
-    AppendWeakFields(key, *this);
+    appendWeakFields(key, *this);
     return key;
 }
 
@@ -399,57 +399,57 @@ ObjectRef NodeIdentity::makeRef(const std::string& evidenceIdIn,
                                 const std::string& displayTextIn) const {
     ObjectRef ref;
     ref.kind = kind;
-    ref.key = crossSessionKey();  // 身份不足即空串，navigable() 自然为假
+    ref.key = crossSessionKey();  // Insufficient identity results in an empty string, so navigable() is naturally false.
     ref.strength = strength();
     ref.displayText = displayTextIn;
     ref.evidenceId = evidenceIdIn;
     return ref;
 }
 
-MatchResult MatchNodeIdentity(const NodeIdentity& a, const NodeIdentity& b) noexcept {
+MatchResult matchNodeIdentity(const NodeIdentity& a, const NodeIdentity& b) noexcept {
     if (a.category != b.category || a.kind != b.kind) {
-        return MatchResult::NoMatch;
+        return MatchResult::kNoMatch;
     }
-    if (a.category == NodeCategory::SystemObject) {
+    if (a.category == NodeCategory::kSystemObject) {
         switch (a.kind) {
-        case ObjectKind::Process:    return MatchProcessInstance(a.process, b.process);
-        case ObjectKind::Thread:     return MatchThreadInstance(a.thread, b.thread);
-        case ObjectKind::Driver:
-        case ObjectKind::Module:     return MatchDriverInstance(a.driver, b.driver);
-        case ObjectKind::File:       return MatchFileIdentity(a.file, b.file);
-        case ObjectKind::Handle:     return MatchHandleIdentity(a.handle, b.handle);
-        case ObjectKind::Connection: return MatchConnectionIdentity(a.connection, b.connection);
-        case ObjectKind::Device:
-        case ObjectKind::Service:
-        case ObjectKind::Unknown:
+        case ObjectKind::kProcess:    return matchProcessInstance(a.process, b.process);
+        case ObjectKind::kThread:     return matchThreadInstance(a.thread, b.thread);
+        case ObjectKind::kDriver:
+        case ObjectKind::kModule:     return matchDriverInstance(a.driver, b.driver);
+        case ObjectKind::kFile:       return matchFileIdentity(a.file, b.file);
+        case ObjectKind::kHandle:     return matchHandleIdentity(a.handle, b.handle);
+        case ObjectKind::kConnection: return matchConnectionIdentity(a.connection, b.connection);
+        case ObjectKind::kDevice:
+        case ObjectKind::kService:
+        case ObjectKind::kUnknown:
             break;
         }
     }
-    // 设备/服务/记录：只有 (bootId, name, instanceTag)。矛盾能判 NoMatch，一致最多
-    // 只能是 Candidate —— 没有生命周期标识就没有"确认是同一个"的资格。
+    // Device/Service/Record: only (bootId, name, instanceTag). A contradiction yields NoMatch; consistency yields at
+    // most Candidate — without a lifecycle identifier, there is no qualification to confirm it is the same entity.
     //
-    // 先过门槛再比。三次 CompareText 在字段全缺时全部返回 Missing，一路落到最后的
-    // Candidate —— 于是两个什么都没填的身份会被判成"可能是同一个对象"。MatchResult
-    // 没有"信息不足"这一档，调用方（例如历史边定位现场）拿 Candidate 当身份证据用，
-    // 所以"没有信息"必须落到 NoMatch 这一侧，而不是弱匹配那一侧。
-    if (a.strength() == IdentityStrength::Unusable || b.strength() == IdentityStrength::Unusable) {
-        return MatchResult::NoMatch;
+    // Check the threshold first, then compare. When all fields are missing, the three compareText calls all return Missing,
+    // eventually falling through to the Candidate state. Consequently, two identities with no data would be judged as
+    // "possibly the same object." Since MatchResult has no "insufficient information" category, and callers (e.g., historical
+    // edge localization) treat Candidate as identity evidence, "no information" must map to NoMatch, not the weak match side.
+    if (a.strength() == IdentityStrength::kUnusable || b.strength() == IdentityStrength::kUnusable) {
+        return MatchResult::kNoMatch;
     }
-    const bool aBlank = a.bootId.empty() && a.name.empty() && a.instanceTag.empty();
-    const bool bBlank = b.bootId.empty() && b.name.empty() && b.instanceTag.empty();
-    if (aBlank || bBlank) {
-        return MatchResult::NoMatch;
+    const bool kABlank = a.bootId.empty() && a.name.empty() && a.instanceTag.empty();
+    const bool kBBlank = b.bootId.empty() && b.name.empty() && b.instanceTag.empty();
+    if (kABlank || kBBlank) {
+        return MatchResult::kNoMatch;
     }
-    if (CompareText(a.bootId, b.bootId) == WeakCompare::Differ) {
-        return MatchResult::NoMatch;
+    if (compareText(a.bootId, b.bootId) == WeakCompare::kDiffer) {
+        return MatchResult::kNoMatch;
     }
-    if (CompareText(a.name, b.name) == WeakCompare::Differ) {
-        return MatchResult::NoMatch;
+    if (compareText(a.name, b.name) == WeakCompare::kDiffer) {
+        return MatchResult::kNoMatch;
     }
-    if (CompareText(a.instanceTag, b.instanceTag) == WeakCompare::Differ) {
-        return MatchResult::NoMatch;
+    if (compareText(a.instanceTag, b.instanceTag) == WeakCompare::kDiffer) {
+        return MatchResult::kNoMatch;
     }
-    return MatchResult::Candidate;
+    return MatchResult::kCandidate;
 }
 
 bool GraphNode::objectNavigable() const noexcept {
@@ -461,48 +461,48 @@ bool GraphNode::evidenceOpenable() const noexcept {
 }
 
 // ---------------------------------------------------------------------------
-// G-01：边
+// G-01: Edge
 // ---------------------------------------------------------------------------
-std::string DeriveEdgeId(const GraphEdge& edge) {
-    std::string id(EdgeKindName(edge.kind));
-    AppendField(id, edge.fromNodeId);
-    AppendField(id, edge.toNodeId);
-    AppendField(id, edge.validFrom100ns, U64Format::Decimal);
-    AppendField(id, edge.validTo100ns, U64Format::Decimal);
-    AppendField(id, edge.ruleId);
+std::string deriveEdgeId(const GraphEdge& edge) {
+    std::string id(edgeKindName(edge.kind));
+    appendField(id, edge.fromNodeId);
+    appendField(id, edge.toNodeId);
+    appendField(id, edge.validFrom100ns, U64Format::kDecimal);
+    appendField(id, edge.validTo100ns, U64Format::kDecimal);
+    appendField(id, edge.ruleId);
     return id;
 }
 
-TemporalValidity EdgeValidAt(const GraphEdge& edge, const OptionalU64& utc100ns) noexcept {
-    // 区间反了先说出来：两端都在场且 from > to 时，下面两条 if 会对**任意**时刻都
-    // 命中 NotValid，这条边在任何带时刻的筛选下永久隐身，而且没有一个取值能说出
-    // "隐身是因为区间坏了"。坏区间与"此刻确实失效"不是一回事。
+TemporalValidity edgeValidAt(const GraphEdge& edge, const OptionalU64& utc100ns) noexcept {
+    // State the interval inversion first: when both endpoints exist and from > to, the subsequent two if-statements will
+    // hit NotValid for **any** timestamp. This edge becomes permanently invisible under any time-based filter, and no
+    // value can explain 'invisibility due to a broken interval'. A broken interval is not the same as 'currently invalid'.
     if (edge.validFrom100ns.present && edge.validTo100ns.present &&
         edge.validFrom100ns.value > edge.validTo100ns.value) {
-        return TemporalValidity::IntervalInvalid;
+        return TemporalValidity::kIntervalInvalid;
     }
     if (!utc100ns.present) {
-        return TemporalValidity::Unknown;
+        return TemporalValidity::kUnknown;
     }
     if (!edge.validFrom100ns.present && !edge.validTo100ns.present) {
-        // 有效期完全未知。这既不是"一直有效"，也不是"已失效"。
-        return TemporalValidity::Unknown;
+        // Validity is completely unknown. This is neither 'always valid' nor 'expired'.
+        return TemporalValidity::kUnknown;
     }
     if (edge.validFrom100ns.present && utc100ns.value < edge.validFrom100ns.value) {
-        return TemporalValidity::NotValid;
+        return TemporalValidity::kNotValid;
     }
     if (edge.validTo100ns.present && utc100ns.value >= edge.validTo100ns.value) {
-        return TemporalValidity::NotValid;
+        return TemporalValidity::kNotValid;
     }
-    // 只给了一端时，另一端仍然未知：给了起点且时刻在起点之后，但没有终点，无法
-    // 断言"此刻仍然有效"。
+    // When only one end is provided, the other remains unknown: having a start time after
+    // the start point but no end time means we cannot assert 'still valid at this moment'.
     if (!edge.validFrom100ns.present || !edge.validTo100ns.present) {
-        return TemporalValidity::Unknown;
+        return TemporalValidity::kUnknown;
     }
-    return TemporalValidity::Valid;
+    return TemporalValidity::kValid;
 }
 
-bool EdgeMatchesFilter(const GraphEdge& edge, const EdgeFilter& filter) noexcept {
+bool edgeMatchesFilter(const GraphEdge& edge, const EdgeFilter& filter) noexcept {
     if (!filter.kinds.empty() &&
         std::find(filter.kinds.begin(), filter.kinds.end(), edge.kind) == filter.kinds.end()) {
         return false;
@@ -513,73 +513,73 @@ bool EdgeMatchesFilter(const GraphEdge& edge, const EdgeFilter& filter) noexcept
         return false;
     }
     if (filter.atUtc100ns.present) {
-        const TemporalValidity validity = EdgeValidAt(edge, filter.atUtc100ns);
-        switch (validity) {
-        case TemporalValidity::NotValid:
+        const TemporalValidity kValidity = edgeValidAt(edge, filter.atUtc100ns);
+        switch (kValidity) {
+        case TemporalValidity::kNotValid:
             return false;
-        case TemporalValidity::Unknown:
-        case TemporalValidity::IntervalInvalid:
-            // 未知不等于无效。区间坏了同样问不出"此刻有没有效"，因此走同一条路：
-            // 默认保留，只有调用方明确要求排除未知时才丢。
+        case TemporalValidity::kUnknown:
+        case TemporalValidity::kIntervalInvalid:
+            // Unknown does not equal invalid. If the interval is broken, we still cannot determine 'is it valid now?', so we follow the same path:
+            // Preserved by default; only dropped if the caller explicitly requests excluding unknown validity.
             return !filter.excludeUnknownValidity;
-        case TemporalValidity::Valid:
+        case TemporalValidity::kValid:
             break;
         }
     }
     return true;
 }
 
-EdgeAdmission NormalizeEdge(const GraphEdge& input, GraphEdge& out) {
+EdgeAdmission normalizeEdge(const GraphEdge& input, GraphEdge& out) {
     out = input;
-    if (out.kind == EdgeKind::Unknown) {
-        return EdgeAdmission::RejectedUnknownKind;
+    if (out.kind == EdgeKind::kUnknown) {
+        return EdgeAdmission::kRejectedUnknownKind;
     }
     if (out.fromNodeId.empty() || out.toNodeId.empty()) {
-        return EdgeAdmission::RejectedMissingEndpoint;
+        return EdgeAdmission::kRejectedMissingEndpoint;
     }
-    if (out.direction == EdgeDirection::Unknown) {
-        // 默认构造的边不许进图：一条"方向未知"的边会被读成 from→to。
-        return EdgeAdmission::RejectedUnknownDirection;
+    if (out.direction == EdgeDirection::kUnknown) {
+        // Edges constructed with default values are rejected from the graph: an edge with 'unknown direction' would be misinterpreted as from→to.
+        return EdgeAdmission::kRejectedUnknownDirection;
     }
     if (out.validFrom100ns.present && out.validTo100ns.present &&
         out.validFrom100ns.value > out.validTo100ns.value) {
-        // G-01：有效区间是边身份的一部分（DeriveEdgeId 把两端都编进去）。一条
-        // from > to 的边照样能拿到独立 id 进图，却在任何带时刻的筛选下永久不可见，
-        // 而且没有任何一处说得出为什么。区间不成立就是这条边不成立，直接拒收。
-        // from == to 是合法的空区间（"这段关系持续了零长时间"），不在此列。
-        return EdgeAdmission::RejectedInvalidInterval;
+        // G-01: Valid intervals are part of edge identity (deriveEdgeId encodes both endpoints). An edge from > to
+        // can still get an independent ID into the graph but remains permanently invisible under any time-based
+        // filter, with no explanation anywhere. If the interval is invalid, the edge is invalid; reject directly.
+        // from == to is a valid empty interval ("the relationship lasted zero duration") and is excluded.
+        return EdgeAdmission::kRejectedInvalidInterval;
     }
 
-    // 证据引用去重排序：同一批证据换个顺序不应产生"另一条边"（G-08）。
-    SortUnique(out.evidenceRefs);
+    // Deduplicate and sort evidence references: the same set of evidence should not produce 'another edge' (G-08) just by changing order.
+    sortUnique(out.evidenceRefs);
 
-    EdgeAdmission admission = EdgeAdmission::Accepted;
+    EdgeAdmission admission = EdgeAdmission::kAccepted;
 
-    if (EdgeKindIsSymmetric(out.kind)) {
-        if (out.direction != EdgeDirection::Symmetric) {
-            // 规范"不包含"里点名禁止把时间邻近画成确定因果，方向直接丢弃。
-            out.direction = EdgeDirection::Symmetric;
-            admission = EdgeAdmission::DemotedTemporalDirectionDropped;
+    if (edgeKindIsSymmetric(out.kind)) {
+        if (out.direction != EdgeDirection::kSymmetric) {
+            // Per the 'exclusion' specification, explicitly forbids rendering temporally adjacent events as deterministic causality; the direction is dropped.
+            out.direction = EdgeDirection::kSymmetric;
+            admission = EdgeAdmission::kDemotedTemporalDirectionDropped;
         }
         if (out.toNodeId < out.fromNodeId) {
             std::swap(out.fromNodeId, out.toNodeId);
         }
     }
 
-    if (out.certainty == EdgeCertainty::Confirmed) {
+    if (out.certainty == EdgeCertainty::kConfirmed) {
         if (out.evidenceRefs.empty()) {
-            // G-01 通过条件：缺证据关系不显示为确定。优先级最高 —— 连证据都没有时，
-            // 报"这一类不能确定"会让调用方以为换个 kind 就能 Confirmed。
-            out.certainty = EdgeCertainty::Candidate;
-            admission = EdgeAdmission::DemotedMissingEvidence;
-        } else if (!EdgeKindAllowsConfirmed(out.kind)) {
-            out.certainty = EdgeCertainty::Candidate;
-            admission = EdgeAdmission::DemotedCandidateOwnerKind;
+            // G-01 Condition: Missing-evidence edges must not appear as Confirmed. Highest priority: Reporting "this kind cannot
+            // be Confirmed" when evidence is missing prevents callers from assuming switching the kind will yield Confirmed.
+            out.certainty = EdgeCertainty::kCandidate;
+            admission = EdgeAdmission::kDemotedMissingEvidence;
+        } else if (!edgeKindAllowsConfirmed(out.kind)) {
+            out.certainty = EdgeCertainty::kCandidate;
+            admission = EdgeAdmission::kDemotedCandidateOwnerKind;
         }
     }
 
     if (out.edgeId.empty()) {
-        out.edgeId = DeriveEdgeId(out);
+        out.edgeId = deriveEdgeId(out);
     }
     return admission;
 }
@@ -588,14 +588,14 @@ EdgeAdmission NormalizeEdge(const GraphEdge& input, GraphEdge& out) {
 // EntityGraph
 // ---------------------------------------------------------------------------
 void EntityGraph::attachEdgeToNode(const std::string& nodeId, std::size_t edgeIndex) {
-    const auto it = nodeIndex_.find(nodeId);
-    if (it == nodeIndex_.end()) {
-        // G-06：邻居还没入图 —— 记成"未保存"，绝不在这里发起任何查询。
+    const auto kIt = nodeIndex_.find(nodeId);
+    if (kIt == nodeIndex_.end()) {
+        // G-06: Neighbor not yet added to the graph — mark as 'unsaved'; never initiate any query here.
         pending_[nodeId].push_back(edgeIndex);
         return;
     }
-    adjacency_[it->second].push_back(edgeIndex);
-    adjacencySorted_[it->second] = 0;
+    adjacency_[kIt->second].push_back(edgeIndex);
+    adjacencySorted_[kIt->second] = 0;
 }
 
 NodeAdmission EntityGraph::addNode(GraphNode node) {
@@ -603,31 +603,31 @@ NodeAdmission EntityGraph::addNode(GraphNode node) {
         node.nodeId = node.identity.nodeKey();
     }
     if (node.nodeId.empty()) {
-        return NodeAdmission::RejectedNoIdentity;
+        return NodeAdmission::kRejectedNoIdentity;
     }
 
-    const auto existingIt = nodeIndex_.find(node.nodeId);
-    if (existingIt != nodeIndex_.end()) {
-        GraphNode& existing = nodes_[existingIt->second];
-        // G-02：nodeId 相同不代表是同一个对象 —— 会话回放时 id 由已保存数据给出，
-        // 两条来源不同的记录完全可能带着同一个 id 和两份互相矛盾的身份。直接合并
-        // 会把第二次观察整条抹掉（"宁可拆成两个节点，也不合成一个"的反面），所以
-        // 这里先问身份：nodeKey 相同说明身份内容一致，可以合并；否则只要匹配器判
-        // 得出 NoMatch，就拒收并记账，绝不静默丢弃。
+    const auto kExistingIt = nodeIndex_.find(node.nodeId);
+    if (kExistingIt != nodeIndex_.end()) {
+        GraphNode& existing = nodes_[kExistingIt->second];
+        // G-02: Same nodeId does not imply the same object. During session replay, IDs come from saved data; two
+        // records from different sources may carry the same ID but contradictory identities. Directly merging
+        // would erase the second observation entirely (the opposite of 'split into two nodes rather than merge
+        // one'). Therefore, first check identity: if nodeKey matches, the identity content is consistent and they
+        // can be merged; otherwise, if the matcher returns NoMatch, reject and record it, never silently discard.
         if (existing.identity.nodeKey() != node.identity.nodeKey() &&
-            MatchNodeIdentity(existing.identity, node.identity) == MatchResult::NoMatch) {
+            matchNodeIdentity(existing.identity, node.identity) == MatchResult::kNoMatch) {
             ++identityConflicts_;
-            return NodeAdmission::RejectedIdentityConflict;
+            return NodeAdmission::kRejectedIdentityConflict;
         }
-        NodeAdmission admission = NodeAdmission::AcceptedMerged;
+        NodeAdmission admission = NodeAdmission::kAcceptedMerged;
         if (existing.lifecycle != node.lifecycle) {
-            if (existing.lifecycle == NodeLifecycle::Unknown) {
+            if (existing.lifecycle == NodeLifecycle::kUnknown) {
                 existing.lifecycle = node.lifecycle;
-            } else if (node.lifecycle != NodeLifecycle::Unknown) {
-                // 两次观察互相矛盾。不许挑一个"看起来更好"的，降级为未知并让调用方
-                // 知道发生过冲突。
-                existing.lifecycle = NodeLifecycle::Unknown;
-                admission = NodeAdmission::AcceptedMergedLifecycleConflict;
+            } else if (node.lifecycle != NodeLifecycle::kUnknown) {
+                // The two observations contradict each other. Do not select the one that
+                // 'looks better'; downgrade to Unknown and notify the caller of the conflict.
+                existing.lifecycle = NodeLifecycle::kUnknown;
+                admission = NodeAdmission::kAcceptedMergedLifecycleConflict;
             }
         }
         if (existing.displayText.empty()) {
@@ -636,79 +636,79 @@ NodeAdmission EntityGraph::addNode(GraphNode node) {
         if (existing.evidenceId.empty()) {
             existing.evidenceId = node.evidenceId;
         }
-        if (existing.ownerRelation == EdgeKind::Unknown) {
+        if (existing.ownerRelation == EdgeKind::kUnknown) {
             existing.ownerRelation = node.ownerRelation;
             existing.ownerKind = node.ownerKind;
         }
         existing.inconsistencyObserved = existing.inconsistencyObserved || node.inconsistencyObserved;
-        MergeSortedUnique(existing.inconsistencyEvidenceIds, node.inconsistencyEvidenceIds);
-        if (existing.outcome.status == CollectionStatus::NotCollected) {
+        mergeSortedUnique(existing.inconsistencyEvidenceIds, node.inconsistencyEvidenceIds);
+        if (existing.outcome.status == CollectionStatus::kNotCollected) {
             existing.outcome = node.outcome;
         }
         return admission;
     }
 
-    SortUnique(node.inconsistencyEvidenceIds);
-    const std::string nodeId = node.nodeId;
-    const std::size_t index = nodes_.size();
+    sortUnique(node.inconsistencyEvidenceIds);
+    const std::string kNodeId = node.nodeId;
+    const std::size_t kIndex = nodes_.size();
     nodes_.push_back(std::move(node));
-    nodeIndex_.emplace(nodeId, index);
+    nodeIndex_.emplace(kNodeId, kIndex);
     adjacency_.emplace_back();
     adjacencySorted_.push_back(1);
 
-    const auto pendingIt = pending_.find(nodeId);
-    if (pendingIt != pending_.end()) {
-        adjacency_[index] = std::move(pendingIt->second);
-        adjacencySorted_[index] = 0;
-        pending_.erase(pendingIt);
+    const auto kPendingIt = pending_.find(kNodeId);
+    if (kPendingIt != pending_.end()) {
+        adjacency_[kIndex] = std::move(kPendingIt->second);
+        adjacencySorted_[kIndex] = 0;
+        pending_.erase(kPendingIt);
     }
-    return NodeAdmission::AcceptedNew;
+    return NodeAdmission::kAcceptedNew;
 }
 
 EdgeAdmission EntityGraph::addEdge(const GraphEdge& edge) {
     GraphEdge normalized;
-    const EdgeAdmission admission = NormalizeEdge(edge, normalized);
-    if (!EdgeAdmissionAccepted(admission)) {
-        return admission;
+    const EdgeAdmission kAdmission = normalizeEdge(edge, normalized);
+    if (!edgeAdmissionAccepted(kAdmission)) {
+        return kAdmission;
     }
     if (edgeIndex_.find(normalized.edgeId) != edgeIndex_.end()) {
-        return EdgeAdmission::RejectedDuplicateId;
+        return EdgeAdmission::kRejectedDuplicateId;
     }
-    const std::size_t index = edges_.size();
-    const std::string fromId = normalized.fromNodeId;
-    const std::string toId = normalized.toNodeId;
-    const std::string edgeId = normalized.edgeId;
+    const std::size_t kIndex = edges_.size();
+    const std::string kFromId = normalized.fromNodeId;
+    const std::string kToId = normalized.toNodeId;
+    const std::string kEdgeId = normalized.edgeId;
     edges_.push_back(std::move(normalized));
-    edgeIndex_.emplace(edgeId, index);
-    attachEdgeToNode(fromId, index);
-    if (toId != fromId) {
-        attachEdgeToNode(toId, index);
+    edgeIndex_.emplace(kEdgeId, kIndex);
+    attachEdgeToNode(kFromId, kIndex);
+    if (kToId != kFromId) {
+        attachEdgeToNode(kToId, kIndex);
     }
-    return admission;
+    return kAdmission;
 }
 
 const GraphNode* EntityGraph::findNode(const std::string& nodeId) const noexcept {
-    const auto it = nodeIndex_.find(nodeId);
-    return it == nodeIndex_.end() ? nullptr : &nodes_[it->second];
+    const auto kIt = nodeIndex_.find(nodeId);
+    return kIt == nodeIndex_.end() ? nullptr : &nodes_[kIt->second];
 }
 
 const GraphEdge* EntityGraph::findEdge(const std::string& edgeId) const noexcept {
-    const auto it = edgeIndex_.find(edgeId);
-    return it == edgeIndex_.end() ? nullptr : &edges_[it->second];
+    const auto kIt = edgeIndex_.find(edgeId);
+    return kIt == edgeIndex_.end() ? nullptr : &edges_[kIt->second];
 }
 
 bool EntityGraph::nodeIndexOf(const std::string& nodeId, std::size_t& out) const noexcept {
-    const auto it = nodeIndex_.find(nodeId);
-    if (it == nodeIndex_.end()) {
+    const auto kIt = nodeIndex_.find(nodeId);
+    if (kIt == nodeIndex_.end()) {
         return false;
     }
-    out = it->second;
+    out = kIt->second;
     return true;
 }
 
 const std::vector<std::size_t>& EntityGraph::incidentEdges(std::size_t nodeIndex) const {
     if (nodeIndex >= adjacency_.size()) {
-        return EmptyIndexList();
+        return emptyIndexList();
     }
     if (!adjacencySorted_[nodeIndex]) {
         std::vector<std::size_t>& list = adjacency_[nodeIndex];
@@ -723,9 +723,9 @@ const std::vector<std::size_t>& EntityGraph::incidentEdges(std::size_t nodeIndex
 bool EntityGraph::declareRelationCoverage(EdgeKind kind,
                                           ObjectKind targetKind,
                                           RelationCoverage coverage) {
-    if (kind == EdgeKind::Unknown) {
-        // G-05：EdgeKind::Unknown 是"没填"，不是一种关系。收下它就等于给每一个没有
-        // 标注 ownerRelation 的节点发了一张"这一跳我们查全了、确实没有 owner"的证明。
+    if (kind == EdgeKind::kUnknown) {
+        // G-05: EdgeKind::Unknown signifies "not filled" and is not a valid relationship. Accepting it would effectively issue a
+        // proof to every node lacking an ownerRelation annotation that "this hop has been fully checked and indeed has no owner."
         return false;
     }
     coverage_[std::make_pair(kind, targetKind)] = std::move(coverage);
@@ -742,30 +742,30 @@ std::vector<RelationCoverageEntry> EntityGraph::declaredRelationCoverages() cons
         out.coverage = entry.second;
         entries.push_back(std::move(out));
     }
-    return entries;  // std::map 已按 (kind, targetKind) 有序
+    return entries;  // std::map is already ordered by (kind, targetKind).
 }
 
 RelationCoverage EntityGraph::relationCoverage(EdgeKind kind, ObjectKind targetKind) const {
-    const auto it = coverage_.find(std::make_pair(kind, targetKind));
-    if (it == coverage_.end()) {
-        // 没声明 = 没采。默认绝不是"采过而且是空的"。
-        return EmptyCoverage();
+    const auto kIt = coverage_.find(std::make_pair(kind, targetKind));
+    if (kIt == coverage_.end()) {
+        // Not declared means not collected. The default is never 'collected but empty'.
+        return emptyCoverage();
     }
-    return it->second;
+    return kIt->second;
 }
 
 // ---------------------------------------------------------------------------
-// G-04：有界展开
+// G-04: Bounded unwind
 // ---------------------------------------------------------------------------
 namespace {
 
-// 每条边在一次展开里的处理状态，保证同一条边不被两个端点重复计数。
+// The processing state of each edge within a single unwind, ensuring the same edge is not double-counted by both endpoints.
 enum class EdgeVisit : unsigned char {
-    Unseen = 0,
-    FilteredOut,
-    Included,
-    DeferredByLimit,
-    UnsavedNeighbor,
+    kUnseen = 0,
+    kFilteredOut,
+    kIncluded,
+    kDeferredByLimit,
+    kUnsavedNeighbor,
 };
 
 struct ExpansionState final {
@@ -777,13 +777,13 @@ struct ExpansionState final {
 
 } // namespace
 
-ExpansionResult ExpandGraph(const EntityGraph& graph, const ExpansionRequest& request) {
+ExpansionResult expandGraph(const EntityGraph& graph, const ExpansionRequest& request) {
     ExpansionResult result;
 
     ExpansionLimits limits = request.limits;
     if (!request.continueRequestedByUser) {
-        // G-04：初始只给目标 + 一跳，默认 200/500。越过默认值必须由调用方显式请求
-        // 继续，而不是把一个大 limits 传进来就悄悄放行。
+        // G-04: Initially allow only the target + one hop, with defaults of 200/500. Exceeding the default requires an
+        // explicit request from the caller to continue; do not silently allow a large limits value to be passed in.
         if (limits.maxNodes > kDefaultMaxNodes) {
             limits.maxNodes = kDefaultMaxNodes;
             result.limitsClampedToDefault = true;
@@ -800,10 +800,10 @@ ExpansionResult ExpandGraph(const EntityGraph& graph, const ExpansionRequest& re
 
     ExpansionState state;
     state.loaded.assign(graph.nodeCount(), 0);
-    state.edgeVisit.assign(graph.edgeCount(), EdgeVisit::Unseen);
+    state.edgeVisit.assign(graph.edgeCount(), EdgeVisit::kUnseen);
 
     std::vector<std::string> roots = request.rootNodeIds;
-    SortUnique(roots);  // 输入顺序不影响装载顺序（G-08）
+    sortUnique(roots);  // Input order does not affect loading order (G-08).
     bool anyRootResolved = false;
     for (const std::string& rootId : roots) {
         std::size_t index = 0;
@@ -828,28 +828,28 @@ ExpansionResult ExpandGraph(const EntityGraph& graph, const ExpansionRequest& re
         ++result.loadedNodes;
     }
 
-    // 扫描一个节点的关联边。allowNewNodes 为假时只做闭包（把两端都已装载的边补齐），
-    // 不再引入新节点。
-    const auto scanNode = [&](std::size_t nodeIndex, bool allowNewNodes) {
+    // Scan incident edges of a node. When allowNewNodes is false, only close the closure
+    // (complete edges whose both ends are already loaded) without introducing new nodes.
+    const auto kScanNode = [&](std::size_t nodeIndex, bool allowNewNodes) {
         const std::string& nodeId = graph.nodes()[nodeIndex].nodeId;
-        for (const std::size_t edgeIndex : graph.incidentEdges(nodeIndex)) {
-            EdgeVisit& visit = state.edgeVisit[edgeIndex];
-            if (visit == EdgeVisit::FilteredOut || visit == EdgeVisit::Included ||
-                visit == EdgeVisit::UnsavedNeighbor) {
+        for (const std::size_t kEdgeIndex : graph.incidentEdges(nodeIndex)) {
+            EdgeVisit& visit = state.edgeVisit[kEdgeIndex];
+            if (visit == EdgeVisit::kFilteredOut || visit == EdgeVisit::kIncluded ||
+                visit == EdgeVisit::kUnsavedNeighbor) {
                 continue;
             }
-            if (visit == EdgeVisit::DeferredByLimit && result.loadedEdges >= limits.maxEdges) {
-                // 边预算已经满了，这条边的状态不会再变：装载判在预算判之后，而它的
-                // 另一端一定是已保存的节点（指向未保存邻居的边在第一次访问时就落成
-                // UnsavedNeighbor 了，不会是 Deferred）。再走一遍只是白花一次哈希
-                // 查找 —— 一个挂着几万条边的 hub 上，这一遍就是整个展开的主要开销。
-                // 账目不受影响：deferredEdges 已经在第一次访问时记过了。
+            if (visit == EdgeVisit::kDeferredByLimit && result.loadedEdges >= limits.maxEdges) {
+                // The edge budget is full, so this edge's state will not change: the load check occurs after the budget check,
+                // and its other endpoint must be a saved node (edges pointing to unsaved neighbors become UnsavedNeighbor on
+                // first visit, never Deferred). Traversing again is merely a wasted hash lookup; on a hub with tens of
+                // thousands of edges, this single traversal accounts for the majority of the unwind data overhead.
+                // Accounting is unaffected: deferredEdges were already recorded during the first access.
                 continue;
             }
-            const GraphEdge& edge = graph.edges()[edgeIndex];
-            if (visit == EdgeVisit::Unseen) {
-                if (!EdgeMatchesFilter(edge, request.filter)) {
-                    visit = EdgeVisit::FilteredOut;
+            const GraphEdge& edge = graph.edges()[kEdgeIndex];
+            if (visit == EdgeVisit::kUnseen) {
+                if (!edgeMatchesFilter(edge, request.filter)) {
+                    visit = EdgeVisit::kFilteredOut;
                     ++result.filteredEdgeCount;
                     continue;
                 }
@@ -857,23 +857,23 @@ ExpansionResult ExpandGraph(const EntityGraph& graph, const ExpansionRequest& re
             const std::string& otherId = (edge.fromNodeId == nodeId) ? edge.toNodeId : edge.fromNodeId;
             std::size_t otherIndex = 0;
             if (!graph.nodeIndexOf(otherId, otherIndex)) {
-                // G-06：邻居没保存。记账，不查询。
+                // G-06: Neighbor not saved. Record accounting, do not query.
                 UnsavedNeighbor missing;
                 missing.edgeId = edge.edgeId;
                 missing.missingNodeId = otherId;
                 missing.relation = edge.kind;
                 result.unsavedNeighbors.push_back(missing);
-                if (visit == EdgeVisit::DeferredByLimit) {
+                if (visit == EdgeVisit::kDeferredByLimit) {
                     --state.deferredEdges;
                 }
-                visit = EdgeVisit::UnsavedNeighbor;
+                visit = EdgeVisit::kUnsavedNeighbor;
                 continue;
             }
-            // 边预算先判：装不下这条边就别把它指向的节点拖进来，否则会出现"图里多了
-            // 一个节点，却看不见把它带进来的那条边"。
+            // Edge budget check first: if this edge cannot fit, do not pull in the node it points to,
+            // otherwise you get 'an extra node in the graph with no visible edge bringing it in'.
             if (result.loadedEdges >= limits.maxEdges) {
-                if (visit != EdgeVisit::DeferredByLimit) {
-                    visit = EdgeVisit::DeferredByLimit;
+                if (visit != EdgeVisit::kDeferredByLimit) {
+                    visit = EdgeVisit::kDeferredByLimit;
                     ++state.deferredEdges;
                 }
                 result.edgeLimitHit = true;
@@ -882,15 +882,15 @@ ExpansionResult ExpandGraph(const EntityGraph& graph, const ExpansionRequest& re
             }
             if (!state.loaded[otherIndex]) {
                 if (!allowNewNodes || result.loadedNodes >= limits.maxNodes) {
-                    if (visit != EdgeVisit::DeferredByLimit) {
-                        visit = EdgeVisit::DeferredByLimit;
+                    if (visit != EdgeVisit::kDeferredByLimit) {
+                        visit = EdgeVisit::kDeferredByLimit;
                         ++state.deferredEdges;
                     }
                     result.moreAvailable = true;
                     if (result.loadedNodes >= limits.maxNodes) {
                         result.nodeLimitHit = true;
                     } else {
-                        // 节点上限还没到，是跳数走完了 —— 两者原因不同，不许混用。
+                        // The node limit has not been reached; the hop count has been exhausted instead. These are distinct causes and must not be conflated.
                         result.hopLimitHit = true;
                     }
                     continue;
@@ -899,10 +899,10 @@ ExpansionResult ExpandGraph(const EntityGraph& graph, const ExpansionRequest& re
                 state.order.push_back(otherIndex);
                 ++result.loadedNodes;
             }
-            if (visit == EdgeVisit::DeferredByLimit) {
+            if (visit == EdgeVisit::kDeferredByLimit) {
                 --state.deferredEdges;
             }
-            visit = EdgeVisit::Included;
+            visit = EdgeVisit::kIncluded;
             ++result.loadedEdges;
         }
     };
@@ -914,19 +914,19 @@ ExpansionResult ExpandGraph(const EntityGraph& graph, const ExpansionRequest& re
             break;
         }
         for (std::size_t i = levelBegin; i < levelEnd; ++i) {
-            scanNode(state.order[i], true);
+            kScanNode(state.order[i], true);
         }
         levelBegin = levelEnd;
         levelEnd = state.order.size();
     }
-    // 闭包：已装载节点之间的边一条都不能藏起来，否则图上看得见两个节点却看不见
-    // 它们之间的关系。同时这一遍会把最后一层节点通向外部的边标成"还有更多"。
-    for (const std::size_t nodeIndex : state.order) {
-        scanNode(nodeIndex, false);
+    // Closure: No edges between loaded nodes can be hidden, otherwise two nodes visible on the graph would have no visible
+    // relationship. Additionally, this pass marks edges from the last layer of nodes to external nodes as 'more available'.
+    for (const std::size_t kNodeIndex : state.order) {
+        kScanNode(kNodeIndex, false);
     }
 
-    const std::uint64_t savedNodes = static_cast<std::uint64_t>(graph.nodeCount());
-    const std::uint64_t savedEdges = static_cast<std::uint64_t>(graph.edgeCount());
+    const std::uint64_t kSavedNodes = static_cast<std::uint64_t>(graph.nodeCount());
+    const std::uint64_t kSavedEdges = static_cast<std::uint64_t>(graph.edgeCount());
 
     result.coverage.succeeded = result.loadedNodes;
     result.coverage.skipped = static_cast<std::uint64_t>(result.unsavedNeighbors.size());
@@ -938,27 +938,27 @@ ExpansionResult ExpandGraph(const EntityGraph& graph, const ExpansionRequest& re
         result.coverage.limit = OptionalU64::of(limits.maxEdges);
     }
 
-    // G-04：总量只有在遍历确实走到头、没有未保存邻居、**并且装载数等于图里保存的
-    // 全部节点与边**时才是已知的。前两个条件在只走完一个连通分量时天然成立：一次
-    // 从孤岛出发的展开既不会 moreAvailable，也不会有未保存邻居，于是 loadedNodes
-    // 会被当成总量写进导出，读的人看到的是"总量已知、覆盖完整"，实际只有一半。
-    // 装载数与图的规模一比，这条路就堵死了。
-    const bool walkedWholeGraph = result.loadedNodes == savedNodes && result.loadedEdges == savedEdges;
+    // G-04: The total count is known only when the traversal has truly reached the end, there are no unsaved neighbors, **and the loaded count
+    // equals all nodes and edges saved in the graph**. The first two conditions naturally hold when only one connected component is traversed:
+    // an expansion starting from an isolated node will neither set moreAvailable nor have unsaved neighbors, causing loadedNodes to be written
+    // as the total count in the export. Readers will see "Total Known, Coverage Complete" when in reality only half the graph was covered.
+    // If the loaded count matches the graph size, this path is blocked.
+    const bool kWalkedWholeGraph = result.loadedNodes == kSavedNodes && result.loadedEdges == kSavedEdges;
     if (anyRootResolved && !result.moreAvailable && result.unsavedNeighbors.empty() &&
-        walkedWholeGraph) {
-        result.totalKnownNodes = OptionalU64::of(savedNodes);
-        result.totalKnownEdges = OptionalU64::of(savedEdges);
+        kWalkedWholeGraph) {
+        result.totalKnownNodes = OptionalU64::of(kSavedNodes);
+        result.totalKnownEdges = OptionalU64::of(kSavedEdges);
     }
-    // 账目里的总量取图的规模，不取本次装载数：让"这次装了多少"自己去当"总共有多少"
-    // 的正面证据，fullyCovered() 就成了一句永远为真的空话。
-    result.coverage.totalKnown = OptionalU64::of(savedNodes);
+    // Set the total in the ledger to the graph size, not the number loaded this time: letting 'how many were loaded this time'
+    // serve as positive evidence for 'how many exist in total' would make fullyCovered() an empty tautology that is always true.
+    result.coverage.totalKnown = OptionalU64::of(kSavedNodes);
 
     result.nodeIds.reserve(state.order.size());
-    for (const std::size_t nodeIndex : state.order) {
-        result.nodeIds.push_back(graph.nodes()[nodeIndex].nodeId);
+    for (const std::size_t kNodeIndex : state.order) {
+        result.nodeIds.push_back(graph.nodes()[kNodeIndex].nodeId);
     }
     for (std::size_t i = 0; i < state.edgeVisit.size(); ++i) {
-        if (state.edgeVisit[i] == EdgeVisit::Included) {
+        if (state.edgeVisit[i] == EdgeVisit::kIncluded) {
             result.edgeIds.push_back(graph.edges()[i].edgeId);
         }
     }
@@ -1002,19 +1002,19 @@ ExpansionResult ExpandGraph(const EntityGraph& graph, const ExpansionRequest& re
     if (result.filteredEdgeCount > 0) {
         result.limitationKeys.emplace_back("graph.expand.filterApplied");
     }
-    SortUnique(result.limitationKeys);
+    sortUnique(result.limitationKeys);
 
-    // G-06：这一层没有任何现场查询出口，所以 liveQueriesIssued 一路保持默认的 0。
-    // 这里**故意不再写一次 = 0**：那一句会把函数体里发生的任何自增抹平，上层那条
-    // "恒为 0"的断言就永远成立、永远抓不到偷偷发起的查询。真要有查询出口，只能由
-    // 那个出口自己自增，然后被这条断言抓住。
+    // G-06: This layer has no live query exit, so liveQueriesIssued remains at the default 0 throughout.
+    // We intentionally omit writing ``= 0`` here: that assignment would flatten any increments occurring within the
+    // function body, making the upper-level "always 0" assertion permanently true and forever unable to catch
+    // stealthy queries. If a query exit exists, it must increment itself, and only then can this assertion catch it.
     return result;
 }
 
 // ---------------------------------------------------------------------------
-// G-02：历史边定位到现场
+// G-02: Locate historical edge to live.
 // ---------------------------------------------------------------------------
-HistoricalEdgeLiveResult ResolveHistoricalEdgeToLive(const EntityGraph& graph,
+HistoricalEdgeLiveResult resolveHistoricalEdgeToLive(const EntityGraph& graph,
                                                      const HistoricalEdgeLiveRequest& request) {
     HistoricalEdgeLiveResult result;
     const GraphEdge* edge = graph.findEdge(request.edgeId);
@@ -1024,7 +1024,7 @@ HistoricalEdgeLiveResult ResolveHistoricalEdgeToLive(const EntityGraph& graph,
     }
     result.edgeFound = true;
     result.savedNodeId =
-        (request.endpoint == EndpointRole::To) ? edge->toNodeId : edge->fromNodeId;
+        (request.endpoint == EndpointRole::kTo) ? edge->toNodeId : edge->fromNodeId;
 
     const GraphNode* node = graph.findNode(result.savedNodeId);
     if (node == nullptr) {
@@ -1034,30 +1034,30 @@ HistoricalEdgeLiveResult ResolveHistoricalEdgeToLive(const EntityGraph& graph,
     result.nodeFound = true;
     result.kind = node->identity.kind;
 
-    if (node->identity.category != NodeCategory::SystemObject ||
-        node->identity.kind != ObjectKind::Process) {
-        // 目前只有进程有"现场重新解析身份"的契约（LiveNavigation.h）。别的类别不是
-        // "不匹配"，是我们无法校验 —— 这两件事必须分开说。
+    if (node->identity.category != NodeCategory::kSystemObject ||
+        node->identity.kind != ObjectKind::kProcess) {
+        // Currently, only processes have the contract for 'live re-resolution of identity' (LiveNavigation.h). For other
+        // categories, this is not a 'mismatch' but rather 'we cannot verify' — these two cases must be distinguished.
         result.liveResolverSupported = false;
-        result.identityDecision = LiveNavigationDecision::RejectIdentityUnverifiable;
+        result.identityDecision = LiveNavigationDecision::kRejectIdentityUnverifiable;
         result.reasonKey = "graph.live.noResolverForKind";
         return result;
     }
 
     result.liveResolverSupported = true;
-    result.identityDecision = ResolveProcessNavigation(node->identity.process, request.live);
+    result.identityDecision = resolveProcessNavigation(node->identity.process, request.live);
     switch (result.identityDecision) {
-    case LiveNavigationDecision::RejectObjectExited:
+    case LiveNavigationDecision::kRejectObjectExited:
         result.reasonKey = "graph.live.objectExited";
         return result;
-    case LiveNavigationDecision::RejectIdentityMismatch:
-        // G-02 核心：同 PID 不同实例。绝不填 liveNodeId，也绝不发起导航。
+    case LiveNavigationDecision::kRejectIdentityMismatch:
+        // G-02 Core: Same PID, different instances. Never populate liveNodeId and never initiate navigation.
         result.reasonKey = "graph.live.identityMismatch";
         return result;
-    case LiveNavigationDecision::RejectIdentityUnverifiable:
+    case LiveNavigationDecision::kRejectIdentityUnverifiable:
         result.reasonKey = "graph.live.identityUnverifiable";
         return result;
-    case LiveNavigationDecision::Allow:
+    case LiveNavigationDecision::kAllow:
         break;
     }
 
@@ -1071,23 +1071,23 @@ HistoricalEdgeLiveResult ResolveHistoricalEdgeToLive(const EntityGraph& graph,
     navigation.evidenceId = node->evidenceId;
     navigation.requireExactMatch = true;
     result.navigationAttempted = true;
-    result.navigation = DecideNavigation(navigation,
+    result.navigation = decideNavigation(navigation,
                                          request.targetPageAvailable,
                                          request.objectPresentInPage,
                                          request.evidencePresentInSession);
-    result.reasonKey = (result.navigation == NavigationOutcome::Delivered)
+    result.reasonKey = (result.navigation == NavigationOutcome::kDelivered)
                            ? "graph.live.delivered"
                            : "graph.live.navigationRejected";
     return result;
 }
 
 // ---------------------------------------------------------------------------
-// G-03：调查链
+// G-03: Investigation chain
 // ---------------------------------------------------------------------------
 namespace {
 
 struct NeighborScan final {
-    std::vector<std::size_t> nodeIndices;   // 已按 nodeId 排序
+    std::vector<std::size_t> nodeIndices;   // Sorted by nodeId
     std::vector<std::string> nodeIds;
     std::vector<std::string> edgeIds;
     std::uint64_t matchCount = 0;
@@ -1096,21 +1096,21 @@ struct NeighborScan final {
     bool everyPresentEvidenceOpenable = true;
     bool anyObjectNavigable = false;
     bool everyObjectNavigable = true;
-    EdgeCertainty weakestCertainty = EdgeCertainty::Confirmed;
+    EdgeCertainty weakestCertainty = EdgeCertainty::kConfirmed;
     std::string evidenceId;
 };
 
-int CertaintyRank(EdgeCertainty certainty) noexcept {
+int certaintyRank(EdgeCertainty certainty) noexcept {
     switch (certainty) {
-    case EdgeCertainty::Unknown:   return 0;
-    case EdgeCertainty::Candidate: return 1;
-    case EdgeCertainty::Confirmed: return 2;
+    case EdgeCertainty::kUnknown:   return 0;
+    case EdgeCertainty::kCandidate: return 1;
+    case EdgeCertainty::kConfirmed: return 2;
     }
     return 0;
 }
 
-// 从若干起点沿某一类关系走一跳。neighborRole 说的是**邻居**在边里的位置。
-NeighborScan ScanRelation(const EntityGraph& graph,
+// Traverse one hop from multiple starting points along a specific relation type. neighborRole indicates the position of the **neighbor** within the edge.
+NeighborScan scanRelation(const EntityGraph& graph,
                           const std::vector<std::size_t>& sources,
                           EdgeKind relation,
                           NodeCategory expectedCategory,
@@ -1120,58 +1120,58 @@ NeighborScan ScanRelation(const EntityGraph& graph,
     NeighborScan scan;
     std::vector<std::pair<std::string, std::size_t>> found;
     std::vector<std::string> edgeIds;
-    for (const std::size_t sourceIndex : sources) {
-        const std::string& sourceId = graph.nodes()[sourceIndex].nodeId;
-        for (const std::size_t edgeIndex : graph.incidentEdges(sourceIndex)) {
-            const GraphEdge& edge = graph.edges()[edgeIndex];
+    for (const std::size_t kSourceIndex : sources) {
+        const std::string& sourceId = graph.nodes()[kSourceIndex].nodeId;
+        for (const std::size_t kEdgeIndex : graph.incidentEdges(kSourceIndex)) {
+            const GraphEdge& edge = graph.edges()[kEdgeIndex];
             if (edge.kind != relation) {
                 continue;
             }
-            if (!EdgeMatchesFilter(edge, options.filter)) {
+            if (!edgeMatchesFilter(edge, options.filter)) {
                 continue;
             }
             const std::string& neighborId =
-                (neighborRole == EndpointRole::To) ? edge.toNodeId : edge.fromNodeId;
+                (neighborRole == EndpointRole::kTo) ? edge.toNodeId : edge.fromNodeId;
             const std::string& selfId =
-                (neighborRole == EndpointRole::To) ? edge.fromNodeId : edge.toNodeId;
+                (neighborRole == EndpointRole::kTo) ? edge.fromNodeId : edge.toNodeId;
             if (selfId != sourceId) {
-                continue;  // 方向不对，这一跳不成立
+                continue;  // Direction is incorrect; this hop is invalid.
             }
             std::size_t neighborIndex = 0;
             if (!graph.nodeIndexOf(neighborId, neighborIndex)) {
-                continue;  // 未保存的邻居由展开负责记账，链路这里只当作没有
+                continue;  // Unsaved neighbors are accounted for by the unwind; the link here is treated as nonexistent.
             }
             const GraphNode& neighbor = graph.nodes()[neighborIndex];
             if (neighbor.identity.category != expectedCategory) {
                 continue;
             }
-            if (expectedKind != ObjectKind::Unknown && neighbor.identity.kind != expectedKind) {
+            if (expectedKind != ObjectKind::kUnknown && neighbor.identity.kind != expectedKind) {
                 continue;
             }
             found.emplace_back(neighborId, neighborIndex);
             edgeIds.push_back(edge.edgeId);
-            if (CertaintyRank(edge.certainty) < CertaintyRank(scan.weakestCertainty)) {
+            if (certaintyRank(edge.certainty) < certaintyRank(scan.weakestCertainty)) {
                 scan.weakestCertainty = edge.certainty;
             }
         }
     }
     std::sort(found.begin(), found.end());
     found.erase(std::unique(found.begin(), found.end()), found.end());
-    SortUnique(edgeIds);
+    sortUnique(edgeIds);
 
     scan.matchCount = static_cast<std::uint64_t>(found.size());
     if (found.empty()) {
-        scan.weakestCertainty = EdgeCertainty::Unknown;
-        // 一个节点都没有的时候，"每一个都能打开证据 / 每一个都可导航"是空真。空真
-        // 不能被读成"这一环可以打开来源"，因此显式落成假。
+        scan.weakestCertainty = EdgeCertainty::kUnknown;
+        // When there are no nodes, 'every evidence is openable' and 'every object is navigable' are vacuously true. This
+        // vacuous truth must not be misinterpreted as 'this link can open the source', so it is explicitly set to false.
         scan.everyPresentEvidenceOpenable = false;
         scan.everyObjectNavigable = false;
     }
     for (const std::pair<std::string, std::size_t>& entry : found) {
         if (static_cast<std::uint64_t>(scan.nodeIds.size()) >= options.maxNodesPerStep) {
             scan.truncated = true;
-            // 被截断就意味着还有没看过的节点，"每一个都能打开证据 / 每一个都可导航"
-            // 这两句话在这一环上不再有依据。
+            // Truncation implies there are still unvisited nodes; the statements 'every evidence
+            // is openable' and 'every object is navigable' no longer hold for this iteration.
             scan.everyPresentEvidenceOpenable = false;
             scan.everyObjectNavigable = false;
             break;
@@ -1179,7 +1179,7 @@ NeighborScan ScanRelation(const EntityGraph& graph,
         const GraphNode& neighbor = graph.nodes()[entry.second];
         scan.nodeIds.push_back(entry.first);
         scan.nodeIndices.push_back(entry.second);
-        if (neighbor.identity.strength() != IdentityStrength::Unusable) {
+        if (neighbor.identity.strength() != IdentityStrength::kUnusable) {
             scan.anyIdentityUsable = true;
         }
         if (neighbor.objectNavigable()) {
@@ -1197,42 +1197,42 @@ NeighborScan ScanRelation(const EntityGraph& graph,
     return scan;
 }
 
-StepAvailability DecideAvailability(const NeighborScan& scan,
+StepAvailability decideAvailability(const NeighborScan& scan,
                                     const RelationCoverage& coverage,
                                     bool previousStepMissing) {
-    // 上一环缺失先判。上一环被判"有记录但身份不足，不能当作确定的一跳"时，从那些
-    // 对象出发再走一跳照样能扫出邻居；先看 matchCount 就会把这一环报成 Present，
-    // UI 上出现"上一跳不能确认，下一跳却是确定的、还能点进对象页"。起点不成立时，
-    // 这一环的状态就是"上一环缺失"，与"这一环的来源没采"是两回事。
+    // Check for missing previous step first. When the previous step is marked as 'has records but insufficient identity to count as a
+    // confirmed hop', traversing one more hop from those objects still yields neighbors; checking matchCount first would incorrectly report
+    // this step as Present, causing the UI to show 'previous hop unconfirmed, next hop confirmed and clickable to object page'. When the
+    // starting point is invalid, this step's state is 'missing previous step', which is distinct from 'source for this step not collected'.
     if (previousStepMissing) {
-        return StepAvailability::MissingPreviousStepMissing;
+        return StepAvailability::kMissingPreviousStepMissing;
     }
     if (scan.matchCount > 0) {
-        // 有记录但一个身份都不够用：不能当作确定的一跳（G-02）。
-        return scan.anyIdentityUsable ? StepAvailability::Present
-                                      : StepAvailability::MissingIdentityUnusable;
+        // Records exist but no usable identity: cannot be treated as a confirmed hop (G-02).
+        return scan.anyIdentityUsable ? StepAvailability::kPresent
+                                      : StepAvailability::kMissingIdentityUnusable;
     }
     switch (coverage.outcome.status) {
-    case CollectionStatus::Success:
-        // 只有账目正面证明了完整覆盖，"没有"才是"确实没有"。
-        return coverage.coverage.fullyCovered() ? StepAvailability::MissingNoData
-                                                : StepAvailability::MissingCoverageIncomplete;
-    case CollectionStatus::Partial:
-        return StepAvailability::MissingCoverageIncomplete;
-    case CollectionStatus::NotCollected:
-        return StepAvailability::MissingNotCollected;
-    case CollectionStatus::Unsupported:
-        return StepAvailability::MissingUnsupported;
-    case CollectionStatus::AccessDenied:
-        return StepAvailability::MissingAccessDenied;
-    case CollectionStatus::Timeout:
-    case CollectionStatus::Error:
-        return StepAvailability::MissingCollectionFailed;
+    case CollectionStatus::kSuccess:
+        // Only if the account positively proves full coverage is 'missing' truly 'missing'.
+        return coverage.coverage.fullyCovered() ? StepAvailability::kMissingNoData
+                                                : StepAvailability::kMissingCoverageIncomplete;
+    case CollectionStatus::kPartial:
+        return StepAvailability::kMissingCoverageIncomplete;
+    case CollectionStatus::kNotCollected:
+        return StepAvailability::kMissingNotCollected;
+    case CollectionStatus::kUnsupported:
+        return StepAvailability::kMissingUnsupported;
+    case CollectionStatus::kAccessDenied:
+        return StepAvailability::kMissingAccessDenied;
+    case CollectionStatus::kTimeout:
+    case CollectionStatus::kError:
+        return StepAvailability::kMissingCollectionFailed;
     }
-    return StepAvailability::MissingNotCollected;
+    return StepAvailability::kMissingNotCollected;
 }
 
-ChainStep MakeRootStep(const EntityGraph& graph,
+ChainStep makeRootStep(const EntityGraph& graph,
                        const std::string& rootNodeId,
                        const char* labelKey,
                        ObjectKind expectedKind,
@@ -1241,13 +1241,13 @@ ChainStep MakeRootStep(const EntityGraph& graph,
     step.index = 0;
     step.labelKey = labelKey;
     step.expectedKind = expectedKind;
-    step.expectedCategory = NodeCategory::SystemObject;
-    step.relationFromPrevious = EdgeKind::Unknown;
+    step.expectedCategory = NodeCategory::kSystemObject;
+    step.relationFromPrevious = EdgeKind::kUnknown;
 
     std::size_t index = 0;
     if (!graph.nodeIndexOf(rootNodeId, index)) {
-        // 根本没有这个节点：这是"没保存/没采到"，不是"这个对象不存在"。
-        step.availability = StepAvailability::MissingNotCollected;
+        // The node does not exist at all: this indicates "not saved/not collected," not "the object is missing."
+        step.availability = StepAvailability::kMissingNotCollected;
         step.outcome = CollectionOutcome::notCollected();
         return step;
     }
@@ -1259,16 +1259,16 @@ ChainStep MakeRootStep(const EntityGraph& graph,
     step.anyObjectNavigable = node.objectNavigable();
     step.everyObjectNavigable = node.objectNavigable();
     step.evidenceOpenable = node.evidenceOpenable();
-    if (node.identity.strength() == IdentityStrength::Unusable) {
-        step.availability = StepAvailability::MissingIdentityUnusable;
+    if (node.identity.strength() == IdentityStrength::kUnusable) {
+        step.availability = StepAvailability::kMissingIdentityUnusable;
     } else {
-        step.availability = StepAvailability::Present;
+        step.availability = StepAvailability::kPresent;
     }
     outSources.push_back(index);
     return step;
 }
 
-ChainStep MakeRelationStep(const EntityGraph& graph,
+ChainStep makeRelationStep(const EntityGraph& graph,
                            std::size_t stepIndex,
                            const char* labelKey,
                            EdgeKind relation,
@@ -1286,30 +1286,30 @@ ChainStep MakeRelationStep(const EntityGraph& graph,
     step.expectedCategory = expectedCategory;
     step.expectedKind = expectedKind;
 
-    const RelationCoverage coverage = graph.relationCoverage(relation, expectedKind);
-    step.outcome = coverage.outcome;
+    const RelationCoverage kCoverage = graph.relationCoverage(relation, expectedKind);
+    step.outcome = kCoverage.outcome;
 
-    const NeighborScan scan =
-        ScanRelation(graph, sources, relation, expectedCategory, expectedKind, neighborRole, options);
-    step.availability = DecideAvailability(scan, coverage, previousStepMissing);
-    step.matchCount = scan.matchCount;
-    step.truncated = scan.truncated;
-    step.nodeIds = scan.nodeIds;
-    step.edgeIds = scan.edgeIds;
-    step.weakestEdgeCertainty = scan.weakestCertainty;
-    step.anyObjectNavigable = scan.anyObjectNavigable;
-    step.everyObjectNavigable = scan.everyObjectNavigable;
-    // G-03 通过条件是"每一步可打开来源详情"。这里必须是 every：只要这一环里有一个
-    // 节点打不开原始证据，"这一步能打开来源"就是假话 —— 3 个线程只有 1 个带证据时
-    // 用 any 会把它判成满足，UI 上画出 3 个点却只有 1 个点得开。
-    step.evidenceOpenable = scan.matchCount > 0 && scan.everyPresentEvidenceOpenable;
-    step.evidenceId = scan.matchCount > 0 ? scan.evidenceId : coverage.evidenceId;
-    outSources = scan.nodeIndices;
+    const NeighborScan kScan =
+        scanRelation(graph, sources, relation, expectedCategory, expectedKind, neighborRole, options);
+    step.availability = decideAvailability(kScan, kCoverage, previousStepMissing);
+    step.matchCount = kScan.matchCount;
+    step.truncated = kScan.truncated;
+    step.nodeIds = kScan.nodeIds;
+    step.edgeIds = kScan.edgeIds;
+    step.weakestEdgeCertainty = kScan.weakestCertainty;
+    step.anyObjectNavigable = kScan.anyObjectNavigable;
+    step.everyObjectNavigable = kScan.everyObjectNavigable;
+    // G-03: The condition is "each step's source details must be openable." It must be 'every': if even one node in the chain
+    // cannot open the original evidence, "this step can open the source" is false. Using 'any' when only 1 of 3 threads has
+    // evidence would incorrectly mark it as satisfied, causing the UI to render 3 points while only 1 is actually openable.
+    step.evidenceOpenable = kScan.matchCount > 0 && kScan.everyPresentEvidenceOpenable;
+    step.evidenceId = kScan.matchCount > 0 ? kScan.evidenceId : kCoverage.evidenceId;
+    outSources = kScan.nodeIndices;
 
     if (previousStepMissing) {
-        // 起点本身不成立：这一环扫到的东西照实报（matchCount / nodeIds / edgeIds 是
-        // 事实），但它不是一次确定的跳转，因此不给对象导航，也不把这些对象继续当作
-        // 下一环的起点 —— 否则一条"上一跳存疑"的链会一路生出确定的下游。
+        // The starting point is invalid: Report the findings from this step as-is (matchCount / nodeIds / edgeIds are factual), but do not
+        // treat this as a deterministic jump. Therefore, do not enable object navigation for these objects, nor use them as starting points
+        // for the next step. Otherwise, a chain with a 'doubtful previous hop' would incorrectly generate a deterministic downstream chain.
         step.anyObjectNavigable = false;
         step.everyObjectNavigable = false;
         outSources.clear();
@@ -1322,7 +1322,7 @@ ChainStep MakeRelationStep(const EntityGraph& graph,
 std::size_t InvestigationChain::missingStepCount() const noexcept {
     std::size_t count = 0;
     for (const ChainStep& step : steps) {
-        if (StepIsMissing(step.availability)) {
+        if (stepIsMissing(step.availability)) {
             ++count;
         }
     }
@@ -1330,7 +1330,7 @@ std::size_t InvestigationChain::missingStepCount() const noexcept {
 }
 
 bool InvestigationChain::complete() const noexcept {
-    // 默认构造的链 steps 为空 —— 那不是"完整"，是"什么都没有"。
+    // A default-constructed chain has empty steps—that is not 'complete', it is 'nothing'.
     return !steps.empty() && missingStepCount() == 0;
 }
 
@@ -1339,14 +1339,14 @@ bool InvestigationChain::everyPresentStepOpensSource() const noexcept {
         return false;
     }
     for (const ChainStep& step : steps) {
-        if (step.availability == StepAvailability::Present && !step.evidenceOpenable) {
+        if (step.availability == StepAvailability::kPresent && !step.evidenceOpenable) {
             return false;
         }
     }
     return true;
 }
 
-InvestigationChain BuildChain(const EntityGraph& graph,
+InvestigationChain buildChain(const EntityGraph& graph,
                               ChainKind kind,
                               const std::string& rootNodeId,
                               const ChainOptions& options) {
@@ -1356,79 +1356,79 @@ InvestigationChain BuildChain(const EntityGraph& graph,
 
     std::vector<std::size_t> rootSources;
     switch (kind) {
-    case ChainKind::ProcessSubjects: {
-        ChainStep root = MakeRootStep(graph, rootNodeId, "graph.chain.process.root",
-                                      ObjectKind::Process, rootSources);
+    case ChainKind::kProcessSubjects: {
+        ChainStep root = makeRootStep(graph, rootNodeId, "graph.chain.process.root",
+                                      ObjectKind::kProcess, rootSources);
         chain.rootFound = !rootSources.empty();
-        const bool rootMissing = StepIsMissing(root.availability);
+        const bool kRootMissing = stepIsMissing(root.availability);
         chain.steps.push_back(root);
 
         std::vector<std::size_t> unusedSources;
-        chain.steps.push_back(MakeRelationStep(graph, 1, "graph.chain.process.threads",
-                                               EdgeKind::Owns, NodeCategory::SystemObject,
-                                               ObjectKind::Thread, EndpointRole::To, rootSources,
-                                               rootMissing, options, unusedSources));
-        chain.steps.push_back(MakeRelationStep(graph, 2, "graph.chain.process.modules",
-                                               EdgeKind::Loads, NodeCategory::SystemObject,
-                                               ObjectKind::Module, EndpointRole::To, rootSources,
-                                               rootMissing, options, unusedSources));
-        chain.steps.push_back(MakeRelationStep(graph, 3, "graph.chain.process.handles",
-                                               EdgeKind::Owns, NodeCategory::SystemObject,
-                                               ObjectKind::Handle, EndpointRole::To, rootSources,
-                                               rootMissing, options, unusedSources));
+        chain.steps.push_back(makeRelationStep(graph, 1, "graph.chain.process.threads",
+                                               EdgeKind::kOwns, NodeCategory::kSystemObject,
+                                               ObjectKind::kThread, EndpointRole::kTo, rootSources,
+                                               kRootMissing, options, unusedSources));
+        chain.steps.push_back(makeRelationStep(graph, 2, "graph.chain.process.modules",
+                                               EdgeKind::kLoads, NodeCategory::kSystemObject,
+                                               ObjectKind::kModule, EndpointRole::kTo, rootSources,
+                                               kRootMissing, options, unusedSources));
+        chain.steps.push_back(makeRelationStep(graph, 3, "graph.chain.process.handles",
+                                               EdgeKind::kOwns, NodeCategory::kSystemObject,
+                                               ObjectKind::kHandle, EndpointRole::kTo, rootSources,
+                                               kRootMissing, options, unusedSources));
         break;
     }
-    case ChainKind::DeviceToService: {
-        ChainStep root = MakeRootStep(graph, rootNodeId, "graph.chain.device.root",
-                                      ObjectKind::Device, rootSources);
+    case ChainKind::kDeviceToService: {
+        ChainStep root = makeRootStep(graph, rootNodeId, "graph.chain.device.root",
+                                      ObjectKind::kDevice, rootSources);
         chain.rootFound = !rootSources.empty();
-        bool previousMissing = StepIsMissing(root.availability);
+        bool previousMissing = stepIsMissing(root.availability);
         chain.steps.push_back(root);
 
         std::vector<std::size_t> driverSources;
-        ChainStep driverStep = MakeRelationStep(graph, 1, "graph.chain.device.driverObject",
-                                                EdgeKind::DeviceOf, NodeCategory::SystemObject,
-                                                ObjectKind::Driver, EndpointRole::To, rootSources,
+        ChainStep driverStep = makeRelationStep(graph, 1, "graph.chain.device.driverObject",
+                                                EdgeKind::kDeviceOf, NodeCategory::kSystemObject,
+                                                ObjectKind::kDriver, EndpointRole::kTo, rootSources,
                                                 previousMissing, options, driverSources);
-        previousMissing = StepIsMissing(driverStep.availability);
+        previousMissing = stepIsMissing(driverStep.availability);
         chain.steps.push_back(driverStep);
 
         std::vector<std::size_t> imageSources;
-        ChainStep imageStep = MakeRelationStep(graph, 2, "graph.chain.device.driverImage",
-                                               EdgeKind::ImageOf, NodeCategory::SystemObject,
-                                               ObjectKind::File, EndpointRole::To, driverSources,
+        ChainStep imageStep = makeRelationStep(graph, 2, "graph.chain.device.driverImage",
+                                               EdgeKind::kImageOf, NodeCategory::kSystemObject,
+                                               ObjectKind::kFile, EndpointRole::kTo, driverSources,
                                                previousMissing, options, imageSources);
-        previousMissing = StepIsMissing(imageStep.availability);
+        previousMissing = stepIsMissing(imageStep.availability);
         chain.steps.push_back(imageStep);
 
         std::vector<std::size_t> serviceSources;
-        chain.steps.push_back(MakeRelationStep(graph, 3, "graph.chain.device.service",
-                                               EdgeKind::ServiceOf, NodeCategory::SystemObject,
-                                               ObjectKind::Service, EndpointRole::To, imageSources,
+        chain.steps.push_back(makeRelationStep(graph, 3, "graph.chain.device.service",
+                                               EdgeKind::kServiceOf, NodeCategory::kSystemObject,
+                                               ObjectKind::kService, EndpointRole::kTo, imageSources,
                                                previousMissing, options, serviceSources));
         break;
     }
-    case ChainKind::ConnectionToTimeline: {
-        ChainStep root = MakeRootStep(graph, rootNodeId, "graph.chain.connection.root",
-                                      ObjectKind::Connection, rootSources);
+    case ChainKind::kConnectionToTimeline: {
+        ChainStep root = makeRootStep(graph, rootNodeId, "graph.chain.connection.root",
+                                      ObjectKind::kConnection, rootSources);
         chain.rootFound = !rootSources.empty();
-        bool previousMissing = StepIsMissing(root.availability);
+        bool previousMissing = stepIsMissing(root.availability);
         chain.steps.push_back(root);
 
         std::vector<std::size_t> processSources;
-        // 进程拥有连接，因此边是 Process --Owns--> Connection：邻居在 From 一侧。
-        ChainStep processStep = MakeRelationStep(graph, 1, "graph.chain.connection.process",
-                                                 EdgeKind::Owns, NodeCategory::SystemObject,
-                                                 ObjectKind::Process, EndpointRole::From,
+        // The process owns the connection: Process -(Owns)-> Connection. The neighbor is on the From side.
+        ChainStep processStep = makeRelationStep(graph, 1, "graph.chain.connection.process",
+                                                 EdgeKind::kOwns, NodeCategory::kSystemObject,
+                                                 ObjectKind::kProcess, EndpointRole::kFrom,
                                                  rootSources, previousMissing, options,
                                                  processSources);
-        previousMissing = StepIsMissing(processStep.availability);
+        previousMissing = stepIsMissing(processStep.availability);
         chain.steps.push_back(processStep);
 
         std::vector<std::size_t> timelineSources;
-        chain.steps.push_back(MakeRelationStep(graph, 2, "graph.chain.connection.timeline",
-                                               EdgeKind::TimelineEntry, NodeCategory::TimelineEntry,
-                                               ObjectKind::Unknown, EndpointRole::To,
+        chain.steps.push_back(makeRelationStep(graph, 2, "graph.chain.connection.timeline",
+                                               EdgeKind::kTimelineEntry, NodeCategory::kTimelineEntry,
+                                               ObjectKind::kUnknown, EndpointRole::kTo,
                                                processSources, previousMissing, options,
                                                timelineSources));
         break;
@@ -1438,9 +1438,9 @@ InvestigationChain BuildChain(const EntityGraph& graph,
 }
 
 // ---------------------------------------------------------------------------
-// G-05：孤立与未知
+// G-05: Isolation and unknown
 // ---------------------------------------------------------------------------
-IsolationReport ClassifyIsolation(const EntityGraph& graph,
+IsolationReport classifyIsolation(const EntityGraph& graph,
                                   const std::string& nodeId,
                                   const EdgeFilter& filter) {
     IsolationReport report;
@@ -1450,78 +1450,78 @@ IsolationReport ClassifyIsolation(const EntityGraph& graph,
         report.explanationKey = "graph.isolation.nodeNotSaved";
         report.rawEvidenceMissingKey = "graph.isolation.noRawEvidence";
         report.ownerLookupOutcome = CollectionOutcome::notCollected();
-        return report;  // state 保持默认的 SourceNotCollected，绝不是"正常"
+        return report;  // state remains the default SourceNotCollected; this is absolutely not 'normal'.
     }
     report.nodeFound = true;
     const GraphNode& node = graph.nodes()[index];
     report.evidenceId = node.evidenceId;
     report.rawEvidenceAvailable = node.evidenceOpenable();
     if (!report.rawEvidenceAvailable) {
-        // G-05：这一档 UI 必须说出"连原始证据都没有"，而不是灰掉一个可点的按钮。
+        // G-05: This UI must state "no raw evidence exists" instead of graying out a clickable button.
         report.rawEvidenceMissingKey = "graph.isolation.noRawEvidence";
     }
     report.inconsistencyEvidenceIds = node.inconsistencyEvidenceIds;
 
     const std::vector<std::size_t>& incident = graph.incidentEdges(index);
     report.edgeCountBeforeFilter = static_cast<std::uint64_t>(incident.size());
-    for (const std::size_t edgeIndex : incident) {
-        if (EdgeMatchesFilter(graph.edges()[edgeIndex], filter)) {
+    for (const std::size_t kEdgeIndex : incident) {
+        if (edgeMatchesFilter(graph.edges()[kEdgeIndex], filter)) {
             ++report.edgeCountAfterFilter;
         }
     }
 
-    // G-05：ownerRelation 没填时按"来源未采集"处理。拿 EdgeKind::Unknown 去查覆盖表
-    // 会读到别人为了完全不同的目的声明的那一格，一次无关的 (Unknown, Unknown) 声明
-    // 就能把这个节点从"我们没查"翻成"我们查全了，确实没有 owner"—— 而这条关系从来
-    // 没有被命名过。没命名就没有"查全"可言，直接落到未采集这一档。
-    const bool ownerRelationDeclared = node.ownerRelation != EdgeKind::Unknown;
-    const RelationCoverage ownerCoverage =
-        ownerRelationDeclared ? graph.relationCoverage(node.ownerRelation, node.ownerKind)
+    // G-05: When ownerRelation is not set, treat it as 'source not collected'. Querying the coverage table with EdgeKind::Unknown
+    // would read a cell declared by someone else for a completely different purpose. A single unrelated (Unknown, Unknown) declaration
+    // could flip this node from 'we didn't check' to 'we checked thoroughly and found no owner'—even though this relationship was
+    // never named. Without a name, 'thoroughly checked' is meaningless; it must fall into the 'not collected' category.
+    const bool kOwnerRelationDeclared = node.ownerRelation != EdgeKind::kUnknown;
+    const RelationCoverage kOwnerCoverage =
+        kOwnerRelationDeclared ? graph.relationCoverage(node.ownerRelation, node.ownerKind)
                               : RelationCoverage{};
-    report.ownerLookupOutcome = ownerCoverage.outcome;
+    report.ownerLookupOutcome = kOwnerCoverage.outcome;
 
     if (report.edgeCountAfterFilter > 0) {
         report.isolated = false;
-        report.state = IsolationState::NotIsolated;
+        report.state = IsolationState::kNotIsolated;
         report.explanationKey = "graph.isolation.notIsolated";
         return report;
     }
     report.isolated = true;
 
-    // 顺序说明：只有"实际不一致"是由正面证据支撑的陈述，另外三种都是在解释"为什么
-    // 没看到边"，所以它先判。其余按"能确定的先说"排：对象已卸载 -> 来源没采全 ->
-    // 采全了确实没有 owner。任何一档都不表达风险。
+    // Ordering explanation: Only 'actual inconsistency' is a statement supported by positive evidence; the other three
+    // explain 'why an edge was not seen', so it is checked first. The rest are ordered by 'what can be determined first':
+    // object unloaded -> source not fully sampled -> fully sampled but no owner exists. None of these express risk.
     if (node.inconsistencyObserved) {
-        report.state = IsolationState::ObservedInconsistency;
+        report.state = IsolationState::kObservedInconsistency;
         report.explanationKey = "graph.isolation.observedInconsistency";
         return report;
     }
-    if (node.lifecycle == NodeLifecycle::Ended) {
-        report.state = IsolationState::ObjectUnloaded;
+    if (node.lifecycle == NodeLifecycle::kEnded) {
+        report.state = IsolationState::kObjectUnloaded;
         report.explanationKey = "graph.isolation.objectUnloaded";
         return report;
     }
-    if (!ownerRelationDeclared) {
-        report.state = IsolationState::SourceNotCollected;
+    if (!kOwnerRelationDeclared) {
+        report.state = IsolationState::kSourceNotCollected;
         report.explanationKey = "graph.isolation.ownerRelationNotDeclared";
         return report;
     }
-    if (!CoverageProvesAbsence(ownerCoverage)) {
-        // 没采 / 不支持 / 被拒 / 超时 / 出错 / 只采了一部分都归到这一档，但原始状态
-        // 与错误码在 ownerLookupOutcome 里原样保留，调用方要区分随时能区分。
-        report.state = IsolationState::SourceNotCollected;
+    if (!coverageProvesAbsence(kOwnerCoverage)) {
+        // Collecting nothing, unsupported, rejected, timeout, error, or partial collection all map to this state. However, the
+        // original state and error code are preserved verbatim in ownerLookupOutcome so callers can distinguish them at any time.
+        report.state = IsolationState::kSourceNotCollected;
         report.explanationKey = "graph.isolation.sourceNotCollected";
         return report;
     }
-    report.state = IsolationState::OwnerMissing;
+    report.state = IsolationState::kOwnerMissing;
     report.explanationKey = "graph.isolation.ownerMissing";
     return report;
 }
 
 // ---------------------------------------------------------------------------
-// G-06 / G-08：列表、详情、推断说明
+// G-06 / G-08: List, details, and inference explanation.
 // ---------------------------------------------------------------------------
-std::vector<EntityListRow> BuildEntityList(const EntityGraph& graph,
+std::vector<EntityListRow> buildEntityList(const EntityGraph& graph,
                                            const ExpansionResult& expansion,
                                            const EdgeFilter& filter,
                                            EntityListOrder order,
@@ -1532,14 +1532,14 @@ std::vector<EntityListRow> BuildEntityList(const EntityGraph& graph,
     for (const std::string& nodeId : expansion.nodeIds) {
         std::size_t index = 0;
         if (!graph.nodeIndexOf(nodeId, index)) {
-            // 视图里有、图里没有：跳过，但记账。行数与 loadedNodes 对不上时调用方
-            // 必须能说出差在哪儿，而不是让两个数字互相矛盾。
+            // Present in view but missing in graph: skip but record. When row counts do not match loadedNodes,
+            // the caller must be able to explain the discrepancy, not have the two numbers contradict each other.
             ++missing;
             continue;
         }
         const GraphNode& node = graph.nodes()[index];
         EntityListRow row;
-        row.nodeId = node.nodeId;  // G-06：与图、详情、导出同一个 id
+        row.nodeId = node.nodeId;  // G-06: Must share the same ID as the graph, details, and export.
         row.category = node.identity.category;
         row.kind = node.identity.kind;
         row.displayText = node.displayText;
@@ -1548,8 +1548,8 @@ std::vector<EntityListRow> BuildEntityList(const EntityGraph& graph,
         row.lifecycle = node.lifecycle;
         row.objectNavigable = node.objectNavigable();
         row.evidenceOpenable = node.evidenceOpenable();
-        for (const std::size_t edgeIndex : graph.incidentEdges(index)) {
-            if (EdgeMatchesFilter(graph.edges()[edgeIndex], filter)) {
+        for (const std::size_t kEdgeIndex : graph.incidentEdges(index)) {
+            if (edgeMatchesFilter(graph.edges()[kEdgeIndex], filter)) {
                 ++row.edgeCount;
             }
         }
@@ -1559,15 +1559,15 @@ std::vector<EntityListRow> BuildEntityList(const EntityGraph& graph,
         *outMissingNodeCount = missing;
     }
 
-    // 所有排序都以 nodeId 兜底，保证同一数据的顺序完全确定；排序只影响显示，
-    // 不影响任何结论（G-08）。
+    // All sorts fall back to nodeId to ensure a fully deterministic order for
+    // the same data; sorting only affects display, not any conclusions (G-08).
     switch (order) {
-    case EntityListOrder::ByNodeId:
+    case EntityListOrder::kByNodeId:
         std::sort(rows.begin(), rows.end(), [](const EntityListRow& a, const EntityListRow& b) {
             return a.nodeId < b.nodeId;
         });
         break;
-    case EntityListOrder::ByDisplayText:
+    case EntityListOrder::kByDisplayText:
         std::sort(rows.begin(), rows.end(), [](const EntityListRow& a, const EntityListRow& b) {
             if (a.displayText != b.displayText) {
                 return a.displayText < b.displayText;
@@ -1575,7 +1575,7 @@ std::vector<EntityListRow> BuildEntityList(const EntityGraph& graph,
             return a.nodeId < b.nodeId;
         });
         break;
-    case EntityListOrder::ByKind:
+    case EntityListOrder::kByKind:
         std::sort(rows.begin(), rows.end(), [](const EntityListRow& a, const EntityListRow& b) {
             if (a.kind != b.kind) {
                 return static_cast<int>(a.kind) < static_cast<int>(b.kind);
@@ -1583,7 +1583,7 @@ std::vector<EntityListRow> BuildEntityList(const EntityGraph& graph,
             return a.nodeId < b.nodeId;
         });
         break;
-    case EntityListOrder::ByEdgeCountDescending:
+    case EntityListOrder::kByEdgeCountDescending:
         std::sort(rows.begin(), rows.end(), [](const EntityListRow& a, const EntityListRow& b) {
             if (a.edgeCount != b.edgeCount) {
                 return a.edgeCount > b.edgeCount;
@@ -1595,13 +1595,13 @@ std::vector<EntityListRow> BuildEntityList(const EntityGraph& graph,
     return rows;
 }
 
-EdgeInferenceNote DescribeEdgeInference(const GraphEdge& edge) {
-    // G-01 的"缺证据关系不许显示为确定"不能只在 addEdge 那条路上成立：这个函数是
-    // 头文件对外暴露的推断说明接口（G-08"推断可展开规则和来源"），调用方完全可能
-    // 拿一条没进过图的边来问。原样相信传进来的 certainty，就会对外呈现出一条
-    // "已确认、无需解释、零来源"的关系。因此先跑一次规范化，再复核不变式。
+EdgeInferenceNote describeEdgeInference(const GraphEdge& edge) {
+    // The rule from G-01 that 'missing evidence relationships must not be displayed as certain' cannot hold only on the addEdge path: this
+    // function is the inference explanation interface exposed by the header file (G-08 'inference rules and sources can be expanded'), and the
+    // caller may entirely likely query an edge that has never entered the graph. Blindly trusting the passed-in certainty would present an
+    // externally confirmed relationship with no explanation and zero sources. Therefore, run normalization first, then re-verify the invariant.
     GraphEdge normalized;
-    NormalizeEdge(edge, normalized);
+    normalizeEdge(edge, normalized);
 
     EdgeInferenceNote note;
     note.edgeId = normalized.edgeId.empty() ? edge.edgeId : normalized.edgeId;
@@ -1610,21 +1610,21 @@ EdgeInferenceNote DescribeEdgeInference(const GraphEdge& edge) {
     note.ruleId = normalized.ruleId;
     note.ruleDescriptionKey = normalized.ruleDescriptionKey;
     note.evidenceRefs = normalized.evidenceRefs;
-    SortUnique(note.evidenceRefs);
-    // 被 NormalizeEdge 在更早的分支上拒收的边（未知类型 / 缺端点 / 方向未知 /
-    // 区间不成立）走不到降级那一步，所以这里再钉一次同一条不变式。
-    if (note.certainty == EdgeCertainty::Confirmed &&
-        (note.evidenceRefs.empty() || !EdgeKindAllowsConfirmed(note.kind))) {
-        note.certainty = EdgeCertainty::Candidate;
+    sortUnique(note.evidenceRefs);
+    // Edges rejected earlier by normalizeEdge (unknown type / missing endpoint / unknown direction
+    // / invalid interval) never reach the downgrade step, so we reassert the same invariant here.
+    if (note.certainty == EdgeCertainty::kConfirmed &&
+        (note.evidenceRefs.empty() || !edgeKindAllowsConfirmed(note.kind))) {
+        note.certainty = EdgeCertainty::kCandidate;
     }
-    if (note.certainty == EdgeCertainty::Confirmed) {
+    if (note.certainty == EdgeCertainty::kConfirmed) {
         return note;
     }
     if (note.evidenceRefs.empty()) {
         note.notConfirmedReasonKey = "graph.edge.noEvidence";
-    } else if (!EdgeKindAllowsConfirmed(note.kind)) {
+    } else if (!edgeKindAllowsConfirmed(note.kind)) {
         note.notConfirmedReasonKey = "graph.edge.candidateOwnerKind";
-    } else if (note.certainty == EdgeCertainty::Unknown) {
+    } else if (note.certainty == EdgeCertainty::kUnknown) {
         note.notConfirmedReasonKey = "graph.edge.certaintyUnknown";
     } else {
         note.notConfirmedReasonKey = "graph.edge.candidateEvidence";
@@ -1632,12 +1632,12 @@ EdgeInferenceNote DescribeEdgeInference(const GraphEdge& edge) {
     return note;
 }
 
-NodeDetail BuildNodeDetail(const EntityGraph& graph,
+NodeDetail buildNodeDetail(const EntityGraph& graph,
                            const std::string& nodeId,
                            const EdgeFilter& filter) {
     NodeDetail detail;
     detail.nodeId = nodeId;
-    detail.isolation = ClassifyIsolation(graph, nodeId, filter);
+    detail.isolation = classifyIsolation(graph, nodeId, filter);
     std::size_t index = 0;
     if (!graph.nodeIndexOf(nodeId, index)) {
         return detail;
@@ -1651,23 +1651,23 @@ NodeDetail BuildNodeDetail(const EntityGraph& graph,
     detail.strength = node.identity.strength();
     detail.lifecycle = node.lifecycle;
 
-    for (const std::size_t edgeIndex : graph.incidentEdges(index)) {
-        const GraphEdge& edge = graph.edges()[edgeIndex];
-        if (!EdgeMatchesFilter(edge, filter)) {
+    for (const std::size_t kEdgeIndex : graph.incidentEdges(index)) {
+        const GraphEdge& edge = graph.edges()[kEdgeIndex];
+        if (!edgeMatchesFilter(edge, filter)) {
             continue;
         }
-        if (edge.direction == EdgeDirection::Symmetric) {
+        if (edge.direction == EdgeDirection::kSymmetric) {
             detail.symmetricEdgeIds.push_back(edge.edgeId);
         } else if (edge.toNodeId == nodeId) {
             detail.incomingEdgeIds.push_back(edge.edgeId);
         } else {
             detail.outgoingEdgeIds.push_back(edge.edgeId);
         }
-        detail.inferences.push_back(DescribeEdgeInference(edge));
+        detail.inferences.push_back(describeEdgeInference(edge));
     }
-    SortUnique(detail.incomingEdgeIds);
-    SortUnique(detail.outgoingEdgeIds);
-    SortUnique(detail.symmetricEdgeIds);
+    sortUnique(detail.incomingEdgeIds);
+    sortUnique(detail.outgoingEdgeIds);
+    sortUnique(detail.symmetricEdgeIds);
     std::sort(detail.inferences.begin(), detail.inferences.end(),
               [](const EdgeInferenceNote& a, const EdgeInferenceNote& b) {
                   return a.edgeId < b.edgeId;
@@ -1676,7 +1676,7 @@ NodeDetail BuildNodeDetail(const EntityGraph& graph,
 }
 
 // ---------------------------------------------------------------------------
-// G-08：结论与导出
+// G-08: Conclusion and export
 // ---------------------------------------------------------------------------
 bool operator==(const GraphConclusion& a, const GraphConclusion& b) {
     return a.conclusion == b.conclusion && a.nodeCount == b.nodeCount &&
@@ -1704,47 +1704,47 @@ bool operator==(const GraphConclusion& a, const GraphConclusion& b) {
            a.limitationKeys == b.limitationKeys;
 }
 
-GraphConclusion SummarizeGraph(const EntityGraph& graph, const EdgeFilter& filter) {
+GraphConclusion summarizeGraph(const EntityGraph& graph, const EdgeFilter& filter) {
     GraphConclusion conclusion;
     conclusion.nodeCount = static_cast<std::uint64_t>(graph.nodeCount());
     conclusion.edgeCountBeforeFilter = static_cast<std::uint64_t>(graph.edgeCount());
 
     for (const GraphEdge& edge : graph.edges()) {
-        if (!EdgeMatchesFilter(edge, filter)) {
+        if (!edgeMatchesFilter(edge, filter)) {
             continue;
         }
         ++conclusion.edgeCountAfterFilter;
         switch (edge.certainty) {
-        case EdgeCertainty::Confirmed: ++conclusion.confirmedEdgeCount; break;
-        case EdgeCertainty::Candidate: ++conclusion.candidateEdgeCount; break;
-        case EdgeCertainty::Unknown:   ++conclusion.unknownCertaintyEdgeCount; break;
+        case EdgeCertainty::kConfirmed: ++conclusion.confirmedEdgeCount; break;
+        case EdgeCertainty::kCandidate: ++conclusion.candidateEdgeCount; break;
+        case EdgeCertainty::kUnknown:   ++conclusion.unknownCertaintyEdgeCount; break;
         }
     }
 
     for (const GraphNode& node : graph.nodes()) {
-        if (node.identity.strength() == IdentityStrength::Unusable) {
+        if (node.identity.strength() == IdentityStrength::kUnusable) {
             ++conclusion.unusableIdentityNodeCount;
         }
         if (!node.evidenceOpenable()) {
             ++conclusion.nodesWithoutEvidenceCount;
         }
-        const IsolationReport report = ClassifyIsolation(graph, node.nodeId, filter);
-        if (!report.isolated) {
+        const IsolationReport kReport = classifyIsolation(graph, node.nodeId, filter);
+        if (!kReport.isolated) {
             continue;
         }
         ++conclusion.isolatedNodeCount;
-        switch (report.state) {
-        case IsolationState::OwnerMissing:          ++conclusion.ownerMissingCount; break;
-        case IsolationState::ObjectUnloaded:        ++conclusion.unloadedCount; break;
-        case IsolationState::SourceNotCollected:    ++conclusion.sourceNotCollectedCount; break;
-        case IsolationState::ObservedInconsistency: ++conclusion.inconsistencyCount; break;
-        case IsolationState::NotIsolated:           break;
+        switch (kReport.state) {
+        case IsolationState::kOwnerMissing:          ++conclusion.ownerMissingCount; break;
+        case IsolationState::kObjectUnloaded:        ++conclusion.unloadedCount; break;
+        case IsolationState::kSourceNotCollected:    ++conclusion.sourceNotCollectedCount; break;
+        case IsolationState::kObservedInconsistency: ++conclusion.inconsistencyCount; break;
+        case IsolationState::kNotIsolated:           break;
         }
     }
 
     conclusion.coverage = graph.envelope().coverage;
-    // F-05：没有观测就不能得出"未发现差异"。差异这一位只由**观察到的不一致**驱动，
-    // "孤立"和"缺 owner"不是差异，更不是风险（G-05）。
+    // F-05: Without observation, one cannot conclude 'no differences found'. The difference flag is driven solely by
+    // **observed inconsistencies**; 'isolated' nodes and 'missing owner' are not differences, nor are they risks (G-05).
     conclusion.conclusion = graph.envelope().deriveConclusion(conclusion.inconsistencyCount > 0);
 
     if (conclusion.unusableIdentityNodeCount > 0) {
@@ -1765,13 +1765,13 @@ GraphConclusion SummarizeGraph(const EntityGraph& graph, const EdgeFilter& filte
     if (!filter.kinds.empty() || !filter.certainties.empty() || filter.atUtc100ns.present) {
         conclusion.limitationKeys.emplace_back("graph.summary.filterApplied");
     }
-    SortUnique(conclusion.limitationKeys);
+    sortUnique(conclusion.limitationKeys);
     return conclusion;
 }
 
 namespace {
 
-JsonValue StringArray(const std::vector<std::string>& values) {
+JsonValue stringArray(const std::vector<std::string>& values) {
     JsonArray array;
     array.reserve(values.size());
     for (const std::string& value : values) {
@@ -1781,14 +1781,14 @@ JsonValue StringArray(const std::vector<std::string>& values) {
 }
 
 // ---------------------------------------------------------------------------
-// 回读小工具。缺字段一律回落到该字段的**默认值**：默认不等于完整，导出件里没写的
-// 东西不许在导入时被补成"正常"。
+// Read-back utility. Missing fields always fall back to the field's **default value**: default is not
+// equivalent to complete; items not written in the export must not be filled in as "normal" during import.
 // ---------------------------------------------------------------------------
-const JsonValue* Child(const JsonValue& object, const char* name) noexcept {
+const JsonValue* child(const JsonValue& object, const char* name) noexcept {
     return object.find(name);
 }
 
-std::string ReadString(const JsonValue& object, const char* name) {
+std::string readString(const JsonValue& object, const char* name) {
     const JsonValue* value = object.find(name);
     std::string out;
     if (value != nullptr && value->tryGetString(out)) {
@@ -1797,7 +1797,7 @@ std::string ReadString(const JsonValue& object, const char* name) {
     return std::string();
 }
 
-bool ReadBool(const JsonValue& object, const char* name) noexcept {
+bool readBool(const JsonValue& object, const char* name) noexcept {
     const JsonValue* value = object.find(name);
     bool out = false;
     if (value != nullptr && value->tryGetBool(out)) {
@@ -1806,7 +1806,7 @@ bool ReadBool(const JsonValue& object, const char* name) noexcept {
     return false;
 }
 
-std::uint64_t ReadU64(const JsonValue& object, const char* name) noexcept {
+std::uint64_t readU64(const JsonValue& object, const char* name) noexcept {
     const JsonValue* value = object.find(name);
     std::uint64_t out = 0;
     if (value != nullptr && value->tryGetU64(out)) {
@@ -1815,7 +1815,7 @@ std::uint64_t ReadU64(const JsonValue& object, const char* name) noexcept {
     return 0;
 }
 
-OptionalU64 ReadOptionalU64(const JsonValue& object, const char* name) noexcept {
+OptionalU64 readOptionalU64(const JsonValue& object, const char* name) noexcept {
     const JsonValue* value = object.find(name);
     OptionalU64 out;
     if (value != nullptr && value->tryGetOptionalU64(out)) {
@@ -1824,7 +1824,7 @@ OptionalU64 ReadOptionalU64(const JsonValue& object, const char* name) noexcept 
     return OptionalU64::unset();
 }
 
-std::vector<std::string> ReadStringArray(const JsonValue& object, const char* name) {
+std::vector<std::string> readStringArray(const JsonValue& object, const char* name) {
     std::vector<std::string> out;
     const JsonValue* value = object.find(name);
     if (value == nullptr) {
@@ -1844,512 +1844,512 @@ std::vector<std::string> ReadStringArray(const JsonValue& object, const char* na
     return out;
 }
 
-// 枚举回读一律用同一套 *Name() 反查，名字只有一处定义，导出与导入不会各写各的。
-ObjectKind ParseObjectKind(const std::string& text) noexcept {
+// All enum back-reads use the same *Name() lookup; the name is defined in only one place, so exports and imports do not write independently.
+ObjectKind parseObjectKind(const std::string& text) noexcept {
     static constexpr ObjectKind kAll[] = {
-        ObjectKind::Unknown, ObjectKind::Process, ObjectKind::Thread,   ObjectKind::Driver,
-        ObjectKind::Module,  ObjectKind::File,    ObjectKind::Handle,   ObjectKind::Connection,
-        ObjectKind::Device,  ObjectKind::Service,
+        ObjectKind::kUnknown, ObjectKind::kProcess, ObjectKind::kThread,   ObjectKind::kDriver,
+        ObjectKind::kModule,  ObjectKind::kFile,    ObjectKind::kHandle,   ObjectKind::kConnection,
+        ObjectKind::kDevice,  ObjectKind::kService,
     };
-    for (const ObjectKind kind : kAll) {
-        if (text == ObjectKindName(kind)) {
-            return kind;
+    for (const ObjectKind kKind : kAll) {
+        if (text == objectKindName(kKind)) {
+            return kKind;
         }
     }
-    return ObjectKind::Unknown;
+    return ObjectKind::kUnknown;
 }
 
-NodeCategory ParseNodeCategory(const std::string& text) noexcept {
+NodeCategory parseNodeCategory(const std::string& text) noexcept {
     static constexpr NodeCategory kAll[] = {
-        NodeCategory::SystemObject, NodeCategory::TimelineEntry, NodeCategory::EvidenceRecord,
+        NodeCategory::kSystemObject, NodeCategory::kTimelineEntry, NodeCategory::kEvidenceRecord,
     };
-    for (const NodeCategory category : kAll) {
-        if (text == NodeCategoryName(category)) {
-            return category;
+    for (const NodeCategory kCategory : kAll) {
+        if (text == nodeCategoryName(kCategory)) {
+            return kCategory;
         }
     }
-    return NodeCategory::SystemObject;
+    return NodeCategory::kSystemObject;
 }
 
-NodeLifecycle ParseNodeLifecycle(const std::string& text) noexcept {
+NodeLifecycle parseNodeLifecycle(const std::string& text) noexcept {
     static constexpr NodeLifecycle kAll[] = {
-        NodeLifecycle::Unknown, NodeLifecycle::Observed, NodeLifecycle::Ended,
+        NodeLifecycle::kUnknown, NodeLifecycle::kObserved, NodeLifecycle::kEnded,
     };
-    for (const NodeLifecycle lifecycle : kAll) {
-        if (text == NodeLifecycleName(lifecycle)) {
-            return lifecycle;
+    for (const NodeLifecycle kLifecycle : kAll) {
+        if (text == nodeLifecycleName(kLifecycle)) {
+            return kLifecycle;
         }
     }
-    return NodeLifecycle::Unknown;
+    return NodeLifecycle::kUnknown;
 }
 
-EdgeKind ParseEdgeKind(const std::string& text) noexcept {
+EdgeKind parseEdgeKind(const std::string& text) noexcept {
     static constexpr EdgeKind kAll[] = {
-        EdgeKind::Unknown,  EdgeKind::Owns,             EdgeKind::Loads,
-        EdgeKind::Maps,     EdgeKind::Opens,            EdgeKind::CandidateOwner,
-        EdgeKind::TemporalNeighbor, EdgeKind::DeviceOf, EdgeKind::ImageOf,
-        EdgeKind::ServiceOf, EdgeKind::TimelineEntry,
+        EdgeKind::kUnknown,  EdgeKind::kOwns,             EdgeKind::kLoads,
+        EdgeKind::kMaps,     EdgeKind::kOpens,            EdgeKind::kCandidateOwner,
+        EdgeKind::kTemporalNeighbor, EdgeKind::kDeviceOf, EdgeKind::kImageOf,
+        EdgeKind::kServiceOf, EdgeKind::kTimelineEntry,
     };
-    for (const EdgeKind kind : kAll) {
-        if (text == EdgeKindName(kind)) {
-            return kind;
+    for (const EdgeKind kKind : kAll) {
+        if (text == edgeKindName(kKind)) {
+            return kKind;
         }
     }
-    return EdgeKind::Unknown;
+    return EdgeKind::kUnknown;
 }
 
-EdgeDirection ParseEdgeDirection(const std::string& text) noexcept {
+EdgeDirection parseEdgeDirection(const std::string& text) noexcept {
     static constexpr EdgeDirection kAll[] = {
-        EdgeDirection::Unknown, EdgeDirection::FromTo, EdgeDirection::Symmetric,
+        EdgeDirection::kUnknown, EdgeDirection::kFromTo, EdgeDirection::kSymmetric,
     };
-    for (const EdgeDirection direction : kAll) {
-        if (text == EdgeDirectionName(direction)) {
-            return direction;
+    for (const EdgeDirection kDirection : kAll) {
+        if (text == edgeDirectionName(kDirection)) {
+            return kDirection;
         }
     }
-    return EdgeDirection::Unknown;
+    return EdgeDirection::kUnknown;
 }
 
-EdgeCertainty ParseEdgeCertainty(const std::string& text) noexcept {
+EdgeCertainty parseEdgeCertainty(const std::string& text) noexcept {
     static constexpr EdgeCertainty kAll[] = {
-        EdgeCertainty::Unknown, EdgeCertainty::Candidate, EdgeCertainty::Confirmed,
+        EdgeCertainty::kUnknown, EdgeCertainty::kCandidate, EdgeCertainty::kConfirmed,
     };
-    for (const EdgeCertainty certainty : kAll) {
-        if (text == EdgeCertaintyName(certainty)) {
-            return certainty;
+    for (const EdgeCertainty kCertainty : kAll) {
+        if (text == edgeCertaintyName(kCertainty)) {
+            return kCertainty;
         }
     }
-    return EdgeCertainty::Unknown;
+    return EdgeCertainty::kUnknown;
 }
 
-CollectionStatus ParseCollectionStatus(const std::string& text) noexcept {
+CollectionStatus parseCollectionStatus(const std::string& text) noexcept {
     static constexpr CollectionStatus kAll[] = {
-        CollectionStatus::NotCollected, CollectionStatus::Success,      CollectionStatus::Partial,
-        CollectionStatus::Unsupported,  CollectionStatus::AccessDenied, CollectionStatus::Timeout,
-        CollectionStatus::Error,
+        CollectionStatus::kNotCollected, CollectionStatus::kSuccess,      CollectionStatus::kPartial,
+        CollectionStatus::kUnsupported,  CollectionStatus::kAccessDenied, CollectionStatus::kTimeout,
+        CollectionStatus::kError,
     };
-    for (const CollectionStatus status : kAll) {
-        if (text == CollectionStatusName(status)) {
-            return status;
+    for (const CollectionStatus kStatus : kAll) {
+        if (text == collectionStatusName(kStatus)) {
+            return kStatus;
         }
     }
-    return CollectionStatus::NotCollected;
+    return CollectionStatus::kNotCollected;
 }
 
-SourceOrigin ParseSourceOrigin(const std::string& text) noexcept {
+SourceOrigin parseSourceOrigin(const std::string& text) noexcept {
     static constexpr SourceOrigin kAll[] = {
-        SourceOrigin::Unknown,      SourceOrigin::LiveKernel,   SourceOrigin::LiveUserMode,
-        SourceOrigin::ExternalFile, SourceOrigin::OfflineSample,
+        SourceOrigin::kUnknown,      SourceOrigin::kLiveKernel,   SourceOrigin::kLiveUserMode,
+        SourceOrigin::kExternalFile, SourceOrigin::kOfflineSample,
     };
-    for (const SourceOrigin origin : kAll) {
-        if (text == SourceOriginName(origin)) {
-            return origin;
+    for (const SourceOrigin kOrigin : kAll) {
+        if (text == sourceOriginName(kOrigin)) {
+            return kOrigin;
         }
     }
-    return SourceOrigin::Unknown;
+    return SourceOrigin::kUnknown;
 }
 
-CaptureMode ParseCaptureMode(const std::string& text) noexcept {
+CaptureMode parseCaptureMode(const std::string& text) noexcept {
     static constexpr CaptureMode kAll[] = {
-        CaptureMode::Unknown, CaptureMode::Snapshot, CaptureMode::Streaming, CaptureMode::Replay,
+        CaptureMode::kUnknown, CaptureMode::kSnapshot, CaptureMode::kStreaming, CaptureMode::kReplay,
     };
-    for (const CaptureMode mode : kAll) {
-        if (text == CaptureModeName(mode)) {
-            return mode;
+    for (const CaptureMode kMode : kAll) {
+        if (text == captureModeName(kMode)) {
+            return kMode;
         }
     }
-    return CaptureMode::Unknown;
+    return CaptureMode::kUnknown;
 }
 
-// DataOrigin 在 ScanBudget.h 里没有名字函数，这里就地给一对，读写共用同一组字面量。
-const char* DataOriginText(DataOrigin origin) noexcept {
-    return origin == DataOrigin::Session ? "Session" : "Live";
+// DataOrigin lacks a name function in ScanBudget.h; this provides a pair of string literals here for shared read/write usage.
+const char* dataOriginText(DataOrigin origin) noexcept {
+    return origin == DataOrigin::kSession ? "Session" : "Live";
 }
 
-DataOrigin ParseDataOrigin(const std::string& text) noexcept {
-    // 只有 "Live" 才是现场；认不出来一律当会话数据，宁可多拒绝一次覆盖刷新。
-    return text == "Live" ? DataOrigin::Live : DataOrigin::Session;
+DataOrigin parseDataOrigin(const std::string& text) noexcept {
+    // Only "Live" counts as live data; anything unrecognized is treated as session data to avoid missing coverage refreshes.
+    return text == "Live" ? DataOrigin::kLive : DataOrigin::kSession;
 }
 
-JsonValue CoverageToJson(const CoverageAccount& coverage) {
+JsonValue coverageToJson(const CoverageAccount& coverage) {
     JsonObject object;
     object.emplace_back("requestedBegin",
-                        JsonValue::makeOptionalU64Text(coverage.requestedBegin, U64Format::Decimal));
+                        JsonValue::makeOptionalU64Text(coverage.requestedBegin, U64Format::kDecimal));
     object.emplace_back("requestedEnd",
-                        JsonValue::makeOptionalU64Text(coverage.requestedEnd, U64Format::Decimal));
+                        JsonValue::makeOptionalU64Text(coverage.requestedEnd, U64Format::kDecimal));
     object.emplace_back("processedBegin",
-                        JsonValue::makeOptionalU64Text(coverage.processedBegin, U64Format::Decimal));
+                        JsonValue::makeOptionalU64Text(coverage.processedBegin, U64Format::kDecimal));
     object.emplace_back("processedEnd",
-                        JsonValue::makeOptionalU64Text(coverage.processedEnd, U64Format::Decimal));
-    object.emplace_back("succeeded", JsonValue::makeU64Text(coverage.succeeded, U64Format::Decimal));
-    object.emplace_back("failed", JsonValue::makeU64Text(coverage.failed, U64Format::Decimal));
-    object.emplace_back("skipped", JsonValue::makeU64Text(coverage.skipped, U64Format::Decimal));
-    object.emplace_back("truncated", JsonValue::makeU64Text(coverage.truncated, U64Format::Decimal));
+                        JsonValue::makeOptionalU64Text(coverage.processedEnd, U64Format::kDecimal));
+    object.emplace_back("succeeded", JsonValue::makeU64Text(coverage.succeeded, U64Format::kDecimal));
+    object.emplace_back("failed", JsonValue::makeU64Text(coverage.failed, U64Format::kDecimal));
+    object.emplace_back("skipped", JsonValue::makeU64Text(coverage.skipped, U64Format::kDecimal));
+    object.emplace_back("truncated", JsonValue::makeU64Text(coverage.truncated, U64Format::kDecimal));
     object.emplace_back("limitHit", JsonValue::makeBool(coverage.limitHit));
     object.emplace_back("cancelled", JsonValue::makeBool(coverage.cancelled));
     object.emplace_back("limit",
-                        JsonValue::makeOptionalU64Text(coverage.limit, U64Format::Decimal));
+                        JsonValue::makeOptionalU64Text(coverage.limit, U64Format::kDecimal));
     object.emplace_back("totalKnown",
-                        JsonValue::makeOptionalU64Text(coverage.totalKnown, U64Format::Decimal));
+                        JsonValue::makeOptionalU64Text(coverage.totalKnown, U64Format::kDecimal));
     object.emplace_back("fullyCovered", JsonValue::makeBool(coverage.fullyCovered()));
     object.emplace_back("remaining", JsonValue::makeString(coverage.describeRemaining()));
     return JsonValue::makeObject(std::move(object));
 }
 
-// fullyCovered / remaining 是从其余字段算出来的展示项，读回时一律忽略：账目的真值
-// 只有一份，绝不让导出件里的一个布尔反过来定义覆盖是否完整。
-CoverageAccount CoverageFromJson(const JsonValue* value) {
+// fullyCovered and remaining are derived display fields calculated from other fields and are always ignored on read: the
+// account's true value exists in only one place; a boolean in the export file must never redefine whether coverage is complete.
+CoverageAccount coverageFromJson(const JsonValue* value) {
     CoverageAccount coverage;
     if (value == nullptr) {
         return coverage;
     }
-    coverage.requestedBegin = ReadOptionalU64(*value, "requestedBegin");
-    coverage.requestedEnd = ReadOptionalU64(*value, "requestedEnd");
-    coverage.processedBegin = ReadOptionalU64(*value, "processedBegin");
-    coverage.processedEnd = ReadOptionalU64(*value, "processedEnd");
-    coverage.succeeded = ReadU64(*value, "succeeded");
-    coverage.failed = ReadU64(*value, "failed");
-    coverage.skipped = ReadU64(*value, "skipped");
-    coverage.truncated = ReadU64(*value, "truncated");
-    coverage.limitHit = ReadBool(*value, "limitHit");
-    coverage.cancelled = ReadBool(*value, "cancelled");
-    coverage.limit = ReadOptionalU64(*value, "limit");
-    coverage.totalKnown = ReadOptionalU64(*value, "totalKnown");
+    coverage.requestedBegin = readOptionalU64(*value, "requestedBegin");
+    coverage.requestedEnd = readOptionalU64(*value, "requestedEnd");
+    coverage.processedBegin = readOptionalU64(*value, "processedBegin");
+    coverage.processedEnd = readOptionalU64(*value, "processedEnd");
+    coverage.succeeded = readU64(*value, "succeeded");
+    coverage.failed = readU64(*value, "failed");
+    coverage.skipped = readU64(*value, "skipped");
+    coverage.truncated = readU64(*value, "truncated");
+    coverage.limitHit = readBool(*value, "limitHit");
+    coverage.cancelled = readBool(*value, "cancelled");
+    coverage.limit = readOptionalU64(*value, "limit");
+    coverage.totalKnown = readOptionalU64(*value, "totalKnown");
     return coverage;
 }
 
-JsonValue OutcomeToJson(const CollectionOutcome& outcome) {
+JsonValue outcomeToJson(const CollectionOutcome& outcome) {
     JsonObject object;
-    object.emplace_back("status", JsonValue::makeString(CollectionStatusName(outcome.status)));
+    object.emplace_back("status", JsonValue::makeString(collectionStatusName(outcome.status)));
     object.emplace_back("nativeCodeDomain", JsonValue::makeString(outcome.nativeCodeDomain));
     object.emplace_back("nativeCode",
-                        JsonValue::makeOptionalU64Text(outcome.nativeCode, U64Format::Decimal));
+                        JsonValue::makeOptionalU64Text(outcome.nativeCode, U64Format::kDecimal));
     object.emplace_back("message", JsonValue::makeString(outcome.message));
     return JsonValue::makeObject(std::move(object));
 }
 
-CollectionOutcome OutcomeFromJson(const JsonValue* value) {
-    CollectionOutcome outcome;  // 默认 NotCollected
+CollectionOutcome outcomeFromJson(const JsonValue* value) {
+    CollectionOutcome outcome;  // Default: NotCollected
     if (value == nullptr) {
         return outcome;
     }
-    outcome.status = ParseCollectionStatus(ReadString(*value, "status"));
-    outcome.nativeCodeDomain = ReadString(*value, "nativeCodeDomain");
-    outcome.nativeCode = ReadOptionalU64(*value, "nativeCode");
-    outcome.message = ReadString(*value, "message");
+    outcome.status = parseCollectionStatus(readString(*value, "status"));
+    outcome.nativeCodeDomain = readString(*value, "nativeCodeDomain");
+    outcome.nativeCode = readOptionalU64(*value, "nativeCode");
+    outcome.message = readString(*value, "message");
     return outcome;
 }
 
 // ---------------------------------------------------------------------------
-// G-06：身份载荷。少写一个字段，重开的会话里这个对象就换了一个身份强度。
+// G-06: identity payload. Omitting one field causes the object to assume a different identity strength in a restarted session.
 // ---------------------------------------------------------------------------
-JsonValue ProcessToJson(const ProcessInstanceId& id) {
+JsonValue processToJson(const ProcessInstanceId& id) {
     JsonObject object;
     object.emplace_back("bootId", JsonValue::makeString(id.bootId));
-    object.emplace_back("pid", JsonValue::makeOptionalU64Text(id.pid, U64Format::Decimal));
+    object.emplace_back("pid", JsonValue::makeOptionalU64Text(id.pid, U64Format::kDecimal));
     object.emplace_back("createTime100ns",
-                        JsonValue::makeOptionalU64Text(id.createTime100ns, U64Format::Decimal));
+                        JsonValue::makeOptionalU64Text(id.createTime100ns, U64Format::kDecimal));
     object.emplace_back("eprocessAddress",
-                        JsonValue::makeOptionalU64Text(id.eprocessAddress, U64Format::HexAddress));
+                        JsonValue::makeOptionalU64Text(id.eprocessAddress, U64Format::kHexAddress));
     object.emplace_back("imageName", JsonValue::makeString(id.imageName));
     return JsonValue::makeObject(std::move(object));
 }
 
-ProcessInstanceId ProcessFromJson(const JsonValue* value) {
+ProcessInstanceId processFromJson(const JsonValue* value) {
     ProcessInstanceId id;
     if (value == nullptr) {
         return id;
     }
-    id.bootId = ReadString(*value, "bootId");
-    id.pid = ReadOptionalU64(*value, "pid");
-    id.createTime100ns = ReadOptionalU64(*value, "createTime100ns");
-    id.eprocessAddress = ReadOptionalU64(*value, "eprocessAddress");
-    id.imageName = ReadString(*value, "imageName");
+    id.bootId = readString(*value, "bootId");
+    id.pid = readOptionalU64(*value, "pid");
+    id.createTime100ns = readOptionalU64(*value, "createTime100ns");
+    id.eprocessAddress = readOptionalU64(*value, "eprocessAddress");
+    id.imageName = readString(*value, "imageName");
     return id;
 }
 
-JsonValue IdentityToJson(const NodeIdentity& identity) {
+JsonValue identityToJson(const NodeIdentity& identity) {
     JsonObject object;
-    object.emplace_back("category", JsonValue::makeString(NodeCategoryName(identity.category)));
-    object.emplace_back("kind", JsonValue::makeString(ObjectKindName(identity.kind)));
+    object.emplace_back("category", JsonValue::makeString(nodeCategoryName(identity.category)));
+    object.emplace_back("kind", JsonValue::makeString(objectKindName(identity.kind)));
     object.emplace_back("bootId", JsonValue::makeString(identity.bootId));
     object.emplace_back("name", JsonValue::makeString(identity.name));
     object.emplace_back("instanceTag", JsonValue::makeString(identity.instanceTag));
 
-    // 只写这一 kind 用得到的那一份：nodeKey / crossSessionKey / strength /
-    // MatchNodeIdentity 全部按 kind 分派，别的槽位里的字节在本模块里没有含义。
+    // Write only the portion needed for this kind: nodeKey, crossSessionKey, strength, and
+    // matchNodeIdentity are all dispatched by kind; bytes in other slots have no meaning in this module.
     switch (identity.kind) {
-    case ObjectKind::Process:
-        object.emplace_back("process", ProcessToJson(identity.process));
+    case ObjectKind::kProcess:
+        object.emplace_back("process", processToJson(identity.process));
         break;
-    case ObjectKind::Thread: {
+    case ObjectKind::kThread: {
         JsonObject thread;
-        thread.emplace_back("process", ProcessToJson(identity.thread.process));
+        thread.emplace_back("process", processToJson(identity.thread.process));
         thread.emplace_back("tid",
-                            JsonValue::makeOptionalU64Text(identity.thread.tid, U64Format::Decimal));
+                            JsonValue::makeOptionalU64Text(identity.thread.tid, U64Format::kDecimal));
         thread.emplace_back("createTime100ns",
                             JsonValue::makeOptionalU64Text(identity.thread.createTime100ns,
-                                                           U64Format::Decimal));
+                                                           U64Format::kDecimal));
         thread.emplace_back("ethreadAddress",
                             JsonValue::makeOptionalU64Text(identity.thread.ethreadAddress,
-                                                           U64Format::HexAddress));
+                                                           U64Format::kHexAddress));
         object.emplace_back("thread", JsonValue::makeObject(std::move(thread)));
         break;
     }
-    case ObjectKind::Driver:
-    case ObjectKind::Module: {
+    case ObjectKind::kDriver:
+    case ObjectKind::kModule: {
         JsonObject driver;
         driver.emplace_back("bootId", JsonValue::makeString(identity.driver.bootId));
         driver.emplace_back("imagePath", JsonValue::makeString(identity.driver.imagePath));
         driver.emplace_back("imageBase",
                             JsonValue::makeOptionalU64Text(identity.driver.imageBase,
-                                                           U64Format::HexAddress));
+                                                           U64Format::kHexAddress));
         driver.emplace_back("imageSize", JsonValue::makeOptionalU64Text(identity.driver.imageSize,
-                                                                       U64Format::Decimal));
+                                                                       U64Format::kDecimal));
         driver.emplace_back("timeDateStamp",
                             JsonValue::makeOptionalU64Text(identity.driver.timeDateStamp,
-                                                           U64Format::Decimal));
+                                                           U64Format::kDecimal));
         driver.emplace_back("checksum", JsonValue::makeOptionalU64Text(identity.driver.checksum,
-                                                                       U64Format::Decimal));
+                                                                       U64Format::kDecimal));
         driver.emplace_back("pdbSignature", JsonValue::makeString(identity.driver.pdbSignature));
         driver.emplace_back("loadOrderIndex",
                             JsonValue::makeOptionalU64Text(identity.driver.loadOrderIndex,
-                                                           U64Format::Decimal));
+                                                           U64Format::kDecimal));
         object.emplace_back("driver", JsonValue::makeObject(std::move(driver)));
         break;
     }
-    case ObjectKind::File: {
+    case ObjectKind::kFile: {
         JsonObject file;
         file.emplace_back("path", JsonValue::makeString(identity.file.path));
         file.emplace_back("volumeSerial",
                           JsonValue::makeOptionalU64Text(identity.file.volumeSerial,
-                                                         U64Format::Decimal));
+                                                         U64Format::kDecimal));
         file.emplace_back("fileId", JsonValue::makeString(identity.file.fileId));
         file.emplace_back("sizeBytes", JsonValue::makeOptionalU64Text(identity.file.sizeBytes,
-                                                                     U64Format::Decimal));
+                                                                     U64Format::kDecimal));
         file.emplace_back("lastWriteUtc100ns",
                           JsonValue::makeOptionalU64Text(identity.file.lastWriteUtc100ns,
-                                                         U64Format::Decimal));
+                                                         U64Format::kDecimal));
         file.emplace_back("contentHash", JsonValue::makeString(identity.file.contentHash));
         object.emplace_back("file", JsonValue::makeObject(std::move(file)));
         break;
     }
-    case ObjectKind::Handle: {
+    case ObjectKind::kHandle: {
         JsonObject handle;
-        handle.emplace_back("owner", ProcessToJson(identity.handle.owner));
+        handle.emplace_back("owner", processToJson(identity.handle.owner));
         handle.emplace_back("handleValue",
                             JsonValue::makeOptionalU64Text(identity.handle.handleValue,
-                                                           U64Format::Decimal));
+                                                           U64Format::kDecimal));
         handle.emplace_back("objectAddress",
                             JsonValue::makeOptionalU64Text(identity.handle.objectAddress,
-                                                           U64Format::HexAddress));
+                                                           U64Format::kHexAddress));
         handle.emplace_back("typeName", JsonValue::makeString(identity.handle.typeName));
         object.emplace_back("handle", JsonValue::makeObject(std::move(handle)));
         break;
     }
-    case ObjectKind::Connection: {
+    case ObjectKind::kConnection: {
         JsonObject connection;
         connection.emplace_back("bootId", JsonValue::makeString(identity.connection.bootId));
         connection.emplace_back("protocol",
                                 JsonValue::makeU64Text(identity.connection.protocol,
-                                                       U64Format::Decimal));
+                                                       U64Format::kDecimal));
         connection.emplace_back("localAddress",
                                 JsonValue::makeString(identity.connection.localAddress));
         connection.emplace_back("localPort",
                                 JsonValue::makeU64Text(identity.connection.localPort,
-                                                       U64Format::Decimal));
+                                                       U64Format::kDecimal));
         connection.emplace_back("remoteAddress",
                                 JsonValue::makeString(identity.connection.remoteAddress));
         connection.emplace_back("remotePort",
                                 JsonValue::makeU64Text(identity.connection.remotePort,
-                                                       U64Format::Decimal));
+                                                       U64Format::kDecimal));
         connection.emplace_back("observedFirstUtc100ns",
                                 JsonValue::makeOptionalU64Text(
-                                    identity.connection.observedFirstUtc100ns, U64Format::Decimal));
+                                    identity.connection.observedFirstUtc100ns, U64Format::kDecimal));
         connection.emplace_back("observedLastUtc100ns",
                                 JsonValue::makeOptionalU64Text(
-                                    identity.connection.observedLastUtc100ns, U64Format::Decimal));
-        connection.emplace_back("owner", ProcessToJson(identity.connection.owner));
+                                    identity.connection.observedLastUtc100ns, U64Format::kDecimal));
+        connection.emplace_back("owner", processToJson(identity.connection.owner));
         object.emplace_back("connection", JsonValue::makeObject(std::move(connection)));
         break;
     }
-    case ObjectKind::Device:
-    case ObjectKind::Service:
-    case ObjectKind::Unknown:
-        // 这三类的全部身份就是上面那三个文本字段（F-03 没有为它们定义生命周期身份）。
+    case ObjectKind::kDevice:
+    case ObjectKind::kService:
+    case ObjectKind::kUnknown:
+        // The complete identity of these three classes consists of the three text fields above (F-03 does not define a lifecycle identity for them).
         break;
     }
     return JsonValue::makeObject(std::move(object));
 }
 
-NodeIdentity IdentityFromJson(const JsonValue* value) {
+NodeIdentity identityFromJson(const JsonValue* value) {
     NodeIdentity identity;
     if (value == nullptr) {
         return identity;
     }
-    identity.category = ParseNodeCategory(ReadString(*value, "category"));
-    identity.kind = ParseObjectKind(ReadString(*value, "kind"));
-    identity.bootId = ReadString(*value, "bootId");
-    identity.name = ReadString(*value, "name");
-    identity.instanceTag = ReadString(*value, "instanceTag");
+    identity.category = parseNodeCategory(readString(*value, "category"));
+    identity.kind = parseObjectKind(readString(*value, "kind"));
+    identity.bootId = readString(*value, "bootId");
+    identity.name = readString(*value, "name");
+    identity.instanceTag = readString(*value, "instanceTag");
 
     switch (identity.kind) {
-    case ObjectKind::Process:
-        identity.process = ProcessFromJson(Child(*value, "process"));
+    case ObjectKind::kProcess:
+        identity.process = processFromJson(child(*value, "process"));
         break;
-    case ObjectKind::Thread: {
-        const JsonValue* thread = Child(*value, "thread");
+    case ObjectKind::kThread: {
+        const JsonValue* thread = child(*value, "thread");
         if (thread != nullptr) {
-            identity.thread.process = ProcessFromJson(Child(*thread, "process"));
-            identity.thread.tid = ReadOptionalU64(*thread, "tid");
-            identity.thread.createTime100ns = ReadOptionalU64(*thread, "createTime100ns");
-            identity.thread.ethreadAddress = ReadOptionalU64(*thread, "ethreadAddress");
+            identity.thread.process = processFromJson(child(*thread, "process"));
+            identity.thread.tid = readOptionalU64(*thread, "tid");
+            identity.thread.createTime100ns = readOptionalU64(*thread, "createTime100ns");
+            identity.thread.ethreadAddress = readOptionalU64(*thread, "ethreadAddress");
         }
         break;
     }
-    case ObjectKind::Driver:
-    case ObjectKind::Module: {
-        const JsonValue* driver = Child(*value, "driver");
+    case ObjectKind::kDriver:
+    case ObjectKind::kModule: {
+        const JsonValue* driver = child(*value, "driver");
         if (driver != nullptr) {
-            identity.driver.bootId = ReadString(*driver, "bootId");
-            identity.driver.imagePath = ReadString(*driver, "imagePath");
-            identity.driver.imageBase = ReadOptionalU64(*driver, "imageBase");
-            identity.driver.imageSize = ReadOptionalU64(*driver, "imageSize");
-            identity.driver.timeDateStamp = ReadOptionalU64(*driver, "timeDateStamp");
-            identity.driver.checksum = ReadOptionalU64(*driver, "checksum");
-            identity.driver.pdbSignature = ReadString(*driver, "pdbSignature");
-            identity.driver.loadOrderIndex = ReadOptionalU64(*driver, "loadOrderIndex");
+            identity.driver.bootId = readString(*driver, "bootId");
+            identity.driver.imagePath = readString(*driver, "imagePath");
+            identity.driver.imageBase = readOptionalU64(*driver, "imageBase");
+            identity.driver.imageSize = readOptionalU64(*driver, "imageSize");
+            identity.driver.timeDateStamp = readOptionalU64(*driver, "timeDateStamp");
+            identity.driver.checksum = readOptionalU64(*driver, "checksum");
+            identity.driver.pdbSignature = readString(*driver, "pdbSignature");
+            identity.driver.loadOrderIndex = readOptionalU64(*driver, "loadOrderIndex");
         }
         break;
     }
-    case ObjectKind::File: {
-        const JsonValue* file = Child(*value, "file");
+    case ObjectKind::kFile: {
+        const JsonValue* file = child(*value, "file");
         if (file != nullptr) {
-            identity.file.path = ReadString(*file, "path");
-            identity.file.volumeSerial = ReadOptionalU64(*file, "volumeSerial");
-            identity.file.fileId = ReadString(*file, "fileId");
-            identity.file.sizeBytes = ReadOptionalU64(*file, "sizeBytes");
-            identity.file.lastWriteUtc100ns = ReadOptionalU64(*file, "lastWriteUtc100ns");
-            identity.file.contentHash = ReadString(*file, "contentHash");
+            identity.file.path = readString(*file, "path");
+            identity.file.volumeSerial = readOptionalU64(*file, "volumeSerial");
+            identity.file.fileId = readString(*file, "fileId");
+            identity.file.sizeBytes = readOptionalU64(*file, "sizeBytes");
+            identity.file.lastWriteUtc100ns = readOptionalU64(*file, "lastWriteUtc100ns");
+            identity.file.contentHash = readString(*file, "contentHash");
         }
         break;
     }
-    case ObjectKind::Handle: {
-        const JsonValue* handle = Child(*value, "handle");
+    case ObjectKind::kHandle: {
+        const JsonValue* handle = child(*value, "handle");
         if (handle != nullptr) {
-            identity.handle.owner = ProcessFromJson(Child(*handle, "owner"));
-            identity.handle.handleValue = ReadOptionalU64(*handle, "handleValue");
-            identity.handle.objectAddress = ReadOptionalU64(*handle, "objectAddress");
-            identity.handle.typeName = ReadString(*handle, "typeName");
+            identity.handle.owner = processFromJson(child(*handle, "owner"));
+            identity.handle.handleValue = readOptionalU64(*handle, "handleValue");
+            identity.handle.objectAddress = readOptionalU64(*handle, "objectAddress");
+            identity.handle.typeName = readString(*handle, "typeName");
         }
         break;
     }
-    case ObjectKind::Connection: {
-        const JsonValue* connection = Child(*value, "connection");
+    case ObjectKind::kConnection: {
+        const JsonValue* connection = child(*value, "connection");
         if (connection != nullptr) {
-            identity.connection.bootId = ReadString(*connection, "bootId");
+            identity.connection.bootId = readString(*connection, "bootId");
             identity.connection.protocol =
-                static_cast<std::uint32_t>(ReadU64(*connection, "protocol"));
-            identity.connection.localAddress = ReadString(*connection, "localAddress");
+                static_cast<std::uint32_t>(readU64(*connection, "protocol"));
+            identity.connection.localAddress = readString(*connection, "localAddress");
             identity.connection.localPort =
-                static_cast<std::uint16_t>(ReadU64(*connection, "localPort"));
-            identity.connection.remoteAddress = ReadString(*connection, "remoteAddress");
+                static_cast<std::uint16_t>(readU64(*connection, "localPort"));
+            identity.connection.remoteAddress = readString(*connection, "remoteAddress");
             identity.connection.remotePort =
-                static_cast<std::uint16_t>(ReadU64(*connection, "remotePort"));
+                static_cast<std::uint16_t>(readU64(*connection, "remotePort"));
             identity.connection.observedFirstUtc100ns =
-                ReadOptionalU64(*connection, "observedFirstUtc100ns");
+                readOptionalU64(*connection, "observedFirstUtc100ns");
             identity.connection.observedLastUtc100ns =
-                ReadOptionalU64(*connection, "observedLastUtc100ns");
-            identity.connection.owner = ProcessFromJson(Child(*connection, "owner"));
+                readOptionalU64(*connection, "observedLastUtc100ns");
+            identity.connection.owner = processFromJson(child(*connection, "owner"));
         }
         break;
     }
-    case ObjectKind::Device:
-    case ObjectKind::Service:
-    case ObjectKind::Unknown:
+    case ObjectKind::kDevice:
+    case ObjectKind::kService:
+    case ObjectKind::kUnknown:
         break;
     }
     return identity;
 }
 
-JsonValue EnvelopeToJson(const EvidenceEnvelope& envelope) {
+JsonValue envelopeToJson(const EvidenceEnvelope& envelope) {
     JsonObject source;
     source.emplace_back("collectorId", JsonValue::makeString(envelope.source.collectorId));
     source.emplace_back("collectorVersion",
                         JsonValue::makeU64Text(envelope.source.collectorVersion,
-                                               U64Format::Decimal));
+                                               U64Format::kDecimal));
     source.emplace_back("sourceGroup", JsonValue::makeString(envelope.source.sourceGroup));
-    source.emplace_back("origin", JsonValue::makeString(SourceOriginName(envelope.source.origin)));
+    source.emplace_back("origin", JsonValue::makeString(sourceOriginName(envelope.source.origin)));
     source.emplace_back("dependsOn", JsonValue::makeString(envelope.source.dependsOn));
 
     JsonObject window;
     window.emplace_back("startUtc100ns",
                         JsonValue::makeOptionalU64Text(envelope.window.startUtc100ns,
-                                                       U64Format::Decimal));
+                                                       U64Format::kDecimal));
     window.emplace_back("endUtc100ns",
                         JsonValue::makeOptionalU64Text(envelope.window.endUtc100ns,
-                                                       U64Format::Decimal));
+                                                       U64Format::kDecimal));
     window.emplace_back("startMonotonic",
                         JsonValue::makeOptionalU64Text(envelope.window.startMonotonic,
-                                                       U64Format::Decimal));
+                                                       U64Format::kDecimal));
     window.emplace_back("endMonotonic",
                         JsonValue::makeOptionalU64Text(envelope.window.endMonotonic,
-                                                       U64Format::Decimal));
+                                                       U64Format::kDecimal));
     window.emplace_back("monotonicFrequency",
                         JsonValue::makeOptionalU64Text(envelope.window.monotonicFrequency,
-                                                       U64Format::Decimal));
+                                                       U64Format::kDecimal));
     window.emplace_back("machineId", JsonValue::makeString(envelope.window.machineId));
     window.emplace_back("bootId", JsonValue::makeString(envelope.window.bootId));
     window.emplace_back("sessionId", JsonValue::makeString(envelope.window.sessionId));
-    window.emplace_back("mode", JsonValue::makeString(CaptureModeName(envelope.window.mode)));
+    window.emplace_back("mode", JsonValue::makeString(captureModeName(envelope.window.mode)));
 
     JsonObject object;
     object.emplace_back("evidenceId", JsonValue::makeString(envelope.evidenceId));
     object.emplace_back("source", JsonValue::makeObject(std::move(source)));
     object.emplace_back("window", JsonValue::makeObject(std::move(window)));
-    object.emplace_back("outcome", OutcomeToJson(envelope.outcome));
-    object.emplace_back("coverage", CoverageToJson(envelope.coverage));
+    object.emplace_back("outcome", outcomeToJson(envelope.outcome));
+    object.emplace_back("coverage", coverageToJson(envelope.coverage));
     return JsonValue::makeObject(std::move(object));
 }
 
-EvidenceEnvelope EnvelopeFromJson(const JsonValue* value) {
-    EvidenceEnvelope envelope;  // 默认 outcome 就是 NotCollected
+EvidenceEnvelope envelopeFromJson(const JsonValue* value) {
+    EvidenceEnvelope envelope;  // The default outcome is NotCollected.
     if (value == nullptr) {
         return envelope;
     }
-    envelope.evidenceId = ReadString(*value, "evidenceId");
-    const JsonValue* source = Child(*value, "source");
+    envelope.evidenceId = readString(*value, "evidenceId");
+    const JsonValue* source = child(*value, "source");
     if (source != nullptr) {
-        envelope.source.collectorId = ReadString(*source, "collectorId");
+        envelope.source.collectorId = readString(*source, "collectorId");
         envelope.source.collectorVersion =
-            static_cast<std::uint32_t>(ReadU64(*source, "collectorVersion"));
-        envelope.source.sourceGroup = ReadString(*source, "sourceGroup");
-        envelope.source.origin = ParseSourceOrigin(ReadString(*source, "origin"));
-        envelope.source.dependsOn = ReadString(*source, "dependsOn");
+            static_cast<std::uint32_t>(readU64(*source, "collectorVersion"));
+        envelope.source.sourceGroup = readString(*source, "sourceGroup");
+        envelope.source.origin = parseSourceOrigin(readString(*source, "origin"));
+        envelope.source.dependsOn = readString(*source, "dependsOn");
     }
-    const JsonValue* window = Child(*value, "window");
+    const JsonValue* window = child(*value, "window");
     if (window != nullptr) {
-        envelope.window.startUtc100ns = ReadOptionalU64(*window, "startUtc100ns");
-        envelope.window.endUtc100ns = ReadOptionalU64(*window, "endUtc100ns");
-        envelope.window.startMonotonic = ReadOptionalU64(*window, "startMonotonic");
-        envelope.window.endMonotonic = ReadOptionalU64(*window, "endMonotonic");
-        envelope.window.monotonicFrequency = ReadOptionalU64(*window, "monotonicFrequency");
-        envelope.window.machineId = ReadString(*window, "machineId");
-        envelope.window.bootId = ReadString(*window, "bootId");
-        envelope.window.sessionId = ReadString(*window, "sessionId");
-        envelope.window.mode = ParseCaptureMode(ReadString(*window, "mode"));
+        envelope.window.startUtc100ns = readOptionalU64(*window, "startUtc100ns");
+        envelope.window.endUtc100ns = readOptionalU64(*window, "endUtc100ns");
+        envelope.window.startMonotonic = readOptionalU64(*window, "startMonotonic");
+        envelope.window.endMonotonic = readOptionalU64(*window, "endMonotonic");
+        envelope.window.monotonicFrequency = readOptionalU64(*window, "monotonicFrequency");
+        envelope.window.machineId = readString(*window, "machineId");
+        envelope.window.bootId = readString(*window, "bootId");
+        envelope.window.sessionId = readString(*window, "sessionId");
+        envelope.window.mode = parseCaptureMode(readString(*window, "mode"));
     }
-    envelope.outcome = OutcomeFromJson(Child(*value, "outcome"));
-    envelope.coverage = CoverageFromJson(Child(*value, "coverage"));
+    envelope.outcome = outcomeFromJson(child(*value, "outcome"));
+    envelope.coverage = coverageFromJson(child(*value, "coverage"));
     return envelope;
 }
 
 } // namespace
 
-JsonValue ExportGraph(const EntityGraph& graph,
+JsonValue exportGraph(const EntityGraph& graph,
                       const ExpansionResult& expansion,
                       const EdgeFilter& filter) {
-    // 节点与边先算，因为"视图里有、图里没有"的条数要写进 view 的账目里。
+    // Calculate nodes and edges first, because the count of 'present in view but absent in graph' entries must be recorded in the view's ledger.
     std::vector<std::string> nodeIds = expansion.nodeIds;
     std::sort(nodeIds.begin(), nodeIds.end());
     JsonArray nodes;
@@ -2358,8 +2358,8 @@ JsonValue ExportGraph(const EntityGraph& graph,
     for (const std::string& nodeId : nodeIds) {
         std::size_t index = 0;
         if (!graph.nodeIndexOf(nodeId, index)) {
-            // 视图引用了一个图里没有的 id。跳过可以，但必须记账并说出来：导出件里
-            // 写着 loadedNodes=2 却只有 1 个节点、通篇搜不到那个 id，就是自相矛盾。
+            // The view references an ID not present in the graph. Skipping is acceptable, but it must be recorded and reported: if
+            // the export claims loadedNodes=2 yet contains only 1 node and the ID cannot be found anywhere, it is a contradiction.
             ++missingNodes;
             continue;
         }
@@ -2367,48 +2367,48 @@ JsonValue ExportGraph(const EntityGraph& graph,
         JsonObject object;
         object.emplace_back("nodeId", JsonValue::makeString(node.nodeId));
         object.emplace_back("category",
-                            JsonValue::makeString(NodeCategoryName(node.identity.category)));
-        object.emplace_back("kind", JsonValue::makeString(ObjectKindName(node.identity.kind)));
+                            JsonValue::makeString(nodeCategoryName(node.identity.category)));
+        object.emplace_back("kind", JsonValue::makeString(objectKindName(node.identity.kind)));
         object.emplace_back("displayText", JsonValue::makeString(node.displayText));
         object.emplace_back("evidenceId", JsonValue::makeString(node.evidenceId));
         object.emplace_back("identityStrength",
-                            JsonValue::makeString(IdentityStrengthName(node.identity.strength())));
+                            JsonValue::makeString(identityStrengthName(node.identity.strength())));
         object.emplace_back("crossSessionKey",
                             JsonValue::makeString(node.identity.crossSessionKey()));
-        object.emplace_back("lifecycle", JsonValue::makeString(NodeLifecycleName(node.lifecycle)));
+        object.emplace_back("lifecycle", JsonValue::makeString(nodeLifecycleName(node.lifecycle)));
         object.emplace_back("objectNavigable", JsonValue::makeBool(node.objectNavigable()));
         object.emplace_back("evidenceOpenable", JsonValue::makeBool(node.evidenceOpenable()));
-        // G-05：这个节点"本该"由哪种关系连到 owner。不写出去，重开的会话里每个节点
-        // 都退回 EdgeKind::Unknown，孤立判据全部塌成"来源未采集"。
-        object.emplace_back("ownerRelation", JsonValue::makeString(EdgeKindName(node.ownerRelation)));
-        object.emplace_back("ownerKind", JsonValue::makeString(ObjectKindName(node.ownerKind)));
-        object.emplace_back("outcome", OutcomeToJson(node.outcome));
+        // G-05: The relationship type that "should" connect this node to its owner. If not written out, in a reopened session
+        // every node reverts to EdgeKind::Unknown, causing all isolation criteria to collapse into "source not collected".
+        object.emplace_back("ownerRelation", JsonValue::makeString(edgeKindName(node.ownerRelation)));
+        object.emplace_back("ownerKind", JsonValue::makeString(objectKindName(node.ownerKind)));
+        object.emplace_back("outcome", outcomeToJson(node.outcome));
         object.emplace_back("inconsistencyObserved",
                             JsonValue::makeBool(node.inconsistencyObserved));
         object.emplace_back("inconsistencyEvidenceIds",
-                            StringArray(node.inconsistencyEvidenceIds));
-        // 身份载荷放最后：它是重开会话的唯一依据，上面那些 identityStrength /
-        // crossSessionKey / objectNavigable 都只是从它算出来的展示项。
-        object.emplace_back("identity", IdentityToJson(node.identity));
+                            stringArray(node.inconsistencyEvidenceIds));
+        // Identity payload is placed last: it is the sole basis for re-establishing a session. The preceding items
+        // (identityStrength, crossSessionKey, objectNavigable) are merely derived display values calculated from it.
+        object.emplace_back("identity", identityToJson(node.identity));
         nodes.push_back(JsonValue::makeObject(std::move(object)));
 
-        const IsolationReport report = ClassifyIsolation(graph, nodeId, filter);
+        const IsolationReport kReport = classifyIsolation(graph, nodeId, filter);
         JsonObject isolationObject;
-        isolationObject.emplace_back("nodeId", JsonValue::makeString(report.nodeId));
-        isolationObject.emplace_back("isolated", JsonValue::makeBool(report.isolated));
-        // 键名是 "state" 而不是 "cause"：这里描述的是观察到的数据状态（有没有边、
-        // 来源采没采、对象在不在），不是对任何行为的因果或性质判定。导出件是给报告
-        // 和下游读的对外制品，读者看到的词必须和头文件里承诺的是同一个。
+        isolationObject.emplace_back("nodeId", JsonValue::makeString(kReport.nodeId));
+        isolationObject.emplace_back("isolated", JsonValue::makeBool(kReport.isolated));
+        // The key is "state" rather than "cause": this describes the observed data state (presence of edges, source
+        // collection status, object existence), not a causal or property judgment on any behavior. The export is an artifact
+        // for reports and downstream consumers; the terminology seen by readers must match the contract in the header file.
         isolationObject.emplace_back("state",
-                                     JsonValue::makeString(IsolationStateName(report.state)));
+                                     JsonValue::makeString(isolationStateName(kReport.state)));
         isolationObject.emplace_back("explanationKey",
-                                     JsonValue::makeString(report.explanationKey));
+                                     JsonValue::makeString(kReport.explanationKey));
         isolationObject.emplace_back("rawEvidenceAvailable",
-                                     JsonValue::makeBool(report.rawEvidenceAvailable));
+                                     JsonValue::makeBool(kReport.rawEvidenceAvailable));
         isolationObject.emplace_back("rawEvidenceMissingKey",
-                                     JsonValue::makeString(report.rawEvidenceMissingKey));
+                                     JsonValue::makeString(kReport.rawEvidenceMissingKey));
         isolationObject.emplace_back("ownerLookupOutcome",
-                                     OutcomeToJson(report.ownerLookupOutcome));
+                                     outcomeToJson(kReport.ownerLookupOutcome));
         isolation.push_back(JsonValue::makeObject(std::move(isolationObject)));
     }
 
@@ -2422,26 +2422,26 @@ JsonValue ExportGraph(const EntityGraph& graph,
             ++missingEdges;
             continue;
         }
-        const EdgeInferenceNote note = DescribeEdgeInference(*edge);
+        const EdgeInferenceNote kNote = describeEdgeInference(*edge);
         JsonObject object;
         object.emplace_back("edgeId", JsonValue::makeString(edge->edgeId));
-        object.emplace_back("kind", JsonValue::makeString(EdgeKindName(edge->kind)));
+        object.emplace_back("kind", JsonValue::makeString(edgeKindName(edge->kind)));
         object.emplace_back("direction",
-                            JsonValue::makeString(EdgeDirectionName(edge->direction)));
+                            JsonValue::makeString(edgeDirectionName(edge->direction)));
         object.emplace_back("from", JsonValue::makeString(edge->fromNodeId));
         object.emplace_back("to", JsonValue::makeString(edge->toNodeId));
         object.emplace_back("validFrom100ns", JsonValue::makeOptionalU64Text(edge->validFrom100ns,
-                                                                            U64Format::Decimal));
+                                                                            U64Format::kDecimal));
         object.emplace_back("validTo100ns", JsonValue::makeOptionalU64Text(edge->validTo100ns,
-                                                                          U64Format::Decimal));
+                                                                          U64Format::kDecimal));
         object.emplace_back("certainty",
-                            JsonValue::makeString(EdgeCertaintyName(edge->certainty)));
-        object.emplace_back("evidenceRefs", StringArray(note.evidenceRefs));
+                            JsonValue::makeString(edgeCertaintyName(edge->certainty)));
+        object.emplace_back("evidenceRefs", stringArray(kNote.evidenceRefs));
         object.emplace_back("ruleId", JsonValue::makeString(edge->ruleId));
         object.emplace_back("ruleDescriptionKey",
                             JsonValue::makeString(edge->ruleDescriptionKey));
         object.emplace_back("notConfirmedReasonKey",
-                            JsonValue::makeString(note.notConfirmedReasonKey));
+                            JsonValue::makeString(kNote.notConfirmedReasonKey));
         object.emplace_back("sourceGroup", JsonValue::makeString(edge->sourceGroup));
         edges.push_back(JsonValue::makeObject(std::move(object)));
     }
@@ -2453,12 +2453,12 @@ JsonValue ExportGraph(const EntityGraph& graph,
     if (missingEdges > 0) {
         viewLimitations.emplace_back("graph.export.viewEdgeMissing");
     }
-    SortUnique(viewLimitations);
+    sortUnique(viewLimitations);
 
     JsonObject root;
     root.emplace_back("schema", JsonValue::makeString(kEntityGraphSchema));
 
-    // 导出有两个作用域，必须写清楚，否则读的人会把视图计数当成全集计数（G-04）。
+    // Export has two scopes; they must be explicitly defined, otherwise readers may mistake view counts for the full set count (G-04).
     JsonObject scope;
     scope.emplace_back("viewIsExpansionResult", JsonValue::makeBool(true));
     scope.emplace_back("conclusionIsWholeSavedGraph", JsonValue::makeBool(true));
@@ -2466,24 +2466,24 @@ JsonValue ExportGraph(const EntityGraph& graph,
 
     JsonObject view;
     view.emplace_back("loadedNodes",
-                      JsonValue::makeU64Text(expansion.loadedNodes, U64Format::Decimal));
+                      JsonValue::makeU64Text(expansion.loadedNodes, U64Format::kDecimal));
     view.emplace_back("loadedEdges",
-                      JsonValue::makeU64Text(expansion.loadedEdges, U64Format::Decimal));
-    // 实际写出去的条数与被跳过的条数分开给：两个数字对不上时，读的人要能立刻看出
-    // 差在哪儿，而不是自己去数数组长度。
+                      JsonValue::makeU64Text(expansion.loadedEdges, U64Format::kDecimal));
+    // Report actual written count and skipped count separately: when the two numbers don't
+    // match, the reader must immediately see the discrepancy rather than counting array lengths.
     view.emplace_back("exportedNodes",
                       JsonValue::makeU64Text(static_cast<std::uint64_t>(nodes.size()),
-                                             U64Format::Decimal));
+                                             U64Format::kDecimal));
     view.emplace_back("exportedEdges",
                       JsonValue::makeU64Text(static_cast<std::uint64_t>(edges.size()),
-                                             U64Format::Decimal));
-    view.emplace_back("viewNodeMissing", JsonValue::makeU64Text(missingNodes, U64Format::Decimal));
-    view.emplace_back("viewEdgeMissing", JsonValue::makeU64Text(missingEdges, U64Format::Decimal));
+                                             U64Format::kDecimal));
+    view.emplace_back("viewNodeMissing", JsonValue::makeU64Text(missingNodes, U64Format::kDecimal));
+    view.emplace_back("viewEdgeMissing", JsonValue::makeU64Text(missingEdges, U64Format::kDecimal));
     view.emplace_back("moreAvailable", JsonValue::makeBool(expansion.moreAvailable));
     view.emplace_back("totalKnownNodes", JsonValue::makeOptionalU64Text(expansion.totalKnownNodes,
-                                                                       U64Format::Decimal));
+                                                                       U64Format::kDecimal));
     view.emplace_back("totalKnownEdges", JsonValue::makeOptionalU64Text(expansion.totalKnownEdges,
-                                                                       U64Format::Decimal));
+                                                                       U64Format::kDecimal));
     view.emplace_back("nodeLimitHit", JsonValue::makeBool(expansion.nodeLimitHit));
     view.emplace_back("edgeLimitHit", JsonValue::makeBool(expansion.edgeLimitHit));
     view.emplace_back("hopLimitHit", JsonValue::makeBool(expansion.hopLimitHit));
@@ -2491,76 +2491,76 @@ JsonValue ExportGraph(const EntityGraph& graph,
                       JsonValue::makeBool(expansion.limitsClampedToDefault));
     view.emplace_back("hopsClampedToDefault", JsonValue::makeBool(expansion.hopsClampedToDefault));
     view.emplace_back("filteredEdgeCount",
-                      JsonValue::makeU64Text(expansion.filteredEdgeCount, U64Format::Decimal));
+                      JsonValue::makeU64Text(expansion.filteredEdgeCount, U64Format::kDecimal));
     view.emplace_back("liveQueriesIssued",
-                      JsonValue::makeU64Text(expansion.liveQueriesIssued, U64Format::Decimal));
-    view.emplace_back("coverage", CoverageToJson(expansion.coverage));
-    view.emplace_back("limitationKeys", StringArray(viewLimitations));
+                      JsonValue::makeU64Text(expansion.liveQueriesIssued, U64Format::kDecimal));
+    view.emplace_back("coverage", coverageToJson(expansion.coverage));
+    view.emplace_back("limitationKeys", stringArray(viewLimitations));
     root.emplace_back("view", JsonValue::makeObject(std::move(view)));
 
-    const GraphConclusion conclusion = SummarizeGraph(graph, filter);
+    const GraphConclusion kConclusion = summarizeGraph(graph, filter);
     JsonObject summary;
     summary.emplace_back("conclusion",
-                         JsonValue::makeString(AnalysisConclusionName(conclusion.conclusion)));
+                         JsonValue::makeString(analysisConclusionName(kConclusion.conclusion)));
     summary.emplace_back("nodeCount",
-                         JsonValue::makeU64Text(conclusion.nodeCount, U64Format::Decimal));
+                         JsonValue::makeU64Text(kConclusion.nodeCount, U64Format::kDecimal));
     summary.emplace_back("edgeCountBeforeFilter",
-                         JsonValue::makeU64Text(conclusion.edgeCountBeforeFilter, U64Format::Decimal));
+                         JsonValue::makeU64Text(kConclusion.edgeCountBeforeFilter, U64Format::kDecimal));
     summary.emplace_back("edgeCountAfterFilter",
-                         JsonValue::makeU64Text(conclusion.edgeCountAfterFilter, U64Format::Decimal));
+                         JsonValue::makeU64Text(kConclusion.edgeCountAfterFilter, U64Format::kDecimal));
     summary.emplace_back("confirmedEdgeCount",
-                         JsonValue::makeU64Text(conclusion.confirmedEdgeCount, U64Format::Decimal));
+                         JsonValue::makeU64Text(kConclusion.confirmedEdgeCount, U64Format::kDecimal));
     summary.emplace_back("candidateEdgeCount",
-                         JsonValue::makeU64Text(conclusion.candidateEdgeCount, U64Format::Decimal));
+                         JsonValue::makeU64Text(kConclusion.candidateEdgeCount, U64Format::kDecimal));
     summary.emplace_back("unknownCertaintyEdgeCount",
-                         JsonValue::makeU64Text(conclusion.unknownCertaintyEdgeCount,
-                                                U64Format::Decimal));
+                         JsonValue::makeU64Text(kConclusion.unknownCertaintyEdgeCount,
+                                                U64Format::kDecimal));
     summary.emplace_back("isolatedNodeCount",
-                         JsonValue::makeU64Text(conclusion.isolatedNodeCount, U64Format::Decimal));
+                         JsonValue::makeU64Text(kConclusion.isolatedNodeCount, U64Format::kDecimal));
     summary.emplace_back("ownerMissingCount",
-                         JsonValue::makeU64Text(conclusion.ownerMissingCount, U64Format::Decimal));
+                         JsonValue::makeU64Text(kConclusion.ownerMissingCount, U64Format::kDecimal));
     summary.emplace_back("unloadedCount",
-                         JsonValue::makeU64Text(conclusion.unloadedCount, U64Format::Decimal));
+                         JsonValue::makeU64Text(kConclusion.unloadedCount, U64Format::kDecimal));
     summary.emplace_back("sourceNotCollectedCount",
-                         JsonValue::makeU64Text(conclusion.sourceNotCollectedCount,
-                                                U64Format::Decimal));
+                         JsonValue::makeU64Text(kConclusion.sourceNotCollectedCount,
+                                                U64Format::kDecimal));
     summary.emplace_back("inconsistencyCount",
-                         JsonValue::makeU64Text(conclusion.inconsistencyCount, U64Format::Decimal));
+                         JsonValue::makeU64Text(kConclusion.inconsistencyCount, U64Format::kDecimal));
     summary.emplace_back("unusableIdentityNodeCount",
-                         JsonValue::makeU64Text(conclusion.unusableIdentityNodeCount,
-                                                U64Format::Decimal));
+                         JsonValue::makeU64Text(kConclusion.unusableIdentityNodeCount,
+                                                U64Format::kDecimal));
     summary.emplace_back("nodesWithoutEvidenceCount",
-                         JsonValue::makeU64Text(conclusion.nodesWithoutEvidenceCount,
-                                                U64Format::Decimal));
-    summary.emplace_back("coverage", CoverageToJson(conclusion.coverage));
-    summary.emplace_back("limitationKeys", StringArray(conclusion.limitationKeys));
+                         JsonValue::makeU64Text(kConclusion.nodesWithoutEvidenceCount,
+                                                U64Format::kDecimal));
+    summary.emplace_back("coverage", coverageToJson(kConclusion.coverage));
+    summary.emplace_back("limitationKeys", stringArray(kConclusion.limitationKeys));
     root.emplace_back("summary", JsonValue::makeObject(std::move(summary)));
 
-    // G-06：图级别的证据 envelope。缺了它，重开的会话只能给出 NoEvidence —— 不是
-    // 因为真的没有观测，而是因为观测没被搬过来。
-    root.emplace_back("envelope", EnvelopeToJson(graph.envelope()));
+    // G-06: Graph-level evidence envelope. Without it, a reopened session can only return NoEvidence—not
+    // because no observations were made, but because the observations were not transferred.
+    root.emplace_back("envelope", envelopeToJson(graph.envelope()));
 
     JsonObject policy;
     policy.emplace_back("allowLiveQueries",
                         JsonValue::makeBool(graph.offlinePolicy().allowLiveQueries));
-    policy.emplace_back("origin", JsonValue::makeString(DataOriginText(graph.offlinePolicy().origin)));
+    policy.emplace_back("origin", JsonValue::makeString(dataOriginText(graph.offlinePolicy().origin)));
     root.emplace_back("offlinePolicy", JsonValue::makeObject(std::move(policy)));
 
-    // G-03 / G-05：关系覆盖声明。缺了它，每一条链都会从"采全了确实没有"掉回
-    // "根本没采"，孤立判据也会全部塌成同一档。
+    // G-03 / G-05: relationship coverage declarations. Without them, every chain would fall back from "truly collected
+    // and none found" to "not collected at all," causing isolated criteria to collapse into the same bucket.
     JsonArray coverageArray;
     for (const RelationCoverageEntry& entry : graph.declaredRelationCoverages()) {
         JsonObject object;
-        object.emplace_back("kind", JsonValue::makeString(EdgeKindName(entry.kind)));
-        object.emplace_back("targetKind", JsonValue::makeString(ObjectKindName(entry.targetKind)));
-        object.emplace_back("outcome", OutcomeToJson(entry.coverage.outcome));
-        object.emplace_back("coverage", CoverageToJson(entry.coverage.coverage));
+        object.emplace_back("kind", JsonValue::makeString(edgeKindName(entry.kind)));
+        object.emplace_back("targetKind", JsonValue::makeString(objectKindName(entry.targetKind)));
+        object.emplace_back("outcome", outcomeToJson(entry.coverage.outcome));
+        object.emplace_back("coverage", coverageToJson(entry.coverage.coverage));
         object.emplace_back("evidenceId", JsonValue::makeString(entry.coverage.evidenceId));
         coverageArray.push_back(JsonValue::makeObject(std::move(object)));
     }
     root.emplace_back("relationCoverage", JsonValue::makeArray(std::move(coverageArray)));
 
-    // 节点与边按 id 排序输出：换输入顺序、换排序方式，导出逐字节相同（G-08）。
+    // Nodes and edges are output sorted by ID: changing the input order or the sorting method still results in byte-identical exports (G-08).
     root.emplace_back("nodes", JsonValue::makeArray(std::move(nodes)));
     root.emplace_back("edges", JsonValue::makeArray(std::move(edges)));
     root.emplace_back("isolation", JsonValue::makeArray(std::move(isolation)));
@@ -2570,7 +2570,7 @@ JsonValue ExportGraph(const EntityGraph& graph,
         JsonObject object;
         object.emplace_back("edgeId", JsonValue::makeString(neighbor.edgeId));
         object.emplace_back("missingNodeId", JsonValue::makeString(neighbor.missingNodeId));
-        object.emplace_back("relation", JsonValue::makeString(EdgeKindName(neighbor.relation)));
+        object.emplace_back("relation", JsonValue::makeString(edgeKindName(neighbor.relation)));
         object.emplace_back("state", JsonValue::makeString("NotSaved"));
         unsaved.push_back(JsonValue::makeObject(std::move(object)));
     }
@@ -2579,40 +2579,40 @@ JsonValue ExportGraph(const EntityGraph& graph,
     return JsonValue::makeObject(std::move(root));
 }
 
-GraphImport ImportGraph(const JsonValue& document) {
+GraphImport importGraph(const JsonValue& document) {
     GraphImport result;
     if (document.asObject() == nullptr) {
         result.limitationKeys.emplace_back("graph.import.notAnObject");
         return result;
     }
-    if (ReadString(document, "schema") != kEntityGraphSchema) {
-        // 认不出 schema 就不猜。半张图被当成整张图用，比干脆拒绝危险得多。
+    if (readString(document, "schema") != kEntityGraphSchema) {
+        // If the schema is unrecognized, do not guess. Using half a graph as a whole graph is far more dangerous than outright rejection.
         result.limitationKeys.emplace_back("graph.import.schemaUnknown");
         return result;
     }
     result.schemaRecognised = true;
 
-    result.graph.setEnvelope(EnvelopeFromJson(Child(document, "envelope")));
+    result.graph.setEnvelope(envelopeFromJson(child(document, "envelope")));
 
-    const JsonValue* policy = Child(document, "offlinePolicy");
+    const JsonValue* policy = child(document, "offlinePolicy");
     if (policy != nullptr) {
         OfflineExpansionPolicy imported;
-        imported.allowLiveQueries = ReadBool(*policy, "allowLiveQueries");
-        imported.origin = ParseDataOrigin(ReadString(*policy, "origin"));
+        imported.allowLiveQueries = readBool(*policy, "allowLiveQueries");
+        imported.origin = parseDataOrigin(readString(*policy, "origin"));
         result.graph.setOfflinePolicy(imported);
     }
 
-    const JsonValue* coverageValue = Child(document, "relationCoverage");
+    const JsonValue* coverageValue = child(document, "relationCoverage");
     if (coverageValue != nullptr && coverageValue->asArray() != nullptr) {
         for (const JsonValue& entry : *coverageValue->asArray()) {
             RelationCoverage coverage;
-            coverage.outcome = OutcomeFromJson(Child(entry, "outcome"));
-            coverage.coverage = CoverageFromJson(Child(entry, "coverage"));
-            coverage.evidenceId = ReadString(entry, "evidenceId");
-            const bool accepted = result.graph.declareRelationCoverage(
-                ParseEdgeKind(ReadString(entry, "kind")),
-                ParseObjectKind(ReadString(entry, "targetKind")), std::move(coverage));
-            if (accepted) {
+            coverage.outcome = outcomeFromJson(child(entry, "outcome"));
+            coverage.coverage = coverageFromJson(child(entry, "coverage"));
+            coverage.evidenceId = readString(entry, "evidenceId");
+            const bool kAccepted = result.graph.declareRelationCoverage(
+                parseEdgeKind(readString(entry, "kind")),
+                parseObjectKind(readString(entry, "targetKind")), std::move(coverage));
+            if (kAccepted) {
                 ++result.coverageAccepted;
             } else {
                 ++result.coverageRejected;
@@ -2620,21 +2620,21 @@ GraphImport ImportGraph(const JsonValue& document) {
         }
     }
 
-    const JsonValue* nodesValue = Child(document, "nodes");
+    const JsonValue* nodesValue = child(document, "nodes");
     if (nodesValue != nullptr && nodesValue->asArray() != nullptr) {
         for (const JsonValue& entry : *nodesValue->asArray()) {
             GraphNode node;
-            node.nodeId = ReadString(entry, "nodeId");
-            node.identity = IdentityFromJson(Child(entry, "identity"));
-            node.displayText = ReadString(entry, "displayText");
-            node.evidenceId = ReadString(entry, "evidenceId");
-            node.lifecycle = ParseNodeLifecycle(ReadString(entry, "lifecycle"));
-            node.ownerRelation = ParseEdgeKind(ReadString(entry, "ownerRelation"));
-            node.ownerKind = ParseObjectKind(ReadString(entry, "ownerKind"));
-            node.inconsistencyObserved = ReadBool(entry, "inconsistencyObserved");
-            node.inconsistencyEvidenceIds = ReadStringArray(entry, "inconsistencyEvidenceIds");
-            node.outcome = OutcomeFromJson(Child(entry, "outcome"));
-            if (NodeAdmissionAccepted(result.graph.addNode(std::move(node)))) {
+            node.nodeId = readString(entry, "nodeId");
+            node.identity = identityFromJson(child(entry, "identity"));
+            node.displayText = readString(entry, "displayText");
+            node.evidenceId = readString(entry, "evidenceId");
+            node.lifecycle = parseNodeLifecycle(readString(entry, "lifecycle"));
+            node.ownerRelation = parseEdgeKind(readString(entry, "ownerRelation"));
+            node.ownerKind = parseObjectKind(readString(entry, "ownerKind"));
+            node.inconsistencyObserved = readBool(entry, "inconsistencyObserved");
+            node.inconsistencyEvidenceIds = readStringArray(entry, "inconsistencyEvidenceIds");
+            node.outcome = outcomeFromJson(child(entry, "outcome"));
+            if (nodeAdmissionAccepted(result.graph.addNode(std::move(node)))) {
                 ++result.nodesAccepted;
             } else {
                 ++result.nodesRejected;
@@ -2642,23 +2642,23 @@ GraphImport ImportGraph(const JsonValue& document) {
         }
     }
 
-    const JsonValue* edgesValue = Child(document, "edges");
+    const JsonValue* edgesValue = child(document, "edges");
     if (edgesValue != nullptr && edgesValue->asArray() != nullptr) {
         for (const JsonValue& entry : *edgesValue->asArray()) {
             GraphEdge edge;
-            edge.edgeId = ReadString(entry, "edgeId");
-            edge.kind = ParseEdgeKind(ReadString(entry, "kind"));
-            edge.direction = ParseEdgeDirection(ReadString(entry, "direction"));
-            edge.fromNodeId = ReadString(entry, "from");
-            edge.toNodeId = ReadString(entry, "to");
-            edge.validFrom100ns = ReadOptionalU64(entry, "validFrom100ns");
-            edge.validTo100ns = ReadOptionalU64(entry, "validTo100ns");
-            edge.evidenceRefs = ReadStringArray(entry, "evidenceRefs");
-            edge.certainty = ParseEdgeCertainty(ReadString(entry, "certainty"));
-            edge.ruleId = ReadString(entry, "ruleId");
-            edge.ruleDescriptionKey = ReadString(entry, "ruleDescriptionKey");
-            edge.sourceGroup = ReadString(entry, "sourceGroup");
-            if (EdgeAdmissionAccepted(result.graph.addEdge(edge))) {
+            edge.edgeId = readString(entry, "edgeId");
+            edge.kind = parseEdgeKind(readString(entry, "kind"));
+            edge.direction = parseEdgeDirection(readString(entry, "direction"));
+            edge.fromNodeId = readString(entry, "from");
+            edge.toNodeId = readString(entry, "to");
+            edge.validFrom100ns = readOptionalU64(entry, "validFrom100ns");
+            edge.validTo100ns = readOptionalU64(entry, "validTo100ns");
+            edge.evidenceRefs = readStringArray(entry, "evidenceRefs");
+            edge.certainty = parseEdgeCertainty(readString(entry, "certainty"));
+            edge.ruleId = readString(entry, "ruleId");
+            edge.ruleDescriptionKey = readString(entry, "ruleDescriptionKey");
+            edge.sourceGroup = readString(entry, "sourceGroup");
+            if (edgeAdmissionAccepted(result.graph.addEdge(edge))) {
                 ++result.edgesAccepted;
             } else {
                 ++result.edgesRejected;
@@ -2675,8 +2675,8 @@ GraphImport ImportGraph(const JsonValue& document) {
     if (result.coverageRejected > 0) {
         result.limitationKeys.emplace_back("graph.import.coverageRejected");
     }
-    SortUnique(result.limitationKeys);
+    sortUnique(result.limitationKeys);
     return result;
 }
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

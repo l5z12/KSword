@@ -7,8 +7,8 @@
 | 类别 | 文件/目录 | 用途 |
 |---|---|---|
 | R0/R3 协议 | `shared/driver/KswordArkProcessIoctl.h`, `KswordArkThreadIoctl.h`, `KswordArkHandleIoctl.h`, `KswordArkKernelIoctl.h`, `KswordArkCallbackIoctl.h` | 确认现有 IOCTL、row 字段、状态位、source/anomaly/risk 位 |
-| R0 实现 | `KswordARKDriver/src/features/process`, `thread`, `handle`, `kernel`, `callback` | 判断是否已有实现、已注册、仍需 PDB 字段补强 |
-| PDB/DynData | `shared/driver/KswordArkDynDataIoctl.h`, `KswordARKDriver/src/features/dyndata`, `tools/pdb_offset_generator/` | 盘点字段 ID、字段来源和 generator 覆盖 |
+| R0 实现 | `drivers/ark/src/features/process`, `thread`, `handle`, `kernel`, `callback` | 判断是否已有实现、已注册、仍需 PDB 字段补强 |
+| PDB/DynData | `shared/driver/KswordArkDynDataIoctl.h`, `drivers/ark/src/features/dyndata`, `tools/pdb_offset_generator/` | 盘点字段 ID、字段来源和 generator 覆盖 |
 | 既有规划 | `docs/next_phase_manifests/process_thread_crossview.md`, `driver_kernel_integrity.md` | 对齐 cross-view / driver integrity 设计意图 |
 
 ## 当前 DynData 覆盖
@@ -38,7 +38,7 @@
 | P1 | MmUnloadedDrivers | 目前 driver integrity 仅报告全局地址可用性 | 已有：`MmUnloadedDrivers` global；候选：`MmLastUnloadedDriver`, `_UNLOADED_DRIVERS.Name`, `StartAddress`, `EndAddress`, `CurrentTime` | unloaded driver rows: name/base/end/time/index/source | 卸载驱动时间线、与当前模块冲突、可疑清理 | 加载卸载测试驱动后确认 entry 出现；清空痕迹样本确认 unavailable/zeroed 风险 |
 | P1 | PiDDBCacheTable | 目前 driver integrity 仅报告全局地址可用性 | 已有：`PiDDBCacheTable` global；候选：`_RTL_AVL_TABLE`/`_RTL_BALANCED_LINKS` 适配、PiDDB entry key/name/time/status | cache rows: name/timestamp/load status/node address/source | PiDDB 条目、与 Services/文件/模块对照、缺失风险 | 测试驱动加载后条目可枚举；手动清理后与 Service/文件残留交叉提示 |
 | P1 | SSDT / ShadowSSDT / Inline / IAT / EAT | 已有 SSDT/ShadowSSDT、inline scan/patch、IAT/EAT scan 协议与实现 | 候选：`KeServiceDescriptorTable`, shadow table 符号、win32k/ntos 导出基线、module section header PDB/PE baseline | service index/name/current target/owner module、inline bytes、IAT/EAT current/expected | Hook 类型、目标模块、当前/期望地址、字节 diff、置信度 | 干净系统基线无高危；测试跳板/导入改写能标记 owner mismatch |
-| P2 | DriverObject 强化审计 | 基础 driver integrity 已有；评分规则需 UI/协议固化 | 候选：`_DRIVER_EXTENSION.ServiceKeyName`, `_DRIVER_OBJECT.Flags`, `DeviceObject`, `_FAST_IO_DISPATCH` 全成员偏移 | normalized service metadata、FastIo operation index、dispatch target class | 风险分、证据列表、服务项对照 | 同一驱动正常/IRP hook/FastIo hook/设备链异常四组样本评分单调上升 |
+| P2 | DriverObject 强化审计 | 基础 driver integrity 已有；评分规则需 ui/协议固化 | 候选：`_DRIVER_EXTENSION.ServiceKeyName`, `_DRIVER_OBJECT.Flags`, `DeviceObject`, `_FAST_IO_DISPATCH` 全成员偏移 | normalized service metadata、FastIo operation index、dispatch target class | 风险分、证据列表、服务项对照 | 同一驱动正常/IRP hook/FastIo hook/设备链异常四组样本评分单调上升 |
 | P2 | module / driver cross-view 聚合 | SystemModule、AuxKlib、PsLoadedModuleList、DriverObject、Service 各有部分证据 | 候选：Service name linkage、`DriverSection`->KLDR reverse index、unloaded/PiDDB entry schema | module identity row, source mask, owner mismatch, stale/unloaded flags | 模块总表、隐藏驱动标签、服务状态、历史痕迹 | 从 KLDR 摘链、删服务、清 PiDDB、残留 DriverObject 各场景出独立标签 |
 
 ## Cross-View 检测规则

@@ -108,7 +108,7 @@ def abstract_present(reader, abstract):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", type=pathlib.Path,
-                        default=HERE.parents[2] / "output/pdf")
+                        default=HERE.parents[2] / "artifacts/pdf")
     parser.add_argument("--pdf-name", default="ksword-live-interposition-v1.pdf")
     parser.add_argument("--archive-name", default="ksword-arxiv-source-v1.zip")
     parser.add_argument("--log-name", default="main.log")

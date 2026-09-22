@@ -1,47 +1,47 @@
 #pragma once
 
-// S 模块：平台安全状态与原因解释。
+// S module: Platform security state and explanation.
 //
-// 这一层只做**状态模型**，不查 WMI、不读注册表、不碰 Win32。查询在既有 Qt 页面里，
-// 它们把查到的原始值塞进 SecurityField，本层负责回答四个问题：
-//   1. 这个能力硬件/系统支持吗？（hardwareSupport）
-//   2. 配置成开了吗？（configured）
-//   3. 现在真的在跑吗？（running）
-//   4. 上面三条各自的证据是怎么来的、查成功了没有？（queryOutcome + 逐字段 outcome）
+// This layer implements only the **state model**: it does not query WMI, read the registry, or access Win32 APIs. Queries occur in
+// existing Qt pages, which populate SecurityField with raw values; this layer is responsible for answering four specific questions:
+//   1. Is this capability supported by hardware/system? (hardwareSupport)
+//   2. Is it configured to be enabled? (configured)
+//   3. Is it actually running? (running)
+//   4. How were the three pieces of evidence above obtained, and did the queries succeed? (queryOutcome + per-field outcome)
 //
-// 贯穿全模块的硬规则（照 S-01…S-08 逐条落）：
-//   * S-01 四维互不推导。Win32_DeviceGuard 的 SecurityServicesConfigured 与
-//     SecurityServicesRunning 是两个属性，本层没有任何一行代码把其中一个抄给另一个；
-//     hardwareSupport 也不从 configured/running 反推。
-//   * S-01 查询失败 ≠ 关闭。一条断言（CapabilityClaim）只有在它指向的字段
-//     **真的携带观测**时才会被采纳；否则该维保持 Unknown，断言本身仍然原样列出来
-//     供人看，但不参与定值。所以 AccessDenied / Timeout / Unsupported 永远不会
-//     变成 TriState::No。
-//   * S-01 未知枚举原样保留。Interpret* 系列对不认识的编码返回
-//     recognized=false，同时把 rawCode / rawText 原封不动带上，绝不猜一个最近的
-//     已知值，也绝不落成 0。
-//   * S-02 规范化不覆盖原始值。FieldAssessment 同时持有 RawObservation 与
-//     EnumInterpretation，两者是并列字段而不是"解析后替换"。
-//   * S-02 重启前的状态不是当前值。用 CaptureWindow.bootId 判定新鲜度：跨 bootId
-//     的定值只进 historicalValue，绝不进 value。
-//   * S-05 多来源不一致时同时展示全部来源的值，resolved 恒为 Unknown。本层没有
-//     任何"取有利值 / 取最新值 / 取内核值优先"的仲裁分支。
-//   * S-05 pending 必须有正面证据。只有来源明确给出待重启/待生效字段，且该字段
-//     携带观测且属于当前启动周期，才会标 pendingActivation。
-//   * S-06 只陈述约束，不给修复建议。KswordCapabilityExplanation 里**没有**
-//     remediation / suggestion / fixAction 之类字段；约束键还要过
-//     IsStatementOnlyConstraintKey 这道词表闸，带 disable/turnoff 之类动作词的键
-//     会被拒收并记进 limitationKeys。词表闸按**词**匹配而不是按子串匹配，
-//     否则 "hvci.notDisabled"、"driver.uninstalled" 这类陈述键会被自己的闸拦掉，
-//     而真正的建议键反而借着 fall-through 把能力放行（见 ExplainKswordCapability）。
-//   * S-06 约束在场却一条都判不了时，可用性回落 Unknown。约束是"拦住能力"的那一侧，
-//     采不到约束证据只能说明"说不清"，绝不能让来源自称的 observedAvailable=Yes
-//     直接放行 —— 那正是"从没采到推出正常"。
-//   * S-07 权限精确到字段。无管理员时 AccessRequirement::None 的字段照样是
-//     Readable，报告不会整体清空。Administrator 与 System 是两档，各由
-//     PrivilegeContext 里各自的三态门控，不共用一个 administrator 判据。
+// Hard rules spanning the entire module (implemented per S-01 through S-08):
+//   * S-01: Four-dimensional mutual non-derivability. SecurityServicesConfigured and SecurityServicesRunning
+//     in Win32_DeviceGuard are two distinct attributes; no line of code at this layer copies one to the other.
+//     hardwareSupport is also not inferred from configured/running.
+//   * S-01 Query failure does not equal closure. A CapabilityClaim assertion is only valid if the field it points to
+//     It is only accepted when it truly carries an observation; otherwise, that dimension remains
+//     Unknown. The assertion itself is still listed for human review but does not participate in value
+//     determination. Therefore, AccessDenied / Timeout / Unsupported will never become TriState::No.
+//   S-01 unknown enumerations are preserved as-is. The Interpret* series returns
+//     recognized=false for unrecognized encodings while carrying rawCode and rawText
+//     unchanged; it never guesses a recent known value and never defaults to 0.
+//   * S-02 normalization does not overwrite the original value. FieldAssessment holds both
+//     RawObservation and EnumInterpretation as parallel fields, not as a "parsed replacement".
+//   * S-02: Pre-reboot state is not the current value. Use captureWindow.bootId to determine
+//     freshness: constant values across different bootIds go only to historicalValue, never to value.
+//   * S-05: When multiple sources are inconsistent, display all source values simultaneously; resolved is always Unknown. This
+//     layer has no arbitration branches for "taking the favorable value", "taking the latest value", or "prioritizing kernel values".
+//   * S-05 pending status requires positive evidence. The pendingActivation flag is set only when a source explicitly provides a
+//     'pending restart' or 'pending activation' field, that field carries an observation, and it belongs to the current boot cycle.
+//   * S-06 states constraints without recommending fixes. KswordCapabilityExplanation has **no**
+//     remediation / suggestion / fixAction fields. Constraint keys must also pass the
+//     isStatementOnlyConstraintKey vocabulary check: keys containing action words such as disable/turnoff are
+//     rejected and recorded in limitationKeys. Match **words**, not substrings. Otherwise, statement keys
+//     such as "hvci.notDisabled" and "driver.uninstalled" would be rejected by the check itself, while actual
+//     recommendation keys could enable the capability through fall-through (see explainKswordCapability).
+//   * For S-06: If constraints are present but none can be evaluated, availability falls back to Unknown. Constraints represent the
+//     "blocking capability" side. Failing to collect constraint evidence means "unclear," not "allowed." We must never let a source
+//     claiming observedAvailable=Yes bypass checks directly—that is exactly the "never collected evidence implies normal" fallacy.
+//   * S-07 permissions are field-precise. Without an administrator, fields with AccessRequirement::None remain
+//     readable; the report is not cleared entirely. Administrator and System are two distinct tiers, each gated
+//     by its own three-state control in PrivilegeContext, without sharing a single administrator criterion.
 //
-// 本层不产出"系统安全""已加固""有威胁"这类结论，也不做远程证明推导。
+// This layer does not produce conclusions like 'System Secure', 'Hardened', or 'Threat Detected', nor does it perform remote attestation derivation.
 
 #include "EvidenceEnvelope.h"
 #include "LosslessValue.h"
@@ -51,61 +51,61 @@
 #include <string_view>
 #include <vector>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 
 // ---------------------------------------------------------------------------
-// S-01：三态。bool 表达不了"没查到"，所以这一层一律不用 bool 表达状态。
-// Unknown 放在 0 位，是为了让任何默认构造的状态都是"未知"而不是"关闭"。
+// S-01: Three-state logic. Since bool cannot express 'not found', this layer never uses bool to represent state.
+// Unknown is placed at index 0 so that any default-constructed state is 'Unknown' rather than 'No'.
 // ---------------------------------------------------------------------------
 enum class TriState {
-    Unknown,  // 没有可用证据
-    No,       // 有证据表明否
-    Yes,      // 有证据表明是
+    kUnknown,  // No available evidence
+    kNo,       // Evidence indicates no
+    kYes,      // Evidence indicates yes
 };
 
-const char* TriStateName(TriState value) noexcept;
+const char* triStateName(TriState value) noexcept;
 
-// 只有 Yes/No 是"定值"。Unknown 不参与一致性比较，也不会与任何值构成冲突。
-bool TriStateIsDefinite(TriState value) noexcept;
+// Only 'Yes' and 'No' are 'definite values'. 'Unknown' does not participate in consistency checks and cannot form conflicts with any value.
+bool triStateIsDefinite(TriState value) noexcept;
 
 // ---------------------------------------------------------------------------
-// S-01 / S-03 / S-04：能力清单。启动安全那几项被拆成独立能力，就是为了满足
-// S-03"Secure Boot / TPM 存在 / TPM 就绪 / 测量日志分开表达"。
+// S-01 / S-03 / S-04: Capability list. The security-related items at startup are split into independent capabilities to satisfy
+// S-03: Express Secure Boot, TPM presence, TPM ready, and measurement logs separately.
 // ---------------------------------------------------------------------------
 enum class SecurityCapabilityId {
-    Unknown,
-    VirtualizationBasedSecurity,
-    HypervisorEnforcedCodeIntegrity,
-    CredentialGuard,
-    SystemGuardSecureLaunch,
-    KernelDmaProtection,
-    SecureBoot,
-    TpmPresence,          // TPM 在不在
-    TpmReadiness,         // TPM 就不就绪 —— 与"在不在"是两回事
-    MeasuredBootLog,      // 测量日志能不能拿到 —— 拿不到就是 Unknown，不是"正常"
-    KernelModeCodeIntegrityPolicy,
-    UserModeCodeIntegrityPolicy,
-    TestSigning,
+    kUnknown,
+    kVirtualizationBasedSecurity,
+    kHypervisorEnforcedCodeIntegrity,
+    kCredentialGuard,
+    kSystemGuardSecureLaunch,
+    kKernelDmaProtection,
+    kSecureBoot,
+    kTpmPresence,          // TPM presence
+    kTpmReadiness,         // TPM not ready — this is distinct from 'present or absent'.
+    kMeasuredBootLog,      // Whether the measurement log is accessible: if not accessible, the state is Unknown, not "normal".
+    kKernelModeCodeIntegrityPolicy,
+    kUserModeCodeIntegrityPolicy,
+    kTestSigning,
 };
 
-const char* SecurityCapabilityName(SecurityCapabilityId capability) noexcept;
+const char* securityCapabilityName(SecurityCapabilityId capability) noexcept;
 
-// S-01：四维中的前三维。第四维 queryOutcome 是 CollectionOutcome，不在这个枚举里，
-// 因为它描述的是"采集这件事"，不是"能力的状态"。
+// S-01: The first three dimensions. The fourth dimension, queryOutcome, is of type CollectionOutcome and is
+// not in this enum because it describes 'the act of collection' rather than 'the state of the capability'.
 enum class SecurityDimension {
-    HardwareSupport,  // 硬件/系统是否具备该能力
-    Configured,       // 是否被配置为启用
-    Running,          // 是否正在运行
+    kHardwareSupport,  // Whether hardware/system supports this capability.
+    kConfigured,       // Whether it is configured to be enabled.
+    kRunning,          // Whether running
 };
 
-const char* SecurityDimensionName(SecurityDimension dimension) noexcept;
+const char* securityDimensionName(SecurityDimension dimension) noexcept;
 
 // ---------------------------------------------------------------------------
-// S-02：原始值与规范化解释并列存放。
+// S-02: The raw value and its normalized interpretation are stored side by side.
 // ---------------------------------------------------------------------------
 
-// 来源原文。numeric 只在来源本身给的就是数值时才填；文本型字段保持 unset，
-// 不做"看着像数字就转一下"的隐式转换 —— 那会把 "0x2" 和 "2" 混成一个值。
+// Source original. The numeric field is populated only if the source itself provides a numeric value; text fields remain unset. No implicit
+// conversion is performed (e.g., treating "looks like a number" as a number), which would otherwise merge "0x2" and "2" into a single value.
 struct RawObservation final {
     std::string text;
     OptionalU64 numeric;
@@ -113,9 +113,9 @@ struct RawObservation final {
     bool empty() const noexcept { return text.empty() && !numeric.present; }
 };
 
-// 枚举规范化结果。recognized=false 表示"这个编码我不认识"，此时 normalizedName
-// 必须为空 —— 不许拿一个"最接近的"已知名字冒充。rawCode/rawText 无论认不认识
-// 都原样保留（S-01 通过条件："新枚举值保留原值且不错误解释"）。
+// Enum normalization result. recognized=false means "I do not recognize this encoding"; in this case,
+// normalizedName must be empty — do not substitute a "closest known" name. rawCode/rawText are preserved verbatim
+// regardless of recognition (S-01 condition: "New enum values retain original values and are not misinterpreted").
 struct EnumInterpretation final {
     bool recognized = false;
     std::string normalizedName;
@@ -124,167 +124,167 @@ struct EnumInterpretation final {
 };
 
 // --- Win32_DeviceGuard.SecurityServicesConfigured / SecurityServicesRunning ---
-// 依据 Microsoft VBS/Device Guard 文档中公开的编码。注意：这两个属性共用同一张
-// 编码表，但**取值来自两个不同的属性**，本层的解释函数不关心它来自哪一个，
-// 调用方必须把它们分别填进 Configured / Running 两个维度。
+// Based on the publicly documented encoding in Microsoft VBS/Device Guard documentation. Note: these two properties share the
+// same encoding table, but **the values come from two different properties**; the interpretation function at this layer does not
+// care which source they come from, and the caller must populate them separately into the Configured and Running dimensions.
 enum class DeviceGuardService {
-    Unknown,
-    None,
-    CredentialGuard,
-    HypervisorEnforcedCodeIntegrity,
-    SystemGuardSecureLaunch,
-    SmmFirmwareMeasurement,
+    kUnknown,
+    kNone,
+    kCredentialGuard,
+    kHypervisorEnforcedCodeIntegrity,
+    kSystemGuardSecureLaunch,
+    kSmmFirmwareMeasurement,
 };
 
-const char* DeviceGuardServiceName(DeviceGuardService service) noexcept;
+const char* deviceGuardServiceName(DeviceGuardService service) noexcept;
 
 struct DeviceGuardServiceValue final {
-    DeviceGuardService service = DeviceGuardService::Unknown;
+    DeviceGuardService service = DeviceGuardService::kUnknown;
     EnumInterpretation interpretation;
 };
 
-DeviceGuardServiceValue InterpretDeviceGuardService(const RawObservation& raw);
+DeviceGuardServiceValue interpretDeviceGuardService(const RawObservation& raw);
 
 // --- Win32_DeviceGuard.VirtualizationBasedSecurityStatus ---
 enum class VbsStatus {
-    Unknown,
-    Disabled,
-    EnabledNotRunning,
-    EnabledAndRunning,
+    kUnknown,
+    kDisabled,
+    kEnabledNotRunning,
+    kEnabledAndRunning,
 };
 
-const char* VbsStatusName(VbsStatus status) noexcept;
+const char* vbsStatusName(VbsStatus status) noexcept;
 
 struct VbsStatusValue final {
-    VbsStatus status = VbsStatus::Unknown;
+    VbsStatus status = VbsStatus::kUnknown;
     EnumInterpretation interpretation;
 };
 
-VbsStatusValue InterpretVbsStatus(const RawObservation& raw);
+VbsStatusValue interpretVbsStatus(const RawObservation& raw);
 
-// S-01 的核心分离点：一个 VBS 状态码同时说明了"配置"和"运行"两件事，本函数把它
-// 拆成两个**独立输出**。EnabledNotRunning 给出 configured=Yes / running=No，
-// 绝不会因为"配置了"就把 running 也写成 Yes。未知/无法识别时两个输出都是 Unknown，
-// 不会把"查不出来"落成 No。
-void VbsStatusToDimensions(VbsStatus status, TriState& configured, TriState& running) noexcept;
+// Core separation point for S-01: A single VBS status code indicates both "configured" and "running"
+// states. This function splits them into two independent outputs. EnabledNotRunning yields configured=Yes
+// and running=No; it never sets running to Yes just because configured is Yes. When the status is unknown
+// or unrecognized, both outputs are Unknown; it never defaults "unable to determine" to No.
+void vbsStatusToDimensions(VbsStatus status, TriState& configured, TriState& running) noexcept;
 
 // --- Win32_DeviceGuard.AvailableSecurityProperties / RequiredSecurityProperties ---
 enum class SecurityProperty {
-    Unknown,
-    None,
-    BaseVirtualizationSupport,
-    SecureBoot,
-    DmaProtection,
-    SecureMemoryOverwrite,
-    NxProtections,
-    SmmMitigations,
-    ModeBasedExecutionControl,
-    ApicVirtualization,
+    kUnknown,
+    kNone,
+    kBaseVirtualizationSupport,
+    kSecureBoot,
+    kDmaProtection,
+    kSecureMemoryOverwrite,
+    kNxProtections,
+    kSmmMitigations,
+    kModeBasedExecutionControl,
+    kApicVirtualization,
 };
 
-const char* SecurityPropertyName(SecurityProperty property) noexcept;
+const char* securityPropertyName(SecurityProperty property) noexcept;
 
 struct SecurityPropertyValue final {
-    SecurityProperty property = SecurityProperty::Unknown;
+    SecurityProperty property = SecurityProperty::kUnknown;
     EnumInterpretation interpretation;
 };
 
-SecurityPropertyValue InterpretSecurityProperty(const RawObservation& raw);
+SecurityPropertyValue interpretSecurityProperty(const RawObservation& raw);
 
 // --- S-04：CodeIntegrityPolicyEnforcementStatus / Usermode... ---
 enum class CodeIntegrityEnforcement {
-    Unknown,
-    Off,
-    Audit,
-    Enforced,
+    kUnknown,
+    kOff,
+    kAudit,
+    kEnforced,
 };
 
-const char* CodeIntegrityEnforcementName(CodeIntegrityEnforcement enforcement) noexcept;
+const char* codeIntegrityEnforcementName(CodeIntegrityEnforcement enforcement) noexcept;
 
 struct CodeIntegrityEnforcementValue final {
-    CodeIntegrityEnforcement enforcement = CodeIntegrityEnforcement::Unknown;
+    CodeIntegrityEnforcement enforcement = CodeIntegrityEnforcement::kUnknown;
     EnumInterpretation interpretation;
 };
 
-CodeIntegrityEnforcementValue InterpretCodeIntegrityEnforcement(const RawObservation& raw);
+CodeIntegrityEnforcementValue interpretCodeIntegrityEnforcement(const RawObservation& raw);
 
 // ---------------------------------------------------------------------------
-// S-02：新鲜度。跨启动周期的状态是历史，不是当前值。
+// S-02: Freshness. State across boot cycles is historical, not current.
 // ---------------------------------------------------------------------------
 enum class FieldFreshness {
-    Unknown,          // 缺 bootId，说不清是哪一次启动的数据
-    Current,          // 与当前启动周期一致
-    Historical,       // 明确来自另一个启动周期（重启前的状态）
-    DifferentMachine, // machineId 都在场且不同 —— 根本不是这台机器
+    kUnknown,          // Missing bootId, cannot determine which boot this data belongs to.
+    kCurrent,          // Consistent with the current boot cycle.
+    kHistorical,       // Explicitly from another boot cycle (state prior to restart).
+    kDifferentMachine, // machineId present and different — not this machine at all.
 };
 
-const char* FieldFreshnessName(FieldFreshness freshness) noexcept;
+const char* fieldFreshnessName(FieldFreshness freshness) noexcept;
 
-// 判定顺序：先看机器，再看启动周期。任一 bootId 缺失就是 Unknown —— 缺失不能
-// 乐观地当成"就是当前这次启动"。
-FieldFreshness ClassifyFieldFreshness(const CaptureWindow& field,
+// Evaluation order: check the machine first, then the boot cycle. If any bootId is missing, the
+// result is Unknown; a missing value must not be optimistically treated as 'this current boot'.
+FieldFreshness classifyFieldFreshness(const CaptureWindow& field,
                                       const CaptureWindow& current) noexcept;
 
-// 只有 Current 才允许当作"现在的状态"。Unknown 也不行：说不清就是说不清。
-bool FreshnessUsableAsCurrent(FieldFreshness freshness) noexcept;
+// Only 'Current' is allowed to represent the 'current state'. 'Unknown' is also excluded: if it cannot be determined, it cannot be determined.
+bool freshnessUsableAsCurrent(FieldFreshness freshness) noexcept;
 
 // ---------------------------------------------------------------------------
-// S-07：权限降级。要求精确到字段。
+// S-07: privilege downgrade. Requires field-level precision.
 // ---------------------------------------------------------------------------
 enum class AccessRequirement {
-    Unknown,        // 没声明 —— 报告里照实说"未声明"，不假定是 None
-    None,           // 普通用户可读
-    Administrator,  // 需要管理员
-    System,         // 需要 SYSTEM/TCB 级
-    KswordDriver,   // 需要本工具驱动已加载
+    kUnknown,        // If not declared, report "Not Declared" in the report as-is; do not assume it is None.
+    kNone,           // Readable by standard users.
+    kAdministrator,  // Requires administrator
+    kSystem,         // Requires SYSTEM/TCB level.
+    kKswordDriver,   // Requires this tool's driver to be loaded
 };
 
-const char* AccessRequirementName(AccessRequirement requirement) noexcept;
+const char* accessRequirementName(AccessRequirement requirement) noexcept;
 
 struct PrivilegeContext final {
-    TriState administrator = TriState::Unknown;
-    // S-07：SYSTEM/TCB 与 Administrator 是两档权限。没有这一项时
-    // AccessRequirement::System 的字段就只能靠 administrator 冒充判断，
-    // "需要 SYSTEM 却没跑"会被说成"只是没跑"。默认 Unknown = 没声明 = 不当作具备。
-    TriState system = TriState::Unknown;
-    TriState kswordDriverLoaded = TriState::Unknown;
+    TriState administrator = TriState::kUnknown;
+    // S-07: SYSTEM/TCB and Administrator represent two distinct privilege levels. Without this item,
+    // Fields for AccessRequirement::System can only be inferred via administrator impersonation; 'requires SYSTEM but
+    // not running' is misinterpreted as 'simply not running'. Default Unknown = not declared = not considered present.
+    TriState system = TriState::kUnknown;
+    TriState kswordDriverLoaded = TriState::kUnknown;
 };
 
-// 字段在当前上下文里的可读性。它是路由用的粗粒度值，**不替代** outcome.status ——
-// Timeout 与 Error 都落到 QueryFailed，但 FieldAssessment.outcome 仍然分别保留了
-// 原始 status、nativeCode 和 message（防止五种失败语义被塌成一个）。
+// Field readability in the current context. It is a coarse-grained value used for routing and **does not replace**
+// outcome.status. Both Timeout and Error map to QueryFailed, but FieldAssessment.outcome still preserves the original
+// status, nativeCode, and message separately to prevent the five failure semantics from collapsing into one.
 enum class FieldAvailability {
-    Unknown,
-    Readable,            // 拿到了观测
-    BlockedByPrivilege,  // 权限不足（被拒，或声明需要更高权限且当前没有）
-    BlockedByDriver,     // 需要本工具驱动而驱动不在
-    NotSupported,        // 当前 OS/硬件不提供
-    QueryFailed,         // 权限够但查询失败（超时/错误）
-    NotCollected,        // 没跑，且没有权限原因可解释
+    kUnknown,
+    kReadable,            // Obtained observation
+    kBlockedByPrivilege,  // Insufficient privilege (denied, or requires higher privilege that is not currently held).
+    kBlockedByDriver,     // Requires this tool's driver, but the driver is not present.
+    kNotSupported,        // Current OS/hardware does not support
+    kQueryFailed,         // Permissions sufficient but query failed (timeout/error).
+    kNotCollected,        // Not run, with no permission reason to explain.
 };
 
-const char* FieldAvailabilityName(FieldAvailability availability) noexcept;
+const char* fieldAvailabilityName(FieldAvailability availability) noexcept;
 
 // ---------------------------------------------------------------------------
-// 输入：字段
+// Input: field
 // ---------------------------------------------------------------------------
 
-// 一个安全状态字段的一次采集。fieldId 是稳定标识，claim 与 pending 证据都靠它引用。
+// A single collection of a security state field. fieldId is a stable identifier; both claim and pending evidence reference it.
 struct SecurityField final {
     std::string fieldId;
-    // S-02：具体查询入口原文。例如
+    // S-02: Original text of the specific query entry. For example
     // "WMI root\\Microsoft\\Windows\\DeviceGuard:Win32_DeviceGuard.SecurityServicesRunning"
-    // 或 "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard:EnableVirtualizationBasedSecurity"。
+    // or "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard:EnableVirtualizationBasedSecurity".
     std::string queryEntry;
     SourceRef source;
     CaptureWindow window;
     CollectionOutcome outcome;
     RawObservation raw;
-    EnumInterpretation interpretation;  // 调用方用上面的 Interpret* 填；不填即"未解释"
-    AccessRequirement access = AccessRequirement::Unknown;
+    EnumInterpretation interpretation;  // Caller fills in using the above Interpret* fields; if not filled, it means "uninterpreted".
+    AccessRequirement access = AccessRequirement::kUnknown;
 };
 
-// 输出：字段评估。raw / interpretation 原样透传，评估只**追加**判断，不改写来源数据。
+// Output: Field assessment. Pass through raw and interpretation data unchanged; assessments only append judgments without rewriting source data.
 struct FieldAssessment final {
     std::string fieldId;
     std::string queryEntry;
@@ -293,89 +293,89 @@ struct FieldAssessment final {
     CollectionOutcome outcome;
     RawObservation raw;
     EnumInterpretation interpretation;
-    AccessRequirement access = AccessRequirement::Unknown;
-    FieldAvailability availability = FieldAvailability::Unknown;
-    FieldFreshness freshness = FieldFreshness::Unknown;
+    AccessRequirement access = AccessRequirement::kUnknown;
+    FieldAvailability availability = FieldAvailability::kUnknown;
+    FieldFreshness freshness = FieldFreshness::kUnknown;
     bool carriesObservation = false;
     bool usableAsCurrent = false;  // carriesObservation && freshness == Current
 
-    // 供导出/UI 使用的事实串，只陈述观测，不含任何结论词。
+    // Fact strings for export/UI use: state only observations, no conclusion words.
     std::string describe() const;
 };
 
 // ---------------------------------------------------------------------------
-// 输入：断言与待生效证据
+// Input: Assertion and pending evidence.
 // ---------------------------------------------------------------------------
 
-// 某来源对"某能力的某一维"给出的一次断言。fieldId 必须指向一个 SecurityField ——
-// 指不到就是无支撑断言，会被原样列出但不参与定值（防止"结论没有来源"）。
+// An assertion from a source regarding 'a specific dimension of a capability'. fieldId must point to a SecurityField; if it does not,
+// it is an unsupported assertion, listed as-is but excluded from value determination (to prevent 'conclusions without sources').
 struct CapabilityClaim final {
-    SecurityCapabilityId capability = SecurityCapabilityId::Unknown;
-    SecurityDimension dimension = SecurityDimension::HardwareSupport;
-    TriState value = TriState::Unknown;
+    SecurityCapabilityId capability = SecurityCapabilityId::kUnknown;
+    SecurityDimension dimension = SecurityDimension::kHardwareSupport;
+    TriState value = TriState::kUnknown;
     std::string fieldId;
 };
 
-// S-05：待重启/待生效证据。必须由来源明确给出，本层不从"不一致"倒推重启需求。
+// S-05: Pending restart/effective evidence. Must be explicitly provided by the source; this layer must not infer restart requirements from 'inconsistency'.
 struct PendingActivationEvidence final {
-    SecurityCapabilityId capability = SecurityCapabilityId::Unknown;
-    SecurityDimension dimension = SecurityDimension::HardwareSupport;
-    std::string fieldId;  // 明确给出待生效证据的字段
-    std::string rawText;  // 来源原文，例如 "PendingReboot=1"
+    SecurityCapabilityId capability = SecurityCapabilityId::kUnknown;
+    SecurityDimension dimension = SecurityDimension::kHardwareSupport;
+    std::string fieldId;  // Explicitly specify the field for the pending evidence.
+    std::string rawText;  // Original source text, e.g., "PendingReboot=1".
 };
 
-// 输出：一条断言在报告里的样子。冲突时所有来源的值都留在这里，一个都不丢。
+// Output: how an assertion appears in the report. On conflict, values from all sources are retained here, none lost.
 struct SourceClaimView final {
     std::string fieldId;
-    std::string sourceGroup;  // 独立来源分组键（取 SourceRef.sourceGroup，空则退回 collectorId）
-    SourceOrigin origin = SourceOrigin::Unknown;
-    TriState value = TriState::Unknown;  // 该来源断言的值，原样保留
-    FieldFreshness freshness = FieldFreshness::Unknown;
-    bool backed = false;          // fieldId 解析到了字段
+    std::string sourceGroup;  // Independent source group key (take SourceRef.sourceGroup; fall back to collectorId if null)
+    SourceOrigin origin = SourceOrigin::kUnknown;
+    TriState value = TriState::kUnknown;  // The value asserted by this source is preserved as-is.
+    FieldFreshness freshness = FieldFreshness::kUnknown;
+    bool backed = false;          // fieldId parsed to field
     bool carriesObservation = false;
-    bool usableAsCurrent = false; // 只有它为真，value 才参与定值
+    bool usableAsCurrent = false; // Only if true, value participates in the assignment.
 };
 
-// 一个维度的结论。
+// Conclusion for a dimension.
 struct DimensionResult final {
-    SecurityDimension dimension = SecurityDimension::HardwareSupport;
+    SecurityDimension dimension = SecurityDimension::kHardwareSupport;
 
-    // 当前值。只由 usableAsCurrent 的定值断言产生；有冲突时恒为 Unknown。
-    TriState value = TriState::Unknown;
-    // 跨启动周期的历史定值，单独展示，永远不会被当成 value（S-02）。
-    TriState historicalValue = TriState::Unknown;
+    // Current value. Only produced by assertions from usableAsCurrent constants; always Unknown in case of conflicts.
+    TriState value = TriState::kUnknown;
+    // Historical value spanning boot cycles, displayed separately; never treated as the current value (S-02).
+    TriState historicalValue = TriState::kUnknown;
 
-    std::vector<SourceClaimView> claims;  // 全部来源，含无支撑与历史的
-    bool conflicted = false;              // 可用来源之间定值不一致
-    // S-05：重启前的多个来源之间也可能互相打架。没有这一位时两条互相矛盾的历史定值
-    // 会一起塌成 historicalValue=Unknown，与"根本没有历史证据"在报告里长得一模一样。
+    std::vector<SourceClaimView> claims;  // All sources, including unsupported and historical ones.
+    bool conflicted = false;              // Inconsistent values between available sources.
+    // S-05: Multiple sources before a reboot may also conflict. Without this flag, two contradictory historical values
+    // collapse into historicalValue=Unknown, which looks identical in the report to 'no historical evidence at all'.
     bool historicalConflicted = false;
-    std::size_t definiteClaimCount = 0;   // 参与定值的断言条数
-    // 独立来源分组数。sourceGroup 与 collectorId 都为空的来源不与别人合并 ——
-    // 两个都没署名的来源是两个来源，不是一个（否则 F-11 的"N 个独立来源"会虚报）。
+    std::size_t definiteClaimCount = 0;   // Number of claims contributing to the definite result.
+    // Independent source groups. Sources with both sourceGroup and collectorId empty remain separate:
+    // two unsigned sources are two sources, not one, or F-11 independent-source counts would be wrong.
     std::size_t distinctSourceGroupCount = 0;
 
-    bool pendingActivation = false;       // 只有拿到明确的待生效证据才为真
+    bool pendingActivation = false;       // True only when explicit pending activation evidence is obtained.
     std::string pendingEvidenceFieldId;
 };
 
-// S-01：一个能力的四维状态。三个 DimensionResult 是三份独立数据，
-// 本类型没有任何成员函数会用其中一个去填另一个。
+// S-01: A capability's four-dimensional state. The three DimensionResult fields
+// are independent data; no member function of this type uses one to fill another.
 struct CapabilityState final {
-    SecurityCapabilityId capability = SecurityCapabilityId::Unknown;
+    SecurityCapabilityId capability = SecurityCapabilityId::kUnknown;
     DimensionResult hardwareSupport;
     DimensionResult configured;
     DimensionResult running;
 
-    // 第四维：这一能力相关字段的采集结果汇总。没有任何断言时是 NotCollected，
-    // 而不是"没问题"。
+    // Fourth dimension: summary of collection results for fields related to this
+    // capability. If no claims exist, the state is NotCollected, not 'no issue'.
     CollectionOutcome queryOutcome;
 
-    bool anyClaim = false;             // 是否收到过任何断言（哪怕是无支撑的）
-    bool anyBackedObservation = false; // 是否有任何支撑字段真的携带观测
+    bool anyClaim = false;             // Whether any claim (even unsupported) has been received.
+    bool anyBackedObservation = false; // Whether any backing field actually carries an observation.
 
-    // S-07：能力级权限说明，来自其支撑字段声明的要求。Administrator 与 System
-    // 分开标：把 System 折进 requiresAdministrator 会让"需要 TCB"这一档消失。
+    // S-07: Capability-level permission specification, derived from requirements in its supporting field declarations. Administrator
+    // and System must be marked separately: folding System into requiresAdministrator would eliminate the 'requires TCB' tier.
     bool requiresAdministrator = false;
     bool requiresSystem = false;
     bool requiresKswordDriver = false;
@@ -384,16 +384,16 @@ struct CapabilityState final {
     const DimensionResult& dimension(SecurityDimension which) const noexcept;
 };
 
-// S-05：一次维度级冲突。claims 里是**全部**来源的值，调用方原样并排展示。
-// resolvedValue 恒为 TriState::Unknown —— 这个字段存在的意义就是把"我不替你选"
-// 写进类型里，而不是留给调用方去猜。
+// S-05: A single dimension-level conflict. The claims contain values from **all** sources; the caller displays them side-by-side as-is.
+// resolvedValue is always TriState::Unknown — this field's purpose is to encode "I
+// won't choose for you" into the type, rather than leaving it to the caller to guess.
 struct DimensionConflict final {
-    SecurityCapabilityId capability = SecurityCapabilityId::Unknown;
-    SecurityDimension dimension = SecurityDimension::HardwareSupport;
+    SecurityCapabilityId capability = SecurityCapabilityId::kUnknown;
+    SecurityDimension dimension = SecurityDimension::kHardwareSupport;
     std::vector<SourceClaimView> claims;
-    TriState resolvedValue = TriState::Unknown;
-    // 当前启动周期的来源互相矛盾 / 重启前的来源互相矛盾。两者都可能单独成立，
-    // 所以是两位而不是一个枚举 —— 调用方要能说清"打架的是现在还是重启前"。
+    TriState resolvedValue = TriState::kUnknown;
+    // Conflicting sources for the current boot cycle / conflicting sources before reboot. Both can independently hold
+    // true, so use two bits instead of an enum—the caller must specify whether the conflict is 'now' or 'before reboot'.
     bool currentConflict = false;
     bool historicalConflict = false;
     bool pendingActivation = false;
@@ -401,36 +401,36 @@ struct DimensionConflict final {
 };
 
 // ---------------------------------------------------------------------------
-// S-04：WDAC / 代码完整性
+// S-04: WDAC / Code Integrity
 // ---------------------------------------------------------------------------
 
-// 一条策略。策略"配置在磁盘上"与"当前实际生效"是两个列表，不共用。
+// One policy. The list of policies 'configured on disk' and the list of policies 'currently in effect' are separate and not shared.
 struct CodeIntegrityPolicyRecord final {
-    std::string policyId;      // GUID 原文，不做大小写归一（避免覆盖原始值）
+    std::string policyId;      // GUID original string; no case normalization (to avoid overwriting the original value).
     std::string friendlyName;
-    RawObservation enforcementRaw;  // 该策略自己的 audit/enforced 原始编码
-    TriState basePolicy = TriState::Unknown;
+    RawObservation enforcementRaw;  // Original audit/enforced encoding for this policy.
+    TriState basePolicy = TriState::kUnknown;
     std::string sourceFieldId;
 };
 
-// 评估后的策略：解释与原始值并列。
+// Evaluated policy: explanation alongside the original value.
 struct CodeIntegrityPolicyView final {
     std::string policyId;
     std::string friendlyName;
-    CodeIntegrityEnforcement enforcement = CodeIntegrityEnforcement::Unknown;
+    CodeIntegrityEnforcement enforcement = CodeIntegrityEnforcement::kUnknown;
     EnumInterpretation enforcementInterpretation;
-    TriState basePolicy = TriState::Unknown;
+    TriState basePolicy = TriState::kUnknown;
     std::string sourceFieldId;
 };
 
 struct CodeIntegrityInput final {
-    // 配置口径：磁盘上摆着的策略文件。
+    // Configuration scope: policy files on disk.
     CollectionOutcome configuredOutcome;
     std::vector<CodeIntegrityPolicyRecord> configuredPolicies;
-    // 有效口径：运行时列举出来的、真正生效的策略。
+    // Effective scope: policies that are enumerated at runtime and actually take effect.
     CollectionOutcome effectiveOutcome;
     std::vector<CodeIntegrityPolicyRecord> effectivePolicies;
-    // 全局执行状态（内核态 / 用户态各一个属性）。
+    // Global execution state (one property each for kernel mode and user mode).
     RawObservation kernelModeRaw;
     CollectionOutcome kernelModeOutcome;
     RawObservation userModeRaw;
@@ -444,13 +444,13 @@ struct CodeIntegrityAssessment final {
 
     std::vector<CodeIntegrityPolicyView> effectivePolicies;
     CollectionOutcome effectiveOutcome;
-    // S-04 通过条件："查不到实际策略状态时保留未知"。查不到时这里是 false，
-    // effectivePolicies 保持空 —— 绝不拿 configuredPolicies 顶替。
+    // S-04 condition: 'retain unknown when actual policy status cannot be found'. When not found,
+    // this is false and effectivePolicies remains empty—never substitute with configuredPolicies.
     bool effectivePolicyKnown = false;
 
-    CodeIntegrityEnforcement kernelModeEnforcement = CodeIntegrityEnforcement::Unknown;
+    CodeIntegrityEnforcement kernelModeEnforcement = CodeIntegrityEnforcement::kUnknown;
     EnumInterpretation kernelModeInterpretation;
-    CodeIntegrityEnforcement userModeEnforcement = CodeIntegrityEnforcement::Unknown;
+    CodeIntegrityEnforcement userModeEnforcement = CodeIntegrityEnforcement::kUnknown;
     EnumInterpretation userModeInterpretation;
 
     std::vector<std::string> limitationKeys;
@@ -459,160 +459,160 @@ struct CodeIntegrityAssessment final {
     std::size_t enforcedPolicyCount() const noexcept;
 };
 
-CodeIntegrityAssessment EvaluateCodeIntegrity(const CodeIntegrityInput& input);
+CodeIntegrityAssessment evaluateCodeIntegrity(const CodeIntegrityInput& input);
 
-// S-04："签名有效 ≠ 当前策略允许加载"。这两件事在类型上就是两个字段，各自由
-// 各自的 outcome 支撑；EvaluateImageLoad 不会用其中一个推另一个。
+// S-04: 'Signature valid' does not equal 'Currently allowed to load by policy'. These are two distinct
+// fields, each supported by its own outcome; evaluateImageLoad does not derive one from the other.
 struct ImageLoadInput final {
     std::string imagePath;
-    TriState signatureValid = TriState::Unknown;
+    TriState signatureValid = TriState::kUnknown;
     CollectionOutcome signatureOutcome;
-    TriState policyAllowsLoad = TriState::Unknown;
+    TriState policyAllowsLoad = TriState::kUnknown;
     CollectionOutcome policyDecisionOutcome;
 };
 
 struct ImageLoadAssessment final {
     std::string imagePath;
-    TriState signatureValid = TriState::Unknown;
-    TriState allowedByCurrentPolicy = TriState::Unknown;
+    TriState signatureValid = TriState::kUnknown;
+    TriState allowedByCurrentPolicy = TriState::kUnknown;
     CollectionOutcome signatureOutcome;
     CollectionOutcome policyDecisionOutcome;
     std::vector<std::string> limitationKeys;
 };
 
-ImageLoadAssessment EvaluateImageLoad(const ImageLoadInput& input);
+ImageLoadAssessment evaluateImageLoad(const ImageLoadInput& input);
 
 // ---------------------------------------------------------------------------
-// S-06：KSword 能力为什么不可用
+// S-06: Why KSword capabilities are unavailable.
 // ---------------------------------------------------------------------------
 enum class CapabilityConstraintKind {
-    Unknown,
-    VendorUnsupported,      // CPU 厂商侧后端缺失（AMD/Intel 分别表示）
-    HardwareUnsupported,    // 硬件本身不具备
-    DriverMissing,          // 本工具驱动未加载
-    ProfileMissing,         // 偏移表 / profile 缺失
-    SecurityConfiguration,  // 平台安全配置不允许（例如 HVCI 在跑）
-    PrivilegeInsufficient,  // 权限不足
-    QueryUnavailable,       // 相关状态查不到，无法判断
+    kUnknown,
+    kVendorUnsupported,      // Missing backend on the CPU vendor side (separately for AMD/Intel).
+    kHardwareUnsupported,    // Hardware itself does not support
+    kDriverMissing,          // This tool's driver is not loaded.
+    kProfileMissing,         // Offset table / profile missing
+    kSecurityConfiguration,  // Platform security configuration disallows it (e.g., HVCI is running).
+    kPrivilegeInsufficient,  // Access denied
+    kQueryUnavailable,       // Related status unavailable; cannot determine.
 };
 
-const char* CapabilityConstraintKindName(CapabilityConstraintKind kind) noexcept;
+const char* capabilityConstraintKindName(CapabilityConstraintKind kind) noexcept;
 
-// S-06：约束键必须是**陈述**（"当前 HVCI 正在运行"），不能是**动作建议**
-// （"去关闭内存完整性"）。这道词表闸是防回归用的：以后有人想把修复建议塞进
-// 这一层，键会被拒收并留下 limitation，而不是悄悄通过。
+// S-06: Constraint keys must be **statements** (e.g., "Current HVCI is running"), not **action recommendations**
+// (e.g., "Disable memory integrity"). This vocabulary gate prevents regressions: if someone later tries to inject a
+// fix recommendation at this layer, the key will be rejected and a limitation recorded, rather than silently passing.
 //
-// 匹配按**词**做，不按子串做。键先在 '.'/'-'/'_'/' '/'/'/':' 上切成段，段内再按
-// camelCase 切成词；命中判据是"某个词恰好等于动作词"，或"相邻至多三个词拼起来
-// 等于动作词"（覆盖 turn-off / please-turn / how-to-fix 这类被分隔符拆开的写法），
-// 或"某个词以动作词开头"（覆盖 suggestion / remediation 这类派生名词）。
-// 命中后还有一道时态豁免，且**只对动作动词生效**：命中词本身是 -ed 过去分词
-// （uninstalled、disabled），或命中词在同一段里紧跟着一个 -ed/-ing 词
-// （bypassDetected、shutdownPending），都判为**陈述**而不是祈使句。
-// recommend / suggest / howToFix 这类劝说词不享受豁免（suggested 还是建议）；
-// 动名词也不享受第一种豁免，否则 "fix.byDisablingHvci" 会溜进来。
-// 子串匹配做不到这一点：它会把
+// Matching is performed at the **word** level, not the substring level. Keys are first split into segments by '.', '-', '_', ' ', or
+// ':', and then each segment is further split into words using camelCase. A match occurs if: (1) a word exactly equals the action
+// word, (2) up to three adjacent words concatenated equal the action word (covering formats like turn-off, please-turn, how-to-fix
+// that are split by delimiters), or (3) a word starts with the action word (covering derived nouns like suggestion, remediation).
+// After a match, there is a temporal exemption that applies **only to action verbs**: if the matched word is a past
+// participle (-ed, e.g., uninstalled, disabled), or if a -ed/-ing word immediately follows the matched word in the
+// same segment (e.g., bypassDetected, shutdownPending), it is classified as a **statement** rather than an imperative.
+// Note: Persuasive terms like 'recommend', 'suggest', or 'howToFix' do not enjoy exemption (even 'suggested' is still a suggestion).
+// Gerunds do not enjoy the first exemption either, otherwise 'fix.byDisablingHvci' could slip in.
+// Substring matching cannot do this: it treats
 // "hvci.notDisabled"、"dse.isDisabledByPolicy"、"driver.uninstalled"、
-// "smm.shutdownPending"、"bypassDetected" 全部当成动作键拒收，
-// 于是这些真正的约束一条都进不了 accepted，能力反而被 observedAvailable 放行。
-bool IsStatementOnlyConstraintKey(std::string_view key) noexcept;
+// Treat "smm.shutdownPending" and "bypassDetected" as action keys to reject, so these actual
+// constraints never enter accepted, while the capability is erroneously allowed via observedAvailable.
+bool isStatementOnlyConstraintKey(std::string_view key) noexcept;
 
 struct KswordCapabilityConstraint final {
-    CapabilityConstraintKind kind = CapabilityConstraintKind::Unknown;
-    std::string constraintKey;  // i18n 键
-    std::string sourceFieldId;  // 这个约束是从哪个字段看出来的
-    RawObservation observed;    // 该字段的原始值
+    CapabilityConstraintKind kind = CapabilityConstraintKind::kUnknown;
+    std::string constraintKey;  // i18n key
+    std::string sourceFieldId;  // From which field is this constraint derived?
+    RawObservation observed;    // Original value of this field.
 };
 
 struct KswordCapabilityConstraintView final {
-    CapabilityConstraintKind kind = CapabilityConstraintKind::Unknown;
+    CapabilityConstraintKind kind = CapabilityConstraintKind::kUnknown;
     std::string constraintKey;
     std::string sourceFieldId;
     RawObservation observed;
-    bool backed = false;    // sourceFieldId 解析到了字段且该字段携带观测
-    bool accepted = false;  // 键通过词表闸且有来源字段
+    bool backed = false;    // sourceFieldId resolved to a field that carries observation.
+    bool accepted = false;  // Key passed the vocabulary gate and has a source field.
 };
 
 struct KswordCapabilityInput final {
-    std::string capabilityId;  // 例如 "kvm.ept.view"
-    // 来源直接观测到的"能不能用"。只有 availabilityOutcome 携带观测时才被采纳。
-    TriState observedAvailable = TriState::Unknown;
+    std::string capabilityId;  // For example, "kvm.ept.view".
+    // Availability directly observed by the source. Accepted only when availabilityOutcome carries an observation.
+    TriState observedAvailable = TriState::kUnknown;
     CollectionOutcome availabilityOutcome;
     std::vector<KswordCapabilityConstraint> constraints;
 };
 
-// 注意：本结构故意**没有** remediation / suggestedAction / howToFix 字段。
-// S-06 通过条件明确禁止把"禁用保护"作为默认修复给出去。
+// Note: this structure intentionally omits the remediation, suggestedAction, and howToFix fields.
+// The S-06 acceptance criteria explicitly prohibit suggesting "disable protection" as the default fix.
 //
-// available 的判定顺序（越靠前越优先）：
-//   1. 有任一约束被采纳 -> No。来源同时声称可用是矛盾，记 kConstraintConflict。
-//   2. 有约束但一条都没被采纳（键被拒 / 来源字段没采到 / 指不到字段），
-//      且来源声称 observedAvailable=Yes -> Unknown，记 kConstraintIndeterminate。
-//      拦路的证据自己没采到就不能放行 —— 这是"查询失败 ≠ 正常"在 S-06 的落点。
-//      来源声称 No 时保留 No：那是正面的不可用证据，不必抹成 Unknown。
-//   3. 没有任何约束且可用性查询携带观测 -> 采纳 observedAvailable。
-//   4. 其余 -> Unknown。
+// Evaluation order for available (earlier takes precedence):
+//   1. If any constraint is adopted -> No. The source simultaneously claiming availability is a contradiction, recorded as kConstraintConflict.
+//   2. Constraints exist but none were adopted (key rejected / source field not captured / field not
+//      referenced), and the source claims observedAvailable=Yes -> Unknown. Record as kConstraintIndeterminate.
+//      Evidence that failed to be collected cannot be used to grant access — this is the S-06 manifestation of 'query failure ≠ normal'.
+//      Preserve 'No' when the source claims 'No': that is positive evidence of unavailability and should not be overwritten with 'Unknown'.
+//   3. If there are no constraints and the availability query carries an observation, adopt observedAvailable.
+//   4. Others -> Unknown.
 struct KswordCapabilityExplanation final {
     std::string capabilityId;
-    TriState available = TriState::Unknown;
+    TriState available = TriState::kUnknown;
     std::vector<KswordCapabilityConstraintView> constraints;
     std::vector<std::string> rejectedConstraintKeys;
     std::vector<std::string> limitationKeys;
 
-    // S-06 通过条件："不能运行的能力不会启动"。Unknown 同样不允许启动 ——
-    // 只有明确 Yes 才放行。
+    // S-06 condition: 'Capabilities that cannot run must not start.' Unknown
+    // is also disallowed from starting; only an explicit Yes permits launch.
     bool mayStart() const noexcept;
 };
 
-KswordCapabilityExplanation ExplainKswordCapability(const KswordCapabilityInput& input,
+KswordCapabilityExplanation explainKswordCapability(const KswordCapabilityInput& input,
                                                     const std::vector<FieldAssessment>& fields);
 
 // ---------------------------------------------------------------------------
-// S-08：实测配置清单
+// S-08: Actual configuration list
 // ---------------------------------------------------------------------------
 struct VerifiedConfiguration final {
     std::string configurationId;
-    std::string osBuildRaw;  // 原始 build 串，不解析成数字（避免丢掉 "26100.1234" 这种形态）
-    TriState vbsRunning = TriState::Unknown;
-    TriState hvciRunning = TriState::Unknown;
-    TriState kswordDriverLoaded = TriState::Unknown;
+    std::string osBuildRaw;  // Raw build string, not parsed into numbers (to avoid losing formats like "26100.1234").
+    TriState vbsRunning = TriState::kUnknown;
+    TriState hvciRunning = TriState::kUnknown;
+    TriState kswordDriverLoaded = TriState::kUnknown;
     std::string evidenceFieldId;
 };
 
 enum class SupportClaimStatus {
-    Blocked,            // 还不够两套配置 —— 规范要求保留 BLOCKED
-    PartiallyVerified,  // 只核对了其中一套
-    Verified,           // 普通配置与 VBS/HVCI 运行配置各一套都核对过
+    kBlocked,            // Not enough for two configurations — the spec requires retaining BLOCKED.
+    kPartiallyVerified,  // Only one set was verified.
+    kVerified,           // Both standard configuration and VBS/HVCI runtime configuration have been verified.
 };
 
-const char* SupportClaimStatusName(SupportClaimStatus status) noexcept;
+const char* supportClaimStatusName(SupportClaimStatus status) noexcept;
 
 struct SupportClaim final {
-    SupportClaimStatus status = SupportClaimStatus::Blocked;
-    bool baselineConfigurationVerified = false;  // VBS 未运行的一套
-    bool vbsConfigurationVerified = false;       // VBS/HVCI 在运行的一套
+    SupportClaimStatus status = SupportClaimStatus::kBlocked;
+    bool baselineConfigurationVerified = false;  // Note: VBS not running configuration.
+    bool vbsConfigurationVerified = false;       // VBS/HVCI configuration currently in use.
     std::vector<std::string> acceptedConfigurationIds;
-    std::vector<std::string> rejectedConfigurationIds;  // 缺 build / 缺证据 / 状态未知
+    std::vector<std::string> rejectedConfigurationIds;  // Missing build / missing evidence / unknown status
     std::vector<std::string> limitationKeys;
 };
 
-// 默认（空清单）是 Blocked：没记录 = 没核对，不是"都支持"。
-SupportClaim EvaluateSupportClaim(const std::vector<VerifiedConfiguration>& configurations);
+// Default (empty list) is Blocked: no record means not verified, not 'all supported'.
+SupportClaim evaluateSupportClaim(const std::vector<VerifiedConfiguration>& configurations);
 
 // ---------------------------------------------------------------------------
-// 顶层评估
+// Top-level evaluation
 // ---------------------------------------------------------------------------
 struct SecurityStateInput final {
-    // 当前启动周期基准。bootId 为空时所有字段的新鲜度都判 Unknown（说不清）。
+    // Baseline for the current boot cycle. When bootId is null, freshness for all fields is judged Unknown (indeterminate).
     CaptureWindow currentWindow;
     PrivilegeContext privilege;
     std::vector<SecurityField> fields;
     std::vector<CapabilityClaim> claims;
     std::vector<PendingActivationEvidence> pendingEvidence;
 
-    // 本轮**期望**覆盖的能力。一个被期望却一条断言都没有的能力，会显式产出一份
-    // 全 Unknown / queryOutcome=NotCollected 的状态并计进账目 —— 绝不静默跳过，
-    // 否则"整轮缺席"会让报告看着干干净净。
+    // Capabilities expected to be covered in this round. A capability that is expected but has no assertions will
+    // explicitly generate a status of all Unknown / queryOutcome=NotCollected and be recorded in the ledger—never
+    // silently skipped, otherwise a "complete absence" in the round would make the report look clean.
     std::vector<SecurityCapabilityId> requestedCapabilities;
 };
 
@@ -621,19 +621,19 @@ struct SecurityStateReport final {
     std::vector<CapabilityState> capabilities;
     std::vector<DimensionConflict> conflicts;
 
-    // envelope.coverage 的单位是"对当前平台安全状态的预期证据项"：每个字段一项，
-    // 外加每个整轮缺席的能力一项。succeeded 只数**当前启动周期的成功观测**；
-    // 采集成功但来自另一个启动周期或另一台机器的观测计进 skipped —— 它们回答不了
-    // "现在是什么状态"，据此判完整覆盖会让一份全是重启前数据的报告得出"未发现差异"。
+    // envelope.coverage unit is 'expected evidence items for the current platform security state': one item per field, plus one
+    // item per absent capability for each full round. succeeded counts only successful observations in the **current boot cycle**;
+    // Observations collected successfully but from a different boot cycle or machine are counted as skipped—they cannot answer 'what is the
+    // current state'; assuming full coverage would cause a report containing only pre-reboot data to incorrectly conclude 'no differences found'.
     EvidenceEnvelope envelope;
-    AnalysisConclusion conclusion = AnalysisConclusion::NoEvidence;
+    AnalysisConclusion conclusion = AnalysisConclusion::kNoEvidence;
     TrustStatement trust;
-    std::vector<std::string> limitationKeys;  // 已排序去重
+    std::vector<std::string> limitationKeys;  // Sorted and deduplicated
 
     std::size_t readableFieldCount = 0;
-    std::size_t blockedFieldCount = 0;      // 权限/驱动导致读不到
+    std::size_t blockedFieldCount = 0;      // Unable to read due to permissions or driver.
     std::size_t historicalFieldCount = 0;
-    std::size_t missingCapabilityCount = 0; // 期望覆盖却一条断言都没有的能力数
+    std::size_t missingCapabilityCount = 0; // Count of capabilities that are expected to be covered but have no assertions.
 
     const FieldAssessment* findField(std::string_view fieldId) const noexcept;
     const CapabilityState* findCapability(SecurityCapabilityId capability) const noexcept;
@@ -642,10 +642,10 @@ struct SecurityStateReport final {
     bool hasLimitation(std::string_view key) const noexcept;
 };
 
-SecurityStateReport EvaluateSecurityState(const SecurityStateInput& input);
+SecurityStateReport evaluateSecurityState(const SecurityStateInput& input);
 
-// 报告里用到的 limitation 键。集中列出来，UI 侧照这张表翻译。
-namespace SecurityLimitationKeys {
+// Limitation keys used in reports. Listed centrally so the UI can translate them using this table.
+namespace security_limitation_keys {
 inline constexpr const char* kClaimUnbacked = "security.claim.unbacked";
 inline constexpr const char* kClaimNotObserved = "security.claim.notObserved";
 inline constexpr const char* kFieldHistorical = "security.field.historical";
@@ -668,10 +668,10 @@ inline constexpr const char* kPolicyDecisionUnknown = "security.codeIntegrity.po
 inline constexpr const char* kConstraintNonStatement = "security.constraint.nonStatement";
 inline constexpr const char* kConstraintUnbacked = "security.constraint.unbacked";
 inline constexpr const char* kConstraintConflict = "security.capability.constraintConflict";
-// 有约束但一条都判不了，因此不采纳来源自称的"可用"。
+// Constraints exist but none can be determined; therefore, the source's self-claimed 'available' status is not accepted.
 inline constexpr const char* kConstraintIndeterminate = "security.constraint.indeterminate";
 inline constexpr const char* kSupportClaimBlocked = "security.supportClaim.blocked";
 inline constexpr const char* kSupportClaimIncomplete = "security.supportClaim.incomplete";
-} // namespace SecurityLimitationKeys
+} // namespace security_limitation_keys
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

@@ -1,0 +1,1332 @@
+#include "PeAnalyzer.h"
+
+#include "../string/String.h"
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <ctime>
+#include <cstring>
+#include <cwchar>
+#include <iomanip>
+#include <iterator>
+#include <limits>
+#include <sstream>
+#include <string>
+#include <vector>
+
+namespace ks::file
+{
+    namespace
+    {
+        // These limits keep malformed files from causing unbounded loops or huge reports.
+        // They are intentionally conservative because this backend feeds an interactive UI.
+        constexpr std::uint16_t kMaxSectionCount = 128;
+        constexpr std::uint32_t kMaxImportDescriptors = 1024;
+        constexpr std::uint32_t kMaxImportPerModule = 2048;
+        constexpr std::uint32_t kMaxExportNames = 4096;
+        constexpr std::uint64_t kMaxPeFileBytes = 512ULL * 1024ULL * 1024ULL;
+
+        // Hex formats unsigned integer values as uppercase 0x-prefixed report text.
+        // The return value is a standalone string so stream state is not leaked.
+        template <typename TValue>
+        std::wstring hex(TValue value)
+        {
+            std::wostringstream stream;
+            stream << L"0x" << std::uppercase << std::hex << static_cast<std::uint64_t>(value);
+            return stream.str();
+        }
+
+        // unixTimeToLocalText converts PE TimeDateStamp seconds to local display text.
+        // On CRT conversion failure it returns an explicit placeholder.
+        std::wstring unixTimeToLocalText(const std::uint32_t timeStamp)
+        {
+            std::time_t rawTime = static_cast<std::time_t>(timeStamp);
+            std::tm localTime{};
+            if (localtime_s(&localTime, &rawTime) != 0)
+            {
+                return L"<time conversion failed>";
+            }
+            wchar_t buffer[64] = {};
+            if (std::wcsftime(buffer, std::size(buffer), L"%Y-%m-%d %H:%M:%S", &localTime) == 0)
+            {
+                return L"<time format failed>";
+            }
+            return buffer;
+        }
+
+        // machineToText maps IMAGE_FILE_HEADER.Machine into common architecture names.
+        // Unknown values remain visible through the raw numeric field printed by callers.
+        std::wstring machineToText(const std::uint16_t machineValue)
+        {
+            switch (machineValue)
+            {
+            case IMAGE_FILE_MACHINE_I386: return L"x86";
+            case IMAGE_FILE_MACHINE_AMD64: return L"x64";
+            case IMAGE_FILE_MACHINE_ARM64: return L"ARM64";
+            case IMAGE_FILE_MACHINE_ARM: return L"ARM";
+            case IMAGE_FILE_MACHINE_ARMNT: return L"ARMNT";
+            case IMAGE_FILE_MACHINE_IA64: return L"IA64";
+            default: return L"Unknown";
+            }
+        }
+
+        // subsystemToText maps the OptionalHeader subsystem value into readable text.
+        // The report still includes the raw subsystem code for exact diagnostics.
+        std::wstring subsystemToText(const std::uint16_t subsystemValue)
+        {
+            switch (subsystemValue)
+            {
+            case IMAGE_SUBSYSTEM_NATIVE: return L"Native";
+            case IMAGE_SUBSYSTEM_WINDOWS_GUI: return L"Windows GUI";
+            case IMAGE_SUBSYSTEM_WINDOWS_CUI: return L"Windows CUI";
+            case IMAGE_SUBSYSTEM_POSIX_CUI: return L"POSIX CUI";
+            case IMAGE_SUBSYSTEM_EFI_APPLICATION: return L"EFI Application";
+            case IMAGE_SUBSYSTEM_EFI_BOOT_SERVICE_DRIVER: return L"EFI Boot Service Driver";
+            case IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER: return L"EFI Runtime Driver";
+            case IMAGE_SUBSYSTEM_WINDOWS_BOOT_APPLICATION: return L"Windows Boot Application";
+            default: return L"Unknown";
+            }
+        }
+
+        // joinItems builds a pipe-separated flag summary for report output.
+        // If no flags are known, emptyText explains that the summary is empty.
+        std::wstring joinItems(const std::vector<std::wstring>& itemList, const std::wstring& emptyText)
+        {
+            if (itemList.empty())
+            {
+                return emptyText;
+            }
+            std::wstring output;
+            for (const std::wstring& itemText : itemList)
+            {
+                if (!output.empty())
+                {
+                    output += L" | ";
+                }
+                output += itemText;
+            }
+            return output;
+        }
+
+        // fileCharacteristicsToText summarizes common COFF file flags.
+        // Inputs are raw IMAGE_FILE_HEADER.Characteristics bits.
+        std::wstring fileCharacteristicsToText(const std::uint16_t characteristicsValue)
+        {
+            std::vector<std::wstring> itemList;
+            if ((characteristicsValue & IMAGE_FILE_EXECUTABLE_IMAGE) != 0) { itemList.push_back(L"Executable"); }
+            if ((characteristicsValue & IMAGE_FILE_DLL) != 0) { itemList.push_back(L"DLL"); }
+            if ((characteristicsValue & IMAGE_FILE_LARGE_ADDRESS_AWARE) != 0) { itemList.push_back(L"LargeAddressAware"); }
+            if ((characteristicsValue & IMAGE_FILE_32BIT_MACHINE) != 0) { itemList.push_back(L"Machine32Bit"); }
+            if ((characteristicsValue & IMAGE_FILE_SYSTEM) != 0) { itemList.push_back(L"System"); }
+            if ((characteristicsValue & IMAGE_FILE_RELOCS_STRIPPED) != 0) { itemList.push_back(L"RelocsStripped"); }
+            return joinItems(itemList, L"<no common flags>");
+        }
+
+        // sectionCharacteristicsToText summarizes common section flags.
+        // The caller prints the raw bitmask next to this derived text.
+        std::wstring sectionCharacteristicsToText(const std::uint32_t characteristicsValue)
+        {
+            std::vector<std::wstring> itemList;
+            if ((characteristicsValue & IMAGE_SCN_CNT_CODE) != 0) { itemList.push_back(L"CODE"); }
+            if ((characteristicsValue & IMAGE_SCN_CNT_INITIALIZED_DATA) != 0) { itemList.push_back(L"INIT_DATA"); }
+            if ((characteristicsValue & IMAGE_SCN_CNT_UNINITIALIZED_DATA) != 0) { itemList.push_back(L"BSS"); }
+            if ((characteristicsValue & IMAGE_SCN_MEM_EXECUTE) != 0) { itemList.push_back(L"EXECUTE"); }
+            if ((characteristicsValue & IMAGE_SCN_MEM_READ) != 0) { itemList.push_back(L"READ"); }
+            if ((characteristicsValue & IMAGE_SCN_MEM_WRITE) != 0) { itemList.push_back(L"WRITE"); }
+            if ((characteristicsValue & IMAGE_SCN_MEM_DISCARDABLE) != 0) { itemList.push_back(L"DISCARDABLE"); }
+            return joinItems(itemList, L"<no common attributes>");
+        }
+
+        // dataDirectoryName maps the fixed PE directory index to its standard label.
+        // It returns UNKNOWN only for caller bugs because valid PE files expose 16 entries.
+        std::wstring dataDirectoryName(const int directoryIndex)
+        {
+            static const std::array<const wchar_t*, IMAGE_NUMBEROF_DIRECTORY_ENTRIES> kNames{ {
+                L"EXPORT", L"IMPORT", L"RESOURCE", L"EXCEPTION",
+                L"SECURITY", L"BASERELOC", L"DEBUG", L"ARCHITECTURE",
+                L"GLOBALPTR", L"TLS", L"LOAD_CONFIG", L"BOUND_IMPORT",
+                L"IAT", L"DELAY_IMPORT", L"COM_DESCRIPTOR", L"RESERVED"
+            } };
+            if (directoryIndex < 0 || directoryIndex >= static_cast<int>(kNames.size()))
+            {
+                return L"UNKNOWN";
+            }
+            return kNames[static_cast<std::size_t>(directoryIndex)];
+        }
+
+        // readPodAtOffset copies a fixed-size POD value from a bounded byte buffer.
+        // It returns false instead of throwing when the requested range is invalid.
+        template <typename TPod>
+        bool readPodAtOffset(const std::vector<std::uint8_t>& fileBytes, std::uint64_t offsetValue, TPod& valueOut)
+        {
+            if (offsetValue > static_cast<std::uint64_t>(fileBytes.size()))
+            {
+                return false;
+            }
+            if (sizeof(TPod) > fileBytes.size() - static_cast<std::size_t>(offsetValue))
+            {
+                return false;
+            }
+            std::memcpy(&valueOut, fileBytes.data() + static_cast<std::size_t>(offsetValue), sizeof(TPod));
+            return true;
+        }
+
+        // readAsciiAtOffset reads a NUL-terminated ANSI/UTF-8-ish PE string.
+        // Inputs are the mapped file byte array and a validated file offset. The
+        // loop is capped so malformed PE files cannot turn a missing NUL byte into
+        // a whole-file string allocation. The return value is empty when the offset
+        // is outside the file, otherwise it contains at most kMaxPeStringBytes bytes.
+        std::wstring readAsciiAtOffset(const std::vector<std::uint8_t>& fileBytes, std::uint64_t offsetValue)
+        {
+            if (offsetValue >= static_cast<std::uint64_t>(fileBytes.size()))
+            {
+                return std::wstring();
+            }
+            constexpr std::size_t kMaxPeStringBytes = 4096;
+            const std::size_t kBeginOffset = static_cast<std::size_t>(offsetValue);
+            std::size_t endOffset = kBeginOffset;
+            const std::size_t kCappedEndOffset = std::min(fileBytes.size(), kBeginOffset + kMaxPeStringBytes);
+            while (endOffset < kCappedEndOffset && fileBytes[endOffset] != 0)
+            {
+                ++endOffset;
+            }
+            return ks::str::utf8ToUtf16(std::string(
+                reinterpret_cast<const char*>(fileBytes.data() + kBeginOffset),
+                endOffset - kBeginOffset));
+        }
+
+        // safeSectionName extracts an IMAGE_SECTION_HEADER.Name without assuming NUL termination.
+        // The return value remains narrow because PeSectionSummary stores section names as std::string.
+        std::string safeSectionName(const IMAGE_SECTION_HEADER& sectionHeader)
+        {
+            const char* nameBytes = reinterpret_cast<const char*>(sectionHeader.Name);
+            int length = 0;
+            while (length < IMAGE_SIZEOF_SHORT_NAME && nameBytes[length] != '\0')
+            {
+                ++length;
+            }
+            return std::string(nameBytes, nameBytes + length);
+        }
+
+        // rvaToFileOffset maps only bytes that physically exist in a section's
+        // raw-data range. A VirtualSize-only tail is zero-filled by the loader and
+        // has no file offset, so treating it as raw evidence would be incorrect.
+        bool rvaToFileOffset(
+            std::uint32_t rvaValue,
+            std::uint32_t sizeOfHeadersValue,
+            const std::vector<IMAGE_SECTION_HEADER>& sectionList,
+            std::uint32_t& fileOffsetOut)
+        {
+            for (const IMAGE_SECTION_HEADER& sectionHeader : sectionList)
+            {
+                const std::uint32_t kSectionRva = sectionHeader.VirtualAddress;
+                if (rvaValue < kSectionRva)
+                {
+                    continue;
+                }
+                const std::uint32_t kDelta = rvaValue - kSectionRva;
+                if (kDelta >= sectionHeader.SizeOfRawData
+                    || sectionHeader.PointerToRawData
+                        > std::numeric_limits<std::uint32_t>::max()
+                            - kDelta)
+                {
+                    continue;
+                }
+                fileOffsetOut =
+                    sectionHeader.PointerToRawData + kDelta;
+                return true;
+            }
+            if (rvaValue < sizeOfHeadersValue)
+            {
+                fileOffsetOut = rvaValue;
+                return true;
+            }
+            return false;
+        }
+
+        // calculateSectionEntropy computes Shannon entropy over the raw section bytes.
+        // Raw size is truncated to the file length so damaged headers remain safe.
+        double calculateSectionEntropy(
+            const std::vector<std::uint8_t>& fileBytes,
+            std::uint32_t rawOffsetValue,
+            std::uint32_t rawSizeValue)
+        {
+            if (rawSizeValue == 0 || rawOffsetValue >= fileBytes.size())
+            {
+                return 0.0;
+            }
+            const std::uint32_t kReadableSize = std::min<std::uint32_t>(
+                rawSizeValue,
+                static_cast<std::uint32_t>(fileBytes.size() - rawOffsetValue));
+            std::array<std::uint32_t, 256> countList{};
+            for (std::uint32_t index = 0; index < kReadableSize; ++index)
+            {
+                ++countList[fileBytes[static_cast<std::size_t>(rawOffsetValue) + index]];
+            }
+            double entropyValue = 0.0;
+            for (std::uint32_t countValue : countList)
+            {
+                if (countValue == 0) { continue; }
+                const double kProbability = static_cast<double>(countValue) / static_cast<double>(kReadableSize);
+                entropyValue -= kProbability * std::log2(kProbability);
+            }
+            return entropyValue;
+        }
+
+        // readWholeFile reads a Unicode path through Win32 sharing-friendly flags.
+        // The output buffer receives exactly the bytes that were read.
+        bool readWholeFile(const std::wstring& filePath, std::vector<std::uint8_t>& fileBytesOut, std::wstring& errorTextOut)
+        {
+            fileBytesOut.clear();
+            errorTextOut.clear();
+            HANDLE fileHandle = ::CreateFileW(
+                filePath.c_str(),
+                GENERIC_READ,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                nullptr,
+                OPEN_EXISTING,
+                FILE_ATTRIBUTE_NORMAL,
+                nullptr);
+            if (fileHandle == INVALID_HANDLE_VALUE)
+            {
+                errorTextOut = L"CreateFileW failed, error=" + std::to_wstring(::GetLastError());
+                return false;
+            }
+
+            LARGE_INTEGER fileSize{};
+            if (::GetFileSizeEx(fileHandle, &fileSize) == FALSE || fileSize.QuadPart < 0)
+            {
+                const DWORD kErrorCode = ::GetLastError();
+                ::CloseHandle(fileHandle);
+                errorTextOut = L"GetFileSizeEx failed, error=" + std::to_wstring(kErrorCode);
+                return false;
+            }
+            if (static_cast<std::uint64_t>(fileSize.QuadPart) > kMaxPeFileBytes)
+            {
+                ::CloseHandle(fileHandle);
+                errorTextOut = L"file is too large for interactive PE analysis";
+                return false;
+            }
+
+            fileBytesOut.assign(static_cast<std::size_t>(fileSize.QuadPart), 0);
+            std::size_t totalRead = 0;
+            while (totalRead < fileBytesOut.size())
+            {
+                const DWORD kChunkSize = static_cast<DWORD>(std::min<std::size_t>(fileBytesOut.size() - totalRead, 1024U * 1024U));
+                DWORD bytesRead = 0;
+                if (::ReadFile(fileHandle, fileBytesOut.data() + totalRead, kChunkSize, &bytesRead, nullptr) == FALSE)
+                {
+                    const DWORD kErrorCode = ::GetLastError();
+                    ::CloseHandle(fileHandle);
+                    errorTextOut = L"ReadFile failed, error=" + std::to_wstring(kErrorCode);
+                    return false;
+                }
+                if (bytesRead == 0)
+                {
+                    break;
+                }
+                totalRead += bytesRead;
+            }
+            ::CloseHandle(fileHandle);
+            fileBytesOut.resize(totalRead);
+            return true;
+        }
+
+        // appendDataDirectories prints all standard PE data directories.
+        // No directory is dereferenced here; this is the safe overview stage.
+        void appendDataDirectories(
+            std::wostringstream& outputStream,
+            const std::array<IMAGE_DATA_DIRECTORY, IMAGE_NUMBEROF_DIRECTORY_ENTRIES>& directoryList)
+        {
+            outputStream << L"\n[数据目录]\n";
+            for (int directoryIndex = 0; directoryIndex < IMAGE_NUMBEROF_DIRECTORY_ENTRIES; ++directoryIndex)
+            {
+                const IMAGE_DATA_DIRECTORY& directoryEntry = directoryList[static_cast<std::size_t>(directoryIndex)];
+                outputStream << L"[" << directoryIndex << L"] " << dataDirectoryName(directoryIndex)
+                    << L" RVA=" << hex(directoryEntry.VirtualAddress)
+                    << L" Size=" << hex(directoryEntry.Size) << L"\n";
+            }
+        }
+
+        // appendImportTable walks IMAGE_IMPORT_DESCRIPTOR and each module thunk list.
+        // It handles both name imports and ordinal imports for PE32 and PE32+ files.
+        void appendImportTable(
+            std::wostringstream& outputStream,
+            const std::vector<std::uint8_t>& fileBytes,
+            bool isPe64,
+            std::uint32_t sizeOfHeadersValue,
+            const std::vector<IMAGE_SECTION_HEADER>& sectionList,
+            const IMAGE_DATA_DIRECTORY& importDirectory)
+        {
+            outputStream << L"\n[导入表]\n";
+            if (importDirectory.VirtualAddress == 0 || importDirectory.Size == 0)
+            {
+                outputStream << L"无导入表。\n";
+                return;
+            }
+            std::uint32_t descriptorOffset = 0;
+            if (!rvaToFileOffset(importDirectory.VirtualAddress, sizeOfHeadersValue, sectionList, descriptorOffset))
+            {
+                outputStream << L"导入表 RVA 无法映射到文件偏移。\n";
+                return;
+            }
+
+            for (std::uint32_t moduleIndex = 0; moduleIndex < kMaxImportDescriptors; ++moduleIndex)
+            {
+                IMAGE_IMPORT_DESCRIPTOR descriptor{};
+                const std::uint64_t kCurrentOffset = static_cast<std::uint64_t>(descriptorOffset) + moduleIndex * sizeof(descriptor);
+                if (!readPodAtOffset(fileBytes, kCurrentOffset, descriptor))
+                {
+                    outputStream << L"导入描述符读取失败，索引=" << moduleIndex << L"\n";
+                    return;
+                }
+                if (descriptor.OriginalFirstThunk == 0 && descriptor.FirstThunk == 0 && descriptor.Name == 0)
+                {
+                    break;
+                }
+
+                std::uint32_t moduleNameOffset = 0;
+                const std::wstring kModuleName = rvaToFileOffset(descriptor.Name, sizeOfHeadersValue, sectionList, moduleNameOffset)
+                    ? readAsciiAtOffset(fileBytes, moduleNameOffset)
+                    : L"<名称RVA无法映射>";
+                outputStream << L"模块: " << kModuleName << L"\n";
+
+                const std::uint32_t kThunkRva = descriptor.OriginalFirstThunk != 0 ? descriptor.OriginalFirstThunk : descriptor.FirstThunk;
+                std::uint32_t thunkOffset = 0;
+                if (!rvaToFileOffset(kThunkRva, sizeOfHeadersValue, sectionList, thunkOffset))
+                {
+                    outputStream << L"  Thunk RVA 无法映射。\n";
+                    continue;
+                }
+                for (std::uint32_t importIndex = 0; importIndex < kMaxImportPerModule; ++importIndex)
+                {
+                    if (isPe64)
+                    {
+                        std::uint64_t thunkValue = 0;
+                        if (!readPodAtOffset(fileBytes, static_cast<std::uint64_t>(thunkOffset) + importIndex * sizeof(thunkValue), thunkValue) || thunkValue == 0)
+                        {
+                            break;
+                        }
+                        if ((thunkValue & IMAGE_ORDINAL_FLAG64) != 0)
+                        {
+                            outputStream << L"  #" << importIndex << L" Ordinal=" << (thunkValue & 0xFFFFULL) << L"\n";
+                            continue;
+                        }
+                        std::uint32_t importNameOffset = 0;
+                        if (!rvaToFileOffset(static_cast<std::uint32_t>(thunkValue), sizeOfHeadersValue, sectionList, importNameOffset))
+                        {
+                            outputStream << L"  #" << importIndex << L" NameRVA=" << hex(thunkValue) << L" <无法映射>\n";
+                            continue;
+                        }
+                        std::uint16_t hintValue = 0;
+                        readPodAtOffset(fileBytes, importNameOffset, hintValue);
+                        outputStream << L"  #" << importIndex << L" Hint=" << hintValue
+                            << L" Name=" << readAsciiAtOffset(fileBytes, importNameOffset + sizeof(std::uint16_t)) << L"\n";
+                    }
+                    else
+                    {
+                        std::uint32_t thunkValue = 0;
+                        if (!readPodAtOffset(fileBytes, static_cast<std::uint64_t>(thunkOffset) + importIndex * sizeof(thunkValue), thunkValue) || thunkValue == 0)
+                        {
+                            break;
+                        }
+                        if ((thunkValue & IMAGE_ORDINAL_FLAG32) != 0)
+                        {
+                            outputStream << L"  #" << importIndex << L" Ordinal=" << (thunkValue & 0xFFFFU) << L"\n";
+                            continue;
+                        }
+                        std::uint32_t importNameOffset = 0;
+                        if (!rvaToFileOffset(thunkValue, sizeOfHeadersValue, sectionList, importNameOffset))
+                        {
+                            outputStream << L"  #" << importIndex << L" NameRVA=" << hex(thunkValue) << L" <无法映射>\n";
+                            continue;
+                        }
+                        std::uint16_t hintValue = 0;
+                        readPodAtOffset(fileBytes, importNameOffset, hintValue);
+                        outputStream << L"  #" << importIndex << L" Hint=" << hintValue
+                            << L" Name=" << readAsciiAtOffset(fileBytes, importNameOffset + sizeof(std::uint16_t)) << L"\n";
+                    }
+                }
+            }
+        }
+
+        // collectImportTable walks IMAGE_IMPORT_DESCRIPTOR and thunk arrays into
+        // structured rows. Inputs are the already-read file bytes, PE bitness, header
+        // size, section table and import directory entry. Processing mirrors
+        // appendImportTable but stores bounded module/function records for UI tables.
+        // Return value is a vector; malformed ranges are reported per-module through
+        // diagnosticText and never throw or access outside fileBytes.
+        std::vector<PeImportModuleSummary> collectImportTable(
+            const std::vector<std::uint8_t>& fileBytes,
+            const bool isPe64,
+            const std::uint32_t sizeOfHeadersValue,
+            const std::vector<IMAGE_SECTION_HEADER>& sectionList,
+            const IMAGE_DATA_DIRECTORY& importDirectory)
+        {
+            std::vector<PeImportModuleSummary> moduleList;
+            if (importDirectory.VirtualAddress == 0 || importDirectory.Size == 0)
+            {
+                return moduleList;
+            }
+
+            std::uint32_t descriptorOffset = 0;
+            if (!rvaToFileOffset(importDirectory.VirtualAddress, sizeOfHeadersValue, sectionList, descriptorOffset))
+            {
+                PeImportModuleSummary errorModule{};
+                errorModule.dllName = "<Import Directory RVA mapping failed>";
+                errorModule.diagnosticText = "Import Directory RVA could not be mapped to a file offset.";
+                moduleList.push_back(std::move(errorModule));
+                return moduleList;
+            }
+
+            for (std::uint32_t moduleIndex = 0; moduleIndex < kMaxImportDescriptors; ++moduleIndex)
+            {
+                IMAGE_IMPORT_DESCRIPTOR descriptor{};
+                const std::uint64_t kCurrentOffset =
+                    static_cast<std::uint64_t>(descriptorOffset) +
+                    static_cast<std::uint64_t>(moduleIndex) * sizeof(descriptor);
+                if (!readPodAtOffset(fileBytes, kCurrentOffset, descriptor))
+                {
+                    PeImportModuleSummary errorModule{};
+                    errorModule.descriptorIndex = moduleIndex;
+                    errorModule.dllName = "<Import Descriptor read failed>";
+                    errorModule.diagnosticText = "Import descriptor could not be read safely.";
+                    moduleList.push_back(std::move(errorModule));
+                    return moduleList;
+                }
+                if (descriptor.OriginalFirstThunk == 0 && descriptor.FirstThunk == 0 && descriptor.Name == 0)
+                {
+                    break;
+                }
+
+                PeImportModuleSummary module{};
+                module.descriptorIndex = moduleIndex;
+
+                std::uint32_t moduleNameOffset = 0;
+                if (rvaToFileOffset(descriptor.Name, sizeOfHeadersValue, sectionList, moduleNameOffset))
+                {
+                    module.dllName = ks::str::utf16ToUtf8(readAsciiAtOffset(fileBytes, moduleNameOffset));
+                }
+                else
+                {
+                    module.dllName = "<Name RVA mapping failed>";
+                    module.diagnosticText = "DLL name RVA could not be mapped.";
+                }
+
+                const std::uint32_t kThunkRva =
+                    descriptor.OriginalFirstThunk != 0 ? descriptor.OriginalFirstThunk : descriptor.FirstThunk;
+                const std::uint32_t kDisplayThunkRva =
+                    descriptor.FirstThunk != 0 ? descriptor.FirstThunk : kThunkRva;
+                std::uint32_t thunkOffset = 0;
+                if (!rvaToFileOffset(kThunkRva, sizeOfHeadersValue, sectionList, thunkOffset))
+                {
+                    if (!module.diagnosticText.empty())
+                    {
+                        module.diagnosticText += " ";
+                    }
+                    module.diagnosticText += "Thunk RVA could not be mapped.";
+                    moduleList.push_back(std::move(module));
+                    continue;
+                }
+
+                const std::uint32_t kThunkWidth = isPe64
+                    ? static_cast<std::uint32_t>(sizeof(std::uint64_t))
+                    : static_cast<std::uint32_t>(sizeof(std::uint32_t));
+                for (std::uint32_t importIndex = 0; importIndex < kMaxImportPerModule; ++importIndex)
+                {
+                    PeImportFunctionSummary function{};
+                    function.dllName = module.dllName;
+                    function.thunkRva = kDisplayThunkRva + (importIndex * kThunkWidth);
+
+                    if (isPe64)
+                    {
+                        std::uint64_t thunkValue = 0;
+                        if (!readPodAtOffset(
+                            fileBytes,
+                            static_cast<std::uint64_t>(thunkOffset) + importIndex * sizeof(thunkValue),
+                            thunkValue) ||
+                            thunkValue == 0)
+                        {
+                            break;
+                        }
+                        if ((thunkValue & IMAGE_ORDINAL_FLAG64) != 0)
+                        {
+                            function.importByOrdinal = true;
+                            function.ordinal = static_cast<std::uint16_t>(thunkValue & 0xFFFFULL);
+                            module.imports.push_back(std::move(function));
+                            continue;
+                        }
+
+                        std::uint32_t importNameOffset = 0;
+                        if (!rvaToFileOffset(
+                            static_cast<std::uint32_t>(thunkValue),
+                            sizeOfHeadersValue,
+                            sectionList,
+                            importNameOffset))
+                        {
+                            function.functionName = "<Name RVA mapping failed>";
+                            module.imports.push_back(std::move(function));
+                            continue;
+                        }
+                        readPodAtOffset(fileBytes, importNameOffset, function.hint);
+                        function.functionName = ks::str::utf16ToUtf8(
+                            readAsciiAtOffset(fileBytes, importNameOffset + sizeof(std::uint16_t)));
+                        module.imports.push_back(std::move(function));
+                    }
+                    else
+                    {
+                        std::uint32_t thunkValue = 0;
+                        if (!readPodAtOffset(
+                            fileBytes,
+                            static_cast<std::uint64_t>(thunkOffset) + importIndex * sizeof(thunkValue),
+                            thunkValue) ||
+                            thunkValue == 0)
+                        {
+                            break;
+                        }
+                        if ((thunkValue & IMAGE_ORDINAL_FLAG32) != 0)
+                        {
+                            function.importByOrdinal = true;
+                            function.ordinal = static_cast<std::uint16_t>(thunkValue & 0xFFFFU);
+                            module.imports.push_back(std::move(function));
+                            continue;
+                        }
+
+                        std::uint32_t importNameOffset = 0;
+                        if (!rvaToFileOffset(thunkValue, sizeOfHeadersValue, sectionList, importNameOffset))
+                        {
+                            function.functionName = "<Name RVA mapping failed>";
+                            module.imports.push_back(std::move(function));
+                            continue;
+                        }
+                        readPodAtOffset(fileBytes, importNameOffset, function.hint);
+                        function.functionName = ks::str::utf16ToUtf8(
+                            readAsciiAtOffset(fileBytes, importNameOffset + sizeof(std::uint16_t)));
+                        module.imports.push_back(std::move(function));
+                    }
+                }
+
+                if (module.imports.size() >= kMaxImportPerModule)
+                {
+                    if (!module.diagnosticText.empty())
+                    {
+                        module.diagnosticText += " ";
+                    }
+                    module.diagnosticText += "Import function list was truncated by safety limit.";
+                }
+                moduleList.push_back(std::move(module));
+            }
+
+            return moduleList;
+        }
+
+        // appendExportTable reports export directory metadata and named exports.
+        // Forwarder strings are detected when function RVAs point into the export directory.
+        void appendExportTable(
+            std::wostringstream& outputStream,
+            const std::vector<std::uint8_t>& fileBytes,
+            std::uint32_t sizeOfHeadersValue,
+            const std::vector<IMAGE_SECTION_HEADER>& sectionList,
+            const IMAGE_DATA_DIRECTORY& exportDirectory)
+        {
+            outputStream << L"\n[导出表]\n";
+            if (exportDirectory.VirtualAddress == 0 || exportDirectory.Size == 0)
+            {
+                outputStream << L"无导出表。\n";
+                return;
+            }
+            std::uint32_t exportOffset = 0;
+            if (!rvaToFileOffset(exportDirectory.VirtualAddress, sizeOfHeadersValue, sectionList, exportOffset))
+            {
+                outputStream << L"导出表 RVA 无法映射到文件偏移。\n";
+                return;
+            }
+
+            IMAGE_EXPORT_DIRECTORY exportInfo{};
+            if (!readPodAtOffset(fileBytes, exportOffset, exportInfo))
+            {
+                outputStream << L"导出目录读取失败。\n";
+                return;
+            }
+            std::uint32_t dllNameOffset = 0;
+            const std::wstring kDllName = rvaToFileOffset(exportInfo.Name, sizeOfHeadersValue, sectionList, dllNameOffset)
+                ? readAsciiAtOffset(fileBytes, dllNameOffset)
+                : L"<名称RVA无法映射>";
+            outputStream << L"DLL名称: " << kDllName << L"\n";
+            outputStream << L"Base: " << exportInfo.Base
+                << L" FunctionCount: " << exportInfo.NumberOfFunctions
+                << L" NameCount: " << exportInfo.NumberOfNames << L"\n";
+
+            std::uint32_t functionArrayOffset = 0;
+            std::uint32_t nameArrayOffset = 0;
+            std::uint32_t ordinalArrayOffset = 0;
+            if (!rvaToFileOffset(exportInfo.AddressOfFunctions, sizeOfHeadersValue, sectionList, functionArrayOffset) ||
+                !rvaToFileOffset(exportInfo.AddressOfNames, sizeOfHeadersValue, sectionList, nameArrayOffset) ||
+                !rvaToFileOffset(exportInfo.AddressOfNameOrdinals, sizeOfHeadersValue, sectionList, ordinalArrayOffset))
+            {
+                outputStream << L"导出数组 RVA 无法映射。\n";
+                return;
+            }
+
+            const std::uint32_t kDisplayCount = std::min<std::uint32_t>(
+                static_cast<std::uint32_t>(exportInfo.NumberOfNames),
+                kMaxExportNames);
+            for (std::uint32_t nameIndex = 0; nameIndex < kDisplayCount; ++nameIndex)
+            {
+                std::uint32_t nameRva = 0;
+                std::uint16_t ordinalIndex = 0;
+                if (!readPodAtOffset(fileBytes, static_cast<std::uint64_t>(nameArrayOffset) + nameIndex * sizeof(nameRva), nameRva) ||
+                    !readPodAtOffset(fileBytes, static_cast<std::uint64_t>(ordinalArrayOffset) + nameIndex * sizeof(ordinalIndex), ordinalIndex))
+                {
+                    outputStream << L"导出数组读取失败，索引=" << nameIndex << L"\n";
+                    break;
+                }
+
+                std::uint32_t functionRva = 0;
+                if (ordinalIndex < exportInfo.NumberOfFunctions)
+                {
+                    readPodAtOffset(fileBytes, static_cast<std::uint64_t>(functionArrayOffset) + ordinalIndex * sizeof(functionRva), functionRva);
+                }
+                std::uint32_t nameOffset = 0;
+                const std::wstring kFunctionName = rvaToFileOffset(nameRva, sizeOfHeadersValue, sectionList, nameOffset)
+                    ? readAsciiAtOffset(fileBytes, nameOffset)
+                    : L"<名称RVA无法映射>";
+
+                outputStream << L"  Ordinal=" << (exportInfo.Base + ordinalIndex)
+                    << L" RVA=" << hex(functionRva)
+                    << L" Name=" << kFunctionName;
+                if (functionRva >= exportDirectory.VirtualAddress &&
+                    functionRva < exportDirectory.VirtualAddress + exportDirectory.Size)
+                {
+                    std::uint32_t forwarderOffset = 0;
+                    if (rvaToFileOffset(functionRva, sizeOfHeadersValue, sectionList, forwarderOffset))
+                    {
+                        outputStream << L" Forwarder=" << readAsciiAtOffset(fileBytes, forwarderOffset);
+                    }
+                }
+                outputStream << L"\n";
+            }
+            if (exportInfo.NumberOfNames > kDisplayCount)
+            {
+                outputStream << L"<导出名称已截断，剩余 " << (exportInfo.NumberOfNames - kDisplayCount) << L" 项>\n";
+            }
+        }
+
+        // resourceTypeIdToText maps common resource type IDs found in root entries.
+        // Named resources are reported separately because their text requires UTF-16 decoding.
+        std::wstring resourceTypeIdToText(const std::uint32_t typeIdValue)
+        {
+            switch (typeIdValue)
+            {
+            case 1: return L"CURSOR";
+            case 2: return L"BITMAP";
+            case 3: return L"ICON";
+            case 4: return L"MENU";
+            case 5: return L"DIALOG";
+            case 6: return L"STRING";
+            case 9: return L"ACCELERATOR";
+            case 10: return L"RCDATA";
+            case 14: return L"GROUP_ICON";
+            case 16: return L"VERSION";
+            case 24: return L"MANIFEST";
+            default: return L"TYPE_" + std::to_wstring(typeIdValue);
+            }
+        }
+
+        // appendResourceDirectory provides a shallow first-level resource summary.
+        // It avoids recursive tree expansion to keep backend output bounded.
+        void appendResourceDirectory(
+            std::wostringstream& outputStream,
+            const std::vector<std::uint8_t>& fileBytes,
+            std::uint32_t sizeOfHeadersValue,
+            const std::vector<IMAGE_SECTION_HEADER>& sectionList,
+            const IMAGE_DATA_DIRECTORY& resourceDirectory)
+        {
+            outputStream << L"\n[资源目录]\n";
+            if (resourceDirectory.VirtualAddress == 0 || resourceDirectory.Size == 0)
+            {
+                outputStream << L"无资源目录。\n";
+                return;
+            }
+            std::uint32_t resourceBaseOffset = 0;
+            if (!rvaToFileOffset(resourceDirectory.VirtualAddress, sizeOfHeadersValue, sectionList, resourceBaseOffset))
+            {
+                outputStream << L"资源目录 RVA 无法映射到文件偏移。\n";
+                return;
+            }
+            IMAGE_RESOURCE_DIRECTORY rootDirectory{};
+            if (!readPodAtOffset(fileBytes, resourceBaseOffset, rootDirectory))
+            {
+                outputStream << L"资源目录头读取失败。\n";
+                return;
+            }
+
+            const std::uint32_t kEntryCount = rootDirectory.NumberOfNamedEntries + rootDirectory.NumberOfIdEntries;
+            outputStream << L"一级资源节点数: " << kEntryCount << L"\n";
+            const std::uint32_t kDisplayCount = std::min<std::uint32_t>(kEntryCount, 64U);
+            for (std::uint32_t index = 0; index < kDisplayCount; ++index)
+            {
+                IMAGE_RESOURCE_DIRECTORY_ENTRY entry{};
+                const std::uint64_t kEntryOffset = static_cast<std::uint64_t>(resourceBaseOffset) +
+                    sizeof(IMAGE_RESOURCE_DIRECTORY) + static_cast<std::uint64_t>(index) * sizeof(entry);
+                if (!readPodAtOffset(fileBytes, kEntryOffset, entry))
+                {
+                    outputStream << L"资源目录项读取失败，索引=" << index << L"\n";
+                    break;
+                }
+                outputStream << L"  [" << index << L"] "
+                    << (entry.NameIsString ? L"NamedResource" : resourceTypeIdToText(entry.Id))
+                    << L" OffsetToData=" << hex(entry.OffsetToData) << L"\n";
+            }
+        }
+
+        // appendBaseRelocDirectory summarizes relocation block and entry counts.
+        // The loop validates each block size before advancing to avoid infinite loops.
+        void appendBaseRelocDirectory(
+            std::wostringstream& outputStream,
+            const std::vector<std::uint8_t>& fileBytes,
+            std::uint32_t sizeOfHeadersValue,
+            const std::vector<IMAGE_SECTION_HEADER>& sectionList,
+            const IMAGE_DATA_DIRECTORY& relocDirectory)
+        {
+            outputStream << L"\n[重定位表]\n";
+            if (relocDirectory.VirtualAddress == 0 || relocDirectory.Size == 0)
+            {
+                outputStream << L"无重定位表。\n";
+                return;
+            }
+            std::uint32_t relocOffset = 0;
+            if (!rvaToFileOffset(relocDirectory.VirtualAddress, sizeOfHeadersValue, sectionList, relocOffset))
+            {
+                outputStream << L"重定位表 RVA 无法映射到文件偏移。\n";
+                return;
+            }
+
+            std::uint32_t consumedBytes = 0;
+            std::uint32_t blockCount = 0;
+            std::uint32_t entryCount = 0;
+            while (consumedBytes + sizeof(IMAGE_BASE_RELOCATION) <= relocDirectory.Size)
+            {
+                IMAGE_BASE_RELOCATION block{};
+                if (!readPodAtOffset(fileBytes, static_cast<std::uint64_t>(relocOffset) + consumedBytes, block))
+                {
+                    break;
+                }
+                if (block.VirtualAddress == 0 || block.SizeOfBlock < sizeof(IMAGE_BASE_RELOCATION))
+                {
+                    break;
+                }
+                ++blockCount;
+                entryCount += (block.SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(std::uint16_t);
+                consumedBytes += block.SizeOfBlock;
+            }
+            outputStream << L"重定位块: " << blockCount << L"，条目估算: " << entryCount << L"\n";
+        }
+
+        // appendDebugDirectory prints debug directory rows and CodeView PDB paths when present.
+        // It keeps parsing shallow because this backend is for quick PE triage.
+        void appendDebugDirectory(
+            std::wostringstream& outputStream,
+            const std::vector<std::uint8_t>& fileBytes,
+            std::uint32_t sizeOfHeadersValue,
+            const std::vector<IMAGE_SECTION_HEADER>& sectionList,
+            const IMAGE_DATA_DIRECTORY& debugDirectory)
+        {
+            outputStream << L"\n[调试目录]\n";
+            if (debugDirectory.VirtualAddress == 0 || debugDirectory.Size == 0)
+            {
+                outputStream << L"无调试目录。\n";
+                return;
+            }
+            std::uint32_t debugOffset = 0;
+            if (!rvaToFileOffset(debugDirectory.VirtualAddress, sizeOfHeadersValue, sectionList, debugOffset))
+            {
+                outputStream << L"调试目录 RVA 无法映射到文件偏移。\n";
+                return;
+            }
+            const std::uint32_t kEntryCount = debugDirectory.Size / sizeof(IMAGE_DEBUG_DIRECTORY);
+            outputStream << L"调试项数量: " << kEntryCount << L"\n";
+            for (std::uint32_t index = 0; index < std::min<std::uint32_t>(kEntryCount, 32U); ++index)
+            {
+                IMAGE_DEBUG_DIRECTORY entry{};
+                if (!readPodAtOffset(fileBytes, static_cast<std::uint64_t>(debugOffset) + index * sizeof(entry), entry))
+                {
+                    outputStream << L"调试项读取失败，索引=" << index << L"\n";
+                    break;
+                }
+                outputStream << L"  [" << index << L"] Type=" << entry.Type
+                    << L" Size=" << entry.SizeOfData
+                    << L" Raw=" << hex(entry.PointerToRawData) << L"\n";
+                if (entry.Type == IMAGE_DEBUG_TYPE_CODEVIEW && entry.PointerToRawData + 24U < fileBytes.size())
+                {
+                    const std::wstring kPdbPath = readAsciiAtOffset(fileBytes, entry.PointerToRawData + 24U);
+                    if (!kPdbPath.empty())
+                    {
+                        outputStream << L"      PDB=" << kPdbPath << L"\n";
+                    }
+                }
+            }
+        }
+
+        // appendTlsDirectory prints TLS callback addresses for PE32 and PE32+ images.
+        // Callback VA values are converted through imageBase back to file offsets.
+        void appendTlsDirectory(
+            std::wostringstream& outputStream,
+            const std::vector<std::uint8_t>& fileBytes,
+            bool isPe64,
+            std::uint64_t imageBaseValue,
+            std::uint32_t sizeOfHeadersValue,
+            const std::vector<IMAGE_SECTION_HEADER>& sectionList,
+            const IMAGE_DATA_DIRECTORY& tlsDirectory)
+        {
+            outputStream << L"\n[TLS目录]\n";
+            if (tlsDirectory.VirtualAddress == 0 || tlsDirectory.Size == 0)
+            {
+                outputStream << L"无 TLS 目录。\n";
+                return;
+            }
+            std::uint32_t tlsOffset = 0;
+            if (!rvaToFileOffset(tlsDirectory.VirtualAddress, sizeOfHeadersValue, sectionList, tlsOffset))
+            {
+                outputStream << L"TLS RVA 无法映射到文件偏移。\n";
+                return;
+            }
+
+            std::uint64_t callbacksVa = 0;
+            if (isPe64)
+            {
+                IMAGE_TLS_DIRECTORY64 tlsInfo{};
+                if (!readPodAtOffset(fileBytes, tlsOffset, tlsInfo))
+                {
+                    outputStream << L"TLS64 目录读取失败。\n";
+                    return;
+                }
+                callbacksVa = tlsInfo.AddressOfCallBacks;
+            }
+            else
+            {
+                IMAGE_TLS_DIRECTORY32 tlsInfo{};
+                if (!readPodAtOffset(fileBytes, tlsOffset, tlsInfo))
+                {
+                    outputStream << L"TLS32 目录读取失败。\n";
+                    return;
+                }
+                callbacksVa = tlsInfo.AddressOfCallBacks;
+            }
+            outputStream << L"AddressOfCallBacks: " << hex(callbacksVa) << L"\n";
+            if (callbacksVa <= imageBaseValue)
+            {
+                return;
+            }
+
+            std::uint32_t callbackOffset = 0;
+            const std::uint32_t kCallbackRva = static_cast<std::uint32_t>(callbacksVa - imageBaseValue);
+            if (!rvaToFileOffset(kCallbackRva, sizeOfHeadersValue, sectionList, callbackOffset))
+            {
+                outputStream << L"TLS 回调数组 RVA 无法映射。\n";
+                return;
+            }
+            for (std::uint32_t index = 0; index < 64U; ++index)
+            {
+                if (isPe64)
+                {
+                    std::uint64_t callbackVa = 0;
+                    if (!readPodAtOffset(fileBytes, static_cast<std::uint64_t>(callbackOffset) + index * sizeof(callbackVa), callbackVa) || callbackVa == 0)
+                    {
+                        break;
+                    }
+                    outputStream << L"  Callback[" << index << L"] VA=" << hex(callbackVa) << L"\n";
+                }
+                else
+                {
+                    std::uint32_t callbackVa = 0;
+                    if (!readPodAtOffset(fileBytes, static_cast<std::uint64_t>(callbackOffset) + index * sizeof(callbackVa), callbackVa) || callbackVa == 0)
+                    {
+                        break;
+                    }
+                    outputStream << L"  Callback[" << index << L"] VA=" << hex(callbackVa) << L"\n";
+                }
+            }
+        }
+
+        // appendSimpleDirectory prints a presence/location summary for directories that
+        // do not need deeper parsing in this shared backend.
+        void appendSimpleDirectory(
+            std::wostringstream& outputStream,
+            const wchar_t* titleText,
+            const wchar_t* emptyText,
+            const IMAGE_DATA_DIRECTORY& directoryEntry)
+        {
+            outputStream << L"\n[" << titleText << L"]\n";
+            if (directoryEntry.VirtualAddress == 0 || directoryEntry.Size == 0)
+            {
+                outputStream << emptyText << L"\n";
+                return;
+            }
+            outputStream << L"RVA=" << hex(directoryEntry.VirtualAddress)
+                << L" Size=" << hex(directoryEntry.Size) << L"\n";
+        }
+    }
+
+    PeAnalysisResult analyzePeBytes(
+        const std::vector<std::uint8_t>& fileBytes)
+    {
+        PeAnalysisResult result{};
+        if (fileBytes.size() < sizeof(IMAGE_DOS_HEADER))
+        {
+            result.reportText = L"PE解析失败：文件过小，无法读取 DOS 头。";
+            return result;
+        }
+
+        IMAGE_DOS_HEADER dosHeader{};
+        if (!readPodAtOffset(fileBytes, 0, dosHeader) || dosHeader.e_magic != IMAGE_DOS_SIGNATURE)
+        {
+            result.reportText = L"PE解析失败：不是有效的 MZ 文件。";
+            return result;
+        }
+        if (dosHeader.e_lfanew < 0)
+        {
+            result.reportText = L"PE解析失败：e_lfanew 为负数。";
+            return result;
+        }
+
+        const std::uint64_t kNtHeaderOffset = static_cast<std::uint64_t>(dosHeader.e_lfanew);
+        std::uint32_t peSignature = 0;
+        if (!readPodAtOffset(fileBytes, kNtHeaderOffset, peSignature) || peSignature != IMAGE_NT_SIGNATURE)
+        {
+            result.reportText = L"PE解析失败：PE 签名无效。";
+            return result;
+        }
+
+        IMAGE_FILE_HEADER fileHeader{};
+        const std::uint64_t kFileHeaderOffset = kNtHeaderOffset + sizeof(std::uint32_t);
+        if (!readPodAtOffset(fileBytes, kFileHeaderOffset, fileHeader))
+        {
+            result.reportText = L"PE解析失败：COFF 文件头读取失败。";
+            return result;
+        }
+        if (fileHeader.NumberOfSections > kMaxSectionCount)
+        {
+            result.reportText = L"PE解析失败：区段数量异常：" + std::to_wstring(fileHeader.NumberOfSections);
+            return result;
+        }
+
+        const std::uint64_t kOptionalHeaderOffset = kFileHeaderOffset + sizeof(IMAGE_FILE_HEADER);
+        if (fileHeader.SizeOfOptionalHeader < sizeof(std::uint16_t)
+            || kOptionalHeaderOffset
+                > static_cast<std::uint64_t>(
+                    fileBytes.size())
+            || static_cast<std::uint64_t>(
+                   fileHeader.SizeOfOptionalHeader)
+                > static_cast<std::uint64_t>(
+                    fileBytes.size())
+                    - kOptionalHeaderOffset)
+        {
+            result.reportText = L"PE解析失败：Optional Header 声明范围超出文件边界。";
+            return result;
+        }
+        std::uint16_t optionalMagic = 0;
+        if (!readPodAtOffset(fileBytes, kOptionalHeaderOffset, optionalMagic))
+        {
+            result.reportText = L"PE解析失败：Optional Header 魔数读取失败。";
+            return result;
+        }
+
+        bool isPe64 = false;
+        std::uint64_t imageBaseValue = 0;
+        std::uint32_t entryPointRva = 0;
+        std::uint16_t subsystemValue = 0;
+        std::uint32_t sizeOfImageValue = 0;
+        std::uint32_t sizeOfHeadersValue = 0;
+        std::uint32_t sectionAlignmentValue = 0;
+        std::uint32_t fileAlignmentValue = 0;
+        std::uint32_t checksumValue = 0;
+        std::array<IMAGE_DATA_DIRECTORY, IMAGE_NUMBEROF_DIRECTORY_ENTRIES> dataDirectoryList{};
+
+        if (optionalMagic == IMAGE_NT_OPTIONAL_HDR64_MAGIC)
+        {
+            IMAGE_OPTIONAL_HEADER64 optionalHeader{};
+            const std::size_t kFixedHeaderBytes =
+                FIELD_OFFSET(
+                    IMAGE_OPTIONAL_HEADER64,
+                    DataDirectory);
+            if (fileHeader.SizeOfOptionalHeader
+                < kFixedHeaderBytes)
+            {
+                result.reportText = L"PE解析失败：PE32+ Optional Header 不足以覆盖固定字段和 NumberOfRvaAndSizes。";
+                return result;
+            }
+            std::memcpy(
+                &optionalHeader,
+                fileBytes.data()
+                    + static_cast<std::size_t>(
+                        kOptionalHeaderOffset),
+                std::min<std::size_t>(
+                    sizeof(optionalHeader),
+                    fileHeader.SizeOfOptionalHeader));
+            isPe64 = true;
+            imageBaseValue = optionalHeader.ImageBase;
+            entryPointRva = optionalHeader.AddressOfEntryPoint;
+            subsystemValue = optionalHeader.Subsystem;
+            sizeOfImageValue = optionalHeader.SizeOfImage;
+            sizeOfHeadersValue = optionalHeader.SizeOfHeaders;
+            sectionAlignmentValue = optionalHeader.SectionAlignment;
+            fileAlignmentValue = optionalHeader.FileAlignment;
+            checksumValue = optionalHeader.CheckSum;
+            const std::size_t kDirectoryCapacity =
+                (fileHeader.SizeOfOptionalHeader
+                 - kFixedHeaderBytes)
+                / sizeof(IMAGE_DATA_DIRECTORY);
+            const std::uint32_t kCount =
+                std::min<std::uint32_t>(
+                    std::min<std::uint32_t>(
+                        optionalHeader.NumberOfRvaAndSizes,
+                        IMAGE_NUMBEROF_DIRECTORY_ENTRIES),
+                    static_cast<std::uint32_t>(
+                        kDirectoryCapacity));
+            for (std::uint32_t index = 0; index < kCount; ++index)
+            {
+                dataDirectoryList[static_cast<std::size_t>(index)] = optionalHeader.DataDirectory[index];
+            }
+        }
+        else if (optionalMagic == IMAGE_NT_OPTIONAL_HDR32_MAGIC)
+        {
+            IMAGE_OPTIONAL_HEADER32 optionalHeader{};
+            const std::size_t kFixedHeaderBytes =
+                FIELD_OFFSET(
+                    IMAGE_OPTIONAL_HEADER32,
+                    DataDirectory);
+            if (fileHeader.SizeOfOptionalHeader
+                < kFixedHeaderBytes)
+            {
+                result.reportText = L"PE解析失败：PE32 Optional Header 不足以覆盖固定字段和 NumberOfRvaAndSizes。";
+                return result;
+            }
+            std::memcpy(
+                &optionalHeader,
+                fileBytes.data()
+                    + static_cast<std::size_t>(
+                        kOptionalHeaderOffset),
+                std::min<std::size_t>(
+                    sizeof(optionalHeader),
+                    fileHeader.SizeOfOptionalHeader));
+            isPe64 = false;
+            imageBaseValue = optionalHeader.ImageBase;
+            entryPointRva = optionalHeader.AddressOfEntryPoint;
+            subsystemValue = optionalHeader.Subsystem;
+            sizeOfImageValue = optionalHeader.SizeOfImage;
+            sizeOfHeadersValue = optionalHeader.SizeOfHeaders;
+            sectionAlignmentValue = optionalHeader.SectionAlignment;
+            fileAlignmentValue = optionalHeader.FileAlignment;
+            checksumValue = optionalHeader.CheckSum;
+            const std::size_t kDirectoryCapacity =
+                (fileHeader.SizeOfOptionalHeader
+                 - kFixedHeaderBytes)
+                / sizeof(IMAGE_DATA_DIRECTORY);
+            const std::uint32_t kCount =
+                std::min<std::uint32_t>(
+                    std::min<std::uint32_t>(
+                        optionalHeader.NumberOfRvaAndSizes,
+                        IMAGE_NUMBEROF_DIRECTORY_ENTRIES),
+                    static_cast<std::uint32_t>(
+                        kDirectoryCapacity));
+            for (std::uint32_t index = 0; index < kCount; ++index)
+            {
+                dataDirectoryList[static_cast<std::size_t>(index)] = optionalHeader.DataDirectory[index];
+            }
+        }
+        else
+        {
+            result.reportText = L"PE解析失败：未知 Optional Header 魔数：" + hex(optionalMagic);
+            return result;
+        }
+
+        // Read and summarize the section table before any directory parsing uses RVA mapping.
+        // The structured summaries are returned alongside the human-readable report.
+        const std::uint64_t kOptionalHeaderEnd =
+            kOptionalHeaderOffset
+            + static_cast<std::uint64_t>(
+                fileHeader.SizeOfOptionalHeader);
+        const std::uint64_t kSectionTableOffset =
+            kOptionalHeaderEnd;
+        const std::uint64_t kSectionTableBytes =
+            static_cast<std::uint64_t>(
+                fileHeader.NumberOfSections)
+            * sizeof(IMAGE_SECTION_HEADER);
+        /*
+         * The PE section table begins exactly at the end declared by
+         * SizeOfOptionalHeader, so construction prevents overlap. Recheck the
+         * addition for wraparound and the complete table for file containment.
+         */
+        if (kOptionalHeaderEnd < kOptionalHeaderOffset
+            || kSectionTableOffset
+                > static_cast<std::uint64_t>(
+                    fileBytes.size())
+            || kSectionTableBytes
+                > static_cast<std::uint64_t>(
+                    fileBytes.size())
+                    - kSectionTableOffset)
+        {
+            result.reportText = L"PE解析失败：区段表与 Optional Header 重叠或超出文件边界。";
+            return result;
+        }
+        std::vector<IMAGE_SECTION_HEADER> sectionList;
+        sectionList.reserve(fileHeader.NumberOfSections);
+        for (std::uint16_t sectionIndex = 0; sectionIndex < fileHeader.NumberOfSections; ++sectionIndex)
+        {
+            IMAGE_SECTION_HEADER sectionHeader{};
+            const std::uint64_t kCurrentOffset = kSectionTableOffset +
+                static_cast<std::uint64_t>(sectionIndex) * sizeof(IMAGE_SECTION_HEADER);
+            if (!readPodAtOffset(fileBytes, kCurrentOffset, sectionHeader))
+            {
+                result.reportText = L"PE解析失败：区段表读取失败，索引=" + std::to_wstring(sectionIndex);
+                return result;
+            }
+            const std::uint64_t kRawOffset =
+                sectionHeader.PointerToRawData;
+            const std::uint64_t kRawSize =
+                sectionHeader.SizeOfRawData;
+            if (kRawSize != 0U
+                && (kRawOffset
+                        > static_cast<std::uint64_t>(
+                            fileBytes.size())
+                    || kRawSize
+                        > static_cast<std::uint64_t>(
+                            fileBytes.size())
+                            - kRawOffset))
+            {
+                result.reportText =
+                    L"PE解析失败：区段原始数据范围超出文件边界，索引="
+                    + std::to_wstring(sectionIndex);
+                return result;
+            }
+            sectionList.push_back(sectionHeader);
+
+            PeSectionSummary summary{};
+            summary.name = safeSectionName(sectionHeader);
+            summary.virtualAddress = sectionHeader.VirtualAddress;
+            summary.virtualSize = sectionHeader.Misc.VirtualSize;
+            summary.rawOffset = sectionHeader.PointerToRawData;
+            summary.rawSize = sectionHeader.SizeOfRawData;
+            summary.characteristics = sectionHeader.Characteristics;
+            summary.entropy = calculateSectionEntropy(fileBytes, sectionHeader.PointerToRawData, sectionHeader.SizeOfRawData);
+            result.sections.push_back(summary);
+        }
+
+        // Fill the structured result fields before building text so non-UI callers can
+        // inspect basic metadata without parsing the report string.
+        result.success = true;
+        result.isPe64 = isPe64;
+        result.machine = fileHeader.Machine;
+        result.subsystem = subsystemValue;
+        result.entryPointRva = entryPointRva;
+        result.imageBase = imageBaseValue;
+        result.entryPointFileOffsetValid =
+            entryPointRva != 0U
+            && rvaToFileOffset(
+                entryPointRva,
+                sizeOfHeadersValue,
+                sectionList,
+                result.entryPointFileOffset)
+            && result.entryPointFileOffset
+                < static_cast<std::uint64_t>(fileBytes.size());
+        result.importModules = collectImportTable(
+            fileBytes,
+            isPe64,
+            sizeOfHeadersValue,
+            sectionList,
+            dataDirectoryList[IMAGE_DIRECTORY_ENTRY_IMPORT]);
+
+        std::wostringstream outputStream;
+        outputStream << L"[PE头]\n";
+        outputStream << L"文件格式: " << (isPe64 ? L"PE32+" : L"PE32") << L"\n";
+        outputStream << L"e_lfanew: " << hex(static_cast<std::uint32_t>(dosHeader.e_lfanew)) << L"\n";
+        outputStream << L"Machine: " << hex(fileHeader.Machine) << L" (" << machineToText(fileHeader.Machine) << L")\n";
+        outputStream << L"Section数量: " << fileHeader.NumberOfSections << L"\n";
+        outputStream << L"TimeDateStamp: " << hex(fileHeader.TimeDateStamp) << L" (" << unixTimeToLocalText(fileHeader.TimeDateStamp) << L")\n";
+        outputStream << L"Characteristics: " << hex(fileHeader.Characteristics) << L" (" << fileCharacteristicsToText(fileHeader.Characteristics) << L")\n";
+        outputStream << L"EntryPoint RVA: " << hex(entryPointRva) << L"\n";
+        outputStream << L"ImageBase: " << hex(imageBaseValue) << L"\n";
+        outputStream << L"Subsystem: " << hex(subsystemValue) << L" (" << subsystemToText(subsystemValue) << L")\n";
+        outputStream << L"SectionAlignment: " << hex(sectionAlignmentValue) << L"\n";
+        outputStream << L"FileAlignment: " << hex(fileAlignmentValue) << L"\n";
+        outputStream << L"SizeOfImage: " << hex(sizeOfImageValue) << L"\n";
+        outputStream << L"SizeOfHeaders: " << hex(sizeOfHeadersValue) << L"\n";
+        outputStream << L"CheckSum: " << hex(checksumValue) << L"\n";
+
+        outputStream << L"\n[区段表]\n";
+        for (std::size_t sectionIndex = 0; sectionIndex < sectionList.size(); ++sectionIndex)
+        {
+            const IMAGE_SECTION_HEADER& sectionHeader = sectionList[sectionIndex];
+            const PeSectionSummary& summary = result.sections[sectionIndex];
+            outputStream
+                << L"[" << sectionIndex << L"] " << ks::str::utf8ToUtf16(summary.name) << L"\n"
+                << L"  VirtualAddress: " << hex(sectionHeader.VirtualAddress) << L"\n"
+                << L"  VirtualSize: " << hex(sectionHeader.Misc.VirtualSize) << L"\n"
+                << L"  PointerToRawData: " << hex(sectionHeader.PointerToRawData) << L"\n"
+                << L"  SizeOfRawData: " << hex(sectionHeader.SizeOfRawData) << L"\n"
+                << L"  Entropy: " << std::fixed << std::setprecision(4) << summary.entropy << L"\n"
+                << L"  Characteristics: " << hex(sectionHeader.Characteristics)
+                << L" (" << sectionCharacteristicsToText(sectionHeader.Characteristics) << L")\n";
+        }
+
+        // Directory-specific appenders stay independent so new consumers can move toward
+        // structured directory objects later without changing the UI wrapper contract.
+        appendDataDirectories(outputStream, dataDirectoryList);
+        appendImportTable(outputStream, fileBytes, isPe64, sizeOfHeadersValue, sectionList, dataDirectoryList[IMAGE_DIRECTORY_ENTRY_IMPORT]);
+        appendExportTable(outputStream, fileBytes, sizeOfHeadersValue, sectionList, dataDirectoryList[IMAGE_DIRECTORY_ENTRY_EXPORT]);
+        appendTlsDirectory(outputStream, fileBytes, isPe64, imageBaseValue, sizeOfHeadersValue, sectionList, dataDirectoryList[IMAGE_DIRECTORY_ENTRY_TLS]);
+        appendResourceDirectory(outputStream, fileBytes, sizeOfHeadersValue, sectionList, dataDirectoryList[IMAGE_DIRECTORY_ENTRY_RESOURCE]);
+        appendBaseRelocDirectory(outputStream, fileBytes, sizeOfHeadersValue, sectionList, dataDirectoryList[IMAGE_DIRECTORY_ENTRY_BASERELOC]);
+        appendDebugDirectory(outputStream, fileBytes, sizeOfHeadersValue, sectionList, dataDirectoryList[IMAGE_DIRECTORY_ENTRY_DEBUG]);
+        appendSimpleDirectory(outputStream, L"延迟导入表", L"无延迟导入表。", dataDirectoryList[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT]);
+        appendSimpleDirectory(outputStream, L"绑定导入表", L"无绑定导入表。", dataDirectoryList[IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT]);
+        appendSimpleDirectory(outputStream, L"Load Config目录", L"无 Load Config 目录。", dataDirectoryList[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG]);
+        appendSimpleDirectory(outputStream, L"CLR/.NET目录", L"无 CLR 目录。", dataDirectoryList[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR]);
+        appendSimpleDirectory(outputStream, L"安全目录/证书", L"无安全目录。", dataDirectoryList[IMAGE_DIRECTORY_ENTRY_SECURITY]);
+
+        result.reportText = outputStream.str();
+        return result;
+    }
+
+    PeAnalysisResult analyzePeFile(const std::wstring& filePath)
+    {
+        std::vector<std::uint8_t> fileBytes;
+        std::wstring readErrorText;
+        if (!readWholeFile(filePath, fileBytes, readErrorText))
+        {
+            PeAnalysisResult result;
+            result.reportText = L"PE解析失败：" + readErrorText;
+            return result;
+        }
+        return analyzePeBytes(fileBytes);
+    }
+
+    std::wstring buildPeAnalysisText(const std::wstring& filePath)
+    {
+        // buildPeAnalysisText is the text-only facade used by the FileDock property page.
+        // It returns the report regardless of success so failures remain displayable.
+        return analyzePeFile(filePath).reportText;
+    }
+
+    std::wstring buildPeAnalysisText(
+        const std::vector<std::uint8_t>& fileBytes)
+    {
+        return analyzePeBytes(fileBytes).reportText;
+    }
+
+    std::string buildPeAnalysisTextUtf8(const std::string& filePathUtf8)
+    {
+        // UTF-8 callers receive both path conversion and report conversion in one helper.
+        // Empty conversion results naturally flow through to analyzePeFile failure text.
+        return ks::str::utf16ToUtf8(buildPeAnalysisText(ks::str::utf8ToUtf16(filePathUtf8)));
+    }
+}

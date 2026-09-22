@@ -5,10 +5,10 @@
 - `shared/evidence/InjectionSurvey.{h,cpp}`：唯一判据层，C++20、Qt-free、Win32-free。
   地址空间索引、模块交叉视图（加载器 L / 映像映射 I / 非映像载荷候选 P）、工作集页筛选、
   线程起点落点、比较范围计划、例外规则准入与匹配、观测语义表、四态结论。
-  离线测试 `KswordARKLightTests/InjectionSurveyTests.cpp`（套件名 `J injection survey`）。
-- `Ksword5.1/Ksword5.1/ksword/process/injection_trace_collector.{h,cpp}`：Win32 现场采集。
+  离线测试 `tests/native/ark_light/InjectionSurveyTests.cpp`（套件名 `J injection survey`）。
+- `shared/platform/process/injection_trace_collector.{h,cpp}`：Win32 现场采集。
   只读、不挂起目标、不改页保护；全程一个句柄，扫描前后各核一次 PID + 创建时间。
-- `Ksword5.1/Ksword5.1/ProcessDock/ProcessDetailWindow.InjectionTrace.cpp`：进程详情窗口
+- `apps/desktop/process_dock/ProcessDetailWindow.InjectionTrace.cpp`：进程详情窗口
   「模块」页的「快速注入检查」「深度注入检查」两个按钮（`m_injectionTraceButton` /
   `m_injectionTraceDeepButton`，两个共用一次扫描，启停要一起改）。
 
@@ -22,7 +22,7 @@
 - `injectorAttribution` 恒为 `OwnerAttribution::Unknown`，本层不提供把它升格的入口。
 - 例外规则必须绑定 目标程序版本 + 被修改模块身份 + 具体 RVA 范围（≤ 64 KiB），缺一即拒；
   规则要求字节检查而现场读不到字节时**不命中**（fail-closed）。
-  `modifiedModuleIdentity` 必须用 `ModuleIdentityKeyFor()` 生成，手写路径大小写不同就永远匹配不上。
+  `modifiedModuleIdentity` 必须用 `moduleIdentityKeyFor()` 生成，手写路径大小写不同就永远匹配不上。
 - 只有三类观测能撑起 `DifferenceObserved`：归一化后仍与可靠参考不同、交叉视图**矛盾**、
   载荷结构且**可靠展开的帧**进入其中。私有 RX/RWX 本身只到 `Indeterminate`。
 
@@ -31,14 +31,14 @@
 - **能力限制 vs 覆盖缺口**：`capabilityLimitKeys`（本版本不做）只缩小适用范围，
   `coverageGapKeys`（打算查没查成）压制"未发现差异"。闸门用 `scopeIntact`，
   `coverageComplete` 只用于展示。混成一张表会让四态在生产里退化成三态。
-- **交叉视图矛盾 vs 不对称**：`ModuleCrossIssueIsContradiction()`。
+- **交叉视图矛盾 vs 不对称**：`moduleCrossIssueIsContradiction()`。
   explorer.exe 上稳定有十几个"映像映射无加载器项"（资源映射 / 元数据映像 / .NET），
   那是不对称，只到 `Indeterminate`；路径/大小不符、主映像自相矛盾才是矛盾。
 
 ## 进程列表的「注入面」列
 
 `ProcessDock` 的 `TableColumn::InjectionSurface`（Security 分组，默认隐藏），
-由右键「筛选注入面」手动填充，走 `ks::process::ScreenProcessInjectionSurface()` ——
+由右键「筛选注入面」手动填充，走 `ks::process::screenProcessInjectionSurface()` ——
 只枚举地址空间 + 分类，不读内存、不碰模块/PE/工作集/线程/驱动。
 
 **为什么是计数不是"状态"**：实测本机 496 个进程里，310 个可打开的有 **284 个（92%）**
@@ -57,12 +57,12 @@
 - 协议 `shared/driver/KswordArkInjectionScanIoctl.h`：
   `IOCTL_KSWORD_ARK_ENUMERATE_PROCESS_VAD`(0x912) 与
   `IOCTL_KSWORD_ARK_SCAN_PROCESS_EXECUTABLE_PTE`(0x913)，两条都是 `FILE_WRITE_ACCESS`、只读、可游标续扫。
-- 实现 `KswordARKDriver/src/features/injection/`：`injection_vad.c`（EPROCESS.VadRoot 平衡树中序遍历）、
+- 实现 `drivers/ark/src/features/injection/`：`injection_vad.c`（EPROCESS.VadRoot 平衡树中序遍历）、
   `injection_pte_scan.c`（四级页表自顶向下、整页读表、只下降到 present 子树）、`injection_ioctl.c`。
 - **不能转调 `ZwQueryVirtualMemory` 冒充第二视图**：它和 R3 的 `VirtualQueryEx` 同源，
   交叉核对它等于自己和自己比。VAD 直接读平衡树、页表读 CR3 下的物理页，才是独立来源。
 - R3 侧 `ArkDriverClient/ArkDriverInjectionScan.cpp`，CLI 子命令 `memory enum-vad` / `memory scan-exec-pte`。
-- 判据在 `EvaluateKernelCrossView()`：结论**只到 Indeterminate**，因为内核交叉差异的
+- 判据在 `evaluateKernelCrossView()`：结论**只到 Indeterminate**，因为内核交叉差异的
   合法成因目录还没在实机数据上建立（`kLimitKernelBenignBaseline`）。有基线后再考虑升档。
 
 ### 新增 IOCTL 要登记八处
@@ -70,7 +70,7 @@
 `shared/driver/*.h` 定义 → `include/ark/ark_ioctl.h` 聚合 → `ioctl_registry.c` 声明 + 表项 →
 驱动 `.vcxproj` / `.vcxproj.filters`（新目录还要加 `<Filter Include=...>` 声明）→
 `tools/driver_functional_ci/driver_test_plan.json`（执行或排除恰好一次，`plan_gate.py` 点名）→
-`KswordCLI` 子命令 + 内置 `help` 元数据 → `docs/CLI使用文档.md`。漏任何一处都会在别处炸。
+`KswordCLI` 子命令 + 内置 `help` 元数据 → `docs/zh-CN/cli.md`。漏任何一处都会在别处炸。
 
 ### 实机读数（2026-09-12，KSword-HVM-Target，Win11 22621.4317）
 
@@ -129,7 +129,7 @@
 这棵树），但内存还在还能跑。这一维查**树自己站不站得住**，和"用户态看不到但页表看得到"
 是互补的两条路：交叉视图全对得上时树照样可能被摘过。
 
-三条判据在 `EvaluateVadLinkIntegrity()`，每条都有一个**容易写成误报**的坑：
+三条判据在 `evaluateVadLinkIntegrity()`，每条都有一个**容易写成误报**的坑：
 
 - `visited < VadCount` 才算。**反向不算** —— 并发建 VAD 时计数还没加上来是常态。
 - `VadHint` 不可达才算，但 **hint 为空是合法的**（刚建的进程没用过），偏移不可用也不算。
@@ -172,7 +172,7 @@
 - `PsLookupProcessByProcessId` / `KeStackAttachProcess` / `KeUnstackDetachProcess` / `KAPC_STATE`
   声明在 **ntifs.h**，本驱动只 include ntddk.h。按 `memory_pagetable.c` 的做法手工声明，
   ApcState 用 `DECLSPEC_ALIGN(16) UCHAR [128]` 承接。
-- **私有 VAD 就是 `MMVAD_SHORT`**，它后面的 `Subsection`/`ViewLinks` 根本不存在。
+- **私有 VAD 就是 `MmvadShort`**，它后面的 `Subsection`/`ViewLinks` 根本不存在。
   按 `sizeof(MMVAD)` 整读会跨出分配，短 VAD 落在页尾时常驻探测还会失败，
   于是一条正常的私有区域被记成"节点读不到"。先读 SHORT，确认非私有再单独读长字段。
 
@@ -208,14 +208,14 @@ shellcode 抬到 `DifferenceObserved` 的一维 —— 内存里有载荷结构�
   我们只给内存读取 / 模块基址 / `RUNTIME_FUNCTION` 三个回调。
 - **可靠性判据必须自己做**：`StackWalk64` 查不到展开数据时会退回扫栈猜，
   而且**不告诉你哪一帧是猜的**。判据是"PC 落在带非空异常目录的 MEM_IMAGE 里
-  ⇒ 下一帧是算出来的"，实现在 `AdmitStackFrames()`（判据层，有离线测试）。
+  ⇒ 下一帧是算出来的"，实现在 `admitStackFrames()`（判据层，有离线测试）。
   可靠前缀一断不再接上；shellcode 帧本身**在**前缀内（由调用者算出），它下面的不在。
 - **不挂起也能有可信上下文**：第四态 `ThreadContextTrust::WaitingThreadStable`。
   `SystemProcessInformation` 的 `ThreadState == 5` 选出停着的线程，再连取两次
   `GetThreadContext` 要求 RIP/RSP/RBP 一字不差。微软那句警告针对的是正在别的核上跑的
   线程。最值得查的信标正好停在等待里，所以这一态够用。
 - **`SurveyInput` 里没有 `reliableStackWalkAvailable` 这个布尔**，是刻意删掉的：
-  做成可赋值字段就等于给了一个绕过 `AdmitStackFrames` 的后门。只能由 `threadStacks` 推出。
+  做成可赋值字段就等于给了一个绕过 `admitStackFrames` 的后门。只能由 `threadStacks` 推出。
 - **只做原生 x64**，WOW64 整节不做 —— x64 展开器走 32 位栈会产出看着像帧的垃圾。
 - **DbgHelp 是进程级单线程**，锁在 `ksword/dbghelp_serialization.h`，
   与 DynData 的 PDB 解析共用。各锁各的等于没锁。

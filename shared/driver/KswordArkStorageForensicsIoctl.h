@@ -4,10 +4,10 @@
 
 // ============================================================
 // KswordArkStorageForensicsIoctl.h
-// 作用：
-// - 定义物理磁盘多后端取证读写的唯一 R3/R0 协议；
-// - 查询接口只返回能力与边界，不隐式切换访问后端；
-// - 写入接口要求显式确认令牌，并由 R0 再执行系统盘与范围预检。
+// Purpose:
+// - Define the unique R3/R0 protocol for multi-backend forensics read/write of physical disks;
+// - Query interface returns capabilities and boundaries only; does not implicitly switch access backends.
+// - The write interface requires an explicit confirmation token; R0 then repeats the system-disk and range preflight checks.
 // ============================================================
 
 #define KSWORD_ARK_STORAGE_FORENSICS_PROTOCOL_VERSION 1UL

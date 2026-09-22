@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <Filter Include="shared">
+      <UniqueIdentifier>{ECA0D383-BE97-599E-B89A-AA493C95FCB0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared\window">
+      <UniqueIdentifier>{C17A4C0F-D288-5CC8-9DF6-F460896CCCDE}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="DwmZOrderAgent.cpp" />
+    <ClInclude Include="NativeQueries.h" />
+    <ClInclude Include="OrderPlan.h" />
+    <ClInclude Include="RuntimeProfile.h" />
+    <ClCompile Include="RuntimeResolver.cpp" />
+    <ClInclude Include="RuntimeResolver.h" />
+    <ClInclude Include="RuntimeSignatures.h" />
+    <ClInclude Include="RuntimeWin10Signatures.h" />
+    <ClInclude Include="..\..\shared\window\DwmProcessIdentity.h">
+      <Filter>shared\window</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\shared\window\DwmZOrderProtocol.h">
+      <Filter>shared\window</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

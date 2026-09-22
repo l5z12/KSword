@@ -1,11 +1,11 @@
-# 宿主侧：把靶机事件环里三重故障现场那几行捞出来念一遍。
+# Host side: Retrieve and read the lines containing the triple fault context from the target machine's event ring.
 #
-# 只念 0xD3（vmcs02 当时装着的三张描述符表 + 与 vmcs12 的逐字段掩码）和
-# 0xD2（L1 一共往 IDTR 基址写过几次、最后写的是什么）。这两行必须一起看：
-# 单看 0xD3 的 "IDTR 基址 = 0" 分不清"L1 从没写过"和"我们把它弄丢了"，
-# Linux 的 IDT 在 0xFFFFFE0000000000，低 32 位恰好全零，两种解释给出同一个值。
+# Read only 0xD3 (the three descriptor tables loaded in vmcs02 at that time and the per-field mask against vmcs12) and
+# 0xD2 (how many times L1 wrote to the IDTR base address and what the last value was). These two lines must be viewed together:
+# Looking at 0xD3's "IDTR base = 0" alone cannot distinguish between "L1 never wrote" and "we lost it",
+# Linux's IDT is at 0xFFFFFE0000000000; the lower 32 bits are all zeros, so both interpretations yield the same value.
 #
-# 环一次只回 64 行，必须翻页；翻不到就打"(没有这一行)"，不要当成零。
+# Ring once returns only 64 lines, requiring pagination; if the line isn't found, output "(no such line)" instead of treating it as zero.
 param(
     [string] $VMName = 'KSword-HVM-Target',
     [int]    $Depth  = 4000
@@ -49,149 +49,149 @@ $desc = @($rows | Where-Object { $_.ruleId -eq 211 })
 $idtw = @($rows | Where-Object { $_.ruleId -eq 210 })
 $copy = @($rows | Where-Object { $_.ruleId -eq 209 })
 
-if ($desc.Count -eq 0) { Write-Output '0xD3（描述符表现场）：(没有这一行)' }
+if ($desc.Count -eq 0) { Write-Output '0xD3 (descriptor-table state): (this line is absent)' }
 foreach ($r in $desc) {
     $lim = [uint64]$r.guestRip
     Write-Output ''
-    Write-Output ("0xD3 描述符表现场  核{0}  序号 {1}" -f $r.access, $r.sequence)
-    Write-Output ("  IDTR 基址 = 0x{0:X16}  界限 = 0x{1:X4}" -f `
+    Write-Output ("0xD3 Descriptor Context  Core{0}  Sequence {1}" -f $r.access, $r.sequence)
+    Write-Output ("  IDTR Base Address = 0x{0:X16}  Limit = 0x{1:X4}" -f `
         ([uint64]$r.qualification), ($lim -band 0xFFFF))
-    Write-Output ("  GDTR 基址 = 0x{0:X16}  界限 = 0x{1:X4}" -f `
+    Write-Output ("  GDTR Base = 0x{0:X16}  Limit = 0x{1:X4}" -f `
         ([uint64]$r.guestPhysicalAddress), (($lim -shr 16) -band 0xFFFF))
-    Write-Output ("  TR   基址 = 0x{0:X16}  界限 = 0x{1:X8}  AR = 0x{2:X}" -f `
+    Write-Output ("  TR   Base = 0x{0:X16}  Limit = 0x{1:X8}  AR = 0x{2:X}" -f `
         ([uint64]$r.guestLinearAddress), (($lim -shr 32) -band 0xFFFFFFFFL), ([uint32]$r.status))
-    Write-Output ("  与 vmcs12 不一致掩码 = 0x{0:X}（0 = 逐字段一致）" -f ([uint64]$r.exitReason))
+    Write-Output ("  Inconsistent mask with vmcs12 = 0x{0:X} (0 = field-by-field consistent)" -f ([uint64]$r.exitReason))
 }
 
-if ($idtw.Count -eq 0) { Write-Output ''; Write-Output '0xD2（IDTR 基址写入记录）：(没有这一行)' }
+if ($idtw.Count -eq 0) { Write-Output ''; Write-Output '0xD2 (IDTR base address write record): (this line is missing)' }
 foreach ($r in $idtw) {
     Write-Output ''
-    Write-Output ("0xD2 IDTR 基址写入记录  核{0}  序号 {1}" -f $r.access, $r.sequence)
-    Write-Output ("  L1 对 0x6818 的 VMWRITE 次数 = {0}" -f ([uint64]$r.guestLinearAddress))
-    Write-Output ("  最后一次写入的值          = 0x{0:X16}" -f ([uint64]$r.qualification))
-    Write-Output ("  三重故障时 vmcs02 里的值  = 0x{0:X16}" -f ([uint64]$r.guestPhysicalAddress))
-    Write-Output ("  当时的 vmcs12 区域        = 0x{0:X}" -f ([uint64]$r.guestRip))
+    Write-Output ("0xD2 IDTR base address write record  Core{0}  Sequence {1}" -f $r.access, $r.sequence)
+    Write-Output ("  L1 VMWRITE count to 0x6818 = {0}" -f ([uint64]$r.guestLinearAddress))
+    Write-Output ("  Last written value          = 0x{0:X16}" -f ([uint64]$r.qualification))
+    Write-Output ("  Values in vmcs02 at triple fault = 0x{0:X16}" -f ([uint64]$r.guestPhysicalAddress))
+    Write-Output ("  The vmcs12 region at that time = 0x{0:X}" -f ([uint64]$r.guestRip))
 }
 
-if ($copy.Count -eq 0) { Write-Output ''; Write-Output '0xD1（拷贝回路两端）：(没有这一行)' }
+if ($copy.Count -eq 0) { Write-Output ''; Write-Output '0xD1 (copy loop endpoints): (this line is missing)' }
 foreach ($r in $copy) {
     $nz = [uint64]$r.guestLinearAddress
     $cn = [uint64]$r.guestRip
     $wc = [uint64]$r.exitReason
     Write-Output ''
-    Write-Output ("0xD1 IDTR 基址拷贝两端  核{0}  序号 {1}" -f $r.access, $r.sequence)
-    Write-Output ("  存出（vmcs02→vmcs12）次数 = {0}   其中非零 = {1}   最后存出值 = 0x{2:X16}" -f `
+    Write-Output ("0xD1 IDTR base address copy both ends  core{0}  sequence {1}" -f $r.access, $r.sequence)
+    Write-Output ("  Number of saves (vmcs02→vmcs12) = {0}   Non-zero count = {1}   Last saved value = 0x{2:X16}" -f `
         ($cn -shr 32), ($nz -shr 32), ([uint64]$r.qualification))
-    Write-Output ("  装入（vmcs12→vmcs02）次数 = {0}   其中非零 = {1}   最后装入值 = 0x{2:X16}" -f `
+    Write-Output ("  Number of loads (vmcs12→vmcs02) = {0}   Non-zero count = {1}   Last loaded value = 0x{2:X16}" -f `
         ($cn -band 0xFFFFFFFFL), ($nz -band 0xFFFFFFFFL), ([uint64]$r.guestPhysicalAddress))
-    # exitReason 只有 32 位，两个对照计数各占 16 位。第一版按 32/32 打包，
-    # 高半直接被截掉，读出来是个恒零的假读数。
-    Write-Output ("  对照：L1 写 IDTR 界限 {0} 次，写 GDTR 基址 {1} 次" -f `
+    # exitReason is only 32 bits; the two comparison counters each occupy 16 bits. The first version packed them as 32/32.
+    # The upper half is directly truncated, resulting in a constant zero false read.
+    Write-Output ("  Reference: L1 writes IDTR limit {0} times, writes GDTR base {1} times" -f `
         (($wc -shr 16) -band 0xFFFF), ($wc -band 0xFFFF))
 }
 
-# 每个 vmcs12 区域自己的 IDTR 基址。这一组不受三重故障门控，随时可读。
+# The IDTR base address for each vmcs12 region. This set is not gated by the triple fault and is always readable.
 $perRegion = @($rows | Where-Object { $_.ruleId -eq 208 })
-if ($perRegion.Count -eq 0) { Write-Output ''; Write-Output '0xD0（每区域 IDTR 基址）：(没有这一行)' }
+if ($perRegion.Count -eq 0) { Write-Output ''; Write-Output '0xD0 (IDTR base address per region): (this line is absent)' }
 foreach ($r in ($perRegion | Sort-Object { [int64]$_.sequence } | Select-Object -Last 8)) {
     Write-Output ''
-    Write-Output ("0xD0 区域 IDTR 基址  核{0}  区{1}  vmcs12=0x{2:X}  序号 {3}" -f `
+    Write-Output ("0xD0 Region IDTR Base  Core{0}  Region{1}  vmcs12=0x{2:X}  Sequence {3}" -f `
         $r.access, [uint64]$r.exitReason, ([uint64]$r.guestRip), $r.sequence)
-    Write-Output ("  当前基址 = 0x{0:X16}" -f ([uint64]$r.qualification))
-    Write-Output ("  归零次数 = {0}   归零时 RIP = 0x{1:X}   归零时退出原因 = {2}" -f `
+    Write-Output ("  Current base address = 0x{0:X16}" -f ([uint64]$r.qualification))
+    Write-Output ("  Reset count = {0}   RIP at reset = 0x{1:X}   Exit reason at reset = {2}" -f `
         ([uint64]$r.guestLinearAddress), ([uint64]$r.guestPhysicalAddress), ([uint32]$r.status))
 }
 
-# 归零次数的分解：是我们的装入把它抹了，还是 L2 自己重载了 IDT。
+# Breakdown of zeroing count: Did our load clear it, or did L2 reload the IDT?
 $blame = @($rows | Where-Object { $_.ruleId -eq 207 })
-if ($blame.Count -eq 0) { Write-Output ''; Write-Output '0xCF（归零归因）：(没有这一行)' }
+if ($blame.Count -eq 0) { Write-Output ''; Write-Output '0xCF (Reset Attribution): (This line is absent)' }
 foreach ($r in ($blame | Sort-Object { [int64]$_.sequence } | Select-Object -Last 4)) {
     Write-Output ''
-    Write-Output ("0xCF 归零归因  核{0}  区{1}  vmcs12=0x{2:X}  序号 {3}" -f `
+    Write-Output ("0xCF Zeroed Attribution  Core{0}  Region{1}  vmcs12=0x{2:X}  Sequence {3}" -f `
         $r.access, (([uint64]$r.exitReason) -band 0xFF), ([uint64]$r.guestRip), $r.sequence)
-    Write-Output ("  该区域装上过 IDT 基址 {0} 次" -f ((([uint64]$r.exitReason) -shr 8)))
-    Write-Output ("  归零总数 = {0}" -f ([uint32]$r.status))
-    Write-Output ("    其中我们装入抹掉的 = {0}" -f ([uint64]$r.guestPhysicalAddress))
-    Write-Output ("    其中 L2 自己重载的 = {0}" -f ([uint64]$r.guestLinearAddress))
-    Write-Output ("  上次装入值 = 0x{0:X16}" -f ([uint64]$r.qualification))
+    Write-Output ("  The area has been installed with IDT base address {0} times" -f ((([uint64]$r.exitReason) -shr 8)))
+    Write-Output ("  Total zero count = {0}" -f ([uint32]$r.status))
+    Write-Output ("    Among them we load the erased = {0}" -f ([uint64]$r.guestPhysicalAddress))
+    Write-Output ("    Among them, L2 self-reloaded = {0}" -f ([uint64]$r.guestLinearAddress))
+    Write-Output ("  Last loaded value = 0x{0:X16}" -f ([uint64]$r.qualification))
 }
 
-# 我们抹掉的那一次现场：后备存储当时的状态。
+# The context we cleared: the state of the backup storage at that time.
 foreach ($r in (@($rows | Where-Object { $_.ruleId -eq 206 }) |
                 Sort-Object { [int64]$_.sequence } | Select-Object -Last 2)) {
     $p = [uint64]$r.guestRip
     Write-Output ''
-    Write-Output ("0xCE 我们抹掉的那一次  核{0}  序号 {1}" -f $r.access, $r.sequence)
-    Write-Output ("  即将进入的 L2 RIP = 0x{0:X}" -f ([uint64]$r.qualification))
-    Write-Output ("  当时的 vmcs12 区域 = 0x{0:X}   区域头 = 0x{1:X}   写序号 = {2}" -f `
+    Write-Output ("0xCE The time we wiped  Core{0}  Sequence {1}" -f $r.access, $r.sequence)
+    Write-Output ("  L2 RIP about to enter = 0x{0:X}" -f ([uint64]$r.qualification))
+    Write-Output ("  The vmcs12 region at that time = 0x{0:X}   Region header = 0x{1:X}   Write sequence number = {2}" -f `
         ([uint64]$r.guestPhysicalAddress), ([uint64]$r.guestLinearAddress), ([uint32]$r.exitReason))
-    Write-Output ("  当时：存页失败 {0}   还原未命中 {1}   还原被拒字段 {2}   池淘汰 {3}   上次存了 {4} 条" -f `
+    Write-Output ("  At that time: page store failed {0}   restore miss {1}   restore rejected field {2}   pool eviction {3}   last stored {4} entries" -f `
         ($p -shr 48), (($p -shr 32) -band 0xFFFF), (($p -shr 16) -band 0xFFFF), ($p -band 0xFFFF), ([uint32]$r.status))
 }
 
-# 后备存储自身的健康度（累计），此前从未发布过。
+# Health status of the backup storage itself (cumulative), never released before.
 foreach ($r in (@($rows | Where-Object { $_.ruleId -eq 205 }) |
                 Sort-Object { [int64]$_.sequence } | Select-Object -Last 2)) {
     $q = [uint64]$r.qualification
     $l = [uint64]$r.guestLinearAddress
     $g = [uint64]$r.guestRip
     Write-Output ''
-    Write-Output ("0xCD 后备存储健康度  核{0}  序号 {1}" -f $r.access, $r.sequence)
-    Write-Output ("  存页：成功 {0}   失败 {1}   跳过 {2}   最近一次写了 {3} 条" -f `
+    Write-Output ("0xCD Backup storage health  Core{0}  Sequence {1}" -f $r.access, $r.sequence)
+    Write-Output ("  Page: Success {0}   Failed {1}   Skipped {2}   Last wrote {3} entries" -f `
         ($q -shr 32), ($q -band 0xFFFFFFFFL), ([uint64]$r.guestPhysicalAddress), ([uint32]$r.status))
-    Write-Output ("  还原：成功 {0}   未命中 {1}   被拒字段 {2}   池淘汰 {3}   上次头里的条数 {4}" -f `
+    Write-Output ("  Restore: success {0}   Missed {1}   Rejected fields {2}   Pool eviction {3}   Entries in last header {4}" -f `
         ($l -shr 32), ($l -band 0xFFFFFFFFL), ($g -shr 32), ($g -band 0xFFFFFFFFL), ([uint32]$r.exitReason))
 }
 
-# 三重故障那个形状：64 位模式 + IDTR 基址 0 + 界限 0x0FFF。
-# 只数状态没用（Linux 正常会路过），关键是带不带注入。
+# The shape of a triple fault: 64-bit mode + IDTR base address 0 + limit 0x0FFF.
+# Counting status alone is useless (Linux typically passes through); the key is whether injection is present.
 foreach ($r in (@($rows | Where-Object { $_.ruleId -eq 204 }) |
                 Sort-Object { [int64]$_.sequence } | Select-Object -Last 2)) {
     Write-Output ''
-    Write-Output ("0xCC 64 位下 IDT 基址为 0 的进入  核{0}  序号 {1}" -f $r.access, $r.sequence)
-    Write-Output ("  这样进入过 {0} 次，其中带着注入的 {1} 次" -f `
+    Write-Output ("0xCC 64-bit IDT base address is 0, entering core{0}, sequence {1}" -f $r.access, $r.sequence)
+    Write-Output ("  Entered {0} times, {1} with injection" -f `
         ([uint64]$r.qualification), ([uint64]$r.guestPhysicalAddress))
-    Write-Output ("  最后一次带注入的：RIP = 0x{0:X}   vmcs12 = 0x{1:X}" -f `
+    Write-Output ("  Last injected: RIP = 0x{0:X}   vmcs12 = 0x{1:X}" -f `
         ([uint64]$r.guestLinearAddress), ([uint64]$r.guestRip))
-    Write-Output ("    注入信息 = 0x{0:X8}   RFLAGS = 0x{1:X}" -f `
+    Write-Output ("    Injection Info = 0x{0:X8}   RFLAGS = 0x{1:X}" -f `
         ([uint32]$r.exitReason), ([uint32]$r.status))
 }
 
-# 同一个字段在三处存储里各是什么：工作副本 / 池槽 / 区域页。
+# What each field stores in the three locations: working copy / pool slot / region page.
 foreach ($r in (@($rows | Where-Object { $_.ruleId -eq 203 }) |
                 Sort-Object { [int64]$_.sequence } | Select-Object -Last 2)) {
     Write-Output ''
-    Write-Output ("0xCB 三处存储里的 IDTR 基址  核{0}  序号 {1}（第 {2} 次这样进入）" -f `
+    Write-Output ("0xCB IDTR base address in three stores  Core{0}  Sequence {1} (this is the {2} time entering this way)" -f `
         $r.access, $r.sequence, ([uint32]$r.status))
-    Write-Output ("  工作副本 vmcs12 = 0x{0:X16}" -f ([uint64]$r.qualification))
-    Write-Output ("  池槽          = 0x{0:X16}" -f ([uint64]$r.guestPhysicalAddress))
-    Write-Output ("  区域页        = 0x{0:X16}（页里共 {1} 条）" -f `
+    Write-Output ("  Working copy vmcs12 = 0x{0:X16}" -f ([uint64]$r.qualification))
+    Write-Output ("  Pool Slot          = 0x{0:X16}" -f ([uint64]$r.guestPhysicalAddress))
+    Write-Output ("  Region Page        = 0x{0:X16} (with {1} entries in page)" -f `
         ([uint64]$r.guestLinearAddress), ([uint32]$r.exitReason))
-    Write-Output ("  该区域 = 0x{0:X}" -f ([uint64]$r.guestRip))
+    Write-Output ("  This region = 0x{0:X}" -f ([uint64]$r.guestRip))
 }
 
-# 64 位 L2 自己把 IDT 基址扔掉的那一刻。
+# The moment the 64-bit L2 discards the IDT base address.
 foreach ($r in (@($rows | Where-Object { $_.ruleId -eq 202 }) |
                 Sort-Object { [int64]$_.sequence } | Select-Object -Last 2)) {
     $g = [uint64]$r.guestRip
     Write-Output ''
-    Write-Output ("0xCA 64 位 L2 自己丢掉 IDT 基址  核{0}  序号 {1}" -f $r.access, $r.sequence)
-    Write-Output ("  发生 {0} 次   最后一次退出 RIP = 0x{1:X}   退出原因 = {2}" -f `
+    Write-Output ("0xCA 64-bit L2 self-dropped IDT base address  Core{0}  Sequence {1}" -f $r.access, $r.sequence)
+    Write-Output ("  Occurred {0} times   Last exit RIP = 0x{1:X}   Exit reason = {2}" -f `
         ([uint64]$r.guestLinearAddress), ([uint64]$r.qualification), ([uint32]$r.exitReason))
-    Write-Output ("  进入时我们装的是 0x{0:X16}" -f ([uint64]$r.guestPhysicalAddress))
-    Write-Output ("  当时 IDTR 界限 = 0x{0:X}   CS.AR = 0x{1:X}" -f `
+    Write-Output ("  Upon entry, we installed 0x{0:X16}" -f ([uint64]$r.guestPhysicalAddress))
+    Write-Output ("  At that time IDTR limit = 0x{0:X}   CS.AR = 0x{1:X}" -f `
         ($g -band 0xFFFFFFFFL), ($g -shr 32))
 }
 
-# 向上的那一跳：退出时带回了一个不是我们写进去的基址 —— 也就是 L2 执行过 LIDT。
+# The upward jump: the base address returned upon exit was not one we wrote, meaning L2 executed LIDT.
 foreach ($r in (@($rows | Where-Object { $_.ruleId -eq 201 }) |
                 Sort-Object { [int64]$_.sequence } | Select-Object -Last 2)) {
     Write-Output ''
-    Write-Output ("0xC9 L2 自己装上 IDT 基址  核{0}  序号 {1}" -f $r.access, $r.sequence)
-    Write-Output ("  发生 {0} 次   最后一次值 = 0x{1:X16}" -f `
+    Write-Output ("0xC9 L2 Install IDT base address manually  Core{0}  Sequence {1}" -f $r.access, $r.sequence)
+    Write-Output ("  Occurred {0} times   Last value = 0x{1:X16}" -f `
         ([uint32]$r.status), ([uint64]$r.qualification))
-    Write-Output ("  最后一次退出 RIP = 0x{0:X}   原因 = {1}   区域 = 0x{2:X}" -f `
+    Write-Output ("  Last exit RIP = 0x{0:X}   Reason = {1}   Region = 0x{2:X}" -f `
         ([uint64]$r.guestPhysicalAddress), ([uint32]$r.exitReason), ([uint64]$r.guestLinearAddress))
-    Write-Output ("  出问题那次进入时，本核对该区域最后一次存出的是 0x{0:X16}" -f `
+    Write-Output ("  When the issue occurred upon entry, the last value stored by this core to this region was 0x{0:X16}" -f `
         ([uint64]$r.guestRip))
 }

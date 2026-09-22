@@ -4,10 +4,10 @@
 
 // ============================================================
 // KswordArkDebugOutputIoctl.h
-// 作用：
-// - 定义内核 DbgPrint/DbgPrintEx/KdPrintEx 输出捕获协议；
-// - R0 通过 DbgSetDebugPrintCallback 写入固定环形缓冲区；
-// - R3 只通过 ArkDriverClient 控制捕获并按序读取快照。
+// Purpose:
+// - Defines the protocol for capturing kernel DbgPrint/DbgPrintEx/KdPrintEx output.
+// - R0 writes to a fixed circular buffer via DbgSetDebugPrintCallback;
+// - R3 controls capture and reads snapshots in order solely through ArkDriverClient.
 // ============================================================
 
 #ifndef FILE_READ_ACCESS
@@ -23,7 +23,7 @@
 #define KSWORD_ARK_IOCTL_FUNCTION_DEBUG_OUTPUT_CONTROL 0x8F8UL
 #define KSWORD_ARK_IOCTL_FUNCTION_DEBUG_OUTPUT_DRAIN   0x8F9UL
 
-// 调试输出可能包含内核地址或设备状态，因此两个 IOCTL 都要求读写句柄。
+// Debug output may contain kernel addresses or device state, so both IOCTLs require read/write handles.
 #define IOCTL_KSWORD_ARK_DEBUG_OUTPUT_CONTROL \
     CTL_CODE( \
         KSWORD_ARK_IOCTL_DEVICE_TYPE, \
@@ -38,25 +38,25 @@
         METHOD_BUFFERED, \
         FILE_READ_ACCESS | FILE_WRITE_ACCESS)
 
-// 控制动作：START 会清空旧快照并注册回调；STOP 注销；QUERY 只读状态。
+// Control actions: START clears old snapshots and registers callbacks; STOP unregisters; QUERY reads status only.
 #define KSWORD_ARK_DEBUG_OUTPUT_ACTION_START 1UL
 #define KSWORD_ARK_DEBUG_OUTPUT_ACTION_STOP  2UL
 #define KSWORD_ARK_DEBUG_OUTPUT_ACTION_QUERY 3UL
 
-// 运行时状态位：用于 R3 区分已注册、正在捕获和发生过丢弃。
+// Runtime status bits: used by R3 to distinguish registered, capturing, and dropped states.
 #define KSWORD_ARK_DEBUG_OUTPUT_RUNTIME_REGISTERED 0x00000001UL
 #define KSWORD_ARK_DEBUG_OUTPUT_RUNTIME_CAPTURING  0x00000002UL
 #define KSWORD_ARK_DEBUG_OUTPUT_RUNTIME_DROPPED    0x00000004UL
 
-// Drain 响应位：OVERFLOW 表示调用方游标已经落后于环形缓冲区。
+// Drain response flags: OVERFLOW indicates the caller's cursor has fallen behind the ring buffer.
 #define KSWORD_ARK_DEBUG_OUTPUT_DRAIN_FLAG_OVERFLOW       0x00000001UL
 #define KSWORD_ARK_DEBUG_OUTPUT_DRAIN_FLAG_MORE_AVAILABLE 0x00000002UL
 #define KSWORD_ARK_DEBUG_OUTPUT_DRAIN_FLAG_SNAPSHOT_RACE  0x00000004UL
 
-// 单条记录位：TEXT_TRUNCATED 表示原始内核调试文本超过固定上限。
+// Single record bit: TEXT_TRUNCATED indicates the original kernel debug text exceeded the fixed limit.
 #define KSWORD_ARK_DEBUG_OUTPUT_RECORD_FLAG_TEXT_TRUNCATED 0x00000001UL
 
-// DbgPrint 单次最多传递 512 字节；保留末尾 NUL，因此正文上限为 511 字节。
+// DbgPrint can pass at most 512 bytes per call; with the trailing NUL reserved, the maximum payload is 511 bytes.
 #define KSWORD_ARK_DEBUG_OUTPUT_TEXT_BYTES 512U
 #define KSWORD_ARK_DEBUG_OUTPUT_RING_CAPACITY 256U
 #define KSWORD_ARK_DEBUG_OUTPUT_DEFAULT_DRAIN_RECORDS 32U

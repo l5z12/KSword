@@ -31,7 +31,7 @@
 | 66 | `KSW_DYN_FIELD_ID_KT_PROCESS` | `StructOffset` | required | `_KTHREAD.Process` |
 | 67 | `KSW_DYN_FIELD_ID_HT_TABLE_CODE` | `StructOffset` | required | `_HANDLE_TABLE.TableCode` |
 | 68 | `KSW_DYN_FIELD_ID_HT_HANDLE_COUNT` | `StructOffset` | required | `_HANDLE_TABLE.HandleCount` |
-| 69 | `KSW_DYN_FIELD_ID_HTE_LOW_VALUE` | `StructOffset` | required | `_HANDLE_TABLE_ENTRY.LowValue` |
+| 69 | `KSW_DYN_FIELD_ID_HTE_LOW_VALUE` | `StructOffset` | required | `HandleTableEntry.LowValue` |
 | 70 | `KSW_DYN_FIELD_ID_KLDR_IN_LOAD_ORDER_LINKS` | `StructOffset` | required | `_KLDR_DATA_TABLE_ENTRY.InLoadOrderLinks` |
 | 71 | `KSW_DYN_FIELD_ID_KLDR_DLL_BASE` | `StructOffset` | required | `_KLDR_DATA_TABLE_ENTRY.DllBase` |
 | 72 | `KSW_DYN_FIELD_ID_KLDR_SIZE_OF_IMAGE` | `StructOffset` | required | `_KLDR_DATA_TABLE_ENTRY.SizeOfImage` |

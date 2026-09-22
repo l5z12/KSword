@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <Filter Include="apps">
+      <UniqueIdentifier>{F72C28E3-6A0B-50C9-BEA5-9F97ECDAAA37}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\desktop">
+      <UniqueIdentifier>{0BFD7DF5-88D1-53F0-A4DE-35B9A36BD1C7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="apps\desktop\other_dock">
+      <UniqueIdentifier>{C90DE8FB-FBBB-574C-B56D-AB89C42153C0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="integrations">
+      <UniqueIdentifier>{079B1FC0-9304-59B5-BC0F-2BE20690F42D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="integrations\dwm_z_order">
+      <UniqueIdentifier>{178A603B-7FDC-5722-8068-F8642C8F4923}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared">
+      <UniqueIdentifier>{AAE22F8F-9A33-5AF4-9900-B9B595BA660C}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared\window">
+      <UniqueIdentifier>{8748EB4B-B20F-53AF-AE09-6CDA965F3281}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="CfgTests.cpp" />
+    <ClCompile Include="DeploymentTests.cpp" />
+    <ClCompile Include="LoaderTests.cpp" />
+    <ClCompile Include="OrderTests.cpp" />
+    <ClCompile Include="RuntimeTests.cpp" />
+    <ClCompile Include="..\..\..\apps\desktop\other_dock\DwmAgentDeployment.cpp">
+      <Filter>apps\desktop\other_dock</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\apps\desktop\other_dock\DwmAgentDeployment.h">
+      <Filter>apps\desktop\other_dock</Filter>
+    </ClInclude>
+    <MASM Include="..\..\..\apps\desktop\other_dock\DwmRemoteLoader.asm">
+      <Filter>apps\desktop\other_dock</Filter>
+    </MASM>
+    <ClCompile Include="..\..\..\apps\desktop\other_dock\DwmZOrderClient.cpp">
+      <Filter>apps\desktop\other_dock</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\apps\desktop\other_dock\DwmZOrderClient.h">
+      <Filter>apps\desktop\other_dock</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\integrations\dwm_z_order\NativeQueries.h">
+      <Filter>integrations\dwm_z_order</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\integrations\dwm_z_order\OrderPlan.h">
+      <Filter>integrations\dwm_z_order</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\..\integrations\dwm_z_order\RuntimeResolver.cpp">
+      <Filter>integrations\dwm_z_order</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\..\integrations\dwm_z_order\RuntimeResolver.h">
+      <Filter>integrations\dwm_z_order</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\integrations\dwm_z_order\RuntimeSignatures.h">
+      <Filter>integrations\dwm_z_order</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\integrations\dwm_z_order\RuntimeWin10Signatures.h">
+      <Filter>integrations\dwm_z_order</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\shared\window\DwmProcessIdentity.h">
+      <Filter>shared\window</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\shared\window\DwmRemoteLoader.h">
+      <Filter>shared\window</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\shared\window\DwmZOrderProtocol.h">
+      <Filter>shared\window</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,29 @@
+name: Bug report / 问题报告
+description: Report a reproducible application, build, or documentation problem / 报告可复现的问题
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened? / 发生了什么？
+      description: Describe the expected and actual behavior. English or Chinese is welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce / 复现步骤
+      description: Include the command or page/action, sample input if relevant, and whether it reproduces consistently.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Version and environment / 版本与环境
+      description: Release name or commit, Windows build and architecture. For build failures, include compiler/Qt/WDK versions as applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or screenshots / 日志或截图
+      description: For build failures include the exact command and first error. Remove secrets and personal data before attaching logs.

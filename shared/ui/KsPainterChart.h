@@ -37,7 +37,7 @@ protected:
     void notifyChanged();
 
 private:
-    std::function<void()> m_changeHandler;
+    std::function<void()> changeHandler_;
 };
 
 class QAbstractAxis : public KsPainterChartObject
@@ -76,17 +76,17 @@ private:
     friend class QChart;
     void setAlignment(Qt::Alignment alignment);
 
-    bool m_labelsVisible = true;
-    bool m_gridLineVisible = true;
-    bool m_minorGridLineVisible = false;
-    bool m_lineVisible = true;
-    QBrush m_labelsBrush;
-    QBrush m_titleBrush;
-    QPen m_linePen = QPen(QColor(128, 128, 128, 150), 1.0);
-    QPen m_gridLinePen = QPen(QColor(128, 128, 128, 55), 1.0);
-    QString m_titleText;
-    QString m_labelFormat;
-    Qt::Alignment m_alignment = Qt::AlignBottom;
+    bool labelsVisible_ = true;
+    bool gridLineVisible_ = true;
+    bool minorGridLineVisible_ = false;
+    bool lineVisible_ = true;
+    QBrush labelsBrush_;
+    QBrush titleBrush_;
+    QPen linePen_ = QPen(QColor(128, 128, 128, 150), 1.0);
+    QPen gridLinePen_ = QPen(QColor(128, 128, 128, 55), 1.0);
+    QString titleText_;
+    QString labelFormat_;
+    Qt::Alignment alignment_ = Qt::AlignBottom;
 };
 
 class QValueAxis : public QAbstractAxis
@@ -99,8 +99,8 @@ public:
     qreal max() const;
 
 private:
-    qreal m_minimum = 0.0;
-    qreal m_maximum = 1.0;
+    qreal minimum_ = 0.0;
+    qreal maximum_ = 1.0;
 };
 
 class QBarCategoryAxis : public QAbstractAxis
@@ -113,7 +113,7 @@ public:
     QStringList categories() const;
 
 private:
-    QStringList m_categories;
+    QStringList categories_;
 };
 
 class QAbstractSeries : public KsPainterChartObject
@@ -127,8 +127,8 @@ public:
     QList<QAbstractAxis*> attachedAxes() const;
 
 private:
-    QString m_name;
-    QList<QAbstractAxis*> m_attachedAxes;
+    QString name_;
+    QList<QAbstractAxis*> attachedAxes_;
 };
 
 class QLineSeries : public QAbstractSeries
@@ -149,8 +149,8 @@ public:
     QPen pen() const;
 
 private:
-    QList<QPointF> m_points;
-    QPen m_pen = QPen(QColor(52, 152, 219), 1.6);
+    QList<QPointF> points_;
+    QPen pen_ = QPen(QColor(52, 152, 219), 1.6);
 };
 
 class QAreaSeries : public QAbstractSeries
@@ -174,10 +174,10 @@ public:
     QBrush brush() const;
 
 private:
-    QLineSeries* m_upperSeries = nullptr;
-    QLineSeries* m_lowerSeries = nullptr;
-    QBrush m_brush = QBrush(QColor(52, 152, 219, 48));
-    QPen m_pen = QPen(QColor(52, 152, 219), 1.6);
+    QLineSeries* upperSeries_ = nullptr;
+    QLineSeries* lowerSeries_ = nullptr;
+    QBrush brush_ = QBrush(QColor(52, 152, 219, 48));
+    QPen pen_ = QPen(QColor(52, 152, 219), 1.6);
 };
 
 class QBarSet : public KsPainterChartObject
@@ -202,11 +202,11 @@ public:
     QBrush labelBrush() const;
 
 private:
-    QString m_label;
-    QVector<qreal> m_values;
-    QBrush m_brush = QBrush(QColor(52, 152, 219));
-    QColor m_borderColor = Qt::transparent;
-    QBrush m_labelBrush;
+    QString label_;
+    QVector<qreal> values_;
+    QBrush brush_ = QBrush(QColor(52, 152, 219));
+    QColor borderColor_ = Qt::transparent;
+    QBrush labelBrush_;
 };
 
 class QBarSeries : public QAbstractSeries
@@ -221,7 +221,7 @@ public:
 private:
     void attachSetHandler(QBarSet* set);
 
-    QList<QBarSet*> m_sets;
+    QList<QBarSet*> sets_;
 };
 
 class QLegend : public KsPainterChartObject
@@ -242,10 +242,10 @@ public:
     QFont font() const;
 
 private:
-    bool m_visible = true;
-    Qt::Alignment m_alignment = Qt::AlignTop;
-    QBrush m_labelBrush;
-    QFont m_font;
+    bool visible_ = true;
+    Qt::Alignment alignment_ = Qt::AlignTop;
+    QBrush labelBrush_;
+    QFont font_;
 };
 
 class QChart : public KsPainterChartObject
@@ -253,10 +253,10 @@ class QChart : public KsPainterChartObject
 public:
     enum AnimationOption
     {
-        NoAnimation = 0x0,
-        GridAxisAnimations = 0x1,
-        SeriesAnimations = 0x2,
-        AllAnimations = GridAxisAnimations | SeriesAnimations
+        kNoAnimation = 0x0,
+        kGridAxisAnimations = 0x1,
+        kSeriesAnimations = 0x2,
+        kAllAnimations = kGridAxisAnimations | kSeriesAnimations
     };
 
     explicit QChart(QObject* parent = nullptr);
@@ -302,22 +302,22 @@ public:
 private:
     void attachSeriesHandlers(QAbstractSeries* series);
 
-    QList<QAbstractSeries*> m_series;
-    QList<QAbstractAxis*> m_axes;
-    QLegend* m_legend = nullptr;
-    QString m_title;
-    QBrush m_titleBrush;
-    QFont m_titleFont;
-    bool m_backgroundVisible = true;
-    qreal m_backgroundRoundness = 0.0;
-    QBrush m_backgroundBrush;
-    QMargins m_margins;
-    bool m_plotAreaBackgroundVisible = false;
-    QBrush m_plotAreaBackgroundBrush;
-    QPen m_plotAreaBackgroundPen = QPen(Qt::NoPen);
-    AnimationOption m_animationOptions = NoAnimation;
-    int m_animationDurationMs = 250;
-    QEasingCurve m_animationEasingCurve = QEasingCurve(QEasingCurve::OutCubic);
+    QList<QAbstractSeries*> series_;
+    QList<QAbstractAxis*> axes_;
+    QLegend* legend_ = nullptr;
+    QString title_;
+    QBrush titleBrush_;
+    QFont titleFont_;
+    bool backgroundVisible_ = true;
+    qreal backgroundRoundness_ = 0.0;
+    QBrush backgroundBrush_;
+    QMargins margins_;
+    bool plotAreaBackgroundVisible_ = false;
+    QBrush plotAreaBackgroundBrush_;
+    QPen plotAreaBackgroundPen_ = QPen(Qt::NoPen);
+    AnimationOption animationOptions_ = kNoAnimation;
+    int animationDurationMs_ = 250;
+    QEasingCurve animationEasingCurve_ = QEasingCurve(QEasingCurve::OutCubic);
 };
 
 class QChartView : public QFrame
@@ -359,20 +359,20 @@ private:
     QVector<qreal> renderedBarValues(const QBarSet* set) const;
     QPair<qreal, qreal> renderedAxisRange(const QValueAxis* axis) const;
 
-    QChart* m_chart = nullptr;
-    QVariantAnimation* m_animation = nullptr;
-    bool m_updateScheduled = false;
-    bool m_antialiasingEnabled = true;
-    qreal m_animationProgress = 1.0;
-    QBrush m_viewBackgroundBrush = QBrush(Qt::NoBrush);
+    QChart* chart_ = nullptr;
+    QVariantAnimation* animation_ = nullptr;
+    bool updateScheduled_ = false;
+    bool antialiasingEnabled_ = true;
+    qreal animationProgress_ = 1.0;
+    QBrush viewBackgroundBrush_ = QBrush(Qt::NoBrush);
 
-    LinePointMap m_displayedLinePoints;
-    LinePointMap m_fromLinePoints;
-    LinePointMap m_toLinePoints;
-    BarValueMap m_displayedBarValues;
-    BarValueMap m_fromBarValues;
-    BarValueMap m_toBarValues;
-    AxisRangeMap m_displayedAxisRanges;
-    AxisRangeMap m_fromAxisRanges;
-    AxisRangeMap m_toAxisRanges;
+    LinePointMap displayedLinePoints_;
+    LinePointMap fromLinePoints_;
+    LinePointMap toLinePoints_;
+    BarValueMap displayedBarValues_;
+    BarValueMap fromBarValues_;
+    BarValueMap toBarValues_;
+    AxisRangeMap displayedAxisRanges_;
+    AxisRangeMap fromAxisRanges_;
+    AxisRangeMap toAxisRanges_;
 };

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Ksword win32k PDB 深度目录生成器。
+Ksword win32k PDB deep directory generator.
 
-用途：
-- 从本机 win32k / win32kbase / win32kfull PDB 缓存读取公开类型、枚举和 public 符号；
-- 为窗口、GUI 线程、Hotkey、Hook、Desktop/Session 等 R0 只读审计准备可发布的离线事实库；
-- 明确记录 public PDB 缺少 tagWND/tagTHREADINFO/tagQ/tagHOOK/tagHOTKEY/tagTIMER/tagEVENTHOOK 私有结构时的能力缺口。
+Purpose:
+- Reads public types, enums, and public symbols from the local win32k / win32kbase / win32kfull PDB cache;
+- Prepares a publishable offline fact library for R0 read-only auditing of windows, GUI threads, hotkeys, hooks, and Desktop/Session;
+- Explicitly record the capability gap when public PDBs lack private structures: tagWND, tagTHREADINFO, tagQ, tagHOOK, tagHOTKEY, tagTIMER, tagEVENTHOOK.
 
-边界：
-- 只读 PDB 文件，不下载符号，不访问驱动，不运行程序；
-- public 符号中的 section:offset 不是最终 RVA，R0 使用前必须结合已加载 PE 节表和 PDB/PE 身份校验；
-- 没有私有结构字段时，只输出 missingPrivateTypes，不伪造偏移。
+Boundary:
+- Read-only PDB file: no symbol downloading, no driver access, no program execution.
+- The section:offset in public symbols is not the final RVA; R0 must combine it with the loaded PE section table and perform PDB/PE identity validation before use.
+- When there are no private structure fields, output only missingPrivateTypes without fabricating offsets.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-# 复用 ntos 生成器里的 TPI 解析器，避免复制一套易漂移的 PDB 文本解析逻辑。
+# Reuse the TPI parser from the ntos generator to avoid duplicating a fragile PDB text parsing logic.
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
@@ -40,9 +40,9 @@ from ksword_ntos_pdb_deep_offsets import (  # noqa: E402
 
 DEFAULT_LLVM_PDBUTIL = r"D:\Software\VS\VC\Tools\Llvm\x64\bin\llvm-pdbutil.exe"
 DEFAULT_OUTPUT_DIR = r"D:\Temp\ksword_pdb_deep_offsets"
-DEFAULT_REPO_JSON = (
-    r"D:\Projects\Ksword5.1\Ksword5.1\Ksword5.1\profiles\pdb_deep_offsets"
-    r"\win32k_gui_public_7bd3_a8a6_2d74_deep_offsets.json"
+DEFAULT_REPO_JSON = str(
+    Path(__file__).resolve().parents[2]
+    / "apps/desktop/profiles/pdb_deep_offsets/win32k_gui_public_7bd3_a8a6_2d74_deep_offsets.json"
 )
 
 DEFAULT_PDBS = [
@@ -51,7 +51,7 @@ DEFAULT_PDBS = [
     r"E:\KswordPDB\PDB\pdb-cache\amd64\win32kfull.pdb\2D745AB4CE6186F2D19839B96062ED851\win32kfull.pdb",
 ]
 
-# P0 GUI 私有类型清单：这些类型缺失时，不能声明 tagWND/tagQ/Hook/Hotkey 运行时读取已经可用。
+# P0 GUI private type list: If these types are missing, tagWND/tagQ/Hook/Hotkey runtime reads cannot be declared available.
 PRIVATE_GUI_TYPES = [
     "tagWND",
     "tagTHREADINFO",
@@ -65,7 +65,7 @@ PRIVATE_GUI_TYPES = [
     "tagWINDOWSTATION",
 ]
 
-# 这些关键字用于从 public PDB 的公开类型中筛出和 GUI 审计相关的结构/枚举。
+# These keywords are used to filter structures and enums related to GUI auditing from public types in the PDB.
 TYPE_KEYWORDS = [
     "wnd",
     "window",
@@ -92,7 +92,7 @@ TYPE_KEYWORDS = [
     "user",
 ]
 
-# 公开符号分类关键字：用于把 NtUser/NtGdi/xxx/tagWND/Hotkey/Hook 等符号分组。
+# Public symbol classification keywords: used to group symbols such as NtUser/NtGdi/xxx/tagWND/Hotkey/Hook.
 SYMBOL_GROUP_KEYWORDS: list[tuple[str, list[str]]] = [
     ("window_timer", ["timer", "settimer", "killtimer", "validatetimercallback"]),
     ("event_hook", ["winevent", "eventhook", "wineventhook", "gpeventhooks"]),
@@ -119,56 +119,56 @@ SYMBOL_GROUP_KEYWORDS: list[tuple[str, list[str]]] = [
     ("ntuser_api", ["ntuser", "xxx"]),
 ]
 
-# 运行时详情域：
-# - requiredPrivateTypes 表示安全读取对象字段前必须具备的私有 GUI layout；
-# - usefulPublicSymbolGroups 表示 public PDB 至少能提供的函数/符号归因证据；
-# - 本结构用于生成 runtimeDetailCatalog，让 UI 和审计脚本不要只显示散落摘要。
+# Runtime detail fields:
+# - requiredPrivateTypes: The private GUI layout required before safely reading object fields.
+# - usefulPublicSymbolGroups indicates the function/symbol attribution evidence that public PDBs can at least provide;
+# - This structure is used to generate runtimeDetailCatalog so that the UI and audit scripts do not only display scattered summaries.
 RUNTIME_DETAIL_DOMAINS: dict[str, dict[str, Any]] = {
     "window_detail": {
         "displayName": "Window detail / tagWND",
         "requiredPrivateTypes": ["tagWND", "tagTHREADINFO", "tagQ"],
         "usefulPublicSymbolGroups": ["window_object", "gui_thread_queue", "ntuser_api"],
-        "intendedUse": "扩充单 HWND 详情、窗口 cross-view、focus/capture/caret 归因。",
+        "intendedUse": "Expand single HWND details, window cross-view, and focus/capture/caret attribution.",
     },
     "gui_thread_detail": {
         "displayName": "GUI thread / tagTHREADINFO + tagQ",
         "requiredPrivateTypes": ["tagTHREADINFO", "tagQ"],
         "usefulPublicSymbolGroups": ["gui_thread_queue", "window_object", "ntuser_api"],
-        "intendedUse": "扩充 GUI 线程表、输入队列和活动窗口关系。",
+        "intendedUse": "Expand the GUI thread table, input queue, and active window relationships.",
     },
     "hotkey_detail": {
         "displayName": "Hotkey table / tagHOTKEY",
         "requiredPrivateTypes": ["tagHOTKEY", "tagWND", "tagTHREADINFO"],
         "usefulPublicSymbolGroups": ["hotkey_hook", "window_object", "gui_thread_queue"],
-        "intendedUse": "扩充热键表中的 hotkey object、窗口和线程归属字段。",
+        "intendedUse": "Expand the hotkey object, window, and thread ownership fields in the hotkey table.",
     },
     "hook_detail": {
         "displayName": "Hook chain / tagHOOK",
         "requiredPrivateTypes": ["tagHOOK", "tagTHREADINFO", "DESKTOPINFO"],
         "usefulPublicSymbolGroups": ["message_hook", "gui_thread_queue", "desktop_session"],
-        "intendedUse": "扩充 Hook 链、过程地址、目标线程和桌面归属字段。",
+        "intendedUse": "Expand Hook chain, process address, target thread, and desktop ownership fields.",
     },
     "timer_detail": {
         "displayName": "Window timer / tagTIMER",
         "requiredPrivateTypes": ["tagTIMER", "tagTHREADINFO", "tagWND"],
         "usefulPublicSymbolGroups": ["window_timer", "gui_thread_queue", "window_object", "ntuser_api"],
-        "intendedUse": "扩充窗口定时器对象、间隔、flags、回调、窗口和线程归属字段。",
+        "intendedUse": "Expand window timer object, interval, flags, callback, window, and thread affiliation fields.",
     },
     "event_hook_detail": {
         "displayName": "WinEvent hook / tagEVENTHOOK",
         "requiredPrivateTypes": ["tagEVENTHOOK", "tagTHREADINFO"],
         "usefulPublicSymbolGroups": ["event_hook", "hotkey_hook", "gui_thread_queue"],
-        "intendedUse": "扩充 WinEvent Hook 链、事件范围、回调、模块和目标线程归属字段。",
+        "intendedUse": "Expand WinEvent Hook chain, event scope, callback, module, and target thread affiliation fields.",
     },
     "desktop_session_detail": {
         "displayName": "Desktop / WindowStation / Session",
         "requiredPrivateTypes": ["tagDESKTOP", "tagWINDOWSTATION"],
         "usefulPublicSymbolGroups": ["desktop_session", "window_object", "ntuser_api"],
-        "intendedUse": "扩充桌面、窗口站和 Session readiness 审计。",
+        "intendedUse": "Expand desktop, window station, and Session readiness auditing.",
     },
 }
 
-# 若未来 private PDB 可用，这些 alias 会把字段直接映射到 shared/driver 的 win32k offset 结构名。
+# If a private PDB becomes available, these aliases will map fields directly to the win32k offset structure names in shared/driver.
 WIN32K_FIELD_ALIASES: dict[tuple[str, str], str] = {
     ("tagWND", "pti"): "tagWndThreadInfo",
     ("tagWND", "spwndParent"): "tagWndParent",
@@ -229,16 +229,16 @@ WIN32K_FIELD_ALIASES: dict[tuple[str, str], str] = {
     ("tagEVENTHOOK", "timeLast"): "eventHookTimestamp",
 }
 
-# public symbol 名称到 Ksword 运行时项目名的稳定别名。section:offset 仍须结合
-# 精确 PE 身份换算，不能把 public PDB 记录直接当作 RVA。
+# Stable aliases mapping public symbol names to Ksword runtime project names. Section:offset still requires combination with
+# Precise PE identity conversion: do not treat public PDB records directly as RVAs.
 WIN32K_PUBLIC_SYMBOL_ALIASES: dict[str, str] = {
     "aatomSysLoaded": "messageHookModuleAtomTable",
     "catomSysTableEntries": "messageHookModuleAtomCount",
 }
 
-# 当前 Win32 消息 Hook 枚举器实际使用的版本布局。这里保存 Windows 版本、
-# PE/PDB 身份和 RVA，供离线审计、矩阵扩展及发布前比对使用。运行时先做精确
-# PE 身份匹配；缺失时按 windowsVersion 选择不高于当前系统的最近表项。
+# The version layout actually used by the current Win32 message hook enumerator. This stores the Windows version and
+# PE/PDB identity and RVA, used for offline auditing, matrix expansion, and pre-release comparison. At runtime, perform precise checks first.
+# PE identity matching; if missing, selects the most recent table entry not exceeding the current system version based on windowsVersion.
 VALIDATED_MESSAGE_HOOK_PROFILES: list[dict[str, Any]] = [
     {
         "profileId": "message_hook_a8a6_2d74_v1",
@@ -329,7 +329,7 @@ RECORD_COUNT_RE = re.compile(r"Showing\s+([0-9,]+)\s+records")
 
 
 def parse_record_count(text: str) -> int:
-    """从 llvm-pdbutil 输出中解析 Showing N records。"""
+    """Parse 'Showing N records' from llvm-pdbutil output."""
     match = RECORD_COUNT_RE.search(text)
     if not match:
         return -1
@@ -337,7 +337,7 @@ def parse_record_count(text: str) -> int:
 
 
 def classify_text(text: str, fallback: str) -> str:
-    """把类型名或符号名按 GUI 审计用途粗分组。"""
+    """Coarsely group type names or symbol names for GUI audit purposes."""
     lowered = text.lower()
     for group_name, keywords in SYMBOL_GROUP_KEYWORDS:
         if any(keyword in lowered for keyword in keywords):
@@ -346,13 +346,13 @@ def classify_text(text: str, fallback: str) -> str:
 
 
 def is_interesting_type(type_name: str) -> bool:
-    """判断一个公开类型是否值得进入 win32k GUI 事实库。"""
+    """Determine if a public type is worth entering the win32k GUI fact library."""
     lowered = type_name.lower()
     return any(keyword in lowered for keyword in TYPE_KEYWORDS)
 
 
 def resolve_public_symbol_alias(symbol_name: str) -> str:
-    """解析普通或 MSVC 装饰后的 public symbol 稳定别名。"""
+    """Parses stable aliases for plain or MSVC-decorated public symbols."""
     direct_alias = WIN32K_PUBLIC_SYMBOL_ALIASES.get(symbol_name)
     if direct_alias:
         return direct_alias
@@ -364,7 +364,7 @@ def resolve_public_symbol_alias(symbol_name: str) -> str:
 
 
 def apply_win32k_aliases(target: dict[str, Any]) -> None:
-    """为未来 private PDB 字段补充 Ksword win32k offset alias。"""
+    """Add Ksword win32k offset aliases for future private PDB fields."""
     type_name = str(target.get("typeName", ""))
     for field_entry in target.get("fields", []):
         if not isinstance(field_entry, dict):
@@ -375,7 +375,7 @@ def apply_win32k_aliases(target: dict[str, Any]) -> None:
 
 
 def parse_public_symbols(publics_text: str, module_name: str) -> list[dict[str, Any]]:
-    """解析 public 符号，并只保留 GUI 审计相关名称。"""
+    """Parse public symbols and retain only GUI audit-related names."""
     rows: list[dict[str, Any]] = []
     pending: dict[str, Any] | None = None
     for line in publics_text.splitlines():
@@ -419,7 +419,7 @@ def parse_public_symbols(publics_text: str, module_name: str) -> list[dict[str, 
 
 
 def extract_module_catalog(pdbutil_path: str, pdb_path: Path, cache_dir: Path) -> dict[str, Any]:
-    """提取单个 win32k-family PDB 的类型、枚举和 public 符号目录。"""
+    """Extract type, enumeration, and public symbol directories for a single win32k-family PDB."""
     module_name = pdb_path.name
     started = time.time()
     summary_text = run_pdbutil(pdbutil_path, pdb_path, "-summary", timeout=120)
@@ -500,14 +500,14 @@ def extract_module_catalog(pdbutil_path: str, pdb_path: Path, cache_dir: Path) -
         "publicSymbols": public_symbols,
         "selectedTypesWithoutFieldList": selected_but_missing_fields,
         "notes": [
-            "publicSymbols 的 section:offset 需要结合目标 PE 节表转换，不能直接当作运行时 RVA。",
-            "privateTypeReadiness.ready 为 false 时，不能启用 tagWND/tagTHREADINFO/tagQ/tagHOOK/tagHOTKEY/tagTIMER/tagEVENTHOOK 字段读取。",
+            "The section:offset of publicSymbols needs to be converted using the target PE section table and cannot be directly treated as a runtime RVA.",
+            "privateTypeReadiness.ready is false, tagWND/tagTHREADINFO/tagQ/tagHOOK/tagHOTKEY/tagTIMER/tagEVENTHOOK field readback cannot be enabled.",
         ],
     }
 
 
 def write_combined_csv(path: Path, modules: list[dict[str, Any]]) -> None:
-    """把所有模块的 flatFields 写成一个 CSV，方便人工审阅。"""
+    """Write all modules' flatFields into a single CSV for manual review."""
     rows: list[dict[str, Any]] = []
     for module in modules:
         for row in module.get("flatFields", []):
@@ -545,18 +545,18 @@ def collect_runtime_public_symbol_examples(
     group_names: list[str],
     max_examples_per_group: int = 5,
 ) -> dict[str, list[dict[str, Any]]]:
-    """按符号组收集 runtime 详情可用的 public symbol 示例。
+    """Collect public symbol examples available for runtime details by symbol group.
 
-    输入：
-    - modules：extract_module_catalog 返回的 win32k-family 模块目录；
-    - group_names：runtime domain 关心的 public symbol 分组；
-    - max_examples_per_group：每个分组最多保留的示例数。
-    处理：
-    - 遍历每个模块 publicSymbols；
-    - 只保留 name/moduleName/sectionOffset/flags 等审计展示必需字段；
-    - 对同一分组限制数量，避免 JSON 被 public symbol 示例无限放大。
-    返回：
-    - dict[groupName] -> 示例列表；没有证据的分组返回空列表。
+    Inputs:
+    - modules: the win32k-family module catalog returned by extract_module_catalog;
+    - group_names: groups of public symbols of interest to the runtime domain;
+    - max_examples_per_group: Maximum number of examples to retain per group.
+    Processing:
+    - Iterate through each module's publicSymbols;
+    - Retain only fields required for audit display, such as name, moduleName, sectionOffset, and flags.
+    - Limit the number of examples per group to prevent the JSON from being infinitely expanded by public symbol examples.
+    Returns:
+    - dict[groupName] -> list of examples; groups without evidence return an empty list
     """
     examples_by_group: dict[str, list[dict[str, Any]]] = {group_name: [] for group_name in group_names}
     wanted_groups = set(group_names)
@@ -581,16 +581,16 @@ def collect_runtime_public_symbol_examples(
 
 
 def build_runtime_detail_catalog(modules: list[dict[str, Any]]) -> dict[str, Any]:
-    """生成 win32k 运行时详情域 readiness 目录。
+    """Generate the win32k runtime details domain readiness directory.
 
-    输入：
-    - modules：全部 win32k / win32kbase / win32kfull 模块目录。
-    处理：
-    - 汇总每个模块已出现的私有 GUI 类型、缺失类型和 public symbol 分组计数；
-    - 按 RUNTIME_DETAIL_DOMAINS 判断 window/gui-thread/hotkey/hook/event-hook/desktop 域是否具备字段读取条件；
-    - 对 public PDB 可用的符号证据给出分组计数和代表符号，供 UI 详情页展示具体内容。
-    返回：
-    - JSON 可序列化目录；ready=false 时 blockedBy 会明确指出缺少 private layout。
+    Inputs:
+    - modules: directories for all win32k, win32kbase, and win32kfull modules.
+    Processing:
+    - Summarize private GUI types present per module, missing types, and public symbol group counts.
+    - Check if the window/gui-thread/hotkey/hook/event-hook/desktop domains have field read conditions based on RUNTIME_DETAIL_DOMAINS;
+    - Provides group counts and representative symbols for symbols available in public PDBs, to display detailed content in the UI details page.
+    Returns:
+    - JSON-serializable directory; when ready=false, blockedBy explicitly indicates missing private layout.
     """
     present_private_types: set[str] = set()
     missing_by_module: dict[str, list[str]] = {}
@@ -667,14 +667,14 @@ def build_runtime_detail_catalog(modules: list[dict[str, Any]]) -> dict[str, Any
         "publicSymbolGroupCounts": public_group_counts,
         "domains": domains,
         "notes": [
-            "ready=false 不代表 public PDB 没有价值；public symbol examples 仍可用于 UI 归因和审计解释。",
-            "只有 requiredPrivateTypes 全部存在时，R0 才能把相应 runtime detail 域从 readiness 提升为字段读取。",
+            "ready=false does not mean public PDBs are valueless; public symbol examples can still be used for UI attribution and audit explanation.",
+            "Only when all requiredPrivateTypes exist can R0 promote the corresponding runtime detail fields from readiness to field read.",
         ],
     }
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """解析命令行参数。"""
+    """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Extract win32k-family public PDB GUI audit catalogs.")
     parser.add_argument("--llvm-pdbutil", default=DEFAULT_LLVM_PDBUTIL, help="llvm-pdbutil executable path")
     parser.add_argument("--pdb", action="append", default=[], help="win32k-family PDB path; can be repeated")
@@ -687,7 +687,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """主入口：生成 win32k-family deep/public catalog JSON。"""
+    """Main entry: Generate win32k-family deep/public catalog JSON."""
     args = parse_args(argv)
     pdbutil_path = str(Path(args.llvm_pdbutil))
     if not Path(pdbutil_path).exists():
@@ -738,9 +738,9 @@ def main(argv: list[str] | None = None) -> int:
         "validatedMessageHookProfiles": VALIDATED_MESSAGE_HOOK_PROFILES,
         "modules": modules,
         "notes": [
-            "当前 public win32kbase/win32kfull PDB 可能报告 Has Types=true，但 TPI dump 实际为 0 records；本库会如实记录。",
-            "tagWND/tagTHREADINFO/tagQ/tagHOOK/tagHOTKEY/tagTIMER/tagEVENTHOOK 私有结构缺失时，R0 运行时 detail IOCTL 只能报告 readiness，不能读取对象字段。",
-            "publicSymbols 可用于函数符号提取和 UI 归因；结构字段读取仍需要 private PDB 或其它经验证 profile。",
+            "Current public win32kbase/win32kfull PDB may report Has Types=true, but TPI dump is actually 0 records; this library will record it faithfully.",
+            "tagWND/tagTHREADINFO/tagQ/tagHOOK/tagHOTKEY/tagTIMER/tagEVENTHOOK private structures missing, R0 runtime detail IOCTL can only report readiness, cannot read object fields.",
+            "publicSymbols can be used for function symbol extraction and UI attribution; structure field reading still requires private PDB or other verified profile.",
         ],
     }
 

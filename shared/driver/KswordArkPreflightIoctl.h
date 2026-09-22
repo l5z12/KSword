@@ -6,10 +6,10 @@
 
 // ============================================================
 // KswordArkPreflightIoctl.h
-// 作用：
-// - 定义 Phase-16 发布前驱动自检协议；
-// - R0 汇总 DynData、安全策略、IOCTL 注册、minifilter、CI 等运行时状态；
-// - Driver Verifier、跨系统兼容性、R3 UI 验收等外部测试只报告 NotRun，不伪造通过。
+// Purpose:
+// - Defines the Phase-16 pre-release driver self-check protocol;
+// - R0 aggregates runtime status including DynData, security policies, IOCTL registration, minifilter, and CI.
+// - External tests like Driver Verifier, cross-system compatibility, and R3 UI acceptance only report NotRun; they do not fabricate a pass.
 // ============================================================
 
 #define KSWORD_ARK_PREFLIGHT_PROTOCOL_VERSION 1UL

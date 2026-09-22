@@ -12,8 +12,7 @@ class LauncherBundleContractTests(unittest.TestCase):
     def test_bundle_copies_every_reported_module_from_inspected_set(self) -> None:
         bundle_source = (
             Path(__file__).resolve().parents[2]
-            / "Launcher"
-            / "Bundle.cpp"
+            / 'apps/launcher/Bundle.cpp'
         ).read_text(encoding="utf-8")
 
         self.assertIn("for (const ModuleFinding& finding : scan.inspected)", bundle_source)

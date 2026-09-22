@@ -1,13 +1,13 @@
-# 宿主侧一步到位：把刚构建的驱动装进靶机、重起常驻、开 TinyCore、按回车、抓图。
+# Host-side one-step execution: install the freshly built driver into the target VM, reboot to make it resident, launch TinyCore, press Enter, and capture the screenshot.
 #
-# 为什么做成一个脚本：这一段有六处只要漏一步就会得到一个看着像被测现象的读数 ——
-#   1. 服务 ImagePath 指向 System32\drivers，只拷到 C:\ksword 会加载着旧驱动跑；
-#   2. 覆盖前必须先 sc stop，不然拷贝被拒而脚本照样往下走；
-#   3. vmx86 不重启，VMware 用的还是开机时缓存的原始能力值；
-#   4. VMware 从 PowerShell Direct（session 0）起来，窗口在看不见的桌面上，
-#      只能走 VNC 取画面；
-#   5. isolinux 菜单要按回车，而按键同样只能走 VNC；
-#   6. 构建产出的哈希要单独记下来对一遍 —— 两端一致只证明传输忠实。
+# Why make this a script: this section has six steps; missing just one yields a reading that looks like the phenomenon under test
+#   1. The service ImagePath points to System32\drivers; copying only to C:\ksword causes the old driver to remain loaded and running.
+#   2. Must run 'sc stop' before overwriting; otherwise, the copy is rejected but the script continues.
+#   3. vmx86 does not restart; VMware still uses the original capability values cached at boot time.
+#   4. VMware starts via PowerShell Direct (session 0), with the window on an invisible desktop,
+#      Screen capture must be retrieved via VNC only;
+#   5. The isolinux menu requires pressing Enter, and key presses can only be routed via VNC;
+#   6. Record the hash of the built artifact separately for verification; matching hashes on both ends only prove faithful transmission.
 param(
     [string] $VMName = 'KSword-HVM-Target',
     [string] $DriverPath = 'C:\Users\Felix\CLionProjects\KSword\Ksword5.1\x64\Release\KswordARK.sys',
@@ -18,20 +18,20 @@ param(
 $ErrorActionPreference = 'Stop'
 $vncScript = Join-Path $PSScriptRoot 'Get-VmwareVnc.ps1'
 $built = (Get-FileHash $DriverPath -Algorithm SHA256).Hash
-Write-Output "构建产出 sha256 = $built"
+Write-Output "Build output sha256 = $built"
 
 $cred = New-Object PSCredential('felix',
     (ConvertTo-SecureString 'password' -AsPlainText -Force))
 $s = New-PSSession -VMName $VMName -Credential $cred
 
 Invoke-Command -Session $s -ScriptBlock {
-    # 先证明所有处理器退出常驻，再拆 VMware。驱动更新允许重启测试来宾。
+    # Verify that every processor has left resident mode before shutting down VMware. Driver updates may restart the test guest.
     & 'C:\ksword\hvm_ctl.exe' stop | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw '常驻停止失败，禁止拆除 VMware' }
+    if ($LASTEXITCODE -ne 0) { throw 'Resident hypervisor stop failed, prohibit removing VMware' }
     $state = (& 'C:\ksword\hvm_ctl.exe' --json status) | ConvertFrom-Json
     if ($null -eq $state.residentProcessorCount -or $state.residentProcessorCount -ne 0 -or
         $state.stateNames -contains 'ROLLBACK_REQUIRED') {
-        throw '常驻仍有活动处理器或待回滚状态，保持 Windows 运行并停止部署'
+        throw 'Resident hypervisor still has active processors or pending rollback state, keep Windows running and stop deployment'
     }
     Get-Process -Name 'vmware', 'vmware-vmx' -ErrorAction SilentlyContinue |
         Stop-Process -Force
@@ -39,12 +39,12 @@ Invoke-Command -Session $s -ScriptBlock {
 }
 
 if (-not $SkipDriver) {
-    # 停不下来就重启来宾。
+    # If it cannot stop, reboot the guest.
     #
-    # 实测这个卸载会卡在 StopPending 不动（常驻停不掉时驱动拒绝卸载），之后
-    # 覆盖 System32\drivers 下那份必然报"文件被占用"，而脚本在那里抛出，
-    # 留下一个半完成的部署。重启一分钟，比每次人工介入便宜，也比带着一份
-    # 旧驱动往下跑安全 —— 后者会得到一份看着正常、实际测的是上一版的读数。
+    # In practice, this unload gets stuck in StopPending (the driver refuses to unload when it cannot be stopped), after which
+    # Overwrites the file in System32\drivers that will inevitably report 'File in use', while the script throws there,
+    # Leaves a partially completed deployment. A one-minute reboot is cheaper than manual intervention each time and avoids carrying over
+    # Running the old driver downward is safe — the latter receives a reading that looks normal but actually measures the previous version.
     $stopped = Invoke-Command -Session $s -ScriptBlock {
         Start-Process 'C:\ksword\hvm_ctl.exe' -ArgumentList 'stop' -NoNewWindow -Wait | Out-Null
         & sc.exe stop KswordARK | Out-Null
@@ -52,11 +52,11 @@ if (-not $SkipDriver) {
         while ((Get-Service KswordARK).Status -ne 'Stopped' -and $n -lt 30) {
             Start-Sleep -Milliseconds 500; $n++
         }
-        Write-Output ("驱动停止状态：" + (Get-Service KswordARK).Status)
+        Write-Output ("Driver stop status: " + (Get-Service KswordARK).Status)
         return ((Get-Service KswordARK).Status -eq 'Stopped')
     }
     if (-not ($stopped | Select-Object -Last 1)) {
-        Write-Output '卸载没完成，重启来宾'
+        Write-Output 'Uninstall incomplete, reboot guest'
         Remove-PSSession $s
         Restart-VM -Name $VMName -Force -Confirm:$false
         Start-Sleep -Seconds 45
@@ -67,19 +67,19 @@ if (-not $SkipDriver) {
             Start-Sleep -Seconds 10
             $tries++
         }
-        if (-not $s) { throw '来宾重启后连不上 PowerShell Direct' }
-        Write-Output '来宾已重启并重新连上'
+        if (-not $s) { throw 'Cannot connect to PowerShell Direct after the guest reboots' }
+        Write-Output 'Guest has rebooted and reconnected'
     }
     Copy-Item -ToSession $s -Path $DriverPath -Destination 'C:\ksword\KswordARK.sys' -Force
     Invoke-Command -Session $s -ArgumentList $built -ScriptBlock {
         param($built)
-        # 覆盖**服务 ImagePath 指着的那一份**，不是某个假定的路径。
+        # Overwrites the file pointed to by the **service ImagePath**, not some assumed path.
         #
-        # 实测踩过：GUI 起来之后会把服务重新注册到它自带的那份
-        # （C:\ksword\gui\KswordARK.sys，日期比当天的构建早六天）。部署脚本
-        # 照旧往 System32\drivers 写、照旧核对那里的哈希、照旧两端一致 ——
-        # 而加载的是另一份。之后所有读数描述的都是六天前的驱动，
-        # 而且没有任何一处会报错。
+        # Real-world issue encountered: after the GUI starts, it re-registers the service to its own bundled version.
+        # (C:\ksword\gui\KswordARK.sys, date is six days older than the current build). Deployment script
+        # Still writing to System32\drivers, still verifying the hash there, still ensuring both ends match—
+        # And it loads a different copy. Subsequently, all readings describe the driver from six days ago.
+        # And no errors occur anywhere.
         $imagePath = (Get-ItemProperty `
             'HKLM:\SYSTEM\CurrentControlSet\Services\KswordARK' -Name ImagePath).ImagePath
         $target = $imagePath -replace '^\\\?\?\\', ''
@@ -87,16 +87,16 @@ if (-not $SkipDriver) {
             $target = Join-Path $env:SystemRoot ($target -replace '^\\?SystemRoot\\?', '')
         }
         [IO.File]::Copy('C:\ksword\KswordARK.sys', $target, $true)
-        # 另一份也一并同步，免得下次别人把 ImagePath 指回去时又加载到旧的
+        # Synchronize the other copy as well to avoid loading the old version if someone later points ImagePath back to it.
         $other = 'C:\Windows\System32\drivers\KswordARK.sys'
         if ($target -ne $other) { [IO.File]::Copy('C:\ksword\KswordARK.sys', $other, $true) }
         $h = (Get-FileHash $target -Algorithm SHA256).Hash
-        if ($h -ne $built) { throw "ImagePath 指向的 $target 哈希是 $h，与构建产出不符" }
-        "服务 ImagePath = $target"
-        "该文件 sha256 = $h（与构建产出一致）"
+        if ($h -ne $built) { throw "The hash of $target pointed to by ImagePath is $h, which does not match the build output" }
+        "Service ImagePath = $target"
+        "This file sha256 = $h (consistent with build output)"
         & sc.exe start KswordARK | Out-Null
         Start-Sleep -Seconds 2
-        "驱动已起：" + (Get-Service KswordARK).Status
+        "Driver started: " + (Get-Service KswordARK).Status
     }
 }
 
@@ -107,25 +107,25 @@ Invoke-Command -Session $s -ScriptBlock {
                 -Wait -PassThru -RedirectStandardOutput $o
         return @{ Exit = $p.ExitCode; Out = [IO.File]::ReadAllText($o) }
     }
-    # 判据是 cpuid-view 的 hidden，不是状态位。
+    # The criterion is the hidden bit of cpuid-view, not the state bits.
     #
-    # `resident-nested` 与 `resident-nested-hidehv` 的**状态位完全一样**，两者都是
-    # INITIALIZED … RESIDENT_ACTIVE RESIDENT_NESTED。按 RESIDENT_ACTIVE 判断
-    # "已经在跑就跳过"，会在别人（比如 GUI 菜单）起了不隐藏的那一版时沿用它 ——
-    # 而 VMware 的身份门排在能力门前面：CPUID 一看见 Microsoft Hv 就弹
-    # "VMware Workstation and Hyper-V are not compatible"，连能力 MSR 都不会读。
-    # 实测踩过：状态位一切正常，VMware 就是不启动。
-    # 必须是 prepare-eptpsw，不是 prepare。
+    # The status bits for `resident-nested` and `resident-nested-hidehv` are **exactly the same**; both are
+    # INITIALIZED … RESIDENT_ACTIVE RESIDENT_NESTED. Judge based on RESIDENT_ACTIVE
+    # "Skip if already running" will reuse the non-hidden version when another (e.g., GUI menu) has started it;
+    # However, VMware's identity gate precedes the capability gate: as soon as CPUID sees Microsoft Hv, it triggers.
+    # "VMware Workstation and Hyper-V are not compatible"; it won't even read the capability MSR.
+    # Real-world pitfall: status bits were all normal, yet VMware failed to start.
+    # Must use prepare-eptpsw, not prepare.
     #
-    # 两者的区别是 ENABLE_EPTP_SWITCH。这台机器多核且没有 Monitor Trap Flag，
-    # 私有 EPT 那条路**永远武装不上**（view-probe 会如实回 NOT_APPLICABLE），
-    # 所以 CLOAK 视图在这里只能靠 EPTP 切换后端。用普通 prepare 起来的常驻，
-    # 状态位一切正常、VMware 也照跑，而 `view-effect` 会回"视图装不上"——
-    # 也就是**虚拟化这条线在推进，EPT 功能却一直是关着的**，且没有任何读数会提。
+    # The difference between the two is ENABLE_EPTP_SWITCH. This machine has multiple cores and lacks the Monitor Trap Flag,
+    # The private EPT path is **permanently unarmable** (view-probe will correctly return NOT_APPLICABLE),
+    # Therefore, the CLOAK view here can only rely on EPTP switching backends. A resident instance started with a standard prepare,
+    # Status bits are all normal and VMware runs as expected, yet `view-effect` returns "view installation failed"—
+    # This means the virtualization line is advancing, yet EPT functionality remains disabled with no readings ever reported.
     #
-    # 而且旧写法在 RESOURCES_READY 已置位时跳过 prepare，于是一旦机器曾被普通
-    # prepare 起过，后面每次部署都沿用那一份，永远补不上这个位。判据要看
-    # EPTP_SWITCH_ARMED 这个能力位本身，不是 RESOURCES_READY。
+    # Furthermore, the old implementation skips prepare when RESOURCES_READY is set, so once a machine has been used normally...
+    # prepare was started previously, and subsequent deployments reuse that instance, so this bit can never be added. The check must look at...
+    # The EPTP_SWITCH_ARMED capability bit itself is not equivalent to RESOURCES_READY.
     $st = (Run @('--json', 'status')).Out | ConvertFrom-Json
     $armed = ($st.featureNames -contains 'EPTP_SWITCH_ARMED')
     $hidden = $false
@@ -134,34 +134,34 @@ Invoke-Command -Session $s -ScriptBlock {
     }
     if (-not ($hidden -and $armed)) {
         if ($st.stateNames -contains 'RESIDENT_ACTIVE') {
-            Write-Output ("常驻在跑但不满足要求（隐藏=$hidden EPTP切换已武装=$armed），停掉重起")
+            Write-Output ("Resident but not meeting requirements (hidden=$hidden EPTP switch armed=$armed), stopping and restarting")
             $r = Run @('stop')
-            if ($r.Exit -ne 0) { throw "stop 退出码 $($r.Exit)" }
+            if ($r.Exit -ne 0) { throw "stop exit code $($r.Exit)" }
         }
         if (-not $armed) {
-            # 已经 prepare 过的资源要先拆，否则 prepare-eptpsw 会被当成重复 prepare。
+            # Resources that have already been prepared must be torn down first; otherwise, prepare-eptpsw will be treated as a duplicate prepare.
             $r = Run @('teardown')
-            if ($r.Exit -ne 0) { throw "teardown 退出码 $($r.Exit)" }
+            if ($r.Exit -ne 0) { throw "teardown exit code $($r.Exit)" }
         }
         foreach ($cmd in 'prepare-eptpsw', 'self-test', 'resident-nested-hidehv') {
             $r = Run @($cmd)
-            if ($r.Exit -ne 0) { throw "$cmd 退出码 $($r.Exit)" }
+            if ($r.Exit -ne 0) { throw "$cmd exit code $($r.Exit)" }
         }
     }
     $st = (Run @('--json', 'status')).Out | ConvertFrom-Json
     $view = (Run @('--json', 'cpuid-view')).Out | ConvertFrom-Json
     if (-not $view.hidden) {
-        throw "常驻起来了但 cpuid-view 的 hidden 仍为假，VMware 会拒绝启动"
+        throw "Resident hypervisor started but cpuid-view's hidden is still false; VMware will refuse to start"
     }
-    "状态位 = " + ($st.stateNames -join ' ')
-    "cpuid-view hidden = " + $view.hidden + "（VMware 的身份门看的就是这个）"
-    # EPT 功能的判据独立于虚拟化那条线，每次部署都打出来。
-    # 没有这一位，CLOAK 视图在这台机器上装不上，而其它读数一个都不会变。
+    "Status bits = " + ($st.stateNames -join ' ')
+    "cpuid-view hidden = " + $view.hidden + " (VMware's identity gate looks at this)"
+    # EPT criteria are independent of the virtualization path; print this on every deployment.
+    # Without this bit, the CLOAK view cannot be installed on this machine, while all other readings remain unchanged.
     if (-not ($st.featureNames -contains 'EPTP_SWITCH_ARMED')) {
-        throw "EPTP_SWITCH_ARMED 未置位：EPT 视图在这台机器上装不上"
+        throw "EPTP_SWITCH_ARMED not set: EPT view cannot be installed on this machine"
     }
-    "EPTP_SWITCH_ARMED = True（EPT 视图的判据；缺了它 view-effect 会回'装不上'）"
-    # vmx86 重启：VMware 只在这个驱动起来时问一次能力 MSR
+    "EPTP_SWITCH_ARMED = True (criterion for EPT view; without it, view-effect will readback as 'not installed')"
+    # vmx86 restart: VMware queries MSR capabilities only once when this driver is running.
     & sc.exe stop vmx86 | Out-Null
     Start-Sleep -Seconds 1
     & sc.exe start vmx86 | Out-Null
@@ -174,8 +174,8 @@ Invoke-Command -Session $s -ScriptBlock {
     "vmware-vmx = " + @(Get-Process -Name 'vmware-vmx' -ErrorAction SilentlyContinue).Count
 }
 
-# isolinux 的菜单：回车（X11 keysym 0xFF0D）。菜单自己也会超时引导，
-# 但那要等六十秒，而且**倒计时在走本身就是时钟通了的判据**，按一下更快。
+# isolinux menu: Enter (X11 keysym 0xFF0D). The menu also times out and boots automatically.
+# But that requires waiting 60 seconds, and the fact that the countdown is running itself is the criterion that the clock is connected; pressing a key is faster.
 Invoke-Command -Session $s -FilePath $vncScript `
     -ArgumentList '127.0.0.1', 5900, 'C:\vmware\shot-menu.png', @(65293)
 
@@ -187,6 +187,6 @@ if ($ShotDir) {
     foreach ($f in 'shot-menu.png', 'shot-boot.png') {
         Copy-Item -FromSession $s -Path "C:\vmware\$f" -Destination (Join-Path $ShotDir $f) -Force
     }
-    Write-Output ("截图已取回 " + $ShotDir)
+    Write-Output ("Screenshot retrieved " + $ShotDir)
 }
 Remove-PSSession $s

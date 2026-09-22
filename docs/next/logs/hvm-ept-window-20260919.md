@@ -13,11 +13,11 @@ issue #198，2026-09-19。
 2. 这台机器 `CPUID.80000008H:EAX[7:0] = 45`，即 **32 TiB**。构建器按设计把映射
    截断到窗口，并置 `EPT_TRUNCATED`。
 3. `hvm_resident.c` 见到 `EPT_TRUNCATED` 就拒绝进 VMX，返回 `STATUS_NOT_SUPPORTED`。
-4. `KswordARKHvmControlStatusFromNtStatus` 把 `STATUS_NOT_SUPPORTED` 翻成
+4. `kswordArkHvmControlStatusFromNtStatus` 把 `STATUS_NOT_SUPPORTED` 翻成
    `UNSUPPORTED_CPU`，界面显示「处理器不支持」。
 
 于是一台**每一项能力都齐备**的处理器被告知自己不被支持，用户只能去查 CPU 与
-BIOS —— 而那两处都没有问题。报告人最后是自己往 `KswordARKHvmBuildEptLocked`
+BIOS —— 而那两处都没有问题。报告人最后是自己往 `kswordArkHvmBuildEptLocked`
 里加了一行 `DbgPrintEx` 才挖出来的，打印的正是上面第 2 段那三个数。
 
 两个缺陷，分开修：**窗口太小**是一个，**报错在说一件没发生的事**是另一个。

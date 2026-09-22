@@ -1,36 +1,36 @@
 /*
  * KswordArkHvmControls.h
  *
- * HVM 里那些"算错了不会报错、只会安静地做错事"的纯算术，集中放在这里。
+ * Pure arithmetic in HVM that 'fails silently' (calculates incorrectly without raising errors) is centralized here.
  *
- * 为什么要单独拆出来：这些逻辑原本埋在依赖 WDK 的 .c 文件里，只能靠加载驱动
- * 才能验证——而加载驱动需要签名、需要一台没开 HVCI 的机器，出错的表现是蓝屏。
- * 把它们做成不依赖任何内核头的内联函数之后，驱动与 host 单测引用的是同一份
- * 实现（不是抄一遍，所以不会漂移），于是这部分正确性可以在编译机上直接证明。
+ * Why separate this logic: These checks were originally buried in .c files depending on the WDK, requiring a driver
+ * load to verify. Loading a driver needs a signature and a machine without HVCI enabled; failure results in a BSOD.
+ * After converting these to inline functions that depend on no kernel headers, the driver and host unit tests reference the same
+ * implementation (not a copy, so no drift occurs), allowing correctness of this part to be verified directly on the build machine.
  *
- * 收录标准只有一条：纯输入到输出、无副作用、算错了很难当场发现。
- * 例如 MSR 位图的四段偏移算错，策略就会打在另一个 MSR 上；自映射公式算错，
- * 就会去改一个不相干的页表项。这两种都不会立刻报错。
+ * The only inclusion criterion is: pure input-to-output with no side effects, where errors are hard to detect immediately.
+ * For example, if the four-segment offset calculation for the MSR bitmap is incorrect, the policy will be applied to a different MSR; if the
+ * self-mapping formula is incorrect, an unrelated page table entry will be modified. Neither of these cases will immediately report an error.
  *
- * 这个头文件同时被内核态 C 与用户态 C++ 包含，因此只使用固定宽度基本类型，
- * 不引用 WDK、CRT 或 Windows 头。
+ * This header is included by both kernel-mode C and user-mode C++, so it uses only
+ * fixed-width primitive types and does not reference WDK, CRT, or Windows headers.
  */
 
 #pragma once
 
 /* ------------------------------------------------------------------ */
-/* VMX 控制位夹取                                                       */
+/* VMX control field clamping                                                       */
 /* ------------------------------------------------------------------ */
 
 /*
- * 按能力 MSR 夹取一组控制位。
+ * Extract a set of control bits via capability MSRs.
  *
- * 能力 MSR 的低 32 位是 allowed-0（这些位必须为 1），高 32 位是 allowed-1
- * （只有这些位允许为 1）。所以正确做法永远是"先或上必须位，再与上允许位"，
- * 而不是直接写自己想要的值。
+ * The lower 32 bits of the capability MSR are allowed-0 (these bits must be 1), and the upper 32 bits
+ * are allowed-1 (only these bits are allowed to be 1). Therefore, the correct approach is always "OR
+ * with required bits first, then AND with allowed bits," rather than directly writing the desired value.
  *
- * 这在嵌套下尤其要命：外层 hypervisor 暴露给我们的能力面比裸硬件窄，任何被
- * 硬置的控制位都会让 VM entry 直接失败，而失败信息只有一个错误码。
+ * This is critical in nested virtualization: the outer hypervisor exposes a narrower capability surface than bare metal.
+ * Any control bits forced hard will cause VM entry to fail directly, with only a single error code as the failure message.
  */
 static __inline unsigned long
 KswordArkHvmAdjustControls(
@@ -38,40 +38,40 @@ KswordArkHvmAdjustControls(
     unsigned long long Capability
     )
 {
-    /* 低 32 位：必须置 1 的位。 */
+    /* Lower 32 bits: bits that must be set to 1. */
     const unsigned long mustBeOne =
         (unsigned long)(Capability & 0xFFFFFFFFULL);
-    /* 高 32 位：允许置 1 的位。 */
+    /* Upper 32 bits: bits allowed to be set to 1. */
     const unsigned long mayBeOne =
         (unsigned long)(Capability >> 32);
 
-    /* 保留必须位，剔除硬件不支持的请求位。 */
+    /* Preserve required bits and discard bits requested by unsupported hardware. */
     return (Desired | mustBeOne) & mayBeOne;
 }
 
 /* ------------------------------------------------------------------ */
-/* MSR 位图寻址                                                         */
+/* MSR bitmap addressing                                                         */
 /* ------------------------------------------------------------------ */
 
-/* 位图页覆盖的低段最后一个索引。 */
+/* Last index of the low segment covered by the bitmap page. */
 #define KSWORD_ARK_HVM_MSR_LOW_LIMIT 0x00001FFFUL
-/* 位图页覆盖的高段起始索引。 */
+/* Starting index of the high segment covered by the bitmap page. */
 #define KSWORD_ARK_HVM_MSR_HIGH_BASE 0xC0000000UL
-/* 位图页覆盖的高段最后一个索引。 */
+/* Last index of the high segment covered by the bitmap page. */
 #define KSWORD_ARK_HVM_MSR_HIGH_LIMIT 0xC0001FFFUL
 
-/* 四个 1KiB 区在页内的字节偏移。 */
+/* Byte offsets of the four 1KiB regions within the page. */
 #define KSWORD_ARK_HVM_MSR_READ_LOW_OFFSET   0x000U
 #define KSWORD_ARK_HVM_MSR_READ_HIGH_OFFSET  0x400U
 #define KSWORD_ARK_HVM_MSR_WRITE_LOW_OFFSET  0x800U
 #define KSWORD_ARK_HVM_MSR_WRITE_HIGH_OFFSET 0xC00U
 
-/* 位图页大小，用于越界断言。 */
+/* Bitmap page size, used for out-of-bounds assertions. */
 #define KSWORD_ARK_HVM_MSR_BITMAP_BYTES 0x1000U
 
 /*
- * 判断某个 MSR 索引是否落在位图描述的两段范围内。
- * 范围外的索引无条件退出，不受位图控制，因此也不能给它设策略。
+ * Check if a given MSR index falls within the two ranges described by the bitmap.
+ * Indices out of range unconditionally exit, are not controlled by the bitmap, and thus cannot have a policy set for them.
  */
 static __inline int
 KswordArkHvmMsrIndexIsCovered(
@@ -86,13 +86,13 @@ KswordArkHvmMsrIndexIsCovered(
 }
 
 /*
- * 计算某个 MSR 在位图中的字节偏移与位掩码。
+ * Calculate the byte offset and bit mask for a given MSR in the bitmap.
  *
- * 位图页分四个 1KiB 区，顺序是：低段读、高段读、低段写、高段写。
- * 高段索引要先减去 0xC0000000 再定位，这一步漏掉的话，写 IA32_LSTAR
- * (0xC0000082) 的策略会落到低段第 0x82 个 MSR 上——两个都存在，都不会报错。
+ * The bitmap page is divided into four 1KiB regions in the following order: low-range read, high-range read, low-range write, high-range write.
+ * High-range indices must be offset by subtracting 0xC0000000 before locating; omitting this step causes writes to
+ * IA32_LSTAR (0xC0000082) to target the 0x82nd MSR in the low range instead. Since both MSRs exist, no error is raised.
  *
- * 返回 0 表示索引不在覆盖范围内，此时两个输出不被写入。
+ * Returns 0 if the index is out of the covered range, in which case neither output is written.
  */
 static __inline int
 KswordArkHvmMsrBitmapLocate(
@@ -125,18 +125,18 @@ KswordArkHvmMsrBitmapLocate(
 }
 
 /* ------------------------------------------------------------------ */
-/* 页表自映射寻址                                                       */
+/* Page table self-mapping addressing                                                       */
 /* ------------------------------------------------------------------ */
 
-/* 规范地址里真正参与索引的低 48 位。 */
+/* The lower 48 bits of the canonical address that actually participate in indexing. */
 #define KSWORD_ARK_HVM_VA_INDEX_MASK 0x0000FFFFFFFFFFFFULL
 
 /*
- * 由自映射基址推出某个虚拟地址的叶页表项地址。
+ * Derive the leaf page table entry address for a virtual address from the self-mapping base.
  *
- * 必须先掩掉符号扩展的高 16 位再移位：内核地址的高位全 1，直接
- * (va >> 12) << 3 会把结果推出自映射区，落到一个不相干的地址上——
- * 而那个地址往往仍然可读，于是错误表现为"改了页表却没生效"。
+ * Must mask off the sign-extended upper 16 bits before shifting: kernel addresses have all 1s in the high bits.
+ * Directly computing (va >> 12) << 3 would shift the result out of the self-mapping region into an unrelated address.
+ * Since that address is often still readable, the error manifests as 'page table changes appear ineffective'.
  */
 static __inline unsigned long long
 KswordArkHvmSelfMapEntryAddress(
@@ -150,7 +150,7 @@ KswordArkHvmSelfMapEntryAddress(
     return SelfMapBase + offset;
 }
 
-/* 由 PML4 槽位号构造自映射基址。 */
+/* Construct self-mapping base address from the PML4 slot number. */
 static __inline unsigned long long
 KswordArkHvmSelfMapBaseFromIndex(
     unsigned long Pml4Index
@@ -161,39 +161,39 @@ KswordArkHvmSelfMapBaseFromIndex(
 }
 
 /* ------------------------------------------------------------------ */
-/* EPTP 校验                                                            */
+/* EPTP validation.                                                            */
 /* ------------------------------------------------------------------ */
 
-/* IA32_VMX_EPT_VPID_CAP 里与 EPTP 字段合法性相关的位。 */
+/* Bits in IA32_VMX_EPT_VPID_CAP related to EPTP field validity. */
 #define KSWORD_ARK_HVM_EPT_CAP_PAGE_WALK_4   (1ULL << 6)
 #define KSWORD_ARK_HVM_EPT_CAP_MEMORY_TYPE_UC (1ULL << 8)
 #define KSWORD_ARK_HVM_EPT_CAP_MEMORY_TYPE_WB (1ULL << 14)
 #define KSWORD_ARK_HVM_EPT_CAP_ACCESSED_DIRTY (1ULL << 21)
 
-/* EPTP 字段布局。 */
+/* EPTP field layout. */
 #define KSWORD_ARK_HVM_EPTP_MEMORY_TYPE_MASK 0x7ULL
 #define KSWORD_ARK_HVM_EPTP_WALK_LENGTH_SHIFT 3
 #define KSWORD_ARK_HVM_EPTP_WALK_LENGTH_MASK 0x7ULL
 #define KSWORD_ARK_HVM_EPTP_ACCESSED_DIRTY (1ULL << 6)
-/* bits 11:7 保留（bit 7 在新版 SDM 用于 supervisor shadow stack）。 */
+/* Bits 11:7 are reserved (bit 7 is used for supervisor shadow stack in newer SDM versions). */
 #define KSWORD_ARK_HVM_EPTP_RESERVED_LOW 0x0F80ULL
 
-/* 架构定义的两种可用内存类型。 */
+/* Two memory types defined by the architecture. */
 #define KSWORD_ARK_HVM_EPTP_MEMORY_TYPE_UC 0ULL
 #define KSWORD_ARK_HVM_EPTP_MEMORY_TYPE_WB 6ULL
 
 /*
- * 按 SDM 判据校验一个 EPTP 值。
+ * Validate an EPTP value according to SDM criteria.
  *
- * 这套判据同时服务于两处：VM entry 前自检 EPT pointer 字段，以及 EPTP list
- * 里每一项的合法性——VMFUNC 用非法项切换时只会得到一次 exit reason 59，
- * 没有任何附加信息说明是哪一项错、错在哪，所以必须在写进 list 之前就自检。
+ * This validation criterion serves two purposes: self-checking the EPT pointer field before VM entry, and validating
+ * each item in the EPTP list. When VMFUNC switches using an invalid item, it only receives exit reason 59 with no
+ * additional information about which item failed or why; therefore, validation must occur before writing to the list.
  *
- * 特别注意：全 0 的项永远非法（页遍历级数为 0），所以 list 里未使用的槽不能
- * 留空，要填成与当前 EPTP 相同的合法值。
+ * Special note: a value of all zeros is always invalid (page traversal level is 0), so unused slots in
+ * the list must not be left empty; they must be filled with a valid value identical to the current EPTP.
  *
- * MaxPhysicalAddressBits 来自 CPUID.80000008H:EAX[7:0]。
- * 返回非零表示该值可以被硬件接受。
+ * MaxPhysicalAddressBits comes from CPUID.80000008H:EAX[7:0].
+ * Returns non-zero if the value is acceptable by the hardware.
  */
 static __inline int
 KswordArkHvmEptpIsValid(
@@ -209,7 +209,7 @@ KswordArkHvmEptpIsValid(
         KSWORD_ARK_HVM_EPTP_WALK_LENGTH_MASK;
     unsigned long long physicalMask = 0ULL;
 
-    /* 内存类型必须是硬件报告支持的那一种。 */
+    /* The memory type must be one supported by the hardware report. */
     if (memoryType == KSWORD_ARK_HVM_EPTP_MEMORY_TYPE_UC) {
         if ((EptVpidCapability &
                 KSWORD_ARK_HVM_EPT_CAP_MEMORY_TYPE_UC) == 0ULL) {
@@ -221,10 +221,10 @@ KswordArkHvmEptpIsValid(
             return 0;
         }
     } else {
-        /* 其余编码架构上未定义。 */
+        /* Undefined on other encoding architectures. */
         return 0;
     }
-    /* 页遍历级数字段存的是"级数减一"，四级 walk 因此是 3。 */
+    /* The page traversal level field stores "level minus one"; thus a four-level walk is 3. */
     if (walkLength != 3ULL) {
         return 0;
     }
@@ -232,17 +232,17 @@ KswordArkHvmEptpIsValid(
             KSWORD_ARK_HVM_EPT_CAP_PAGE_WALK_4) == 0ULL) {
         return 0;
     }
-    /* 只有硬件支持时才允许开启 accessed/dirty。 */
+    /* Only allow enabling accessed/dirty if the hardware supports it. */
     if ((Eptp & KSWORD_ARK_HVM_EPTP_ACCESSED_DIRTY) != 0ULL &&
         (EptVpidCapability &
             KSWORD_ARK_HVM_EPT_CAP_ACCESSED_DIRTY) == 0ULL) {
         return 0;
     }
-    /* 低位保留域必须为零。 */
+    /* Low-order reserved bits must be zero. */
     if ((Eptp & KSWORD_ARK_HVM_EPTP_RESERVED_LOW) != 0ULL) {
         return 0;
     }
-    /* 超出物理地址宽度的高位必须为零。 */
+    /* High bits exceeding the physical address width must be zero. */
     if (MaxPhysicalAddressBits == 0UL ||
         MaxPhysicalAddressBits >= 64UL) {
         return 0;
@@ -437,26 +437,26 @@ KswordArkHvmEptLocalFitsBudget(
 }
 
 /* ------------------------------------------------------------------ */
-/* VMX 能力 MSR 过滤                                                    */
+/* VMX capability MSR filtering                                                    */
 /* ------------------------------------------------------------------ */
 
 /*
- * 我们**宣告**支持什么，必须等于我们**实现**了什么。
+ * What we **declare** support must equal what we **implement**.
  *
- * L1 打开一个 VMX 特性之前，只会读这几个 MSR。不过滤的话它读到的是宿主的真实
- * 能力，于是它会去开 VPID、unrestricted guest、VMFUNC、posted interrupt 这些我们
- * 根本没有把字段拷进 vmcs02 的东西 —— 它设了控制位，我们不写配套字段，处理器
- * 按 vmcs02 里那个陈旧值（通常是 0）去做。整条路上没有任何一处会报错。
+ * Before L1 enables a VMX feature, it reads only these MSRs. Without filtering, it reads the host's actual
+ * capabilities and attempts to enable VPID, unrestricted guest, VMFUNC, and posted interrupts—features whose fields
+ * we never copied into vmcs02. It sets the control bits, but we do not write the corresponding fields; the processor
+ * then acts based on the stale value in vmcs02 (typically 0). There is no error reporting anywhere along this path.
  *
- * 这跟 MSR 位图那个缺陷是同一族：**控制位与配套字段分家**。区别只在于那次是
- * 我们自己漏拷，这次是我们主动答应了做不到的事。
+ * This belongs to the same family as the MSR bitmap defect: **control bits and their corresponding fields are separated**.
+ * The difference is that last time we missed copying, while this time we voluntarily agreed to an impossible task.
  *
- * 所以这里是一份**白名单**：只有明确列出的位才允许被宣告，其余一律清掉。新的
- * Intel 特性默认落到"不宣告"一侧 —— 反过来（黑名单）意味着每出一个新特性我们
- * 就默认答应一次，而且没人会注意到。
+ * Thus, this is a **whitelist**: only explicitly listed bits are allowed to be advertised;
+ * all others must be cleared. New Intel features default to 'not advertised' — the reverse (a
+ * blacklist) would mean every new feature is implicitly accepted, and no one would notice.
  */
 
-/* 能力 MSR 的索引区间，全都是只读的。 */
+/* Index range for capability MSRs; all are read-only. */
 #define KSWORD_ARK_HVM_VMX_MSR_BASIC            0x480UL
 #define KSWORD_ARK_HVM_VMX_MSR_PINBASED         0x481UL
 #define KSWORD_ARK_HVM_VMX_MSR_PROCBASED        0x482UL
@@ -476,7 +476,7 @@ KswordArkHvmEptLocalFitsBudget(
 #define KSWORD_ARK_HVM_VMX_MSR_TRUE_ENTRY_CTLS  0x490UL
 #define KSWORD_ARK_HVM_VMX_MSR_VMFUNC           0x491UL
 
-/* 判断一个索引是不是 VMX 能力 MSR。 */
+/* Check if an index corresponds to a VMX capability MSR. */
 static __inline int
 KswordArkHvmIsVmxCapabilityMsr(
     unsigned long MsrIndex
@@ -487,177 +487,177 @@ KswordArkHvmIsVmxCapabilityMsr(
 }
 
 /*
- * pin-based 控制里允许宣告的位。
+ * Bits allowed to be declared in pin-based control.
  *
- * bit 0 外部中断退出 / bit 3 NMI 退出 / bit 5 虚拟 NMI：只是控制位，合并时并进
- * vmcs02，没有配套地址字段。
- * 清掉 bit 6（VMX 抢占计时器，要 0x482E 与退出控制 22）与 bit 7（posted
- * interrupt，要 0x2016 描述符地址 + 通知向量），两者的字段我们都不拷。
+ * bit 0: External interrupt exit / bit 3: NMI exit / bit 5: Virtual NMI: control
+ * bit only; merged into vmcs02 during merge, with no associated address field.
+ * Clear bit 6 (VMX preemption timer, requires 0x482E and exit control 22) and bit 7 (posted
+ * interrupt, requires 0x2016 descriptor address + notification vector); we do not copy either field.
  */
 /*
- * 2026-09-14：bit 6 曾被临时加进这张表，想看看"宣告了抢占计时器，VMware 会不会
- * 去配一个真的监控器定时器"。**那次实验是空操作，什么都没验到。**
+ * 2026-09-14: Bit 6 was temporarily added to this table to see if "declaring a preemptible timer" would
+ * cause VMware to configure a real monitoring timer. **That experiment was a no-op; nothing was verified.**
  *
- * 这张表是白名单，下面的过滤器做的是 `高半部 &= 本表`——它只能收窄。宿主
- * （Hyper-V）的 pin allowed-1 是 0x3F，bit 6 本来就不在里面，所以无论这里写
- * 0x29 还是 0x69，交给来宾的都是同一个 0x3F，VMware 的能力转储照旧是
+ * This table is a whitelist; the filter below performs `upper_half &= this_table`, which can only narrow the
+ * result. The host (Hyper-V) pin allowed-1 is 0x3F, and bit 6 is not included. Therefore, whether 0x29 or 0x69
+ * is written here, the same 0x3F is passed to the guest, and the VMware capability dump remains unchanged.
  * `Activate VMX-preemption timer { 0 }`。
  *
- * **判据：想让 L1 看见一个新能力，改白名单不够，得让过滤器去合成它**——那就
- * 不再是过滤而是伪造，必须连同字段（0x482E）与退出语义（原因 52）一起实现。
- * 在这之前，这里只放我们真的会往 vmcs02 里合并的位。
+ * **Criterion: To make L1 see a new capability, updating the whitelist is insufficient; the filter must synthesize it.** That
+ * is no longer filtering but forging, requiring implementation of both the field (0x482E) and the exit semantics (reason 52).
+ * Before this point, only bits that we will actually merge into vmcs02 are placed here.
  */
 #define KSWORD_ARK_HVM_VMX_PIN_ALLOWED 0x00000029UL
 
 /*
- * primary processor-based 控制里允许宣告的位。
+ * Bit allowed to be declared in the primary processor-based controls.
  *
- * 清掉的几个都是"要一个配套地址字段而我们不写"的：
- *   bit 27 monitor trap flag -> 我们没为 L2 实现 MTF
+ * The cleared ones are all cases of 'requiring a matching address field that we do not write'.
+ *   bit 27 monitor trap flag -> We have not implemented MTF for L2.
  *
- * bit 21（use TPR shadow）曾在这一行里，理由正是"要 0x2012 而我们不写"。现在写了：
- * 0x2012 与 0x401C 一起进了 hvm_nested_l2.c 的被拷控制字段表，进入前还会校验这一页
- * 的地址非零且页对齐。加它是因为 VMware Workstation 17.6 点名要它
+ * Bit 21 (use TPR shadow) was previously in this line because the reason was 'we need 0x2012 but we don't write it'. Now we do write it:
+ * 0x2012 and 0x401C are included in the copied control field table in hvm_nested_l2.c, with validation that the page
+ * address is non-zero and page-aligned before entry. Added because VMware Workstation 17.6 explicitly requires it.
  * （`True Primary Processor-Based VM-Execution Controls: Use TPR shadow`）。
- * 注意它与 secondary 的 virtualize-APIC-accesses（bit 0）是两件事，后者仍然不宣告。
- * 保留 bit 25 使用 I/O 位图与 bit 28 使用 MSR 位图（这两条路已经端到端验过），
- * 以及 bit 31 激活 secondary。
+ * Note that this is distinct from secondary virtualize-APIC-accesses (bit 0), which remains unannounced.
+ * Retain bit 25 for I/O bitmap and bit 28 for MSR bitmap (both paths
+ * have been end-to-end verified), and bit 31 to activate secondary.
  *
- * bit 3（TSC offsetting）曾被清掉，那是个错误：0x2010 一直在
- * g_KswordL2CopiedControlFields 里拷着，我却按"它没被拷"把它停止宣告了 ——
- * 一次自己造出来的倒退。判断一位该不该留，**去 hvm_nested_l2.c 的字段表里查，
- * 不要 grep 宏名**：那三张表是循环应用的，表里的字段一个宏都没有。
+ * Bit 3 (TSC offsetting) was erroneously cleared: 0x2010 was always copied into
+ * g_KswordL2CopiedControlFields, yet I incorrectly stopped declaring it as copied—a regression I caused
+ * myself. To determine whether a bit should be retained, **check the field table in hvm_nested_l2.c**, do not
+ * grep macro names: those three tables are applied cyclically, and the fields within them contain no macros.
  */
 #define KSWORD_ARK_HVM_VMX_PROC_ALLOWED 0xF3F99E8CUL
 
 /*
- * secondary 控制里允许宣告的位：EPT 与 unrestricted guest。
+ * secondary control: bits allowed to declare are EPT and unrestricted guest.
  *
- * 其余每一位都要一个我们没拷进 vmcs02 的字段：VPID 要 VPID 字段与 INVVPID 处理、
- * VMFUNC 要 0x2018、VMCS shadowing 要 0x2026/0x2028、PML 要 0x200E、#VE 要
- * 0x202A、EPTP 切换要 0x2024、TSC scaling 要 0x2032。
+ * Every other bit requires a field not copied into vmcs02: VPID needs the VPID field and
+ * INVVPID handling; VMFUNC needs 0x2018; VMCS shadowing needs 0x2026/0x2028; PML needs
+ * 0x200E; #VE needs 0x202A; EPTP switching needs 0x2024; TSC scaling needs 0x2032.
  *
- * bit 7（unrestricted guest）**不需要任何新字段**，这是它与上面那些的根本区别：
- * 它只是放宽处理器对来宾 CR0.PE/PG 的要求，让 L2 可以跑在实模式或未分页保护模式。
- * 来宾 CR0、段属性、CR0 掩码与读影子本来就逐字段从 vmcs12 拷过来，进入路径也没有
- * 任何一处校验 CR0.PE —— 也就是说这一位所需要的东西**全都已经在了**。
+ * Bit 7 (unrestricted guest) requires no new fields; this is its fundamental distinction from the above:
+ * It merely relaxes the processor's requirements for guest CR0.PE/PG, allowing L2 to run in real mode or unpaged protected mode.
+ * Guest CR0, segment attributes, CR0 mask, and shadow reads are already copied field-by-field from vmcs12, and
+ * the entry path performs no CR0.PE validation—meaning all required elements for this bit are already present.
  *
- * 加它是因为真机上量到的需求：VMware Workstation 17.6 在自己的日志里点名
+ * Added due to a requirement observed on physical hardware: VMware Workstation 17.6 explicitly references this in its own logs.
  * `The Intel "VMX Unrestricted Guest" feature is necessary to run this virtual
- * machine` —— 它的来宾从**实模式**启动，没有这一位一定起不来。这是四项缺件里
- * 唯一无法绕开的一项（另外三项是 TPR shadow、ack-interrupt-on-exit、INVVPID）。
+ * machine` — its guest boots in **real mode**, and without this bit it cannot start. This is the only one of the four
+ * missing features that cannot be bypassed (the other three are TPR shadow, ack-interrupt-on-exit, and INVVPID).
  *
- * 依赖关系必须由代码保证而不是靠 L1 自觉：Intel 规定 unrestricted guest = 1 时
- * enable EPT 也必须为 1，否则 VM entry 失败。合并 vmcs02 控制时会把 EPT 关着的
- * unrestricted guest 位丢掉 —— 与 pin 控制里"虚拟 NMI 不能没有 NMI 退出"同一种
- * 处理，理由也一样：**不把一对没验过的控制送进 VMLAUNCH**。
+ * Dependencies must be enforced by code, not L1 compliance: Intel specifies that when unrestricted
+ * guest = 1, EPT must also be enabled, otherwise VM entry fails. Merging vmcs02 controls drops the
+ * unrestricted guest bit if EPT is disabled—similar to handling 'Virtual NMI requires NMI exit' in pin
+ * controls. The rationale is identical: **do not pass an unverified pair of controls into VMLAUNCH**.
  *
- * 后果仍然要说清楚：这份能力依旧很窄，很多 hypervisor 会直接拒绝启动。那正是想要
- * 的结果 —— 干净地拒绝，好过答应了再静默地做不到。
+ * The consequences must be stated clearly: this capability remains very narrow, and many hypervisors will refuse
+ * to start directly. That is the desired outcome—a clean refusal rather than agreeing and then silently failing.
  */
 #define KSWORD_ARK_HVM_VMX_PROC2_ALLOWED 0x00000082UL
 
 /*
- * VM-exit 控制里允许宣告的位。
+ * Bits allowed to be declared in VM-exit controls.
  *
- * 留的每一位都能在 hvm_nested_l2.c 的字段表里指出它依赖的那个字段：
- *   bit 2  保存调试控制  -> guest IA32_DEBUGCTL(0x2802) 与 DR7(0x681A) 在双向表里
- *   bit 9  host 地址空间 -> x64 上本来就是强制位
- *   bit 18 保存 guest PAT  -> 0x2804 在双向表里，反射时写回 vmcs12
- *   bit 19 装载 host PAT   -> 0x2C00 在 host 表里（继承自 vmcs01）
- *   bit 20 保存 guest EFER -> 0x2806 同上
- *   bit 21 装载 host EFER  -> 0x2C02 同上
- * 清掉的：12 PERF_GLOBAL_CTRL（0x2808 **不在**任何表里）、22 抢占计时器
- * （0x482E 同样不在）。
+ * Each reserved bit can point to the field it depends on in the field table of hvm_nested_l2.c:
+ *   bit 2  Save debug controls -> guest IA32_DEBUGCTL(0x2802) and DR7(0x681A) are in the bidirectional table.
+ *   bit 9  Host address space -> already mandatory on x64.
+ *   bit 18 Save guest PAT -> 0x2804 is in the bidirectional table; write back to vmcs12 on reflection.
+ *   bit 19 Load host PAT -> 0x2C00 is in the host table (inherited from vmcs01).
+ *   bit 20 Save guest EFER -> 0x2806, handled like guest PAT above.
+ *   bit 21 Load host EFER -> 0x2C02, handled like host PAT above.
+ * Cleared: 12 PERF_GLOBAL_CTRL (0x2808 is **not in** any table), and 22 preemption timer
+ * (0x482E is also absent).
  *
- * bit 15（退出时应答中断）：置位时处理器**自己**去应答中断控制器并把向量写进
- * 0x4404，而 0x4404 与 0x4406 在反射时本来就逐字段写进 vmcs12。
- * VMware Workstation 17.6 点名要它（`True VM-Exit Controls: Acknowledge interrupt
- * on exit`），是它四项缺件里的最后一项。
+ * Bit 15 (respond to interrupt on exit): When set, the processor itself responds to the interrupt controller and
+ * writes the vector to 0x4404. During reflection, 0x4404 and 0x4406 are already written into vmcs12 field-by-field.
+ * VMware Workstation 17.6 explicitly requires this (`True VM-Exit Controls: Acknowledge
+ * interrupt on exit`); it is the final missing item among its four requirements.
  *
- * 这一位的危险不在语义而在**路由**：被应答的中断已经从控制器上取走了，谁都不再会
- * 重新投递它，所以这个退出**必须**到达 L1。保证它的是三件事，缺一不可：
- *   1. 我们自己从不请求外部中断退出，所以 reason 1 只可能因为 L1 要了才发生；
- *   2. 我们自己的退出控制里没有 bit 15，vmcs02 里的这一位只会来自 vmcs12；
- *   3. 退出归属里 reason 1 被**显式**判给 L1（不是靠 default 兜底）——
- *      见 hvm_nested_l2.c，那里写明了为什么这一条不能跟着默认走。
- * 三条里任何一条被后来的改动破坏，症状都是丢中断导致的静默挂死。
+ * The danger of this bit lies not in semantics but in **routing**: the acknowledged interrupt has already been removed from the
+ * controller, so no one will re-inject it; thus, this exit **must** reach L1. Three things guarantee this, all of which are indispensable:
+ *   1. We never request external interrupt exits, so reason 1 can only occur if L1 requested it;
+ *   2. Our own exit control does not have bit 15; this bit in vmcs02 comes only from vmcs12;
+ *   3. In the exit ownership, reason 1 is explicitly assigned to L1 (not relying on the default
+ *      fallback) — see hvm_nested_l2.c, which explains why this case cannot follow the default.
+ * If any of the three is broken by later changes, the symptom is a silent hang caused by lost interrupts.
  *
- * **两次实测确认这一位既扣不下、也不能在合并时剥掉**（2026-09-14）：
- *   - 从这张表里去掉它是空操作。过滤器只能在宿主给的范围内收窄，而且
- *     `high |= low` 会把每个"必须为一"的位加回来，bit 15 正是其中之一 ——
- *     去掉之后来宾读到的 vmcs12 里它照旧置位。
- *   - 在合并进 vmcs02 时剥掉它，VMware 的监控器当场倒下：
+ * **Confirmed by two practical tests that this bit cannot be cleared and cannot be stripped during merging** (2026-09-14):
+ *   - Removing it from this table is a no-op. Filters can only narrow within the
+ *     host-provided range, and `high |= low` restores every 'must-be-one' bit, including
+ *     bit 15; thus, even after removal, it remains set in the vmcs12 read by the guest.
+ *   - Strip this when merging into vmcs02; the VMware monitor crashes immediately.
  *     `MONITOR PANIC: VERIFY vmcore/monitor/common/platform/common/x86/irq.c:111`。
- *     L1 一旦要了这一位就会无条件去读那个向量，读到无效值就触发它自己的断言。
- * **L1 设了的控制位不能悄悄扣下**，要么它根本不该能设，要么就得如实兑现。
+ *     Note: Once L1 requests this bit, it unconditionally reads that vector; if an invalid value is read, it triggers its own assertion.
+ * Control bits set by L1 cannot be silently suppressed: either they should never be settable, or they must be honored exactly as set.
  */
 #define KSWORD_ARK_HVM_VMX_EXIT_ALLOWED 0x003C8204UL
 
 /*
- * VM-entry 控制里允许宣告的位。
+ * Bits allowed to be declared in the VM-entry control.
  *
- *   bit 2  装载调试控制 -> guest IA32_DEBUGCTL(0x2802)、DR7 在双向表里
- *   bit 9  IA-32e 模式来宾 -> 不留的话 64 位 L2 根本进不去
- *   bit 14 装载 guest PAT  -> 0x2804 在双向表里
- *   bit 15 装载 guest EFER -> 0x2806 在双向表里
- * 清掉 13（PERF_GLOBAL_CTRL，0x2808 不拷）与 16/17/18/20/21/22
- * （BNDCFGS、PT、RTIT、CET、LBR、PKRS，字段一个都不拷）。
+ *   bit 2  Load debug controls -> guest IA32_DEBUGCTL(0x2802) and DR7 are in the bidirectional table.
+ *   bit 9  IA-32e mode guest -> without this bit, a 64-bit L2 cannot enter.
+ *   bit 14 Load guest PAT -> 0x2804 is in the bidirectional table.
+ *   bit 15 Load guest EFER -> 0x2806 is in the bidirectional table.
+ * Clear 13 (PERF_GLOBAL_CTRL; 0x2808 is not copied) and 16/17/18/20/21/22
+ * (BNDCFGS, PT, RTIT, CET, LBR, PKRS; none of these fields are copied).
  *
- * 这一组曾经只留 bit 9，是我按"这些字段没拷"写的，而那个前提是错的 —— 那三张
- * 批量表一直在拷。**过窄的宣告和过宽的宣告一样有害**：过宽是答应做不到的事，
- * 过窄是让一个本可以跑起来的 hypervisor 干净地拒绝启动，而且两者都不报错。
- * 所以这份表的每一位现在都写明它依赖哪个字段编码，改之前先去表里查。
+ * This group originally only reserved bit 9; I wrote it based on the incorrect premise that 'these fields were not copied,' whereas those three
+ * batch tables are always copied. **An overly narrow declaration is as harmful as an overly wide one**: being too wide promises what cannot be
+ * done, while being too narrow causes a hypervisor that could otherwise run to cleanly refuse startup, and neither case produces an error.
+ * Thus, every bit in this table now specifies which field encoding it depends on; check the table before making changes.
  */
 #define KSWORD_ARK_HVM_VMX_ENTRY_ALLOWED 0x0000C204UL
 
 /*
- * EPT/VPID 能力里允许宣告的位。
+ * Bits allowed to declare in EPT/VPID capabilities.
  *
- * 留下的是影子 EPT 真的走过的那些：4 级页表走、UC/WB 内存类型、2 MiB 与 1 GiB
- * 叶、INVEPT 及其两种上下文，外加 bit 21 accessed/dirty —— A/D 是这条线上唯一
- * 一个已经实测折回过 L1 表的能力位。
+ * The remaining entries reflect the actual path taken by shadow EPT: 4-level page tables, UC/WB memory
+ * types, 2 MiB and 1 GiB leaf entries, INVEPT and its two contexts, plus bit 21 (accessed/dirty). A/D is
+ * the only capability bit on this line that has been empirically observed to fold back to the L1 table.
  *
- * VPID 那一族只宣告 **bit 32（支持 INVVPID）与 bit 40/41/42（类型 0/1/2）**，
- * 恰好是 VMware Workstation 17.6 在自己日志里点名要的那四位。注意它要的是**指令
- * 能力**，不是 secondary 里的 enable-VPID 控制位（那一位仍然不宣告，见
- * KSWORD_ARK_HVM_VMX_PROC2_ALLOWED）—— 这两件事在架构上本来就是分开的。
+ * The VPID family only declares **bit 32 (INVVPID support)** and **bits 40/41/42 (types 0/1/2)**, which
+ * exactly match the four bits VMware Workstation 17.6 explicitly requires in its own logs. Note that it
+ * requires **instruction capabilities**, not the secondary enable-VPID control bit (which remains
+ * undeclared, see KSWORD_ARK_HVM_VMX_PROC2_ALLOWED)—these two concepts are architecturally distinct.
  *
- * 我们**不开 VPID**，所以 vmcs02 里 L2 用的是 VPID 0000H，而处理器在每一次 VM entry
- * 与 VM exit 上都会失效 VPID 0000H 的线性映射。也就是说 L1 想让 INVVPID 去掉的那些
- * 翻译，到下一次进出之前必然已经没了 —— 服务这条指令的正确动作是**什么都不做**，
- * 不是去刷影子 EPT（那是 INVEPT 的事，而且每次 INVVPID 重建一遍影子会很贵）。
+ * We do not enable VPID, so L2 in vmcs02 uses VPID 0000H. The processor invalidates the linear mapping for
+ * VPID 0000H on every VM entry and VM exit. This means any translations L1 intends to remove via INVVPID are
+ * already gone before the next entry/exit. The correct action for this instruction is to do nothing, not to
+ * flush the shadow EPT (which is INVEPT's job, and rebuilding the shadow on every INVVPID would be expensive).
  *
- * bit 43（类型 3，单上下文保留全局）不宣告：VMware 没要，我们也没有理由去承诺一个
- * 更精细的粒度。
+ * Bit 43 (Type 3, single-context reserved global) is not declared: VMware
+ * doesn't require it, and we have no reason to commit to a finer granularity.
  *
- * bit 0 execute-only 也清掉 —— 影子合成是否逐位保留 execute-only 没有验过，
- * 没验过的位不宣告。
+ * Clear bit 0 (execute-only) as well. It has not been verified whether shadow synthesis
+ * preserves execute-only bit-by-bit; do not declare bits that haven't been verified.
  *
- * **这份白名单必须是我们自己在来宾里用到的位的超集。**
+ * **This whitelist must be a superset of the bits used by us in the guest.**
  *
- * 容易漏的一点：驱动自己也是这些 MSR 的读者，而常驻起来之后驱动就跑在来宾里，
- * 于是我们读到的是自己过滤后的值。今天有两个这样的读者：
- *   hvm_nested_ept.c  查 bit 21 决定要不要维护 A/D
- *   hvm_nested_probe.c 查 bit 17 决定 EPT12 能不能用 1 GiB 叶搭
- * bit 17 起初不在这份表里，那会让探针的 EPT12 装不起来、整行判 FAIL —— 故障现象
- * 跟"嵌套坏了"一模一样，而真因是我们把自己要用的能力给自己屏蔽了。
+ * A common oversight: the driver itself is also a reader of these MSRs. Once resident, the driver runs
+ * inside the guest, so we read values filtered by ourselves. There are currently two such readers:
+ *   hvm_nested_ept.c: Check bit 21 to decide whether to maintain A/D. hvm_nested_probe.c: Check bit 17 to decide
+ *   if EPT12 can use 1 GiB pages. Bit 17 was initially missing from this table, causing the probe's EPT12 setup
+ * to FAIL entirely, resulting in a failure status. The observed symptom is identical to "nested virtualization
+ * broken," but the root cause is that we inadvertently disabled a capability we ourselves require.
  */
 #define KSWORD_ARK_HVM_VMX_EPT_CAP_ALLOWED 0x0000070106334140ULL
 
-/* MISC 里 CR3-target 个数字段的位置；我们不拷 CR3-target 字段，所以必须报 0。 */
+/* Position of the CR3-target field in MISC; we do not copy the CR3-target field, so it must be reported as 0. */
 #define KSWORD_ARK_HVM_VMX_MISC_CR3_TARGET_MASK 0x01FF0000ULL
 
 /*
- * 把一个成对格式的控制能力 MSR 收窄。
+ * Narrow a paired-format control capability MSR.
  *
- * 低 32 位是 allowed-0（置 1 表示"必须为 1"），高 32 位是 allowed-1（置 1 表示
- * "可以为 1"）。收窄只动高半部。
+ * The lower 32 bits are allowed-0 (set to 1 means "must be 1"), and the upper 32 bits
+ * are allowed-1 (set to 1 means "can be 1"). Narrowing only affects the upper half.
  *
- * `| low` 这一步不能省：硬件强制为 1 的位必然也是允许为 1 的，把它从高半部清掉
- * 会造出一个自相矛盾的 MSR —— L1 照着它算出来的控制值会被处理器判非法，而报出
- * 来的错误指向 L1 自己的计算，不指向我们。宁可宣告一个我们没实现但被强制打开
- * 的位，也不能给出一份不自洽的能力。
+ * The `| low` step is mandatory: bits forced to 1 by hardware must also be allowed to be 1. Clearing them
+ * from the high half creates a self-contradictory MSR. L1 would compute a control value based on it that
+ * the processor rejects as invalid, but the error would point to L1's own calculation rather than to us.
+ * Better to declare an unimplemented bit that is forced on than to provide an inconsistent capability.
  */
 static __inline unsigned long long
 KswordArkHvmFilterPairedControlMsr(
@@ -674,10 +674,10 @@ KswordArkHvmFilterPairedControlMsr(
 }
 
 /*
- * 按索引收窄一个能力 MSR。返回要交给来宾的值。
+ * Narrow a capability MSR by index. Return the value to be given to the guest.
  *
- * 不在过滤范围内的索引原样返回 —— 调用方已经用 KswordArkHvmIsVmxCapabilityMsr
- * 把范围框住了，这里再判一次是为了让这个函数单独拿出来也是对的。
+ * Return the index unchanged if it is not in the filter range. The caller has already bounded the range using
+ * KswordArkHvmIsVmxCapabilityMsr; checking again here ensures this function remains correct when used standalone.
  */
 static __inline unsigned long long
 KswordArkHvmFilterVmxCapabilityMsr(
@@ -706,33 +706,33 @@ KswordArkHvmFilterVmxCapabilityMsr(
         return KswordArkHvmFilterPairedControlMsr(
             HostValue, KSWORD_ARK_HVM_VMX_PROC2_ALLOWED);
     case KSWORD_ARK_HVM_VMX_MSR_EPT_VPID_CAP:
-        /* 单值格式，不是成对的：直接与白名单相与。 */
+        /* Single-value format, not paired: directly AND with the whitelist. */
         return HostValue & KSWORD_ARK_HVM_VMX_EPT_CAP_ALLOWED;
     case KSWORD_ARK_HVM_VMX_MSR_VMFUNC:
         /*
-         * secondary 里 VMFUNC 已经清了，这里把功能位也清空。
+         * VMFUNC has already cleared the secondary context; clear the feature bits here as well.
          *
-         * 两处都清是故意的：L1 若只读这一个 MSR 就去用 VMFUNC，得到的是"一个
-         * 功能都没有"，而不是"有功能但激活位打不开"。后者会让它以为是配置问题
-         * 而重试。
+         * Clearing both is intentional: if L1 reads only this MSR and uses VMFUNC, it gets
+         * 'no functionality at all' rather than 'functionality exists but activation bits
+         * are off'. The latter would make it think it's a configuration issue and retry.
          */
         return 0ULL;
     case KSWORD_ARK_HVM_VMX_MSR_MISC:
         /*
-         * 只清 CR3-target 个数。
+         * Clear only the CR3-target count.
          *
-         * 这个字段是个**承诺**：报 N 就是说 vmcs 里有 N 个 CR3-target 值可用，
-         * 而我们一个都不往 vmcs02 里拷。其余各位是描述性的（活动状态、MSEG
-         * 版本、抢占计时器频率），不构成我们必须兑现的功能。
+         * This field is a **promise**: reporting N means there are N CR3-target values available in the
+         * VMCS, and we copy none of them into vmcs02. The remaining bits are descriptive (active state, MSEG
+         * version, preemption timer frequency) and do not constitute functional guarantees we must honor.
          */
         return HostValue & ~KSWORD_ARK_HVM_VMX_MISC_CR3_TARGET_MASK;
     default:
         /*
-         * BASIC / CR0 与 CR4 的固定位 / VMCS_ENUM 原样透传。
+         * BASIC / CR0 and CR4 fixed bits / VMCS_ENUM are passed through as-is.
          *
-         * BASIC 尤其不能动：低 31 位是 VMCS 修订号，改了它，来宾按新号去建
-         * VMCS 区域，VMXON 与 VMPTRLD 会因为区域头部对不上而失败 —— 那是一个
-         * 跟能力毫无关系的故障，却会被当成嵌套坏了。
+         * BASIC must not be modified: The lower 31 bits represent the VMCS revision ID. Changing it causes
+         * guests to build VMCS regions with the new ID, leading to VMXON and VMPTRLD failures due to header
+         * mismatches—a failure unrelated to capabilities but mistaken for nested virtualization corruption.
          */
         return HostValue;
     }

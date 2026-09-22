@@ -4,11 +4,11 @@
 
 // ============================================================
 // KswordArkI8042AuditIoctl.h
-// 作用：
-// - 定义 R3 <-> R0 i8042prt 专项只读审计协议；
-// - 所有版本都通过 I/O 管理器公开接口枚举 i8042prt 设备对象；
-// - 仅在 PE/RSDS/opcode/DriverObject 全部匹配已知描述符后读取设备扩展指针；
-// - 只返回端点地址、归属和设备栈关系，不读取键鼠输入数据，也不提供写入能力。
+// Purpose:
+// - Defines R3 <-> R0 i8042prt specialized read-only audit protocol;
+// - All versions expose the interface via the I/O Manager to enumerate i8042prt device objects.
+// - Read the device extension pointer only after PE, RSDS, opcode, and DriverObject all match known descriptors.
+// - Returns only endpoint address, ownership, and device stack relationship; does not read keyboard/mouse input data and provides no write capability.
 // ============================================================
 
 #define KSWORD_ARK_I8042_AUDIT_PROTOCOL_VERSION 1UL
@@ -44,7 +44,7 @@
 #define KSWORD_ARK_I8042_ENDPOINT_MOUSE_CLASS_SERVICE          4UL
 #define KSWORD_ARK_I8042_ENDPOINT_MOUSE_ISR                    5UL
 
-// “AVAILABLE”只表示证据可读取；本协议没有独立干净基线，因此不定义 CLEAN。
+// "AVAILABLE" only indicates that evidence is readable; this protocol has no independent clean baseline, so CLEAN is not defined.
 #define KSWORD_ARK_I8042_VERDICT_UNKNOWN     0UL
 #define KSWORD_ARK_I8042_VERDICT_AVAILABLE   1UL
 #define KSWORD_ARK_I8042_VERDICT_SUSPICIOUS  2UL

@@ -12,7 +12,7 @@
 
 static SOCKET listener;
 static struct sockaddr_in address;
-static volatile LONG stop_requests, worker_error;
+static volatile LONG stopRequests, workerError;
 static HANDLE ready;
 static long long tick(void) { LARGE_INTEGER q; QueryPerformanceCounter(&q); return q.QuadPart; }
 static int transfer(SOCKET fd, void *data, int bytes, int writing) {
@@ -32,29 +32,29 @@ static void configure(SOCKET fd) {
 }
 static unsigned __stdcall serve(void *unused) {
     SOCKET fd;uint64_t seq,expected=1; (void)unused;
-    if(!SetThreadAffinityMask(GetCurrentThread(),2)){InterlockedExchange(&worker_error,1);return 1;}
+    if(!SetThreadAffinityMask(GetCurrentThread(),2)){InterlockedExchange(&workerError,1);return 1;}
     fd=accept(listener,NULL,NULL);
-    if(fd==INVALID_SOCKET){InterlockedExchange(&worker_error,2);return 1;}
+    if(fd==INVALID_SOCKET){InterlockedExchange(&workerError,2);return 1;}
     configure(fd);
     while(transfer(fd,&seq,sizeof(seq),0)) {
-        if(seq!=expected++ || !transfer(fd,&seq,sizeof(seq),1)){InterlockedExchange(&worker_error,3);break;}
+        if(seq!=expected++ || !transfer(fd,&seq,sizeof(seq),1)){InterlockedExchange(&workerError,3);break;}
     }
     closesocket(fd);return 0;
 }
 static unsigned __stdcall request(void *unused) {
     SOCKET fd;uint64_t seq=0,reply;long long previous=0; (void)unused;
-    if(!SetThreadAffinityMask(GetCurrentThread(),4)){InterlockedExchange(&worker_error,4);SetEvent(ready);return 1;}
+    if(!SetThreadAffinityMask(GetCurrentThread(),4)){InterlockedExchange(&workerError,4);SetEvent(ready);return 1;}
     fd=socket(AF_INET,SOCK_STREAM,0);configure(fd);
-    if(connect(fd,(struct sockaddr*)&address,sizeof(address))){InterlockedExchange(&worker_error,5);SetEvent(ready);closesocket(fd);return 1;}
+    if(connect(fd,(struct sockaddr*)&address,sizeof(address))){InterlockedExchange(&workerError,5);SetEvent(ready);closesocket(fd);return 1;}
     SetEvent(ready);
-    while(!InterlockedCompareExchange(&stop_requests,0,0)) {
+    while(!InterlockedCompareExchange(&stopRequests,0,0)) {
         long long begin=tick(),end;int valid;
         ++seq;reply=0;
         valid=transfer(fd,&seq,sizeof(seq),1)&&transfer(fd,&reply,sizeof(reply),0)&&reply==seq;
         end=tick();
         printf("{\"kind\":\"request\",\"seq\":%llu,\"beginQpc\":%lld,\"endQpc\":%lld,\"previousEndQpc\":%lld,\"valid\":%s}\n",
             (unsigned long long)seq,begin,end,previous,valid?"true":"false");
-        if(!valid){InterlockedExchange(&worker_error,6);break;}
+        if(!valid){InterlockedExchange(&workerError,6);break;}
         previous=end;Sleep(1);
     }
     closesocket(fd);return 0;
@@ -77,7 +77,7 @@ int main(int argc,char **argv) {
     ready=CreateEvent(NULL,TRUE,FALSE,NULL);
     server=(HANDLE)_beginthreadex(NULL,0,serve,NULL,0,NULL);
     client=(HANDLE)_beginthreadex(NULL,0,request,NULL,0,NULL);
-    if(!ready || !server || !client || WaitForSingleObject(ready,5000)!=WAIT_OBJECT_0 || worker_error)return 5;
+    if(!ready || !server || !client || WaitForSingleObject(ready,5000)!=WAIT_OBJECT_0 || workerError)return 5;
     Sleep(3000);
     log=CreateFileA(argv[2],GENERIC_WRITE,FILE_SHARE_READ,&sa,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,NULL);
     if(log==INVALID_HANDLE_VALUE){rc=6;goto cleanup;}
@@ -97,11 +97,11 @@ int main(int argc,char **argv) {
     if(wait!=WAIT_OBJECT_0 || code!=0)rc=8;
     Sleep(3000);
 cleanup:
-    InterlockedExchange(&stop_requests,1);
+    InterlockedExchange(&stopRequests,1);
     if(WaitForSingleObject(client,6000)!=WAIT_OBJECT_0)rc=9;
     if(WaitForSingleObject(server,6000)!=WAIT_OBJECT_0)rc=10;
-    printf("{\"kind\":\"final\",\"error\":%d,\"workerError\":%ld,\"endQpc\":%lld}\n",rc,worker_error,tick());
+    printf("{\"kind\":\"final\",\"error\":%d,\"workerError\":%ld,\"endQpc\":%lld}\n",rc,workerError,tick());
     CloseHandle(client);CloseHandle(server);CloseHandle(ready);closesocket(listener);
     if(timer==TIMERR_NOERROR)timeEndPeriod(1);
-    WSACleanup();return rc?rc:(worker_error?11:0);
+    WSACleanup();return rc?rc:(workerError?11:0);
 }

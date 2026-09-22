@@ -14,11 +14,11 @@ PatchGuard/HVCI/WHQL 拒绝，且失败后系统处于不可恢复内核状态�
   - 确认令牌 `KSWORD_ARK_BUGCHECK_SHIELD_CONFIRMATION_TOKEN = 'KSHL' = 0x4C48534B`
   - 请求 `KSWORD_ARK_BUGCHECK_SHIELD_REQUEST`、响应 `KSWORD_ARK_BUGCHECK_SHIELD_RESPONSE`
   - 时间轴条目 `KSWORD_ARK_BUGCHECK_SHIELD_TIMELINE_ENTRY`，环容量 16
-- 头声明：`KswordARKDriver/include/ark/ark_bugcheck.h`
-  - `KswordARKBugcheckShieldInitialize/Uninitialize/IoctlConfigure`
-- 实现：`KswordARKDriver/src/features/bugcheck/bugcheck_shield.c`
-- 注册：`KswordARKDriver/src/dispatch/ioctl_registry.c`（前向声明 + 表项）
-- 生命周期：`KswordARKDriver/src/framework/driver_entry.c`
+- 头声明：`drivers/ark/include/ark/ark_bugcheck.h`
+  - `kswordArkBugcheckShieldInitialize/Uninitialize/IoctlConfigure`
+- 实现：`drivers/ark/src/features/bugcheck/bugcheck_shield.c`
+- 注册：`drivers/ark/src/dispatch/ioctl_registry.c`（前向声明 + 表项）
+- 生命周期：`drivers/ark/src/framework/driver_entry.c`
   - Initialize：`KSWORD_ARK_BUGCHECK_DIAGNOSTICS_ENABLED` 分支内，`Guard` 之后
   - Uninitialize：卸载路径，`Guard` 之后，`Control` 之前
 - 工程注册：`KswordARKDriver.vcxproj` 与 `.vcxproj.filters`

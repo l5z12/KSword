@@ -1,0 +1,10 @@
+#include "Ksword5.h"
+
+Ksword5::Ksword5(QWidget *parent)
+    : QMainWindow(parent)
+{
+    ui_.setupUi(this);
+}
+
+Ksword5::~Ksword5()
+{}

@@ -9,8 +9,8 @@
 ### 1.1 已对齐的仓库约束
 
 - R0/R3 协议只能在 `shared/driver/` 定义。
-- 驱动 IOCTL handler 只能通过 `KswordARKDriver/src/dispatch/ioctl_registry.c` 注册。
-- 用户态设备访问只能通过 `Ksword5.1/Ksword5.1/ArkDriverClient/`，Dock UI 不直接调用 KswordARK `DeviceIoControl`。
+- 驱动 IOCTL handler 只能通过 `drivers/ark/src/dispatch/ioctl_registry.c` 注册。
+- 用户态设备访问只能通过 `shared/ark_client/`，Dock UI 不直接调用 KswordARK `DeviceIoControl`。
 - 已有 IOCTL 审计显示 shared 定义与 registry 注册结构一致，但 mutating IOCTL 仍存在访问控制风险，需要在后续安全门禁中复查。
 - 已有 DynData v3、cross-view、kernel memory evidence、driver integrity、mutation/audit、safety/preflight 等文档和协议可作为后续 PDB R0 审计能力的集成基础。
 
@@ -309,7 +309,7 @@ UI 禁止把 `unknown/partial/unsupported` 渲染成绿色；也禁止把单一�
 最终总设计文档建议按以下目录组织：
 
 1. 背景与目标。
-2. 总体架构：PDB profile -> R3 loader -> DynData/capability -> R0 read-only evidence -> ArkDriverClient -> UI/Risk Center。
+2. 总体架构：PDB profile -> R3 loader -> DynData/capability -> R0 read-only evidence -> ArkDriverClient -> ui/Risk Center。
 3. Profile/schema 规范。
 4. R0 安全模型与只读协议规范。
 5. 各功能域 evidence 设计索引。

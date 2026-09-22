@@ -1,0 +1,193 @@
+#include "OtherDock.h"
+#include "WindowCaptureProtection.h"
+#include "../framework/PrivilegeElevationPrompt.h"
+
+// ============================================================
+// OtherDock.WindowProtection.cpp
+// Purpose:
+// 1) Connects to the UI operations for screenshot protection on the window list page.
+// 2) Pass the selected window's HWND to the WindowCaptureProtection helper;
+// 3) Unify logging, message boxes, and refresh actions.
+// ============================================================
+
+#include <QMessageBox>
+#include <QString>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
+
+#include <iomanip>
+
+namespace
+{
+    // formatHwndText:
+    // - Format the HWND integer value as uppercase hexadecimal.
+    // - Invocation: displays the target window in message boxes and log summaries.
+    QString formatHwndText(const quint64 hwndValue)
+    {
+        return QStringLiteral("0x%1")
+            .arg(static_cast<qulonglong>(hwndValue), 0, 16)
+            .toUpper();
+    }
+
+    // affinityText:
+    // - Convert the affinity value returned by the helper into UI text.
+    // - Input affinityValue: raw WDA_* numeric value.
+    QString affinityText(const std::uint32_t affinityValue)
+    {
+        return QString::fromStdString(ks::window::displayAffinityName(affinityValue));
+    }
+
+    // buildProtectionMessage:
+    // - Generate a user-readable success/failure summary.
+    // - Input result: screenshot prevention write result.
+    // - Output: QString message body.
+    QString buildProtectionMessage(const ks::window::CaptureProtectionResult& result)
+    {
+        const QString kActionText = result.requestedProtection
+            ? QStringLiteral("启用防截图保护")
+            : QStringLiteral("取消防截图保护");
+        const QString kRouteText = result.usedRemoteThread
+            ? QStringLiteral("跨进程远程调用")
+            : QStringLiteral("本进程直接调用");
+
+        QString messageText;
+        messageText += result.success
+            ? QStringLiteral("%1成功。\n").arg(kActionText)
+            : QStringLiteral("%1失败。\n").arg(kActionText);
+        messageText += QStringLiteral("选择窗口: %1\n").arg(formatHwndText(result.requestedHwnd));
+        messageText += QStringLiteral("实际窗口: %1\n").arg(formatHwndText(result.appliedHwnd));
+        messageText += QStringLiteral("目标 PID: %1\n").arg(result.processId);
+        messageText += QStringLiteral("调用路径: %1\n").arg(kRouteText);
+        const QString kAffinityHexText =
+            QString::number(static_cast<qulonglong>(result.appliedAffinity), 16).toUpper();
+        messageText += QStringLiteral("DisplayAffinity: 0x%1 (%2)\n")
+            .arg(kAffinityHexText)
+            .arg(affinityText(result.appliedAffinity));
+
+        if (result.usedRootWindow)
+        {
+            messageText += QStringLiteral("说明: 选中的是子窗口，已对所属顶层窗口执行。\n");
+        }
+        if (!result.success)
+        {
+            messageText += QStringLiteral("错误码: %1\n").arg(result.win32Error);
+            messageText += QStringLiteral("诊断: %1\n").arg(QString::fromStdString(result.detail));
+            messageText += QStringLiteral("限制: 更高权限、受保护进程、32 位目标进程或非顶层窗口可能被系统拒绝。");
+        }
+        return messageText;
+    }
+}
+
+void OtherDock::setCaptureProtectionForSelectedWindow(const bool protectedState)
+{
+    QTreeWidgetItem* item = windowTree_ != nullptr ? windowTree_->currentItem() : nullptr;
+    if (item == nullptr || item->data(0, Qt::UserRole + 1).toBool())
+    {
+        KLogEvent event;
+        warn << event
+            << "[OtherDock] 防截图保护操作失败：未选中有效窗口。"
+            << eol;
+        QMessageBox::information(
+            this,
+            QStringLiteral("窗口防截图保护"),
+            QStringLiteral("请先选中一个窗口。"));
+        return;
+    }
+
+    const quint64 kHwndValue = item->data(0, Qt::UserRole).toULongLong();
+    const WindowInfo* windowInfo = findInfoByHwnd(kHwndValue);
+    if (windowInfo == nullptr)
+    {
+        KLogEvent event;
+        warn << event
+            << "[OtherDock] 防截图保护操作失败：选中 HWND 不在当前快照, hwnd="
+            << formatHwndText(kHwndValue).toStdString()
+            << eol;
+        QMessageBox::warning(
+            this,
+            QStringLiteral("窗口防截图保护"),
+            QStringLiteral("当前窗口快照已失效，请刷新后重试。"));
+        return;
+    }
+
+    setCaptureProtectionForWindow(*windowInfo, protectedState);
+}
+
+void OtherDock::setCaptureProtectionForWindow(
+    const WindowInfo& windowInfo,
+    const bool protectedState)
+{
+    KLogEvent actionEvent;
+    info << actionEvent
+        << "[OtherDock] 开始窗口防截图保护操作, hwnd="
+        << formatHwndText(windowInfo.hwndValue).toStdString()
+        << ", pid="
+        << windowInfo.processId
+        << ", targetProtected="
+        << (protectedState ? "true" : "false")
+        << eol;
+
+    const ks::window::CaptureProtectionResult kResult =
+        ks::window::setWindowCaptureProtection(windowInfo.hwndValue, protectedState);
+    const QString kMessageText = buildProtectionMessage(kResult);
+
+    if (kResult.success)
+    {
+        info << actionEvent
+            << "[OtherDock] 窗口防截图保护操作成功, requestedHwnd="
+            << formatHwndText(kResult.requestedHwnd).toStdString()
+            << ", appliedHwnd="
+            << formatHwndText(kResult.appliedHwnd).toStdString()
+            << ", remote="
+            << (kResult.usedRemoteThread ? "true" : "false")
+            << ", affinity=0x"
+            << std::hex
+            << kResult.appliedAffinity
+            << std::dec
+            << eol;
+        QMessageBox::information(
+            this,
+            QStringLiteral("窗口防截图保护"),
+            kMessageText);
+    }
+    else
+    {
+        // privilegePromptHandled: First consumes structured Win32 errors; if not found, checks the text details.
+        bool privilegePromptHandled = ks::ui::promptForPrivilegeFailure(
+            this,
+            kResult.requestedProtection ? QStringLiteral("启用窗口防截图保护") : QStringLiteral("取消窗口防截图保护"),
+            kResult.win32Error);
+        if (!privilegePromptHandled)
+        {
+            privilegePromptHandled = ks::ui::promptForPrivilegeFailure(
+                this,
+                kResult.requestedProtection ? QStringLiteral("启用窗口防截图保护") : QStringLiteral("取消窗口防截图保护"),
+                QString::fromStdString(kResult.detail));
+        }
+        err << actionEvent
+            << "[OtherDock] 窗口防截图保护操作失败, requestedHwnd="
+            << formatHwndText(kResult.requestedHwnd).toStdString()
+            << ", appliedHwnd="
+            << formatHwndText(kResult.appliedHwnd).toStdString()
+            << ", remote="
+            << (kResult.usedRemoteThread ? "true" : "false")
+            << ", error="
+            << kResult.win32Error
+            << ", detail="
+            << kResult.detail
+            << eol;
+        if (!privilegePromptHandled)
+        {
+            QMessageBox::warning(
+                this,
+                QStringLiteral("窗口防截图保护"),
+                kMessageText);
+        }
+    }
+
+    refreshWindowListAsync();
+}
+
+// WindowLayerDiagnostics.inl is intentionally included here so the feature is
+// compiled once without expanding the already large OtherDock.cpp translation unit.
+#include "WindowLayerDiagnostics.inl"

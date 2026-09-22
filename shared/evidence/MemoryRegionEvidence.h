@@ -1,16 +1,16 @@
 #pragma once
 
-// M 模块：区域证据模型、部分读取账目、可执行区域线索与 pool 归因边界。
+// M module: region evidence model, partial read ledger, executable region clues, and pool attribution boundaries.
 //
-// 对应验收：
-//   M-01 区域信息语义（字段按来源分开；未走 VAD 不得显示"VAD 已验证"）
-//   M-02 安全读取与部分结果（孔洞必须是孔洞；完整成功与部分成功不混用）
-//   M-07 可执行区域线索（规则逐条列出事实，不靠单个属性判恶意）
-//   M-09 内核 pool 归因边界（直接证据/候选/未知三档；不生成调用栈）
-//   M-10 扫描预算（范围校验与预算停止复用 ScanBudget.h，不另造判据）
+// Corresponding acceptance criteria.
+//   M-01 Region information semantics (fields separated by source; do not display 'VAD verified' if VAD was not traversed).
+//   M-02: safe read with partial results (holes must be holes; do not mix full success with partial success).
+//   M-07: Executable region clues (list facts item by item; do not judge maliciousness based on a single attribute)
+//   M-09 Kernel pool attribution boundaries (direct evidence/candidate/unknown tiers; no call stack generated)
+//   M-10 Scan budget (range validation and budget stop reuse ScanBudget.h; do not create additional criteria).
 //
-// 这一层没有 malicious/threat/score 字段，也没有 callStack 字段 —— 不是忘了加，
-// 是规范禁止：单个属性只能产出线索，没有事先采集的分配栈就必须是未知。
+// This layer lacks malicious/threat/score fields and callStack fields—not due to oversight, but by specification:
+// a single attribute can only yield a clue, and without a pre-collected allocation stack, it must be unknown.
 
 #include "EvidenceEnvelope.h"
 #include "LosslessValue.h"
@@ -23,38 +23,38 @@
 #include <string>
 #include <vector>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 
 // ---------------------------------------------------------------------------
-// M-01：区域信息语义
+// M-01: Region information semantics.
 // ---------------------------------------------------------------------------
 enum class RegionState {
-    Unknown,
-    Free,
-    Reserved,
-    Commit,
+    kUnknown,
+    kFree,
+    kReserved,
+    kCommit,
 };
 
-const char* RegionStateName(RegionState state) noexcept;
+const char* regionStateName(RegionState state) noexcept;
 
 enum class RegionType {
-    Unknown,
-    Private,
-    Mapped,
-    Image,
+    kUnknown,
+    kPrivate,
+    kMapped,
+    kImage,
 };
 
-const char* RegionTypeName(RegionType type) noexcept;
+const char* regionTypeName(RegionType type) noexcept;
 
-// 区域记录的来源。R3 的 VirtualQuery 与 R0 的 VAD 遍历是两条独立证据，
-// 必须在同一张表里区分开，不能合并成一个"内存区域"就完事。
+// Source of the region record. R3 VirtualQuery and R0 VAD walk are independent evidence streams;
+// they must be distinguished in the same table and cannot be merged into a single 'memory region'.
 enum class RegionEvidenceSource {
-    R3VirtualQuery,   // 用户态查询：可用但看不到 VAD 层事实
-    R0VadWalk,        // 内核 VAD 遍历：需要已验证的 profile
-    OfflineSnapshot,  // 已保存会话/转储里的区域记录
+    kR3VirtualQuery,   // User-mode query: Available but cannot see VAD layer facts.
+    kR0VadWalk,        // Kernel VAD walk: Requires a validated profile.
+    kOfflineSnapshot,  // Region records from a saved session or dump.
 };
 
-const char* RegionEvidenceSourceName(RegionEvidenceSource source) noexcept;
+const char* regionEvidenceSourceName(RegionEvidenceSource source) noexcept;
 
 struct RegionProtection final {
     bool readable = false;
@@ -63,132 +63,132 @@ struct RegionProtection final {
     bool copyOnWrite = false;
     bool guard = false;
     bool noAccess = false;
-    OptionalU64 rawValue;  // 原始 PAGE_* 值；来源没给就是 unset，不补 0
+    OptionalU64 rawValue;  // Raw PAGE_* value; if the source is not provided, it is unset (do not pad with 0).
 };
 
-// VAD 侧事实。只有真的走了 VAD 才允许填，且必须记录用的哪个 profile（M-06 边界）。
+// VAD-side evidence. Only allowed to fill if VAD was actually traversed, and must record which profile was used (M-06 boundary).
 struct VadEvidence final {
     OptionalU64 vadNodeAddress;
     OptionalU64 startingVpn;
     OptionalU64 endingVpn;
     OptionalU64 vadFlagsRaw;
-    std::string profileId;          // 空表示没有可验证的 profile
-    bool profileVerified = false;   // profile 与当前内核匹配且已校验
+    std::string profileId;          // Empty indicates no verifiable profile.
+    bool profileVerified = false;   // profile matches the current kernel and has been verified
 
-    // 四个关键字段齐全 + profile 已验证才算"这条 VAD 证据可用"。
+    // All four key fields must be present and the profile must be verified for this VAD evidence to be considered usable.
     bool complete() const noexcept;
 };
 
 struct RegionRecord final {
     OptionalU64 base;
     OptionalU64 size;
-    RegionState state = RegionState::Unknown;
-    RegionType type = RegionType::Unknown;
+    RegionState state = RegionState::kUnknown;
+    RegionType type = RegionType::kUnknown;
     RegionProtection protection;
     OptionalU64 allocationBase;
     RegionProtection allocationProtect;
-    std::string mappedPath;         // 空表示"来源没给"，不等于"是私有内存"
-    RegionEvidenceSource source = RegionEvidenceSource::R3VirtualQuery;
+    std::string mappedPath;         // Null indicates 'source not provided', not 'private memory'.
+    RegionEvidenceSource source = RegionEvidenceSource::kR3VirtualQuery;
 
     VadEvidence vad;
     ProcessInstanceId owner;
-    std::string evidenceId;         // 指回产生该行的 envelope
+    std::string evidenceId;         // Points back to the envelope that generated this line.
 };
 
-// M-01 硬规则：没有走 VAD 就绝不允许输出"VAD 已验证"。
-// 光有 vad 字段不够 —— 来源必须是 R0VadWalk，且 profile 经过验证。
-bool VadVerified(const RegionRecord& record) noexcept;
+// M-01 hard rule: Never output "VAD verified" if the VAD was not traversed.
+// The VAD field alone is insufficient — the source must be R0VadWalk, and the profile must be verified.
+bool vadVerified(const RegionRecord& record) noexcept;
 
-// 区域的地址范围。base/size 缺一即返回 false（不拿 0 冒充）。
-bool RegionRange(const RegionRecord& record, AddressRange& out) noexcept;
+// The address range of the region. Returns false if base or size is missing (do not use 0 as a placeholder).
+bool regionRange(const RegionRecord& record, AddressRange& out) noexcept;
 
 // ---------------------------------------------------------------------------
-// M-02：安全读取与部分结果
+// M-02: Safe read with partial results.
 // ---------------------------------------------------------------------------
 
-// 单次读取的最大跨度。超过就拒绝分配，避免"为了完成进度条"而吞掉整块 RAM（M-10）。
+// Maximum span for a single read. Allocation is rejected if exceeded to prevent consuming the entire RAM (M-10) just to complete a progress bar.
 constexpr std::uint64_t kMaxReadSpanBytes = 64ULL * 1024ULL * 1024ULL;
 
-// ReadSpan 把"读到的字节"和"哪些位置根本没读到"分成两个数组。
-// present 为 false 的位置 bytes 里的值没有意义，任何调用方都不得把它当数据 ——
-// 补 0 后当数据正是 M-02 明令禁止的行为。
+// ReadSpan splits 'read bytes' and 'positions that were not read at all' into two separate arrays.
+// When present is false, the values in bytes are meaningless; no caller may treat them as
+// data. Treating them as data after padding with zeros is explicitly prohibited by M-02.
 struct ReadSpan final {
     AddressRange range;
     std::vector<std::uint8_t> bytes;
     std::vector<bool> present;
     CollectionOutcome outcome;
-    // M-05：这一段字节是"什么时候"读到的。unset 表示来源没记录时刻 —— 那就无法
-    // 证明它和别的段属于同一次原子观测，合并时只能降级，不许默认当成同一时刻。
+    // M-05: This byte indicates when the data was read. If unset, the source timestamp is unrecorded, meaning we cannot prove it belongs to the
+    // same atomic observation as other segments. During merging, it must be downgraded and never assumed to be at the same timestamp by default.
     OptionalU64 observedUtc100ns;
 
-    bool consistent() const noexcept;          // 三者长度自洽
+    bool consistent() const noexcept;          // The three lengths are self-consistent.
     std::uint64_t presentCount() const noexcept;
     bool hasHole() const noexcept;
 };
 
-// 按范围建一个全孔洞的空 span。长度为 0 或超过 kMaxReadSpanBytes 时返回
-// outcome=Error 的空 span，不做分配。
-ReadSpan MakeEmptyReadSpan(const AddressRange& range);
+// Create an empty span with full holes based on the range. If the length is 0 or exceeds
+// kMaxReadSpanBytes, return an empty span with outcome=Error without performing any allocation.
+ReadSpan makeEmptyReadSpan(const AddressRange& range);
 
-// 把一段实际读到的字节写进 span 并标为 present。越界返回 false 且不写入。
-bool ApplyReadChunk(ReadSpan& span,
+// Write the actual bytes read into the span and mark them as present. Return false without writing if out of bounds.
+bool applyReadChunk(ReadSpan& span,
                     std::uint64_t address,
                     const std::uint8_t* data,
                     std::size_t length);
 
-// 取单个字节。孔洞返回 false —— 调用方拿不到"0"，因此不会误当数据。
-bool ByteAt(const ReadSpan& span, std::uint64_t address, std::uint8_t& out) noexcept;
+// Fetch a single byte. Return false for holes—callers cannot obtain "0", so they won't mistake it for data.
+bool byteAt(const ReadSpan& span, std::uint64_t address, std::uint8_t& out) noexcept;
 
-// M-02：孔洞的精确范围（极大连续段）。全部可读时返回空。
-std::vector<AddressRange> DescribeHoles(const ReadSpan& span);
+// M-02: Precise range of holes (maximal contiguous segments). Returns empty if fully readable.
+std::vector<AddressRange> describeHoles(const ReadSpan& span);
 
-// 依据孔洞情况给出采集状态：全读到 = Success，有孔洞 = Partial，一个都没读到
-// 且没有更具体的错误 = Error。完整成功与部分成功因此不会混用。
-CollectionStatus ClassifyReadSpan(const ReadSpan& span) noexcept;
+// Determine collection status based on hole conditions: Success if fully read, Partial if holes exist,
+// Error if nothing read and no more specific error. Full success and partial success are never mixed.
+CollectionStatus classifyReadSpan(const ReadSpan& span) noexcept;
 
-// F-06 账目：请求范围、成功/失败字节数。孔洞进 failed，不进 succeeded。
-CoverageAccount BuildReadCoverage(const ReadSpan& span);
+// F-06 ledger: request range, success/failure byte counts. Gaps go to failed, not succeeded.
+CoverageAccount buildReadCoverage(const ReadSpan& span);
 
-// M-05：多段观测之间的时刻关系。只有"能证明来自同一次观测"才允许 Success。
+// M-05: Temporal relationship between multiple observation segments. Success is allowed only if it can be proven that they originate from the same observation.
 enum class MergeObservationTiming {
-    SingleObservation,       // 只有一段输入，或全部输入带同一个已记录的采集时刻
-    MultipleObservations,    // 输入来自两个及以上不同的采集时刻
-    ObservationTimeUnknown,  // 多段输入里至少一段没记录时刻，无法证明它们同时
+    kSingleObservation,       // Only one input segment, or all inputs share the same recorded collection timestamp.
+    kMultipleObservations,    // Input originates from two or more distinct collection timestamps.
+    kObservationTimeUnknown,  // If at least one segment in the multi-segment input lacks a recorded timestamp, simultaneity cannot be proven.
 };
 
-const char* MergeObservationTimingName(MergeObservationTiming timing) noexcept;
+const char* mergeObservationTimingName(MergeObservationTiming timing) noexcept;
 
-// 合并多个 span。M-05 的通过条件是"不会把两次不同时间的观测包装成原子快照"，
-// 所以判据是**采集时刻**，不是字节值：两段字节恰好相同不能证明它们同时被读到。
+// Merge multiple spans. The pass condition for M-05 is 'not wrapping observations from two different times into an atomic snapshot'; thus, the
+// criterion is the **collection timestamp**, not the byte values: two segments having identical bytes does not prove they were read simultaneously.
 struct MergedReadSpan final {
     ReadSpan span;
     std::vector<AddressRange> conflictingRanges;
-    // 每个字节的来源采集时刻，与 span.bytes 等长；孔洞、或来源未记时刻处为 unset。
-    // M-05 要求"分时记录"，所以来源时刻必须逐段保留，而不是合并后就丢掉。
+    // The collection timestamp for each byte, matching the length of span.bytes; holes or locations where the source timestamp is unrecorded are unset.
+    // M-05 requires "time-sliced recording", so source timestamps must be preserved segment-by-segment rather than discarded after merging.
     std::vector<OptionalU64> byteObservedUtc100ns;
-    MergeObservationTiming timing = MergeObservationTiming::SingleObservation;
+    MergeObservationTiming timing = MergeObservationTiming::kSingleObservation;
 };
 
-// spans 按读取顺序传入；冲突字节保留最后一次（较新）的值，同时记入 conflictingRanges。
-// 只要 timing 不是 SingleObservation，结果一律不是 Success —— 哪怕一个字节都没冲突。
-MergedReadSpan MergeReadSpans(const std::vector<ReadSpan>& spans);
+// spans are passed in read order; conflicting bytes retain the last (newer) value and are recorded in conflictingRanges.
+// If timing is not SingleObservation, the result is never Success—even if no bytes conflicted.
+MergedReadSpan mergeReadSpans(const std::vector<ReadSpan>& spans);
 
 // ---------------------------------------------------------------------------
-// M-02 + M-10：有界读取
+// M-02 + M-10: bounded read.
 // ---------------------------------------------------------------------------
 
-// 一次分块读取的结果。F-05：失败必须把原始错误码交回来 —— 只有一个"拷了几个
-// 字节"的返回值时，STATUS_ACCESS_DENIED、目标进程已退出、页不可读长得一模一样。
+// Result of a single chunked read. F-05: Failures must return the original error code — when only the number of
+// bytes copied is returned, STATUS_ACCESS_DENIED, target process exit, and unreadable pages appear identical.
 struct ChunkReadResult final {
-    std::size_t copied = 0;   // 实际拷贝的字节数；0 < copied < bytes 是合法且常见的
-    CollectionStatus status = CollectionStatus::NotCollected;
-    OptionalU64 nativeCode;         // NTSTATUS / Win32 / HRESULT 原值，未知即 unset
+    std::size_t copied = 0;   // Actual number of bytes copied; 0 < copied < bytes is valid and common.
+    CollectionStatus status = CollectionStatus::kNotCollected;
+    OptionalU64 nativeCode;         // Original NTSTATUS / Win32 / HRESULT value; unset if unknown.
     std::string nativeCodeDomain;   // "NTSTATUS" / "WIN32" / "HRESULT" / ""
-    std::string message;            // 来源给的原文，不是我们编的解释
+    std::string message;            // Original text from the source, not an explanation we generated.
 };
 
-// 分块读取回调。copied 表达真实驱动的"部分复制"语义（不是只有成功/失败两态），
-// 其余字段把失败原因原样交回来，供 ReadRangeBounded 写进 outcome。
+// Chunked read callback. The `copied` field expresses the real driver's "partial copy" semantics (not just
+// success/failure states); other fields return failure reasons as-is for `readRangeBounded` to write into the outcome.
 using ChunkReader = std::function<void(std::uint64_t address,
                                        std::uint8_t* out,
                                        std::size_t bytes,
@@ -196,152 +196,152 @@ using ChunkReader = std::function<void(std::uint64_t address,
 
 struct BoundedReadRequest final {
     AddressRange requested;
-    AddressRange approved;             // 用户已批准范围；length==0 表示未限定
+    AddressRange approved;             // User-approved range; length==0 indicates no limit.
     ScanBudget budget;
-    std::uint64_t chunkSize = 0x1000;  // 按页切块，页边界因此必然被覆盖到
-    OptionalU64 observedUtc100ns;      // 本次采集时刻，原样写进 span（M-05）
+    std::uint64_t chunkSize = 0x1000;  // Chunk by page; page boundaries are therefore guaranteed to be covered.
+    OptionalU64 observedUtc100ns;      // Write the collection timestamp of this run directly into the span (M-05).
 
-    // 可选：把"已耗时"和"是否取消"交给调用方注入，避免这一层依赖时钟或线程，
-    // 也让离线测试能确定性地触发时间预算与取消。
+    // Optional: delegate 'elapsed time' and 'cancellation status' to the caller for injection, avoiding clock or thread
+    // dependencies at this layer, and enabling offline tests to deterministically trigger time budgets and cancellations.
     std::function<std::uint64_t()> elapsedNanos;
     std::function<bool()> cancelRequested;
 };
 
-// M-10：ReadRangeBounded 自己的拒绝档位。RangeValidation 定义在 ScanBudget.h，
-// 里面没有"超过单次跨度上限"和"没有预算"这两档；把它们判成 Ok 会让调用方以为
-// "合法范围、没命中预算、正常跑完"。所以这两档在本模块自己的返回结构上表达。
+// M-10: Rejection levels specific to readRangeBounded. RangeValidation is defined in ScanBudget.h, which lacks the "exceeds
+// single-span limit" and "no budget" levels; treating them as Ok would mislead the caller into thinking "valid range,
+// budget not hit, completed normally." Therefore, these two levels are expressed in this module's own return structure.
 enum class BoundedReadRejection {
-    None,
-    InvalidRange,     // ValidateRange 拒绝；具体原因见 BoundedReadResult::validation
-    ReversedRange,    // (begin,end) 入口里 end < begin
-    ExceedsMaxSpan,   // 请求跨度超过 kMaxReadSpanBytes
-    NoBudget,         // request.budget 一条上限都没设
+    kNone,
+    kInvalidRange,     // validateRange rejected; see BoundedReadResult::validation for the specific reason.
+    kReversedRange,    // In the (begin, end) entry, end < begin.
+    kExceedsMaxSpan,   // Request span exceeds kMaxReadSpanBytes.
+    kNoBudget,         // request.budget: no upper limit set.
 };
 
-const char* BoundedReadRejectionName(BoundedReadRejection rejection) noexcept;
+const char* boundedReadRejectionName(BoundedReadRejection rejection) noexcept;
 
 struct BoundedReadResult final {
     ReadSpan span;
     CoverageAccount coverage;
-    RangeValidation validation = RangeValidation::Ok;
-    // rejection != None 时一个字节都没读；此时 stop 保持 Continue 没有任何含义，
-    // 调用方必须先看 rejection 再看 stop。
-    BoundedReadRejection rejection = BoundedReadRejection::None;
-    BudgetStop stop = BudgetStop::Continue;
+    RangeValidation validation = RangeValidation::kOk;
+    // When rejection != None, no bytes are read; at this point, stop remaining as
+    // Continue is meaningless. The caller must check rejection first, then stop.
+    BoundedReadRejection rejection = BoundedReadRejection::kNone;
+    BudgetStop stop = BudgetStop::kContinue;
 };
 
-// 非法范围、超跨度上限、无预算一律拒绝，一个字节都不读；
-// 合法范围按预算停止并保留已完成部分。
-BoundedReadResult ReadRangeBounded(const BoundedReadRequest& request, const ChunkReader& reader);
+// Reject invalid ranges, spans exceeding the limit, or requests without budget; read zero bytes.
+// Stop within the valid range based on the budget and retain the completed portion.
+BoundedReadResult readRangeBounded(const BoundedReadRequest& request, const ChunkReader& reader);
 
-// M-10：(begin,end) 形式的入口。AddressRange 用 (begin,length) 表达，逆序范围在
-// 那种表示里根本无法出现 —— 所以"逆序"只能在这个接受 end 的入口里判。这里判，
-// 并明确拒绝。request.requested 被 begin/end 覆盖，其余字段（预算、块大小、回调）照用。
-BoundedReadResult ReadRangeBoundedFromEndpoints(std::uint64_t begin,
+// M-10: Entry in (begin, end) form. AddressRange uses (begin, length), so reversed ranges cannot exist in that
+// representation; thus, 'reversed' can only be checked and explicitly rejected in this entry accepting 'end'. Here, we check
+// and reject. request.requested is overridden by begin/end; other fields (budget, block size, callback) are used as-is.
+BoundedReadResult readRangeBoundedFromEndpoints(std::uint64_t begin,
                                                 std::uint64_t end,
                                                 const BoundedReadRequest& request,
                                                 const ChunkReader& reader);
 
 // ---------------------------------------------------------------------------
-// M-09：归因三档。M-07 的归属字段也用同一套。
+// M-09: Three attribution levels. The attribution field in M-07 also uses this set.
 // ---------------------------------------------------------------------------
 enum class OwnerAttribution {
-    DirectEvidence,  // 有事先采集的分配事件/映射对象等直接证据
-    Candidate,       // 只有标签、范围命中一类的间接线索
-    Unknown,         // 没有可用依据 —— 就是未知，不许降格成"系统"或"未知驱动"
+    kDirectEvidence,  // Contains pre-collected direct evidence such as allocation events or mapping objects.
+    kCandidate,       // Only indirect clues like tag and range hits.
+    kUnknown,         // No available evidence means unknown; do not downgrade to 'System' or 'Unknown Driver'.
 };
 
-const char* OwnerAttributionName(OwnerAttribution attribution) noexcept;
+const char* ownerAttributionName(OwnerAttribution attribution) noexcept;
 
-// pool tag -> 已知使用者。同一个 tag 被多个组件使用是常态，所以这是一张多值表。
+// pool tag -> known users. It is common for the same tag to be used by multiple components, so this is a multi-value map.
 struct PoolTagOwnerEntry final {
     std::string tag;
-    std::string ownerId;      // 归一化的驱动/组件标识
-    std::string sourceNote;   // 这条映射本身从哪来（知识库版本 / 本机符号）
+    std::string ownerId;      // Normalized driver/component identifier
+    std::string sourceNote;   // Note: Origin of this mapping itself (knowledge base version / local symbols).
 };
 
 struct PoolAttributionResult final {
-    OwnerAttribution attribution = OwnerAttribution::Unknown;
-    std::vector<std::string> candidateOwners;  // Candidate 时列出全部候选，不只留一个
-    std::vector<std::string> facts;            // 逐条依据，可回源
-    // 分配栈只有事先采集才可能有。这里永远只是一个"有没有"的事实位，
-    // 本模块不提供任何生成调用栈的入口（M-09）。
+    OwnerAttribution attribution = OwnerAttribution::kUnknown;
+    std::vector<std::string> candidateOwners;  // When in Candidate mode, list all candidates, not just one.
+    std::vector<std::string> facts;            // Individual facts traceable to their sources.
+    // Allocation stacks are available only if collected beforehand. This is solely an
+    // availability fact; this module exposes no entry point to generate a call stack (M-09).
     bool allocationStackAvailable = false;
 };
 
-// M-09 硬规则：标签命中**只能**是 Candidate，哪怕表里只有一个 owner。
-PoolAttributionResult AttributeByTag(const std::string& tag,
+// Rule M-09: A tag match can only be a Candidate, even if the table contains only one owner.
+PoolAttributionResult attributeByTag(const std::string& tag,
                                      const std::vector<PoolTagOwnerEntry>& knownTagOwners);
 
-// 事先采集到的分配事件。captured 为假就是没有，绝不构造。
+// Pre-collected allocation events. If captured is false, none exist; do not construct them.
 struct PoolAllocationEvent final {
     bool captured = false;
     DriverInstanceId allocator;
     OptionalU64 eventUtc100ns;
-    std::string eventSourceId;  // 采集器 id，例如 "etw.pool.alloc"
+    std::string eventSourceId;  // Collector ID, e.g., "etw.pool.alloc"
 };
 
-// 只有带上事先采集的分配事件才可能到 DirectEvidence；否则退回 tag 那一档。
-PoolAttributionResult AttributeByAllocationEvent(const PoolAllocationEvent& event,
+// DirectEvidence is only possible with a pre-collected allocation event; otherwise, fall back to the tag level.
+PoolAttributionResult attributeByAllocationEvent(const PoolAllocationEvent& event,
                                                  const PoolAttributionResult& tagFallback);
 
 // ---------------------------------------------------------------------------
-// M-07：可执行区域线索
+// M-07: Executable region clues.
 // ---------------------------------------------------------------------------
 
-// 与磁盘映像的字节比对结果。没做比对就是没做，不能用"没差异"顶替。
+// Byte comparison result against the disk image. If no comparison was performed, it remains 'not performed' and cannot be substituted with 'no difference'.
 struct ImageBytesComparison final {
     bool compared = false;
     CollectionOutcome outcome;
     std::string onDiskPath;
-    std::vector<AddressRange> differingRanges;  // 精确差异范围（虚拟地址）
-    // 未做重定位/导入表/热补丁归一化时，差异里混着正常改动，只能算线索。
+    std::vector<AddressRange> differingRanges;  // Exact differing ranges in virtual addresses.
+    // Without relocation/import-table/hotpatch normalization, differences include legitimate changes and are only leads.
     bool relocationsApplied = false;
 };
 
-// 线程起始地址事实。startAddress 未知就是 unset。
+// Thread start address fact. startAddress is unset if unknown.
 struct ThreadStartFact final {
     ThreadInstanceId thread;
     OptionalU64 startAddress;
     bool startAddressInsideRegion = false;
-    std::string startAddressMappedPath;  // 空表示归属未知，不是"没有归属"
+    std::string startAddressMappedPath;  // Empty indicates unknown ownership, not 'no ownership'.
 };
 
 struct ExecutableRegionInput final {
     RegionRecord region;
     ImageBytesComparison imageComparison;
     std::vector<ThreadStartFact> threads;
-    // 是否拿到了区域归属的直接证据（section 对象 / 映射文件句柄等）。
+    // Whether direct evidence of region ownership (e.g., section object or mapped file handle) was obtained.
     bool regionOwnerKnown = false;
 };
 
-// 一条规则的输出。注意这里没有 malicious/score 字段：规则只交事实。
+// Output for a single rule. Note: no malicious/score fields here; rules only report facts.
 struct ExecutableRegionFinding final {
     std::string ruleId;
     std::uint32_t ruleVersion = 0;
-    std::vector<std::string> facts;   // 该规则实际依据的事实，key=value，可回源
-    OwnerAttribution attribution = OwnerAttribution::Unknown;
+    std::vector<std::string> facts;   // Actual facts the rule is based on, key=value, with source traceability.
+    OwnerAttribution attribution = OwnerAttribution::kUnknown;
     std::vector<std::string> candidateOwners;
-    CollectionOutcome inputOutcome;   // 该规则依赖输入的采集状态
+    CollectionOutcome inputOutcome;   // This rule depends on the input collection status.
 };
 
 struct ExecutableRegionReport final {
     std::uint32_t ruleSetVersion = 1;
     std::vector<ExecutableRegionFinding> findings;
-    OwnerAttribution attribution = OwnerAttribution::Unknown;
-    // 只在"做过比对且比对完整"时才可能是 DifferenceObserved / NoDifferenceObserved；
-    // 单纯的 private RX 只到 Indeterminate（有线索，不足以判定）。
-    AnalysisConclusion conclusion = AnalysisConclusion::NoEvidence;
+    OwnerAttribution attribution = OwnerAttribution::kUnknown;
+    // Only when comparison has been performed and completed can the result be DifferenceObserved or NoDifferenceObserved.
+    // Pure private RX only reaches Indeterminate (clues exist, but insufficient for a definitive conclusion).
+    AnalysisConclusion conclusion = AnalysisConclusion::kNoEvidence;
 };
 
-// 规则 id 常量，供 UI 与导出稳定引用。
+// Rule ID constants for stable reference by UI and export.
 extern const char* const kRuleIdPrivateExecutable;      // mem.exec.private
 extern const char* const kRuleIdImageBytesDiffer;       // mem.exec.image-bytes-differ
 extern const char* const kRuleIdThreadOriginMismatch;   // mem.exec.thread-origin-mismatch
-// F-05：起始地址根本没采集到，是"没有观测"，不是"归属不一致"。两者混用同一个
-// ruleId 会让一条零观测的 finding 把结论从 NoEvidence 抬成 Indeterminate。
+// F-05: The start address was never collected, meaning 'no observation', not 'mismatched ownership'. Using the same ruleId
+// for both causes a finding with zero observations to incorrectly elevate the conclusion from NoEvidence to Indeterminate.
 extern const char* const kRuleIdThreadOriginUnknown;    // mem.exec.thread-origin-unknown
 
-ExecutableRegionReport EvaluateExecutableRegion(const ExecutableRegionInput& input);
+ExecutableRegionReport evaluateExecutableRegion(const ExecutableRegionInput& input);
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

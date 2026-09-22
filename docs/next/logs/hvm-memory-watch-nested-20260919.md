@@ -105,7 +105,7 @@ rearm status=ok  state=armed  hitCount=0
 
 离线套件（157/157）一条都抓不到这四个，它们只有真机第一次调用才暴露：
 
-1. **外层契约门的白名单没同步。** `KswordARKHvmEptRuleControl` 有一张 flags 与
+1. **外层契约门的白名单没同步。** `kswordArkHvmEptRuleControl` 有一张 flags 与
    operation 的白名单，`WATCH_ONCE` / `REARM` / `WATCH_QUERY` 只加进了协议头和
    内层 `...Locked`，这道门没加 —— 每一条 watch 请求在到达处置逻辑之前就被判
    `STATUS_INVALID_PARAMETER`，用户侧只看到 `win32=87`。这道门没有宿主侧对应物，

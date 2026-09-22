@@ -555,7 +555,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--source", default=str(DEFAULT_SOURCE_DIR), help="Directory containing generated JSON profiles.")
     parser.add_argument(
         "--release-root",
-        default=str(Path("Ksword5.1") / "Ksword5.1" / "x64" / "Release"),
+        default=str(Path(__file__).resolve().parents[2] / "artifacts/bin/x64/Release"),
         help="KswordARK release root that contains Ksword5.1.exe.",
     )
     parser.add_argument("--local-kernel", default=str(DEFAULT_LOCAL_KERNEL), help="Optional ntoskrnl.exe path for match smoke test.")

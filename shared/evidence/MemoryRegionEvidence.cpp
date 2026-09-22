@@ -3,99 +3,99 @@
 #include <algorithm>
 #include <limits>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 namespace {
 
 constexpr std::uint64_t kU64Max = (std::numeric_limits<std::uint64_t>::max)();
 
-std::string Fact(const char* key, const std::string& value) {
+std::string fact(const char* key, const std::string& value) {
     return std::string(key) + "=" + value;
 }
 
-std::string FactBool(const char* key, bool value) {
-    return Fact(key, value ? "true" : "false");
+std::string factBool(const char* key, bool value) {
+    return fact(key, value ? "true" : "false");
 }
 
-std::string FactCount(const char* key, std::uint64_t value) {
-    return Fact(key, FormatU64(value, U64Format::Decimal));
+std::string factCount(const char* key, std::uint64_t value) {
+    return fact(key, formatU64(value, U64Format::kDecimal));
 }
 
-std::string FactAddress(const char* key, const OptionalU64& value) {
-    // 未知就写 unknown。写 0x0000000000000000 会被下游当成"地址是 0"。
+std::string factAddress(const char* key, const OptionalU64& value) {
+    // Write 'unknown' if the value is missing. Writing '0x0000000000000000' would be interpreted by downstream systems as 'address is 0'.
     if (!value.present) {
-        return Fact(key, "unknown");
+        return fact(key, "unknown");
     }
-    return Fact(key, FormatU64(value.value, U64Format::HexAddress));
+    return fact(key, formatU64(value.value, U64Format::kHexAddress));
 }
 
-std::string FactText(const char* key, const std::string& value) {
-    return Fact(key, value.empty() ? std::string("unknown") : value);
+std::string factText(const char* key, const std::string& value) {
+    return fact(key, value.empty() ? std::string("unknown") : value);
 }
 
-std::string DescribeRange(const AddressRange& range) {
-    return FormatU64(range.begin, U64Format::HexAddress) + "+" +
-           FormatU64(range.length, U64Format::Decimal);
+std::string describeRange(const AddressRange& range) {
+    return formatU64(range.begin, U64Format::kHexAddress) + "+" +
+           formatU64(range.length, U64Format::kDecimal);
 }
 
-// M-07/M-09：区域归属只有三种结果。没有映射路径就是未知，绝不写"系统"。
-OwnerAttribution RegionAttribution(const RegionRecord& region, bool ownerKnown) noexcept {
+// M-07/M-09: Region attribution has only three outcomes. If there is no mapped path, it is Unknown; never write "System".
+OwnerAttribution regionAttribution(const RegionRecord& region, bool ownerKnown) noexcept {
     if (region.mappedPath.empty()) {
-        return OwnerAttribution::Unknown;
+        return OwnerAttribution::kUnknown;
     }
-    return ownerKnown ? OwnerAttribution::DirectEvidence : OwnerAttribution::Candidate;
+    return ownerKnown ? OwnerAttribution::kDirectEvidence : OwnerAttribution::kCandidate;
 }
 
-void AppendRegionFacts(const RegionRecord& region, std::vector<std::string>& facts) {
-    facts.push_back(FactAddress("region.base", region.base));
-    facts.push_back(Fact("region.size",
-                         region.size.present ? FormatU64(region.size.value, U64Format::Decimal)
+void appendRegionFacts(const RegionRecord& region, std::vector<std::string>& facts) {
+    facts.push_back(factAddress("region.base", region.base));
+    facts.push_back(fact("region.size",
+                         region.size.present ? formatU64(region.size.value, U64Format::kDecimal)
                                              : std::string("unknown")));
-    facts.push_back(Fact("region.state", RegionStateName(region.state)));
-    facts.push_back(Fact("region.type", RegionTypeName(region.type)));
-    facts.push_back(Fact("region.source", RegionEvidenceSourceName(region.source)));
-    facts.push_back(FactAddress("region.allocationBase", region.allocationBase));
-    facts.push_back(FactText("region.mappedPath", region.mappedPath));
-    facts.push_back(FactBool("protection.readable", region.protection.readable));
-    facts.push_back(FactBool("protection.writable", region.protection.writable));
-    facts.push_back(FactBool("protection.executable", region.protection.executable));
-    facts.push_back(FactBool("vadVerified", VadVerified(region)));
+    facts.push_back(fact("region.state", regionStateName(region.state)));
+    facts.push_back(fact("region.type", regionTypeName(region.type)));
+    facts.push_back(fact("region.source", regionEvidenceSourceName(region.source)));
+    facts.push_back(factAddress("region.allocationBase", region.allocationBase));
+    facts.push_back(factText("region.mappedPath", region.mappedPath));
+    facts.push_back(factBool("protection.readable", region.protection.readable));
+    facts.push_back(factBool("protection.writable", region.protection.writable));
+    facts.push_back(factBool("protection.executable", region.protection.executable));
+    facts.push_back(factBool("vadVerified", vadVerified(region)));
 }
 
-// 从一组"是否命中"的位图里抽出极大连续段。孔洞与冲突范围共用这段逻辑。
-std::vector<AddressRange> CollectRuns(std::uint64_t begin,
+// Extract maximal continuous segments from a bitmap of "hit or miss" flags. Hole and conflict ranges share this logic.
+std::vector<AddressRange> collectRuns(std::uint64_t begin,
                                       const std::vector<bool>& flags,
                                       bool wanted) {
     std::vector<AddressRange> runs;
     std::size_t i = 0;
-    const std::size_t count = flags.size();
-    while (i < count) {
+    const std::size_t kCount = flags.size();
+    while (i < kCount) {
         if (flags[i] != wanted) {
             ++i;
             continue;
         }
-        const std::size_t start = i;
-        while (i < count && flags[i] == wanted) {
+        const std::size_t kStart = i;
+        while (i < kCount && flags[i] == wanted) {
             ++i;
         }
         AddressRange run;
-        run.begin = begin + static_cast<std::uint64_t>(start);
-        run.length = static_cast<std::uint64_t>(i - start);
+        run.begin = begin + static_cast<std::uint64_t>(kStart);
+        run.length = static_cast<std::uint64_t>(i - kStart);
         runs.push_back(run);
     }
     return runs;
 }
 
-// 合并时的准入条件。MergeReadSpans 的两趟循环必须调用**同一个**判据：第一趟
-// 排除掉、第二趟却放进来的 span（例如 begin+length 溢出 64 位的那种）会让
-// base = begin - lowest 算出一个巨大值，随后 present[target] / bytes[target]
-// 就是越界读写。把条件收成一个函数，正是为了让两趟不可能再走偏（M-02）。
-bool MergeAdmits(const ReadSpan& span, std::uint64_t& end) noexcept {
+// Admission condition during merge. Both passes of mergeReadSpans must use the **same** predicate: a span excluded
+// in the first pass but included in the second (e.g., one where begin+length overflows 64-bit) would cause base =
+// begin - lowest to compute an enormous value, leading to out-of-bounds reads/writes in present[target] /
+// bytes[target]. Consolidating the condition into a single function ensures both passes cannot diverge (M-02).
+bool mergeAdmits(const ReadSpan& span, std::uint64_t& end) noexcept {
     return span.consistent() && span.range.length != 0ULL && span.range.endAddress(end);
 }
 
-// 拒绝一次有界读取：一个字节都不读，但请求范围照实记账（F-06），
-// 拒绝档位写进 rejection，绝不伪装成"正常跑完"（M-10）。
-BoundedReadResult RejectBoundedRead(const BoundedReadRequest& request,
+// Reject a bounded read: read zero bytes but log the request range as-is (F-06),
+// write the rejection level into rejection, and never pretend it ran normally (M-10).
+BoundedReadResult rejectBoundedRead(const BoundedReadRequest& request,
                                     RangeValidation validation,
                                     BoundedReadRejection rejection,
                                     std::uint64_t nativeCode,
@@ -106,7 +106,7 @@ BoundedReadResult RejectBoundedRead(const BoundedReadRequest& request,
     result.span.range = request.requested;
     result.span.range.length = 0ULL;
     result.span.observedUtc100ns = request.observedUtc100ns;
-    result.span.outcome = CollectionOutcome::failure(CollectionStatus::Error,
+    result.span.outcome = CollectionOutcome::failure(CollectionStatus::kError,
                                                      "KSWORD",
                                                      nativeCode,
                                                      std::move(message));
@@ -115,7 +115,7 @@ BoundedReadResult RejectBoundedRead(const BoundedReadRequest& request,
     if (request.requested.endAddress(end)) {
         result.coverage.requestedEnd = OptionalU64::of(end);
     }
-    // 被拒的整段都没处理，全部记进 truncated —— coverage 全零会被读成"没什么可做"。
+    // The entire rejected segment is left unprocessed and recorded in truncated — a coverage of all zeros would be read as 'nothing to do'.
     result.coverage.truncated = request.requested.length;
     return result;
 }
@@ -126,31 +126,31 @@ BoundedReadResult RejectBoundedRead(const BoundedReadRequest& request,
 // M-01
 // ---------------------------------------------------------------------------
 
-const char* RegionStateName(RegionState state) noexcept {
+const char* regionStateName(RegionState state) noexcept {
     switch (state) {
-    case RegionState::Unknown:  return "Unknown";
-    case RegionState::Free:     return "Free";
-    case RegionState::Reserved: return "Reserved";
-    case RegionState::Commit:   return "Commit";
+    case RegionState::kUnknown:  return "Unknown";
+    case RegionState::kFree:     return "Free";
+    case RegionState::kReserved: return "Reserved";
+    case RegionState::kCommit:   return "Commit";
     }
     return "Unknown";
 }
 
-const char* RegionTypeName(RegionType type) noexcept {
+const char* regionTypeName(RegionType type) noexcept {
     switch (type) {
-    case RegionType::Unknown: return "Unknown";
-    case RegionType::Private: return "Private";
-    case RegionType::Mapped:  return "Mapped";
-    case RegionType::Image:   return "Image";
+    case RegionType::kUnknown: return "Unknown";
+    case RegionType::kPrivate: return "Private";
+    case RegionType::kMapped:  return "Mapped";
+    case RegionType::kImage:   return "Image";
     }
     return "Unknown";
 }
 
-const char* RegionEvidenceSourceName(RegionEvidenceSource source) noexcept {
+const char* regionEvidenceSourceName(RegionEvidenceSource source) noexcept {
     switch (source) {
-    case RegionEvidenceSource::R3VirtualQuery:  return "R3VirtualQuery";
-    case RegionEvidenceSource::R0VadWalk:       return "R0VadWalk";
-    case RegionEvidenceSource::OfflineSnapshot: return "OfflineSnapshot";
+    case RegionEvidenceSource::kR3VirtualQuery:  return "R3VirtualQuery";
+    case RegionEvidenceSource::kR0VadWalk:       return "R0VadWalk";
+    case RegionEvidenceSource::kOfflineSnapshot: return "OfflineSnapshot";
     }
     return "R3VirtualQuery";
 }
@@ -162,17 +162,17 @@ bool VadEvidence::complete() const noexcept {
     if (!vadNodeAddress.present || !startingVpn.present || !endingVpn.present) {
         return false;
     }
-    // 反向区间说明链结构异常，按 M-06 停下，不当成可用证据。
+    // Reverse interval description chain structure is abnormal; stop per M-06 and do not treat as valid evidence.
     return endingVpn.value >= startingVpn.value;
 }
 
-bool VadVerified(const RegionRecord& record) noexcept {
-    // 硬规则：只有真的走了 VAD（R0VadWalk）且字段齐全，才允许说"VAD 已验证"。
-    // R3 的 VirtualQuery 结果哪怕被人手工填上 vad 字段，也不算。
-    return record.source == RegionEvidenceSource::R0VadWalk && record.vad.complete();
+bool vadVerified(const RegionRecord& record) noexcept {
+    // Hard rule: Only if the VAD walk (R0VadWalk) was actually performed and all fields are complete, is it valid to claim 'VAD verified'.
+    // R3 VirtualQuery results are invalid even if the vad field is manually filled in.
+    return record.source == RegionEvidenceSource::kR0VadWalk && record.vad.complete();
 }
 
-bool RegionRange(const RegionRecord& record, AddressRange& out) noexcept {
+bool regionRange(const RegionRecord& record, AddressRange& out) noexcept {
     if (!record.base.present || !record.size.present || record.size.value == 0ULL) {
         return false;
     }
@@ -214,27 +214,27 @@ bool ReadSpan::hasHole() const noexcept {
     return false;
 }
 
-ReadSpan MakeEmptyReadSpan(const AddressRange& range) {
+ReadSpan makeEmptyReadSpan(const AddressRange& range) {
     ReadSpan span;
     span.range = range;
     std::uint64_t end = 0ULL;
     if (range.length == 0ULL || !range.endAddress(end) || range.length > kMaxReadSpanBytes) {
-        // 非法或超限的范围一个字节都不分配，也不返回"空但成功"。
+        // Invalid or out-of-range ranges allocate no bytes and do not return 'empty but success'.
         span.range.length = 0ULL;
-        span.outcome = CollectionOutcome::failure(CollectionStatus::Error,
+        span.outcome = CollectionOutcome::failure(CollectionStatus::kError,
                                                   "KSWORD",
-                                                  static_cast<std::uint64_t>(RangeValidation::Overflow),
+                                                  static_cast<std::uint64_t>(RangeValidation::kOverflow),
                                                   "read span range rejected");
         return span;
     }
-    const std::size_t count = static_cast<std::size_t>(range.length);
-    span.bytes.assign(count, 0U);
-    span.present.assign(count, false);
+    const std::size_t kCount = static_cast<std::size_t>(range.length);
+    span.bytes.assign(kCount, 0U);
+    span.present.assign(kCount, false);
     span.outcome = CollectionOutcome::notCollected();
     return span;
 }
 
-bool ApplyReadChunk(ReadSpan& span,
+bool applyReadChunk(ReadSpan& span,
                     std::uint64_t address,
                     const std::uint8_t* data,
                     std::size_t length) {
@@ -247,58 +247,58 @@ bool ApplyReadChunk(ReadSpan& span,
     if (address < span.range.begin) {
         return false;
     }
-    const std::uint64_t offset = address - span.range.begin;
-    if (offset > span.range.length || static_cast<std::uint64_t>(length) > span.range.length - offset) {
+    const std::uint64_t kOffset = address - span.range.begin;
+    if (kOffset > span.range.length || static_cast<std::uint64_t>(length) > span.range.length - kOffset) {
         return false;
     }
-    const std::size_t base = static_cast<std::size_t>(offset);
+    const std::size_t kBase = static_cast<std::size_t>(kOffset);
     for (std::size_t i = 0; i < length; ++i) {
-        span.bytes[base + i] = data[i];
-        span.present[base + i] = true;
+        span.bytes[kBase + i] = data[i];
+        span.present[kBase + i] = true;
     }
     return true;
 }
 
-bool ByteAt(const ReadSpan& span, std::uint64_t address, std::uint8_t& out) noexcept {
+bool byteAt(const ReadSpan& span, std::uint64_t address, std::uint8_t& out) noexcept {
     if (!span.consistent() || address < span.range.begin) {
         return false;
     }
-    const std::uint64_t offset = address - span.range.begin;
-    if (offset >= span.range.length) {
+    const std::uint64_t kOffset = address - span.range.begin;
+    if (kOffset >= span.range.length) {
         return false;
     }
-    const std::size_t index = static_cast<std::size_t>(offset);
-    if (!span.present[index]) {
-        // 孔洞：调用方拿不到值，因此不可能把补零当成真实数据（M-02）。
+    const std::size_t kIndex = static_cast<std::size_t>(kOffset);
+    if (!span.present[kIndex]) {
+        // Hole: The caller cannot retrieve the value, so zero-padding cannot be mistaken for real data (M-02).
         return false;
     }
-    out = span.bytes[index];
+    out = span.bytes[kIndex];
     return true;
 }
 
-std::vector<AddressRange> DescribeHoles(const ReadSpan& span) {
+std::vector<AddressRange> describeHoles(const ReadSpan& span) {
     if (!span.consistent()) {
         return {};
     }
-    return CollectRuns(span.range.begin, span.present, false);
+    return collectRuns(span.range.begin, span.present, false);
 }
 
-CollectionStatus ClassifyReadSpan(const ReadSpan& span) noexcept {
+CollectionStatus classifyReadSpan(const ReadSpan& span) noexcept {
     if (!span.consistent() || span.range.length == 0ULL) {
-        return CollectionStatus::Error;
+        return CollectionStatus::kError;
     }
-    const std::uint64_t got = span.presentCount();
-    if (got == span.range.length) {
-        return CollectionStatus::Success;
+    const std::uint64_t kGot = span.presentCount();
+    if (kGot == span.range.length) {
+        return CollectionStatus::kSuccess;
     }
-    if (got == 0ULL) {
-        // 一个字节都没读到不是"部分成功"。具体原因保留在 span.outcome 里。
-        return CollectionStatus::Error;
+    if (kGot == 0ULL) {
+        // Reading zero bytes is not "partial success". The specific reason is preserved in span.outcome.
+        return CollectionStatus::kError;
     }
-    return CollectionStatus::Partial;
+    return CollectionStatus::kPartial;
 }
 
-CoverageAccount BuildReadCoverage(const ReadSpan& span) {
+CoverageAccount buildReadCoverage(const ReadSpan& span) {
     CoverageAccount coverage;
     std::uint64_t end = 0ULL;
     if (!span.range.endAddress(end)) {
@@ -309,26 +309,26 @@ CoverageAccount BuildReadCoverage(const ReadSpan& span) {
     if (!span.consistent()) {
         return coverage;
     }
-    const std::uint64_t got = span.presentCount();
-    coverage.succeeded = got;
-    coverage.failed = span.range.length - got;
+    const std::uint64_t kGot = span.presentCount();
+    coverage.succeeded = kGot;
+    coverage.failed = span.range.length - kGot;
     coverage.totalKnown = OptionalU64::of(span.range.length);
-    // 处理到的范围就是请求范围：我们确实逐块尝试过，只是有些块没读到。
+    // The processed range equals the requested range: we indeed attempted to process block by block, though some blocks were unreadable.
     coverage.processedBegin = coverage.requestedBegin;
     coverage.processedEnd = coverage.requestedEnd;
     return coverage;
 }
 
-const char* MergeObservationTimingName(MergeObservationTiming timing) noexcept {
+const char* mergeObservationTimingName(MergeObservationTiming timing) noexcept {
     switch (timing) {
-    case MergeObservationTiming::SingleObservation:      return "SingleObservation";
-    case MergeObservationTiming::MultipleObservations:   return "MultipleObservations";
-    case MergeObservationTiming::ObservationTimeUnknown: return "ObservationTimeUnknown";
+    case MergeObservationTiming::kSingleObservation:      return "SingleObservation";
+    case MergeObservationTiming::kMultipleObservations:   return "MultipleObservations";
+    case MergeObservationTiming::kObservationTimeUnknown: return "ObservationTimeUnknown";
     }
     return "ObservationTimeUnknown";
 }
 
-MergedReadSpan MergeReadSpans(const std::vector<ReadSpan>& spans) {
+MergedReadSpan mergeReadSpans(const std::vector<ReadSpan>& spans) {
     MergedReadSpan merged;
     bool any = false;
     std::uint64_t lowest = 0ULL;
@@ -340,11 +340,11 @@ MergedReadSpan MergeReadSpans(const std::vector<ReadSpan>& spans) {
 
     for (const ReadSpan& span : spans) {
         std::uint64_t end = 0ULL;
-        if (!MergeAdmits(span, end)) {
+        if (!mergeAdmits(span, end)) {
             continue;
         }
         ++admitted;
-        // M-05：时刻关系只看被真正合并进来的那些段。
+        // M-05: For time relationships, only consider segments that were actually merged in.
         if (!span.observedUtc100ns.present) {
             timeMissing = true;
         } else if (!firstTime.present) {
@@ -362,15 +362,15 @@ MergedReadSpan MergeReadSpans(const std::vector<ReadSpan>& spans) {
         highest = (std::max)(highest, end);
     }
 
-    // 判据是采集时刻，不是字节值。两次观测字节恰好一样，只说明这段内存没被改过，
-    // 不说明它们是同一时刻的快照 —— 拿字节相等当"同时"的证据正是 M-05 禁止的。
+    // The criterion is the collection timestamp, not the byte values. Two observations having identical bytes only indicates that this memory region was not
+    // modified; it does not prove they are snapshots from the same moment. Using byte equality as evidence of simultaneity is exactly what M-05 prohibits.
     if (timeDiffers) {
-        merged.timing = MergeObservationTiming::MultipleObservations;
+        merged.timing = MergeObservationTiming::kMultipleObservations;
     } else if (admitted > 1U && timeMissing) {
-        // 多段输入里有段没记时刻：无法证明同时，宁可降级也不冒充原子快照。
-        merged.timing = MergeObservationTiming::ObservationTimeUnknown;
+        // If some segments in the multi-segment input lack timestamps, simultaneity cannot be proven. Prefer downgrading rather than falsely claiming an atomic snapshot.
+        merged.timing = MergeObservationTiming::kObservationTimeUnknown;
     } else {
-        merged.timing = MergeObservationTiming::SingleObservation;
+        merged.timing = MergeObservationTiming::kSingleObservation;
     }
 
     if (!any) {
@@ -381,11 +381,11 @@ MergedReadSpan MergeReadSpans(const std::vector<ReadSpan>& spans) {
     AddressRange full;
     full.begin = lowest;
     full.length = highest - lowest;
-    merged.span = MakeEmptyReadSpan(full);
+    merged.span = makeEmptyReadSpan(full);
     if (merged.span.range.length == 0ULL) {
-        return merged;  // MakeEmptyReadSpan 已经把拒绝原因写进 outcome
+        return merged;  // makeEmptyReadSpan has already written the rejection reason into outcome.
     }
-    if (merged.timing == MergeObservationTiming::SingleObservation) {
+    if (merged.timing == MergeObservationTiming::kSingleObservation) {
         merged.span.observedUtc100ns = firstTime;
     }
     merged.byteObservedUtc100ns.assign(merged.span.bytes.size(), OptionalU64::unset());
@@ -393,118 +393,118 @@ MergedReadSpan MergeReadSpans(const std::vector<ReadSpan>& spans) {
     std::vector<bool> conflicts(merged.span.bytes.size(), false);
     for (const ReadSpan& span : spans) {
         std::uint64_t end = 0ULL;
-        // 与第一趟**完全相同**的准入条件，一个字都不能少（见 MergeAdmits 的注释）。
-        if (!MergeAdmits(span, end)) {
+        // The admission condition is **exactly the same** as the first pass; not a single character can be omitted (see the comment in mergeAdmits).
+        if (!mergeAdmits(span, end)) {
             continue;
         }
-        // 再确认它确实落在第一趟算出的 [lowest, highest] 之内。lowest/highest 就是
-        // 由这批 span 算出来的，多这一道确认是为了让 base 与 target 的界内性不依赖
-        // 上面那趟循环的正确性 —— 越界读写是 BLOCKER，判据要能自证。
+        // Re-verify that it indeed falls within the [lowest, highest] range calculated in the first pass. Since lowest/highest are derived
+        // from this set of spans, this additional check ensures that the boundary validity of base and target does not depend on the
+        // correctness of the previous loop iteration — out-of-bounds reads/writes are BLOCKER issues, so the criteria must be self-validating.
         if (span.range.begin < lowest || end > highest) {
             continue;
         }
-        const std::size_t base = static_cast<std::size_t>(span.range.begin - lowest);
+        const std::size_t kBase = static_cast<std::size_t>(span.range.begin - lowest);
         for (std::size_t i = 0; i < span.present.size(); ++i) {
             if (!span.present[i]) {
                 continue;
             }
-            const std::size_t target = base + i;
-            if (merged.span.present[target] && merged.span.bytes[target] != span.bytes[i]) {
-                // 同一地址两次读到不同值：保留较新的值，并把冲突范围单列出来。
-                conflicts[target] = true;
+            const std::size_t kTarget = kBase + i;
+            if (merged.span.present[kTarget] && merged.span.bytes[kTarget] != span.bytes[i]) {
+                // If the same address yields different values on two reads, retain the newer value and isolate the conflicting range.
+                conflicts[kTarget] = true;
             }
-            merged.span.bytes[target] = span.bytes[i];
-            merged.span.present[target] = true;
-            merged.byteObservedUtc100ns[target] = span.observedUtc100ns;
+            merged.span.bytes[kTarget] = span.bytes[i];
+            merged.span.present[kTarget] = true;
+            merged.byteObservedUtc100ns[kTarget] = span.observedUtc100ns;
         }
     }
-    merged.conflictingRanges = CollectRuns(lowest, conflicts, true);
+    merged.conflictingRanges = collectRuns(lowest, conflicts, true);
 
-    CollectionStatus status = ClassifyReadSpan(merged.span);
-    if (status == CollectionStatus::Success &&
+    CollectionStatus status = classifyReadSpan(merged.span);
+    if (status == CollectionStatus::kSuccess &&
         (!merged.conflictingRanges.empty() ||
-         merged.timing != MergeObservationTiming::SingleObservation)) {
-        // 只有"覆盖完整 + 没有冲突 + 能证明来自同一次观测"才配叫 Success。
-        status = CollectionStatus::Partial;
+         merged.timing != MergeObservationTiming::kSingleObservation)) {
+        // Only 'full coverage + no conflicts + proven to originate from the same observation' qualifies as Success.
+        status = CollectionStatus::kPartial;
     }
     merged.span.outcome.status = status;
     if (!merged.conflictingRanges.empty()) {
         merged.span.outcome.message = "conflicting-observations";
-    } else if (merged.timing == MergeObservationTiming::MultipleObservations) {
+    } else if (merged.timing == MergeObservationTiming::kMultipleObservations) {
         merged.span.outcome.message = "observations-at-different-times";
-    } else if (merged.timing == MergeObservationTiming::ObservationTimeUnknown) {
+    } else if (merged.timing == MergeObservationTiming::kObservationTimeUnknown) {
         merged.span.outcome.message = "observation-time-unrecorded";
     }
     return merged;
 }
 
-const char* BoundedReadRejectionName(BoundedReadRejection rejection) noexcept {
+const char* boundedReadRejectionName(BoundedReadRejection rejection) noexcept {
     switch (rejection) {
-    case BoundedReadRejection::None:           return "None";
-    case BoundedReadRejection::InvalidRange:   return "InvalidRange";
-    case BoundedReadRejection::ReversedRange:  return "ReversedRange";
-    case BoundedReadRejection::ExceedsMaxSpan: return "ExceedsMaxSpan";
-    case BoundedReadRejection::NoBudget:       return "NoBudget";
+    case BoundedReadRejection::kNone:           return "None";
+    case BoundedReadRejection::kInvalidRange:   return "InvalidRange";
+    case BoundedReadRejection::kReversedRange:  return "ReversedRange";
+    case BoundedReadRejection::kExceedsMaxSpan: return "ExceedsMaxSpan";
+    case BoundedReadRejection::kNoBudget:       return "NoBudget";
     }
     return "InvalidRange";
 }
 
-BoundedReadResult ReadRangeBounded(const BoundedReadRequest& request, const ChunkReader& reader) {
-    // 拒绝顺序：先看范围本身合不合法，再看跨度上限，最后看预算。三档都必须在返回
-    // 结构上如实标出来 —— 任何一档伪装成"合法范围、没命中预算、正常跑完"都是
-    // M-10 / F-06 的直接违反。
-    const RangeValidation validation = ValidateRange(request.requested, request.approved);
-    if (validation != RangeValidation::Ok) {
-        // M-10：非法或越权范围一个字节都不读，也不留下"部分结果"的假象。
-        return RejectBoundedRead(request,
-                                 validation,
-                                 BoundedReadRejection::InvalidRange,
-                                 static_cast<std::uint64_t>(validation),
-                                 RangeValidationName(validation));
+BoundedReadResult readRangeBounded(const BoundedReadRequest& request, const ChunkReader& reader) {
+    // Rejection order: first check if the range itself is valid, then check the span limit, and finally check the budget. All three stages must
+    // be accurately reflected in the returned structure; any stage masquerading as 'valid range, budget not hit, normal completion' is invalid.
+    // Direct violation of M-10 / F-06.
+    const RangeValidation kValidation = validateRange(request.requested, request.approved);
+    if (kValidation != RangeValidation::kOk) {
+        // M-10: Reject invalid or unauthorized ranges without reading a single byte and without leaving the illusion of partial results.
+        return rejectBoundedRead(request,
+                                 kValidation,
+                                 BoundedReadRejection::kInvalidRange,
+                                 static_cast<std::uint64_t>(kValidation),
+                                 rangeValidationName(kValidation));
     }
     if (request.requested.length > kMaxReadSpanBytes) {
-        // 超过单次跨度上限。以前这里 validation=Ok、stop=Continue、coverage 全零，
-        // 调用方会以为这次扫描正常跑完了什么都没有 —— 那是把拒绝伪装成成功。
-        return RejectBoundedRead(request,
-                                 RangeValidation::Ok,
-                                 BoundedReadRejection::ExceedsMaxSpan,
+        // Exceeds the single-span limit. Previously, validation was Ok, stop was Continue, and coverage was all zeros; the
+        // caller would assume the scan completed normally with no results. This effectively disguised a rejection as success.
+        return rejectBoundedRead(request,
+                                 RangeValidation::kOk,
+                                 BoundedReadRejection::kExceedsMaxSpan,
                                  kMaxReadSpanBytes,
                                  "requested span exceeds kMaxReadSpanBytes");
     }
     if (!request.budget.bounded()) {
-        // M-10：忘了设预算的调用点不该能一次读走 64 MiB 内核内存。无界即拒绝。
-        return RejectBoundedRead(request,
-                                 RangeValidation::Ok,
-                                 BoundedReadRejection::NoBudget,
+        // M-10: Call sites that forgot to set a budget should not be able to read 64 MiB of kernel memory in one go. Unbounded reads are rejected.
+        return rejectBoundedRead(request,
+                                 RangeValidation::kOk,
+                                 BoundedReadRejection::kNoBudget,
                                  0ULL,
                                  "scan budget is unbounded");
     }
 
     BoundedReadResult result;
-    result.validation = RangeValidation::Ok;
-    result.span = MakeEmptyReadSpan(request.requested);
+    result.validation = RangeValidation::kOk;
+    result.span = makeEmptyReadSpan(request.requested);
     result.span.observedUtc100ns = request.observedUtc100ns;
     if (result.span.range.length == 0ULL) {
-        // 上面三道判据理论上已经把所有拒绝理由拦完；真到这里说明 MakeEmptyReadSpan
-        // 还有自己的兜底判据生效了，同样按明确拒绝返回，不返回"空但成功"。
-        result.rejection = BoundedReadRejection::ExceedsMaxSpan;
+        // The three criteria above theoretically cover all rejection reasons. Reaching this point indicates that
+        // makeEmptyReadSpan has its own fallback criteria active. Return an explicit rejection, not 'empty but success'.
+        result.rejection = BoundedReadRejection::kExceedsMaxSpan;
         result.coverage.requestedBegin = OptionalU64::of(request.requested.begin);
         result.coverage.truncated = request.requested.length;
         return result;
     }
 
-    const std::uint64_t chunkSize = (request.chunkSize == 0ULL) ? 0x1000ULL : request.chunkSize;
+    const std::uint64_t kChunkSize = (request.chunkSize == 0ULL) ? 0x1000ULL : request.chunkSize;
     std::uint64_t end = 0ULL;
-    (void)request.requested.endAddress(end);  // ValidateRange 已保证不溢出
+    (void)request.requested.endAddress(end);  // validateRange ensures no overflow occurs.
 
     ScanProgress progress;
     std::vector<std::uint8_t> buffer;
     std::uint64_t cursor = request.requested.begin;
 
-    // F-05：第一条失败的原始码原样留下来。没有它，STATUS_ACCESS_DENIED、目标进程
-    // 已退出、页不可读三种失败在结果里长得一模一样。
+    // F-05: The original code of the first failure is preserved as-is. Without it, failures such as
+    // STATUS_ACCESS_DENIED, target process exit, and unreadable pages appear identical in the results.
     bool failureCaptured = false;
-    CollectionStatus failureStatus = CollectionStatus::Error;
+    CollectionStatus failureStatus = CollectionStatus::kError;
     OptionalU64 failureCode;
     std::string failureDomain;
     std::string failureMessage;
@@ -514,29 +514,29 @@ BoundedReadResult ReadRangeBounded(const BoundedReadRequest& request, const Chun
         if (request.elapsedNanos) {
             progress.elapsedNanos = request.elapsedNanos();
         }
-        result.stop = EvaluateBudget(request.budget, progress);
-        if (result.stop != BudgetStop::Continue) {
+        result.stop = evaluateBudget(request.budget, progress);
+        if (result.stop != BudgetStop::kContinue) {
             break;
         }
 
-        // 按 chunkSize 边界切块，页边界因此必然落在块边界上。
+        // Chunk by chunkSize boundaries, so page boundaries will necessarily align with chunk boundaries.
         std::uint64_t chunkEnd = end;
-        const std::uint64_t aligned = cursor - (cursor % chunkSize);
-        if (aligned <= kU64Max - chunkSize) {
-            const std::uint64_t boundary = aligned + chunkSize;
-            if (boundary < chunkEnd) {
-                chunkEnd = boundary;
+        const std::uint64_t kAligned = cursor - (cursor % kChunkSize);
+        if (kAligned <= kU64Max - kChunkSize) {
+            const std::uint64_t kBoundary = kAligned + kChunkSize;
+            if (kBoundary < chunkEnd) {
+                chunkEnd = kBoundary;
             }
         }
         std::uint64_t length = chunkEnd - cursor;
         if (request.budget.maxBytes.present) {
-            // 字节预算精确到字节：不允许为了凑整块而超出用户批准的上限。
-            const std::uint64_t remaining = (request.budget.maxBytes.value > progress.bytesDone)
+            // Byte budget is precise to the byte: do not exceed the user-approved limit to round up to a block.
+            const std::uint64_t kRemaining = (request.budget.maxBytes.value > progress.bytesDone)
                                                 ? (request.budget.maxBytes.value - progress.bytesDone)
                                                 : 0ULL;
-            length = (std::min)(length, remaining);
+            length = (std::min)(length, kRemaining);
             if (length == 0ULL) {
-                result.stop = BudgetStop::BytesExhausted;
+                result.stop = BudgetStop::kBytesExhausted;
                 break;
             }
         }
@@ -546,25 +546,25 @@ BoundedReadResult ReadRangeBounded(const BoundedReadRequest& request, const Chun
         if (reader) {
             reader(cursor, buffer.data(), buffer.size(), chunk);
         } else {
-            chunk.status = CollectionStatus::Error;
+            chunk.status = CollectionStatus::kError;
             chunk.message = "no chunk reader supplied";
         }
         std::size_t copied = chunk.copied;
         if (copied > buffer.size()) {
-            copied = buffer.size();  // 回调撒谎时按缓冲区截断，绝不越界写入
+            copied = buffer.size();  // Clamp writes to the buffer capacity even if the callback reports a false length; never write out of bounds.
         }
         if (copied > 0U) {
-            (void)ApplyReadChunk(result.span, cursor, buffer.data(), copied);
+            (void)applyReadChunk(result.span, cursor, buffer.data(), copied);
         }
         if (!failureCaptured && copied < buffer.size()) {
-            // 只记第一条：它是"为什么这次读不全"的直接原因，后面的多半是它的连锁。
+            // Record only the first one: it is the direct cause of 'why this read was incomplete'; the rest are mostly its chain reactions.
             failureCaptured = true;
-            // 回调没给具体状态（或声称成功却没拷满）时才退到通用 Error；
-            // 给了 AccessDenied / Unsupported / Timeout 就原样保留。
-            failureStatus = (chunk.status == CollectionStatus::NotCollected ||
-                             chunk.status == CollectionStatus::Success ||
-                             chunk.status == CollectionStatus::Partial)
-                                ? CollectionStatus::Error
+            // Only fall back to the generic Error when the callback provides no specific status (or claims success but failed to copy fully).
+            // If AccessDenied / Unsupported / Timeout, retain the original state.
+            failureStatus = (chunk.status == CollectionStatus::kNotCollected ||
+                             chunk.status == CollectionStatus::kSuccess ||
+                             chunk.status == CollectionStatus::kPartial)
+                                ? CollectionStatus::kError
                                 : chunk.status;
             failureCode = chunk.nativeCode;
             failureDomain = chunk.nativeCodeDomain;
@@ -574,49 +574,49 @@ BoundedReadResult ReadRangeBounded(const BoundedReadRequest& request, const Chun
         progress.bytesDone += length;
         progress.pagesDone += 1ULL;
         progress.itemsDone += 1ULL;
-        // 按实际尝试的长度前进：字节预算把块截短时，游标不能跳到整块末尾，
-        // 否则被跳过的字节会既没读到也没记进截断账目。
+        // Advance by the actually attempted length: when the byte budget truncates a block, the cursor must not jump to the end
+        // of the whole block, otherwise the skipped bytes would be neither read nor accounted for in the truncation ledger.
         cursor += length;
     }
 
-    // 账目分三笔，互不重复计数：读到的、试过但读不到的、根本没试到的。
-    const std::uint64_t processed = cursor - request.requested.begin;
-    const std::uint64_t got = result.span.presentCount();
-    result.coverage = BuildReadCoverage(result.span);
-    result.coverage.succeeded = got;
-    result.coverage.failed = (processed > got) ? (processed - got) : 0ULL;
-    result.coverage.truncated = request.requested.length - processed;
+    // Accounting splits into three non-overlapping categories: successfully read, attempted but unreadable, and never attempted.
+    const std::uint64_t kProcessed = cursor - request.requested.begin;
+    const std::uint64_t kGot = result.span.presentCount();
+    result.coverage = buildReadCoverage(result.span);
+    result.coverage.succeeded = kGot;
+    result.coverage.failed = (kProcessed > kGot) ? (kProcessed - kGot) : 0ULL;
+    result.coverage.truncated = request.requested.length - kProcessed;
     result.coverage.processedEnd = OptionalU64::of(cursor);
 
-    if (result.stop == BudgetStop::Continue) {
-        const CollectionStatus coverageStatus = ClassifyReadSpan(result.span);
-        result.span.outcome.status = coverageStatus;
-        if (coverageStatus == CollectionStatus::Partial) {
+    if (result.stop == BudgetStop::kContinue) {
+        const CollectionStatus kCoverageStatus = classifyReadSpan(result.span);
+        result.span.outcome.status = kCoverageStatus;
+        if (kCoverageStatus == CollectionStatus::kPartial) {
             result.span.outcome.message = "unreadable-holes";
         }
-        if (coverageStatus == CollectionStatus::Error && failureCaptured) {
-            // 一个字节都没读到时，到底是哪一种失败必须留下来（F-05）。
+        if (kCoverageStatus == CollectionStatus::kError && failureCaptured) {
+            // If no bytes are read, the specific type of failure must be preserved (F-05).
             result.span.outcome.status = failureStatus;
         }
     } else {
-        // 命中上限或被取消：整体是 Partial，理由由 OutcomeForStop 给出。
-        result.span.outcome = OutcomeForStop(result.stop);
-        ApplyStopToCoverage(result.stop, request.budget, result.coverage);
+        // Hit limit or cancelled: Overall result is Partial, with the reason provided by outcomeForStop.
+        result.span.outcome = outcomeForStop(result.stop);
+        applyStopToCoverage(result.stop, request.budget, result.coverage);
     }
     if (failureCaptured) {
-        // 原始码与来源原文原样带回，绝不用默认 0 / 空串补齐（F-05）。
+        // Return the original code and source text exactly as-is; never pad with default 0 or empty strings (F-05).
         result.span.outcome.nativeCode = failureCode;
         result.span.outcome.nativeCodeDomain = failureDomain;
-        // 停止理由（budget:* / cancelled）本身就是这次不完整的主因，不被读取失败
-        // 的文案覆盖；只有跑完整段时才把来源原文摆到最前面。
-        if (!failureMessage.empty() && result.stop == BudgetStop::Continue) {
+        // The stop reason (budget:* / cancelled) is itself the primary cause of this incomplete operation and should not be overwritten
+        // by read failure messages; only when the full segment completes is the original source message placed at the front.
+        if (!failureMessage.empty() && result.stop == BudgetStop::kContinue) {
             result.span.outcome.message = failureMessage;
         }
     }
     return result;
 }
 
-BoundedReadResult ReadRangeBoundedFromEndpoints(std::uint64_t begin,
+BoundedReadResult readRangeBoundedFromEndpoints(std::uint64_t begin,
                                                 std::uint64_t end,
                                                 const BoundedReadRequest& request,
                                                 const ChunkReader& reader) {
@@ -624,47 +624,47 @@ BoundedReadResult ReadRangeBoundedFromEndpoints(std::uint64_t begin,
     adjusted.requested.begin = begin;
     adjusted.requested.length = 0ULL;
     if (end < begin) {
-        // M-10：逆序范围。AddressRange 用 (begin,length) 表达，endAddress() 成功后
-        // end 必然 >= begin，所以这条判据在那种表示里根本不可达 —— 只有在这个接受
-        // end 的入口里才能真正生效。这里判，并且一个字节都不读。
-        BoundedReadResult rejected = RejectBoundedRead(adjusted,
-                                                       RangeValidation::Reversed,
-                                                       BoundedReadRejection::ReversedRange,
+        // M-10: Reversed range. AddressRange is expressed as (begin, length); after a successful endAddress(),
+        // end is guaranteed to be >= begin, making this check unreachable in that representation—it only takes
+        // effect in this entry point accepting 'end'. Here we check and read zero bytes.
+        BoundedReadResult rejected = rejectBoundedRead(adjusted,
+                                                       RangeValidation::kReversed,
+                                                       BoundedReadRejection::kReversedRange,
                                                        static_cast<std::uint64_t>(
-                                                           RangeValidation::Reversed),
-                                                       RangeValidationName(
-                                                           RangeValidation::Reversed));
-        // 调用方给的 end 照实记下来，UI 才能说清"你要的是哪一段"。
+                                                           RangeValidation::kReversed),
+                                                       rangeValidationName(
+                                                           RangeValidation::kReversed));
+        // Record the end value provided by the caller as-is so the UI can clearly specify "which segment you requested."
         rejected.coverage.requestedEnd = OptionalU64::of(end);
         return rejected;
     }
     adjusted.requested.length = end - begin;
-    return ReadRangeBounded(adjusted, reader);
+    return readRangeBounded(adjusted, reader);
 }
 
 // ---------------------------------------------------------------------------
 // M-09
 // ---------------------------------------------------------------------------
 
-const char* OwnerAttributionName(OwnerAttribution attribution) noexcept {
+const char* ownerAttributionName(OwnerAttribution attribution) noexcept {
     switch (attribution) {
-    case OwnerAttribution::DirectEvidence: return "DirectEvidence";
-    case OwnerAttribution::Candidate:      return "Candidate";
-    case OwnerAttribution::Unknown:        return "Unknown";
+    case OwnerAttribution::kDirectEvidence: return "DirectEvidence";
+    case OwnerAttribution::kCandidate:      return "Candidate";
+    case OwnerAttribution::kUnknown:        return "Unknown";
     }
     return "Unknown";
 }
 
-PoolAttributionResult AttributeByTag(const std::string& tag,
+PoolAttributionResult attributeByTag(const std::string& tag,
                                      const std::vector<PoolTagOwnerEntry>& knownTagOwners) {
     PoolAttributionResult result;
-    result.allocationStackAvailable = false;  // 本函数只看标签，永远没有分配栈
+    result.allocationStackAvailable = false;  // This function only checks tags and never has an allocation stack.
     if (tag.empty()) {
-        result.attribution = OwnerAttribution::Unknown;
-        result.facts.push_back(Fact("pool.tag", "absent"));
+        result.attribution = OwnerAttribution::kUnknown;
+        result.facts.push_back(fact("pool.tag", "absent"));
         return result;
     }
-    result.facts.push_back(Fact("pool.tag", tag));
+    result.facts.push_back(fact("pool.tag", tag));
 
     for (const PoolTagOwnerEntry& entry : knownTagOwners) {
         if (entry.tag != tag || entry.ownerId.empty()) {
@@ -675,48 +675,48 @@ PoolAttributionResult AttributeByTag(const std::string& tag,
             continue;
         }
         result.candidateOwners.push_back(entry.ownerId);
-        result.facts.push_back(Fact("pool.tagOwner", entry.ownerId));
+        result.facts.push_back(fact("pool.tagOwner", entry.ownerId));
         if (!entry.sourceNote.empty()) {
-            result.facts.push_back(Fact("pool.tagOwnerSource", entry.sourceNote));
+            result.facts.push_back(fact("pool.tagOwnerSource", entry.sourceNote));
         }
     }
 
-    result.facts.push_back(FactCount("pool.tagOwnerCount",
+    result.facts.push_back(factCount("pool.tagOwnerCount",
                                      static_cast<std::uint64_t>(result.candidateOwners.size())));
     if (result.candidateOwners.empty()) {
-        result.attribution = OwnerAttribution::Unknown;
+        result.attribution = OwnerAttribution::kUnknown;
         return result;
     }
-    // M-09 硬规则：标签不是所有者证明。哪怕表里只有一个 owner，也只能是候选 ——
-    // 多组件共用同一个 tag 是常态，表不全更是常态。
-    result.attribution = OwnerAttribution::Candidate;
+    // M-09 Hard rule: A tag is not proof of ownership. Even if the table lists only one owner, it must be marked
+    // as a candidate—multiple components sharing the same tag is common, and incomplete tables are also common.
+    result.attribution = OwnerAttribution::kCandidate;
     return result;
 }
 
-PoolAttributionResult AttributeByAllocationEvent(const PoolAllocationEvent& event,
+PoolAttributionResult attributeByAllocationEvent(const PoolAllocationEvent& event,
                                                  const PoolAttributionResult& tagFallback) {
     if (!event.captured) {
-        // 没有事先采集的分配事件就退回标签那一档，不编造。
+        // If no allocation event was captured beforehand, fall back to the tag tier without fabricating data.
         PoolAttributionResult result = tagFallback;
         result.allocationStackAvailable = false;
-        result.facts.push_back(Fact("pool.allocationEvent", "not-captured"));
+        result.facts.push_back(fact("pool.allocationEvent", "not-captured"));
         return result;
     }
     PoolAttributionResult result;
     result.allocationStackAvailable = true;
-    result.attribution = OwnerAttribution::DirectEvidence;
-    const std::string key = event.allocator.crossSessionKey();
-    if (key.empty()) {
-        // 事件在，但分配者身份不足以跨会话确认：降级为候选，不硬升成直接证据。
-        result.attribution = OwnerAttribution::Candidate;
-        result.facts.push_back(Fact("pool.allocatorIdentity", "insufficient"));
+    result.attribution = OwnerAttribution::kDirectEvidence;
+    const std::string kKey = event.allocator.crossSessionKey();
+    if (kKey.empty()) {
+        // The event exists, but the allocator identity is insufficient to confirm across sessions: downgrade to candidate status instead of hard-promoting to direct evidence.
+        result.attribution = OwnerAttribution::kCandidate;
+        result.facts.push_back(fact("pool.allocatorIdentity", "insufficient"));
     }
     if (!event.allocator.imagePath.empty()) {
         result.candidateOwners.push_back(event.allocator.imagePath);
-        result.facts.push_back(Fact("pool.allocator", event.allocator.imagePath));
+        result.facts.push_back(fact("pool.allocator", event.allocator.imagePath));
     }
-    result.facts.push_back(FactText("pool.allocationEventSource", event.eventSourceId));
-    result.facts.push_back(FactAddress("pool.allocationEventUtc100ns", event.eventUtc100ns));
+    result.facts.push_back(factText("pool.allocationEventSource", event.eventSourceId));
+    result.facts.push_back(factAddress("pool.allocationEventUtc100ns", event.eventUtc100ns));
     return result;
 }
 
@@ -729,18 +729,18 @@ const char* const kRuleIdImageBytesDiffer = "mem.exec.image-bytes-differ";
 const char* const kRuleIdThreadOriginMismatch = "mem.exec.thread-origin-mismatch";
 const char* const kRuleIdThreadOriginUnknown = "mem.exec.thread-origin-unknown";
 
-ExecutableRegionReport EvaluateExecutableRegion(const ExecutableRegionInput& input) {
+ExecutableRegionReport evaluateExecutableRegion(const ExecutableRegionInput& input) {
     ExecutableRegionReport report;
-    report.attribution = RegionAttribution(input.region, input.regionOwnerKnown);
+    report.attribution = regionAttribution(input.region, input.regionOwnerKnown);
 
-    // 规则一：private executable。这只是一个特征，JIT / .NET / 打包器都会命中，
-    // 因此它只交事实，不给结论 —— 归属未知就保持未知。
-    if (input.region.protection.executable && input.region.type == RegionType::Private) {
+    // Rule 1: private executable. This is merely a heuristic; JIT, .NET, and packers all trigger it.
+    // Therefore, it reports facts only, not conclusions—keep the attribution unknown if unknown.
+    if (input.region.protection.executable && input.region.type == RegionType::kPrivate) {
         ExecutableRegionFinding finding;
         finding.ruleId = kRuleIdPrivateExecutable;
         finding.ruleVersion = 1U;
-        AppendRegionFacts(input.region, finding.facts);
-        finding.facts.push_back(FactBool("region.privateExecutable", true));
+        appendRegionFacts(input.region, finding.facts);
+        finding.facts.push_back(factBool("region.privateExecutable", true));
         finding.attribution = report.attribution;
         if (!input.region.mappedPath.empty()) {
             finding.candidateOwners.push_back(input.region.mappedPath);
@@ -749,27 +749,27 @@ ExecutableRegionReport EvaluateExecutableRegion(const ExecutableRegionInput& inp
         report.findings.push_back(finding);
     }
 
-    // 规则二：image 区域字节与磁盘不一致。
+    // Rule 2: Image region bytes are inconsistent with disk.
     bool comparedClean = false;
     bool differenceConfirmed = false;
     const ImageBytesComparison& comparison = input.imageComparison;
-    const bool comparisonAttempted =
-        comparison.compared || comparison.outcome.status != CollectionStatus::NotCollected;
-    if (input.region.type == RegionType::Image && comparisonAttempted) {
+    const bool kComparisonAttempted =
+        comparison.compared || comparison.outcome.status != CollectionStatus::kNotCollected;
+    if (input.region.type == RegionType::kImage && kComparisonAttempted) {
         ExecutableRegionFinding finding;
         finding.ruleId = kRuleIdImageBytesDiffer;
         finding.ruleVersion = 1U;
-        AppendRegionFacts(input.region, finding.facts);
-        finding.facts.push_back(FactText("image.onDiskPath", comparison.onDiskPath));
-        finding.facts.push_back(FactBool("image.compared", comparison.compared));
+        appendRegionFacts(input.region, finding.facts);
+        finding.facts.push_back(factText("image.onDiskPath", comparison.onDiskPath));
+        finding.facts.push_back(factBool("image.compared", comparison.compared));
         finding.facts.push_back(
-            Fact("image.compareStatus", CollectionStatusName(comparison.outcome.status)));
-        finding.facts.push_back(FactBool("image.relocationsApplied", comparison.relocationsApplied));
+            fact("image.compareStatus", collectionStatusName(comparison.outcome.status)));
+        finding.facts.push_back(factBool("image.relocationsApplied", comparison.relocationsApplied));
         finding.facts.push_back(
-            FactCount("image.differingRangeCount",
+            factCount("image.differingRangeCount",
                       static_cast<std::uint64_t>(comparison.differingRanges.size())));
         for (const AddressRange& range : comparison.differingRanges) {
-            finding.facts.push_back(Fact("image.differingRange", DescribeRange(range)));
+            finding.facts.push_back(fact("image.differingRange", describeRange(range)));
         }
         finding.attribution = report.attribution;
         if (!comparison.onDiskPath.empty()) {
@@ -778,28 +778,28 @@ ExecutableRegionReport EvaluateExecutableRegion(const ExecutableRegionInput& inp
         finding.inputOutcome = comparison.outcome;
         report.findings.push_back(finding);
 
-        const bool usable =
-            comparison.compared && comparison.outcome.status == CollectionStatus::Success;
-        comparedClean = usable && comparison.differingRanges.empty();
-        // 没做重定位/热补丁归一化时，差异里混着正常改动，只能算线索不能算结论。
+        const bool kUsable =
+            comparison.compared && comparison.outcome.status == CollectionStatus::kSuccess;
+        comparedClean = kUsable && comparison.differingRanges.empty();
+        // Without relocation/Hotpatch normalization, differences mix with legitimate changes; treat as clues, not conclusions.
         differenceConfirmed =
-            usable && !comparison.differingRanges.empty() && comparison.relocationsApplied;
+            kUsable && !comparison.differingRanges.empty() && comparison.relocationsApplied;
     }
 
-    // 规则三：线程起始地址与映射归属不一致。
+    // Rule 3: Thread start address does not match the mapping ownership.
     for (const ThreadStartFact& thread : input.threads) {
         if (!thread.startAddress.present) {
-            // 起始地址拿不到就是拿不到，不拿区域基址顶替。而且这是"没有观测"，
-            // 不是"归属不一致" —— 两者共用一个 ruleId 会让 UI 与导出读成同一条
-            // 线索，也会让一条零观测的 finding 把结论抬高（F-05）。所以单独一条。
+            // If the start address cannot be obtained, do not substitute it with the region base address. This represents 'no observation'
+            // rather than 'ownership mismatch'. Sharing a ruleId between them would cause the UI and exporter to treat them as the same clue,
+            // and a finding with zero observations would incorrectly elevate the conclusion (F-05). Therefore, keep them as separate entries.
             ExecutableRegionFinding unknownStart;
             unknownStart.ruleId = kRuleIdThreadOriginUnknown;
             unknownStart.ruleVersion = 1U;
-            unknownStart.facts.push_back(FactAddress("thread.startAddress", thread.startAddress));
-            unknownStart.facts.push_back(FactText("thread.key", thread.thread.crossSessionKey()));
+            unknownStart.facts.push_back(factAddress("thread.startAddress", thread.startAddress));
+            unknownStart.facts.push_back(factText("thread.key", thread.thread.crossSessionKey()));
             unknownStart.facts.push_back(
-                Fact("thread.identityStrength", IdentityStrengthName(thread.thread.strength())));
-            unknownStart.attribution = OwnerAttribution::Unknown;
+                fact("thread.identityStrength", identityStrengthName(thread.thread.strength())));
+            unknownStart.attribution = OwnerAttribution::kUnknown;
             unknownStart.inputOutcome = CollectionOutcome::notCollected();
             report.findings.push_back(unknownStart);
             continue;
@@ -807,27 +807,27 @@ ExecutableRegionReport EvaluateExecutableRegion(const ExecutableRegionInput& inp
         if (!thread.startAddressInsideRegion) {
             continue;
         }
-        const bool pathUnknown = thread.startAddressMappedPath.empty();
-        if (!pathUnknown && thread.startAddressMappedPath == input.region.mappedPath) {
-            continue;  // 归属一致，没有可报的事实
+        const bool kPathUnknown = thread.startAddressMappedPath.empty();
+        if (!kPathUnknown && thread.startAddressMappedPath == input.region.mappedPath) {
+            continue;  // Ownership matches; no facts to report.
         }
 
         ExecutableRegionFinding finding;
         finding.ruleId = kRuleIdThreadOriginMismatch;
         finding.ruleVersion = 1U;
-        finding.facts.push_back(FactAddress("thread.startAddress", thread.startAddress));
-        finding.facts.push_back(FactText("thread.key", thread.thread.crossSessionKey()));
+        finding.facts.push_back(factAddress("thread.startAddress", thread.startAddress));
+        finding.facts.push_back(factText("thread.key", thread.thread.crossSessionKey()));
         finding.facts.push_back(
-            Fact("thread.identityStrength", IdentityStrengthName(thread.thread.strength())));
-        finding.facts.push_back(FactText("thread.startMappedPath", thread.startAddressMappedPath));
-        finding.facts.push_back(FactText("region.mappedPath", input.region.mappedPath));
-        finding.facts.push_back(FactBool("thread.startInsideRegion", true));
-        if (pathUnknown) {
-            finding.attribution = OwnerAttribution::Unknown;
+            fact("thread.identityStrength", identityStrengthName(thread.thread.strength())));
+        finding.facts.push_back(factText("thread.startMappedPath", thread.startAddressMappedPath));
+        finding.facts.push_back(factText("region.mappedPath", input.region.mappedPath));
+        finding.facts.push_back(factBool("thread.startInsideRegion", true));
+        if (kPathUnknown) {
+            finding.attribution = OwnerAttribution::kUnknown;
         } else {
-            // 两条路径都非空且不同：哪一边是"真正的归属"没有证据可判，
-            // 所以两边都只是候选，全列出来，不挑一个当结论（M-09）。
-            finding.attribution = OwnerAttribution::Candidate;
+            // Both paths are non-empty and different: there is no evidence to determine which side is
+            // the "true owner", so both are listed as candidates without selecting a conclusion (M-09).
+            finding.attribution = OwnerAttribution::kCandidate;
             finding.candidateOwners.push_back(thread.startAddressMappedPath);
             if (!input.region.mappedPath.empty()) {
                 finding.candidateOwners.push_back(input.region.mappedPath);
@@ -837,28 +837,28 @@ ExecutableRegionReport EvaluateExecutableRegion(const ExecutableRegionInput& inp
         report.findings.push_back(finding);
     }
 
-    // F-05：Indeterminate 是"有观测但不足以判断"，NoEvidence 才是"没有可用观测"。
-    // 所以只有真的携带观测的 finding 才能把结论从 NoEvidence 抬到 Indeterminate ——
-    // 一条 inputOutcome=NotCollected 的 finding 抬不动任何结论。
+    // F-05: Indeterminate means 'observed but insufficient to determine', while NoEvidence means 'no available observation'.
+    // Therefore, only findings that actually carry observations can elevate the conclusion from NoEvidence
+    // to Indeterminate. A finding with inputOutcome=NotCollected cannot elevate any conclusion.
     std::size_t observedFindings = 0U;
     for (const ExecutableRegionFinding& finding : report.findings) {
-        if (StatusCarriesObservation(finding.inputOutcome.status)) {
+        if (statusCarriesObservation(finding.inputOutcome.status)) {
             ++observedFindings;
         }
     }
 
     if (differenceConfirmed) {
-        report.conclusion = AnalysisConclusion::DifferenceObserved;
+        report.conclusion = AnalysisConclusion::kDifferenceObserved;
     } else if (comparedClean) {
-        report.conclusion = AnalysisConclusion::NoDifferenceObserved;
+        report.conclusion = AnalysisConclusion::kNoDifferenceObserved;
     } else if (observedFindings != 0U) {
-        // 有线索但不足以判定。private RX 单独一条永远停在这里 ——
-        // 把它升级成"恶意"正是 M-07 明令禁止的。
-        report.conclusion = AnalysisConclusion::Indeterminate;
+        // There is a clue but it is insufficient for a definitive conclusion. A private RX entry alone
+        // will always remain here; upgrading it to "malicious" is explicitly prohibited by M-07.
+        report.conclusion = AnalysisConclusion::kIndeterminate;
     } else {
-        report.conclusion = AnalysisConclusion::NoEvidence;
+        report.conclusion = AnalysisConclusion::kNoEvidence;
     }
     return report;
 }
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

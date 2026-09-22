@@ -4,10 +4,10 @@
 
 // ============================================================
 // KswordArkWorkQueueIoctl.h
-// 作用：
-// - 定义只读 Ex 工作队列审计协议；
-// - R0 只接受与当前 ntoskrnl PE/PDB 身份匹配的 DynData v4 布局；
-// - 未知结构、缺失字段和不一致链表均显式降级，不做全局扫描或偏移猜测。
+// Purpose:
+// - Define a read-only Ex work queue audit protocol;
+// - R0 only accepts DynData v4 layouts that match the current ntoskrnl PE/PDB identity.
+// - Explicitly degrades unknown structures, missing fields, and inconsistent lists without global scanning or offset guessing.
 // ============================================================
 
 #define KSWORD_ARK_WORK_QUEUE_PROTOCOL_VERSION 1UL
@@ -34,8 +34,8 @@
 #define KSWORD_ARK_WORK_QUEUE_MODULE_NAME_BYTES 96U
 #define KSWORD_ARK_WORK_QUEUE_MODULE_PATH_BYTES 256U
 
-// queueType 与 Windows WORK_QUEUE_TYPE 的前三种语义保持一致，但协议使用
-// 独立稳定值，避免把私有内核枚举值直接暴露为 ABI。
+// queueType maintains semantic consistency with the first three Windows WORK_QUEUE_TYPE values, but the protocol
+// uses independent stable values to avoid exposing private kernel enumeration values directly as an ABI.
 #define KSWORD_ARK_WORK_QUEUE_TYPE_CRITICAL      1UL
 #define KSWORD_ARK_WORK_QUEUE_TYPE_DELAYED       2UL
 #define KSWORD_ARK_WORK_QUEUE_TYPE_HYPERCRITICAL 3UL

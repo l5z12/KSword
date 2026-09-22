@@ -131,7 +131,7 @@ def main() -> int:
     root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", type=Path, default=Path(os.environ.get("WINDIR", "C:/Windows")) / "System32/udwm.dll")
-    parser.add_argument("--profile", type=Path, default=root / "DwmZOrderAgent/RuntimeProfile.h")
+    parser.add_argument("--profile", type=Path, default=root / "integrations/dwm_z_order/RuntimeProfile.h")
     parser.add_argument("--self-test", action="store_true", help="also reject corrupted identity, code, vtable and CFG fixtures")
     args = parser.parse_args()
     image = Image(args.image.read_bytes())

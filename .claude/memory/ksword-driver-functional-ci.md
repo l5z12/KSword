@@ -9,9 +9,9 @@ metadata:
 
 - 入口三件套：`tools/driver_functional_ci/driver_test_plan.json`（计划）、
   `tools/driver_functional_ci/plan_gate.py`（静态门禁）、
-  `KswordARKDriver/tests/DriverFunctionalMatrix.ps1`（测试机执行器）。
+  `drivers/ark/tests/DriverFunctionalMatrix.ps1`（测试机执行器）。
   工作流 `.github/workflows/driver-functional-ci.yml` 分两段：普通 runner 跑门禁 + harness 自检，
-  自托管测试签名机跑真实矩阵。完整说明见 `KswordARKDriver/tests/README.md`。
+  自托管测试签名机跑真实矩阵。完整说明见 `drivers/ark/tests/README.md`。
 - 覆盖是**强制闭合**的：185 个已注册 IOCTL 必须在计划里被「执行」或「排除」恰好一次。
   新增/改名 IOCTL 而没有同步计划，`plan_gate.py` 会直接点名失败。当前口径是
   134 执行 + 51 排除（33 项安全排除 + 18 项 `no-cli-path` 缺口）。

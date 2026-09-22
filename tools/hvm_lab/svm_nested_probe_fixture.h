@@ -4,7 +4,7 @@
 #include <windows.h>
 #undef WIN32_NO_STATUS
 #include <ntstatus.h>
-#include "../../KswordARKDriver/src/features/hvm/hvm_svm_arch.h"
+#include "../../drivers/ark/src/features/hvm/hvm_svm_arch.h"
 #include "../../shared/driver/KswordArkHvmIoctl.h"
 typedef LONG NTSTATUS;
 #define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)

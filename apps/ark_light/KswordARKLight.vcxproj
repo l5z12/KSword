@@ -1,0 +1,627 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{44CC7D72-182E-4B28-9D88-531B09C77C41}</ProjectGuid>
+    <RootNamespace>KswordARKLight</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Platform)'=='x64'">
+    <OutDir>$(MSBuildProjectDirectory)\..\..\artifacts\bin\x64\$(Configuration)\</OutDir>
+    <IntDir>$(MSBuildProjectDirectory)\x64\$(Configuration)\obj\</IntDir>
+    <TargetName>KswordARKLight</TargetName>
+  </PropertyGroup>
+  <Import Project="$(MSBuildProjectDirectory)\..\..\build\msbuild\Ksword.Output.props" />
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;UNICODE;_UNICODE;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..;$(MSBuildProjectDirectory)\..\desktop;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>Comctl32.lib;Shell32.lib;Advapi32.lib;Crypt32.lib;Wintrust.lib;Rstrtmgr.lib;Psapi.lib;Ntdll.lib;User32.lib;Gdi32.lib;Comdlg32.lib;Ole32.lib;OleAut32.lib;Setupapi.lib;Cfgmgr32.lib;Tdh.lib;Wevtapi.lib;Version.lib;Shlwapi.lib;Taskschd.lib;Wbemuuid.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <WarningLevel>Level4</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;UNICODE;_UNICODE;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..;$(MSBuildProjectDirectory)\..\desktop;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>Comctl32.lib;Shell32.lib;Advapi32.lib;Crypt32.lib;Wintrust.lib;Rstrtmgr.lib;Psapi.lib;Ntdll.lib;User32.lib;Gdi32.lib;Comdlg32.lib;Ole32.lib;OleAut32.lib;Setupapi.lib;Cfgmgr32.lib;Tdh.lib;Wevtapi.lib;Version.lib;Shlwapi.lib;Taskschd.lib;Wbemuuid.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ResourceCompile Include="KswordARKLight.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="app\Main.cpp" />
+    <ClCompile Include="app\MainWindow.cpp" />
+    <ClCompile Include="core\Common.cpp" />
+    <ClCompile Include="core\DriverLease.cpp" />
+    <ClCompile Include="core\DriverService.cpp" />
+    <ClCompile Include="core\EntityRef.cpp" />
+    <ClCompile Include="core\NtApi.cpp" />
+    <ClCompile Include="core\PathUtils.cpp" />
+    <ClCompile Include="core\Privilege.cpp" />
+    <ClCompile Include="core\WorkspaceConfig.cpp" />
+    <ClCompile Include="docking\DockManager.cpp" />
+    <ClCompile Include="features\audit_common\AuditFormatting.cpp" />
+    <ClCompile Include="features\audit_common\AuditStatus.cpp" />
+    <ClCompile Include="features\audit_common\AuditSummaryPanel.cpp" />
+    <ClCompile Include="features\audit_common\AuditTable.cpp" />
+    <ClCompile Include="features\driver\DriverActions.cpp" />
+    <ClCompile Include="features\driver\DriverDebugOutputView.cpp" />
+    <ClCompile Include="features\driver\DriverEnumerator.cpp" />
+    <ClCompile Include="features\driver\DriverFeature.cpp" />
+    <ClCompile Include="features\driver\DriverModel.cpp" />
+    <ClCompile Include="features\driver\DriverObjectView.cpp" />
+    <ClCompile Include="features\driver\DriverOverviewView.cpp" />
+    <ClCompile Include="features\FeatureRegistry.cpp" />
+    <ClCompile Include="features\file\FileActions.cpp" />
+    <ClCompile Include="features\file\FileFeature.cpp" />
+    <ClCompile Include="features\file\FileSystemEnumerator.cpp" />
+    <ClCompile Include="features\file\FileView.cpp" />
+    <ClCompile Include="features\file\PathNavigator.cpp" />
+    <ClCompile Include="features\hardware\HardwareEnumerator.cpp" />
+    <ClCompile Include="features\hardware\HardwareFeature.cpp" />
+    <ClCompile Include="features\hardware\HardwareHwidDispatchView.cpp" />
+    <ClCompile Include="features\hardware\HardwareModel.cpp" />
+    <ClCompile Include="features\hardware\HardwareView.cpp" />
+    <ClCompile Include="features\handle\HandleClient.cpp" />
+    <ClCompile Include="features\handle\HandleFeature.cpp" />
+    <ClCompile Include="features\handle\HandlePage.cpp" />
+    <ClCompile Include="features\kernel\KernelAtomTableFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelBaseNamedObjectsFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelCallbackEnumerationFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelCallbackEventReceiver.cpp" />
+    <ClCompile Include="features\kernel\KernelCallbackInterceptFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelCatalog.cpp" />
+    <ClCompile Include="features\kernel\KernelCommunicationEndpointFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelDeviceDriverObjectsFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelDriverStatusFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelDynDataFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelDynDataProfiles.cpp" />
+    <ClCompile Include="features\kernel\KernelFacade.cpp" />
+    <ClCompile Include="features\kernel\KernelFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelIatEatHookFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelInlineHookFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelModel.cpp" />
+    <ClCompile Include="features\kernel\KernelNamedPipeFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelNativeQueries.cpp" />
+    <ClCompile Include="features\kernel\KernelNtQueryLegacyFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelObjectDirectoryRecursiveFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelObjectNamespaceFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelObjectTypeMatrixFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelPage.cpp" />
+    <ClCompile Include="features\kernel\KernelPageLayout.cpp" />
+    <ClCompile Include="features\kernel\KernelR0ExtendedFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelShadowSsdtFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelSsdtFeature.cpp" />
+    <ClCompile Include="features\kernel\KernelSymbolicLinkFeature.cpp" />
+    <ClCompile Include="features\memory\DriverMemoryClient.cpp" />
+    <ClCompile Include="features\memory\DriverMemoryModel.cpp" />
+    <ClCompile Include="features\memory\DriverMemoryView.cpp" />
+    <ClCompile Include="features\memory\MemoryFeature.cpp" />
+    <ClCompile Include="features\memory\MemoryInspection.cpp" />
+    <ClCompile Include="features\memory\MemorySnapshot.cpp" />
+    <ClCompile Include="features\memory\MemoryWritePlan.cpp" />
+    <ClCompile Include="features\misc\MiscFeature.cpp" />
+    <ClCompile Include="features\monitor\EtwEventModel.cpp" />
+    <ClCompile Include="features\monitor\EtwFilterDialog.cpp" />
+    <ClCompile Include="features\monitor\EtwFilterModel.cpp" />
+    <ClCompile Include="features\monitor\EtwMonitorView.cpp" />
+    <ClCompile Include="features\monitor\EtwSessionController.cpp" />
+    <ClCompile Include="features\monitor\MonitorFeature.cpp" />
+    <ClCompile Include="features\network\NetworkFeature.cpp" />
+    <ClCompile Include="features\network\NetworkModel.cpp" />
+    <ClCompile Include="features\network\NetworkView.cpp" />
+    <ClCompile Include="features\process\ProcessActions.cpp" />
+    <ClCompile Include="features\process\ProcessColumns.cpp" />
+    <ClCompile Include="features\process\ProcessEnumerator.cpp" />
+    <ClCompile Include="features\process\ProcessFeature.cpp" />
+    <ClCompile Include="features\process\ProcessModel.cpp" />
+    <ClCompile Include="features\process\ProcessView.cpp" />
+    <ClCompile Include="features\registry\RegistryActions.cpp" />
+    <ClCompile Include="features\registry\RegistryFeature.cpp" />
+    <ClCompile Include="features\registry\RegistryModel.cpp" />
+    <ClCompile Include="features\registry\RegistrySearchModel.cpp" />
+    <ClCompile Include="features\registry\RegistrySearchView.cpp" />
+    <ClCompile Include="features\registry\RegistryView.cpp" />
+    <ClCompile Include="features\process_detail\ProcessDetailCollector.cpp" />
+    <ClCompile Include="features\process_detail\ProcessDetailFeature.cpp" />
+    <ClCompile Include="features\process_detail\ProcessDetailPage.cpp" />
+    <ClCompile Include="features\process_detail\ProcessDetailPage.Action.cpp" />
+    <ClCompile Include="features\process_detail\ProcessDetailPage.DetailPlugin.cpp" />
+    <ClCompile Include="features\process_detail\ProcessDetailPage.EvidencePeb.cpp" />
+    <ClCompile Include="features\process_detail\ProcessDetailPage.HotkeyKeyboard.cpp" />
+    <ClCompile Include="features\process_detail\ProcessDetailPage.Module.cpp" />
+    <ClCompile Include="features\process_detail\ProcessDetailPage.Thread.cpp" />
+    <ClCompile Include="features\process_detail\ProcessDetailPage.Token.cpp" />
+    <ClCompile Include="features\driver\DriverUnloadedView.cpp" />
+    <ClCompile Include="features\net_tools\NetToolsActions.cpp" />
+    <ClCompile Include="features\net_tools\NetToolsConnectionView.cpp" />
+    <ClCompile Include="features\net_tools\NetToolsDiagnostics.cpp" />
+    <ClCompile Include="features\net_tools\NetToolsDiagnosticView.cpp" />
+    <ClCompile Include="features\net_tools\NetToolsEnumerator.cpp" />
+    <ClCompile Include="features\net_tools\NetToolsFirewallView.cpp" />
+    <ClCompile Include="features\net_tools\NetToolsModel.cpp" />
+    <ClCompile Include="features\hardware_stats\BusDeviceView.cpp" />
+    <ClCompile Include="features\hardware_stats\DeviceTopologyEnumerator.cpp" />
+    <ClCompile Include="features\hardware_stats\DiskActivityView.cpp" />
+    <ClCompile Include="features\hardware_stats\HardwareStatsModel.cpp" />
+    <ClCompile Include="features\hardware_stats\PerformanceSampler.cpp" />
+    <ClCompile Include="features\hardware_stats\PerformanceView.cpp" />
+    <ClCompile Include="features\hardware_stats\UsbTopologyView.cpp" />
+    <ClCompile Include="features\sys_tools\ContextMenuScanner.cpp" />
+    <ClCompile Include="features\sys_tools\ContextMenuView.cpp" />
+    <ClCompile Include="features\sys_tools\EventLogReader.cpp" />
+    <ClCompile Include="features\sys_tools\EventLogView.cpp" />
+    <ClCompile Include="features\sys_tools\FileHolderScanner.cpp" />
+    <ClCompile Include="features\sys_tools\FileHolderView.cpp" />
+    <ClCompile Include="features\sys_tools\IoctlDecoder.cpp" />
+    <ClCompile Include="features\sys_tools\IoctlDecoderView.cpp" />
+    <ClCompile Include="features\sys_tools\SysToolsFeature.cpp" />
+    <ClCompile Include="features\sys_tools\SystemTimeInfo.cpp" />
+    <ClCompile Include="features\sys_tools\SystemTimeView.cpp" />
+    <ClCompile Include="features\window_tools\WindowToolsCaptureView.cpp" />
+    <ClCompile Include="features\window_tools\WindowToolsClipboardView.cpp" />
+    <ClCompile Include="features\window_tools\WindowToolsCommon.cpp" />
+    <ClCompile Include="features\window_tools\WindowToolsHierarchyView.cpp" />
+    <ClCompile Include="features\window_tools\WindowToolsHotkeyView.cpp" />
+    <ClCompile Include="features\privilege\PrivilegeActions.cpp" />
+    <ClCompile Include="features\privilege\PrivilegeEnumerator.cpp" />
+    <ClCompile Include="features\privilege\PrivilegeFeature.cpp" />
+    <ClCompile Include="features\privilege\PrivilegeModel.cpp" />
+    <ClCompile Include="features\privilege\PrivilegeView.cpp" />
+    <ClCompile Include="features\service\ServiceActions.cpp" />
+    <ClCompile Include="features\service\ServiceEnumerator.cpp" />
+    <ClCompile Include="features\service\ServiceFeature.cpp" />
+    <ClCompile Include="features\service\ServiceModel.cpp" />
+    <ClCompile Include="features\service\ServiceView.cpp" />
+    <ClCompile Include="features\startup\StartupActions.cpp" />
+    <ClCompile Include="features\startup\StartupEnumerator.cpp" />
+    <ClCompile Include="features\startup\StartupFeature.cpp" />
+    <ClCompile Include="features\startup\StartupModel.cpp" />
+    <ClCompile Include="features\startup\StartupView.cpp" />
+    <ClCompile Include="features\window\WindowActions.cpp" />
+    <ClCompile Include="features\window\WindowEnumerator.cpp" />
+    <ClCompile Include="features\window\WindowFeature.cpp" />
+    <ClCompile Include="features\window\WindowModel.cpp" />
+    <ClCompile Include="features\window\Win32kTimerEvidenceModel.cpp" />
+    <ClCompile Include="features\window\WindowView.cpp" />
+    <ClCompile Include="ui\Controls.cpp" />
+    <ClCompile Include="ui\EntityNavigation.cpp" />
+    <ClCompile Include="ui\EvidenceSession.cpp" />
+    <ClCompile Include="ui\EvidenceSessionView.cpp" />
+    <ClCompile Include="ui\ExportUtil.cpp" />
+    <ClCompile Include="ui\FilterBar.cpp" />
+    <ClCompile Include="ui\IconUtil.cpp" />
+    <ClCompile Include="ui\ListViewUtil.cpp" />
+    <ClCompile Include="ui\LoadingOverlay.cpp" />
+    <ClCompile Include="ui\MenuUtil.cpp" />
+    <ClCompile Include="ui\NumericSortKey.cpp" />
+    <ClCompile Include="ui\PlaceholderPage.cpp" />
+    <ClCompile Include="ui\SplitterUtil.cpp" />
+    <ClCompile Include="ui\TabUtil.cpp" />
+    <ClCompile Include="ui\TextFindSupport.cpp" />
+    <ClCompile Include="ui\Theme.cpp" />
+    <ClCompile Include="ui\TreeViewUtil.cpp" />
+    <ClCompile Include="ui\VirtualListView.cpp" />
+    <ClCompile Include="ui\WorkspaceHost.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverAlpc.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverBlind.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDispatch.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverHvm.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverImage.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverKernelBaseline.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverNetworkTraffic.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverPiDdb.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverPower.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverStorageForensics.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverSystemTime.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverVirtualization.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverWorkQueue.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverCallback.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverBugcheck.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverCapabilities.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverCapability.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverClient.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDynData.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkRuntimeDynData.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDebugOutput.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverError.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverFile.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverHwid.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverHandle.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverIoctlRegistry.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverKernel.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverKeyboard.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverMemory.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverMutation.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcess.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverRegistry.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverSection.cpp" />
+    <ClCompile Include="..\..\shared\platform\file\PeAnalyzer.cpp" />
+    <ClCompile Include="..\..\shared\platform\process\Process.cpp" />
+    <ClCompile Include="..\..\shared\platform\service\Service.cpp" />
+    <ClCompile Include="..\..\shared\platform\string\String.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="app\MainWindow.h" />
+    <ClInclude Include="core\Common.h" />
+    <ClInclude Include="core\DriverLease.h" />
+    <ClInclude Include="core\DriverLeasePolicy.h" />
+    <ClInclude Include="core\DriverService.h" />
+    <ClInclude Include="core\EntityRef.h" />
+    <ClInclude Include="core\NtApi.h" />
+    <ClInclude Include="core\PathUtils.h" />
+    <ClInclude Include="core\Privilege.h" />
+    <ClInclude Include="core\Win32Lean.h" />
+    <ClInclude Include="core\WorkspaceConfig.h" />
+    <ClInclude Include="docking\DockManager.h" />
+    <ClInclude Include="features\audit_common\AuditCommon.h" />
+    <ClInclude Include="features\audit_common\AuditFormatting.h" />
+    <ClInclude Include="features\audit_common\AuditStatus.h" />
+    <ClInclude Include="features\audit_common\AuditSummaryPanel.h" />
+    <ClInclude Include="features\audit_common\AuditTable.h" />
+    <ClInclude Include="features\driver\DriverActions.h" />
+    <ClInclude Include="features\driver\DriverDebugOutputView.h" />
+    <ClInclude Include="features\driver\DriverEnumerator.h" />
+    <ClInclude Include="features\driver\DriverFeature.h" />
+    <ClInclude Include="features\driver\DriverModel.h" />
+    <ClInclude Include="features\driver\DriverObjectView.h" />
+    <ClInclude Include="features\driver\DriverOverviewView.h" />
+    <ClInclude Include="features\FeatureRegistry.h" />
+    <ClInclude Include="features\file\FileActions.h" />
+    <ClInclude Include="features\file\FileFeature.h" />
+    <ClInclude Include="features\file\FileSystemEnumerator.h" />
+    <ClInclude Include="features\file\FileView.h" />
+    <ClInclude Include="features\file\PathNavigator.h" />
+    <ClInclude Include="features\hardware\HardwareEnumerator.h" />
+    <ClInclude Include="features\hardware\HardwareFeature.h" />
+    <ClInclude Include="features\hardware\HardwareHwidDispatchView.h" />
+    <ClInclude Include="features\hardware\HardwareModel.h" />
+    <ClInclude Include="features\hardware\HardwareView.h" />
+    <ClInclude Include="features\handle\HandleClient.h" />
+    <ClInclude Include="features\handle\HandleFeature.h" />
+    <ClInclude Include="features\handle\HandlePage.h" />
+    <ClInclude Include="features\kernel\KernelAtomTableFeature.h" />
+    <ClInclude Include="features\kernel\KernelBaseNamedObjectsFeature.h" />
+    <ClInclude Include="features\kernel\KernelCallbackEnumerationFeature.h" />
+    <ClInclude Include="features\kernel\KernelCallbackEventReceiver.h" />
+    <ClInclude Include="features\kernel\KernelCallbackInterceptFeature.h" />
+    <ClInclude Include="features\kernel\KernelCatalog.h" />
+    <ClInclude Include="features\kernel\KernelCommunicationEndpointFeature.h" />
+    <ClInclude Include="features\kernel\KernelDeviceDriverObjectsFeature.h" />
+    <ClInclude Include="features\kernel\KernelDriverStatusFeature.h" />
+    <ClInclude Include="features\kernel\KernelDynDataFeature.h" />
+    <ClInclude Include="features\kernel\KernelDynDataProfiles.h" />
+    <ClInclude Include="features\kernel\KernelFacade.h" />
+    <ClInclude Include="features\kernel\KernelFeature.h" />
+    <ClInclude Include="features\kernel\KernelIatEatHookFeature.h" />
+    <ClInclude Include="features\kernel\KernelInlineHookFeature.h" />
+    <ClInclude Include="features\kernel\KernelModel.h" />
+    <ClInclude Include="features\kernel\KernelNamedPipeFeature.h" />
+    <ClInclude Include="features\kernel\KernelNativeQueries.h" />
+    <ClInclude Include="features\kernel\KernelNtQueryLegacyFeature.h" />
+    <ClInclude Include="features\kernel\KernelObjectDirectoryRecursiveFeature.h" />
+    <ClInclude Include="features\kernel\KernelObjectNamespaceFeature.h" />
+    <ClInclude Include="features\kernel\KernelObjectTypeMatrixFeature.h" />
+    <ClInclude Include="features\kernel\KernelPage.h" />
+    <ClInclude Include="features\kernel\KernelPageLayout.h" />
+    <ClInclude Include="features\kernel\KernelR0ExtendedFeature.h" />
+    <ClInclude Include="features\kernel\KernelShadowSsdtFeature.h" />
+    <ClInclude Include="features\kernel\KernelSsdtFeature.h" />
+    <ClInclude Include="features\kernel\KernelSymbolicLinkFeature.h" />
+    <ClInclude Include="features\memory\DriverMemoryClient.h" />
+    <ClInclude Include="features\memory\DriverMemoryModel.h" />
+    <ClInclude Include="features\memory\DriverMemoryView.h" />
+    <ClInclude Include="features\memory\MemoryFeature.h" />
+    <ClInclude Include="features\memory\MemoryInspection.h" />
+    <ClInclude Include="features\memory\MemorySnapshot.h" />
+    <ClInclude Include="features\memory\MemoryWritePlan.h" />
+    <ClInclude Include="features\misc\MiscFeature.h" />
+    <ClInclude Include="features\monitor\EtwEventModel.h" />
+    <ClInclude Include="features\monitor\EtwFilterDialog.h" />
+    <ClInclude Include="features\monitor\EtwFilterModel.h" />
+    <ClInclude Include="features\monitor\EtwMonitorView.h" />
+    <ClInclude Include="features\monitor\EtwSessionController.h" />
+    <ClInclude Include="features\monitor\MonitorFeature.h" />
+    <ClInclude Include="features\network\NetworkFeature.h" />
+    <ClInclude Include="features\network\NetworkModel.h" />
+    <ClInclude Include="features\network\NetworkView.h" />
+    <ClInclude Include="features\process\ProcessActions.h" />
+    <ClInclude Include="features\process\ProcessEnumerator.h" />
+    <ClInclude Include="features\process\ProcessFeature.h" />
+    <ClInclude Include="features\process\ProcessModel.h" />
+    <ClInclude Include="features\process\ProcessView.h" />
+    <ClInclude Include="features\process\ProcessColumns.h" />
+    <ClInclude Include="features\registry\RegistryActions.h" />
+    <ClInclude Include="features\registry\RegistryFeature.h" />
+    <ClInclude Include="features\registry\RegistryModel.h" />
+    <ClInclude Include="features\registry\RegistrySearchModel.h" />
+    <ClInclude Include="features\registry\RegistrySearchView.h" />
+    <ClInclude Include="features\registry\RegistryView.h" />
+    <ClInclude Include="features\process_detail\ProcessDetailCollector.h" />
+    <ClInclude Include="features\process_detail\ProcessDetailFeature.h" />
+    <ClInclude Include="features\process_detail\ProcessDetailPage.h" />
+    <ClInclude Include="features\process_detail\ProcessDetailTypes.h" />
+    <ClInclude Include="features\driver\DriverUnloadedView.h" />
+    <ClInclude Include="features\net_tools\NetToolsActions.h" />
+    <ClInclude Include="features\net_tools\NetToolsConnectionView.h" />
+    <ClInclude Include="features\net_tools\NetToolsDiagnostics.h" />
+    <ClInclude Include="features\net_tools\NetToolsDiagnosticView.h" />
+    <ClInclude Include="features\net_tools\NetToolsEnumerator.h" />
+    <ClInclude Include="features\net_tools\NetToolsFirewallView.h" />
+    <ClInclude Include="features\net_tools\NetToolsModel.h" />
+    <ClInclude Include="features\hardware_stats\BusDeviceView.h" />
+    <ClInclude Include="features\hardware_stats\DeviceTopologyEnumerator.h" />
+    <ClInclude Include="features\hardware_stats\DiskActivityView.h" />
+    <ClInclude Include="features\hardware_stats\HardwareStatsModel.h" />
+    <ClInclude Include="features\hardware_stats\PerformanceSampler.h" />
+    <ClInclude Include="features\hardware_stats\PerformanceView.h" />
+    <ClInclude Include="features\hardware_stats\UsbTopologyView.h" />
+    <ClInclude Include="features\sys_tools\ContextMenuScanner.h" />
+    <ClInclude Include="features\sys_tools\ContextMenuView.h" />
+    <ClInclude Include="features\sys_tools\EventLogReader.h" />
+    <ClInclude Include="features\sys_tools\EventLogView.h" />
+    <ClInclude Include="features\sys_tools\FileHolderScanner.h" />
+    <ClInclude Include="features\sys_tools\FileHolderView.h" />
+    <ClInclude Include="features\sys_tools\IoctlDecoder.h" />
+    <ClInclude Include="features\sys_tools\IoctlDecoderView.h" />
+    <ClInclude Include="features\sys_tools\SysToolsFeature.h" />
+    <ClInclude Include="features\sys_tools\SystemTimeInfo.h" />
+    <ClInclude Include="features\sys_tools\SystemTimeView.h" />
+    <ClInclude Include="features\window_tools\WindowToolsCaptureView.h" />
+    <ClInclude Include="features\window_tools\WindowToolsClipboardView.h" />
+    <ClInclude Include="features\window_tools\WindowToolsCommon.h" />
+    <ClInclude Include="features\window_tools\WindowToolsHierarchyView.h" />
+    <ClInclude Include="features\window_tools\WindowToolsHotkeyView.h" />
+    <ClInclude Include="features\privilege\PrivilegeActions.h" />
+    <ClInclude Include="features\privilege\PrivilegeEnumerator.h" />
+    <ClInclude Include="features\privilege\PrivilegeFeature.h" />
+    <ClInclude Include="features\privilege\PrivilegeModel.h" />
+    <ClInclude Include="features\privilege\PrivilegeView.h" />
+    <ClInclude Include="features\service\ServiceActions.h" />
+    <ClInclude Include="features\service\ServiceEnumerator.h" />
+    <ClInclude Include="features\service\ServiceFeature.h" />
+    <ClInclude Include="features\service\ServiceModel.h" />
+    <ClInclude Include="features\service\ServiceView.h" />
+    <ClInclude Include="features\startup\StartupActions.h" />
+    <ClInclude Include="features\startup\StartupEnumerator.h" />
+    <ClInclude Include="features\startup\StartupFeature.h" />
+    <ClInclude Include="features\startup\StartupModel.h" />
+    <ClInclude Include="features\startup\StartupView.h" />
+    <ClInclude Include="features\window\WindowActions.h" />
+    <ClInclude Include="features\window\WindowEnumerator.h" />
+    <ClInclude Include="features\window\WindowFeature.h" />
+    <ClInclude Include="features\window\WindowModel.h" />
+    <ClInclude Include="features\window\Win32kTimerEvidenceModel.h" />
+    <ClInclude Include="features\window\WindowView.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="ui\Controls.h" />
+    <ClInclude Include="ui\EntityNavigation.h" />
+    <ClInclude Include="ui\EvidenceSession.h" />
+    <ClInclude Include="ui\EvidenceSessionView.h" />
+    <ClInclude Include="ui\ExportUtil.h" />
+    <ClInclude Include="ui\AsyncTask.h" />
+    <ClInclude Include="ui\FilterBar.h" />
+    <ClInclude Include="ui\IconUtil.h" />
+    <ClInclude Include="ui\ListViewUtil.h" />
+    <ClInclude Include="ui\LoadingOverlay.h" />
+    <ClInclude Include="ui\MenuUtil.h" />
+    <ClInclude Include="ui\ModuleDescriptor.h" />
+    <ClInclude Include="ui\NumericSortKey.h" />
+    <ClInclude Include="ui\PlaceholderPage.h" />
+    <ClInclude Include="ui\SplitterUtil.h" />
+    <ClInclude Include="ui\TabUtil.h" />
+    <ClInclude Include="ui\TextFindSupport.h" />
+    <ClInclude Include="ui\Theme.h" />
+    <ClInclude Include="ui\TreeViewUtil.h" />
+    <ClInclude Include="ui\VirtualListView.h" />
+    <ClInclude Include="ui\WorkspaceHost.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverCapabilities.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverClient.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverError.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkRuntimeDynData.h" />
+    <None Include="..\..\shared\ark_client\ArkRuntimeDynDataCatalog.inc" />
+    <ClInclude Include="..\..\shared\platform\file\PeAnalyzer.h" />
+    <ClInclude Include="..\..\shared\platform\process\Process.h" />
+    <ClInclude Include="..\..\shared\platform\string\String.h" />
+    <ClInclude Include="..\..\shared\KswordArkLogProtocol.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkAlpcIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkCallbackIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkCapabilityIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkDynDataIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkFileIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkFilterIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkDeviceAuditIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkHwidIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkKernelIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkKeyboardIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkMemoryIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkMutationIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkPreflightIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkProcessIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkRedirectIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkRegistryIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkSafetyIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkSectionIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkSecurityAuditIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkStorageIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkThreadIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkTrustIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkNetworkIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkKernelObjectIoctl.h" />
+    <ClInclude Include="..\..\shared\driver\KswordArkWslSiloIoctl.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="..\desktop\Resource\Logo\KswordLogo.ico" />
+    <Image Include="..\desktop\Resource\Logo\Mainlogo.png" />
+  </ItemGroup>
+  <Target Name="BuildKswordArkDriverBeforeLightEmbed" BeforeTargets="PrepareKswordArkLightEmbeddedDriver" Condition="'$(KswordArkLightEnsureDriverBuilt)'!='false' and ('$(SolutionPath)'=='' or '$(SolutionPath)'=='*Undefined*')">
+    <!--
+      Inputs:
+        - A standalone KswordARKLight project build where MSBuild did not get a
+          real SolutionDir from Ksword5.1.sln.
+      Processing:
+        - Build KswordARKDriver explicitly before the Light resource compile,
+          passing the repository solution directory that makes the driver project
+          emit KswordARK.sys to the same $(TargetDir) that Light will embed from.
+        - The driver project's KswordArkAutoVariantSignAfterBuild target is wired
+          to AfterTargets=Build, so this nested build returns only after the
+          two-pass CSignTool + AuthenticodeVariant signing chain has completed.
+      Return behavior:
+        - No value is returned. A driver build failure fails the Light build
+          before any stale KswordARK.sys can be embedded.
+    -->
+    <PropertyGroup>
+      <KswordArkLightDriverProject>$(MSBuildProjectDirectory)\..\..\drivers\ark\KswordARKDriver.vcxproj</KswordArkLightDriverProject>
+      <KswordArkLightStandaloneSolutionDir>$(MSBuildProjectDirectory)\..\..\</KswordArkLightStandaloneSolutionDir>
+    </PropertyGroup>
+    <Message Importance="High" Text="KswordARKLight: standalone build detected; building/signing KswordARKDriver before embedding. Set /p:KswordArkLightEnsureDriverBuilt=false only if a fresh signed KswordARK.sys is already present." />
+    <MSBuild Projects="$(KswordArkLightDriverProject)" Targets="Build" Properties="Configuration=$(Configuration);Platform=$(Platform);SolutionDir=$(KswordArkLightStandaloneSolutionDir)" />
+  </Target>
+  <Target Name="PrepareKswordArkLightEmbeddedDriver" BeforeTargets="ResourceCompile">
+    <!--
+      Inputs:
+        - $(TargetDir)KswordARK.sys, which is the generated driver location used
+          by standalone KswordARKLight builds.
+        - During solution builds, Ksword5.1.sln orders KswordARKDriver before
+          KswordARKLight. During standalone project builds, the
+          BuildKswordArkDriverBeforeLightEmbed target above provides the same
+          ordering and passes a SolutionDir that makes the signed driver land in
+          this same generated directory before this target copies it.
+      Processing:
+        - When the unsigned companion output KswordARK_Clean.sys exists, restore it
+          to $(TargetDir)KswordARK.sys only when KswordArkLightReuseSignedDriver
+          is explicitly set to false.  Solution builds already run the driver
+          project's post-build variant signing target first, so the default path
+          reuses that signed driver and avoids a second two-pass CSignTool run.
+        - Optionally sign $(TargetDir)KswordARK.sys before copying it into the
+          project-local generated path referenced by KswordARKLight.rc, because
+          .rc files cannot expand MSBuild properties inside RCDATA filenames.
+      Return behavior:
+        - There is no return value; the target fails early with an actionable
+          error if the driver binary is missing.
+    -->
+    <PropertyGroup>
+      <KswordArkLightDriverOutputPath>$(TargetDir)KswordARK.sys</KswordArkLightDriverOutputPath>
+      <KswordArkLightCleanDriverPath>$(TargetDir)KswordARK_Clean.sys</KswordArkLightCleanDriverPath>
+      <KswordArkLightEmbeddedDriverDir>$(MSBuildProjectDirectory)\generated\</KswordArkLightEmbeddedDriverDir>
+      <KswordArkLightEmbeddedDriverPath>$(KswordArkLightEmbeddedDriverDir)KswordARK.sys</KswordArkLightEmbeddedDriverPath>
+      <KswordArkLightSignScript>$(MSBuildProjectDirectory)\..\..\scripts\Sign-KswordArkDriverVariant.ps1</KswordArkLightSignScript>
+      <KswordArkLightPowerShellExe Condition="'$(KswordArkLightPowerShellExe)'==''">powershell</KswordArkLightPowerShellExe>
+      <KswordArkLightReuseSignedDriver Condition="'$(KswordArkLightReuseSignedDriver)'==''">true</KswordArkLightReuseSignedDriver>
+      <KswordArkLightShouldSignDriver Condition="'$(KswordArkLightReuseSignedDriver)'!='true' and '$(KswordArkLightSkipDriverSign)'!='true'">true</KswordArkLightShouldSignDriver>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(KswordArkLightDriverOutputPath)')" Text="KswordARKLight cannot embed KswordARK.sys because it was not found at $(KswordArkLightDriverOutputPath). Build KswordARKDriver first when building the solution, or place KswordARK.sys in the KswordARKLight generated output directory for a standalone project build." />
+    <Error Condition="'$(KswordArkLightShouldSignDriver)'=='true' and !Exists('$(KswordArkLightSignScript)')" Text="KswordARKLight cannot sign the embedded driver because the signing script was not found: $(KswordArkLightSignScript)" />
+    <Message Importance="High" Condition="'$(KswordArkLightShouldSignDriver)'!='true'" Text="KswordARKLight: reusing existing driver for RCDATA embedding: $(KswordArkLightDriverOutputPath). Set /p:KswordArkLightReuseSignedDriver=false to force a clean restore and re-sign." />
+    <Message Importance="High" Condition="'$(KswordArkLightShouldSignDriver)'=='true' and Exists('$(KswordArkLightCleanDriverPath)') and '$(KswordArkLightSkipRestoreCleanDriver)'!='true'" Text="KswordARKLight: restoring unsigned driver before embedding sign: $(KswordArkLightCleanDriverPath) -> $(KswordArkLightDriverOutputPath)" />
+    <Copy Condition="'$(KswordArkLightShouldSignDriver)'=='true' and Exists('$(KswordArkLightCleanDriverPath)') and '$(KswordArkLightSkipRestoreCleanDriver)'!='true'" SourceFiles="$(KswordArkLightCleanDriverPath)" DestinationFiles="$(KswordArkLightDriverOutputPath)" SkipUnchangedFiles="false" />
+    <Message Importance="High" Condition="'$(KswordArkLightShouldSignDriver)'=='true'" Text="KswordARKLight: signing $(KswordArkLightDriverOutputPath) before embedding it as RCDATA. Set /p:KswordArkLightReuseSignedDriver=true or /p:KswordArkLightSkipDriverSign=true to skip." />
+    <Exec Condition="'$(KswordArkLightShouldSignDriver)'=='true'" Command="&quot;$(KswordArkLightPowerShellExe)&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;$(KswordArkLightSignScript)&quot; -DriverPath &quot;$(KswordArkLightDriverOutputPath)&quot;" IgnoreStandardErrorWarningFormat="true" />
+    <MakeDir Directories="$(KswordArkLightEmbeddedDriverDir)" />
+    <Copy SourceFiles="$(KswordArkLightDriverOutputPath)" DestinationFiles="$(KswordArkLightEmbeddedDriverPath)" SkipUnchangedFiles="false" />
+  </Target>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+  <ItemGroup>
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverFirmware.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessControl.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessEnumeration.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessInjection.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverProcessSecurity.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverThreadControl.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDeviceAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverDynDataV4.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverI8042Audit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverNetworkAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverNetworkEvents.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverObjectAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverPlatformAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverSecurityAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverStorageAudit.cpp" />
+    <ClCompile Include="..\..\shared\ark_client\ArkDriverWin32kAudit.cpp" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverAuditSupport.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverCallbackTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverDebugOutputTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverDriverControlTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverDynDataTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverFileTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverHvmTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverIoTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverKernelTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverMemoryTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverMutationTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverNetworkSupport.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverNetworkTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverObjectTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverPlatformTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverProcessTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverRegistryTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverResponseSupport.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverSecurityTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverStorageTypes.h" />
+    <ClInclude Include="..\..\shared\ark_client\ArkDriverWindowTypes.h" />
+  </ItemGroup>
+</Project>

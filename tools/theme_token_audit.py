@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Audit KSword theme colour tokens for use outside Qt Style Sheets.
 
-theme.h exposes two families of colour accessors:
+Theme.h exposes two families of colour accessors:
 
 * dynamic tokens return a Qt Style Sheet palette role such as ``palette(base)``;
   Qt re-resolves them on every repaint, so they follow theme changes for free;
@@ -15,7 +15,7 @@ inherited colour.  Nothing warns at compile time, and the two accessor families
 differ by a single word, so the mistake is easy to make and hard to see.
 
 This audit fails the build when a dynamic token reaches one of those consumers.
-The token list is parsed out of theme.h, so new tokens are covered automatically.
+The token list is parsed out of Theme.h, so new tokens are covered automatically.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ SOURCE_SUFFIXES = {".cpp", ".h", ".hpp", ".cc", ".cxx"}
 SKIPPED_DIRS = {"x64", "debug", "release", "backup", "moc", ".git"}
 SKIPPED_FILE_PREFIXES = ("moc_", "qrc_", "ui_")
 
-# theme.h 里动态 token 的两种写法。
+# Two ways to write dynamic tokens in Theme.h.
 DYNAMIC_FUNCTION_RE = re.compile(
     r"inline QString ([A-Za-z_]\w*)\(\)\s*\{\s*return QStringLiteral\(\"palette\("
 )
@@ -38,34 +38,34 @@ DYNAMIC_CONSTANT_RE = re.compile(
     r"inline const QString ([A-Za-z_]\w*)\s*=\s*QStringLiteral\(\"palette\("
 )
 
-# 禁止消费动态 token 的上下文。每条给出「怎么改」而不是只说「不许用」。
-# 回归样本里「这一行应当被报出」的标记；只认行尾形式，正文里提到它不算。
+# Contexts that consume dynamic tokens are forbidden. Each entry must specify 'how to fix' rather than just stating 'not allowed'.
+# Mark in regression samples indicating 'this line should be reported'; only the line-end format is recognized, not mentions within the body.
 EXPECT_MARK_RE = re.compile(r"//\s*KSWORD_AUDIT_EXPECT\s*$")
 
 FORBIDDEN_CONTEXTS = (
     (
         re.compile(r"\bQColor\s*\("),
-        "QColor 的字符串构造解析不了 palette(...)，会得到无效颜色",
+        "QColor's string constructor cannot parse palette(...), resulting in an invalid color",
     ),
     (
         re.compile(r"\bQ(?:Pen|Brush)\s*\("),
-        "QPen/QBrush 需要真实颜色，palette(...) 不是颜色值",
+        "QPen/QBrush require real colors, palette(...) is not a color value",
     ),
     (
         re.compile(r"\.set(?:Foreground|Background)\s*\("),
-        "QTextCharFormat/QTableWidgetItem 走绘制路径，不解析 palette(...)",
+        "QTextCharFormat/QTableWidgetItem follow the draw path, do not parse palette(...)",
     ),
     (
         re.compile(r"<(?:div|span|td|tr|p|font|b|i|h[1-6]|html|body)\b[^>]*style\s*="),
-        "QLabel/QTextEdit 富文本由 QTextDocument 解析，不认 palette(...)",
+        "QLabel/QTextEdit rich text is parsed by QTextDocument, does not recognize palette(...)",
     ),
     (
         re.compile(r"\bsetHtml\s*\("),
-        "setHtml 走 QTextDocument，不认 palette(...)",
+        "setHtml goes through QTextDocument, does not recognize palette(...)",
     ),
     (
         re.compile(r"environment\.insert\s*\(|\bsetEnvironment\s*\("),
-        "跨进程传参：对端没有本进程的样式表，解析不了 palette(...)",
+        "Cross-process parameter passing: The peer does not have this process's stylesheet and cannot parse palette(...)",
     ),
 )
 
@@ -157,11 +157,11 @@ def statement_range(text: str, index: int, code_mask: bytearray) -> tuple[int, i
 
 def audit_file(path: Path, tokens: set[str]) -> list[Violation]:
     text = path.read_text(encoding="utf-8", errors="replace")
-    if "KswordTheme::" not in text:
+    if "ksword_theme::" not in text:
         return []
     violations: list[Violation] = []
     code_mask = build_code_mask(text)
-    pattern = re.compile(r"KswordTheme::(" + "|".join(sorted(tokens)) + r")\b")
+    pattern = re.compile(r"ksword_theme::(" + "|".join(sorted(tokens)) + r")\b")
     for match in pattern.finditer(text):
         line_start = text.rfind("\n", 0, match.start()) + 1
         line_text = text[line_start : text.find("\n", match.start())].strip()
@@ -225,10 +225,10 @@ def main() -> int:
     )
     arguments = parser.parse_args()
 
-    default_header = Path(__file__).resolve().parent.parent / "Ksword5.1" / "Ksword5.1" / "theme.h"
+    default_header = Path(__file__).resolve().parent.parent / 'apps/desktop/Theme.h'
     source_root: Path = arguments.source_root
     theme_header: Path = arguments.theme_header or (
-        (source_root / "theme.h") if source_root is not None else default_header
+        (source_root / "Theme.h") if source_root is not None else default_header
     )
     if source_root is None and not arguments.self_test:
         print("theme token audit: --source-root is required unless --self-test is given", file=sys.stderr)

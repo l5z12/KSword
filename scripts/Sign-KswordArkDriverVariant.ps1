@@ -423,8 +423,8 @@ function Invoke-KswordDriverVariantSign {
     }
 }
 
-# 发布构建通过参数或环境变量要求硬校验；开发机默认只警告，
-# 因为本地回退到测试签名时 /kp 必然失败。
+# Release builds require hard validation via parameters or environment variables; development machines default to warnings only.
+# Because local fallback to test signing will inevitably fail with /kp.
 $strictSignatureCheck = $RequireKernelSignature.IsPresent -or ($env:KSWORD_REQUIRE_KERNEL_SIGNATURE -eq '1')
 
 try {

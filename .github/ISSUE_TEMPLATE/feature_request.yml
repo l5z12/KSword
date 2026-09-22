@@ -1,0 +1,22 @@
+name: Improvement proposal / 改进建议
+description: Discuss a focused change before implementation / 讨论具体改进
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve / 要解决的问题
+      description: Describe the workflow and who would benefit, with an example.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior / 建议的行为
+      description: Describe the result you want and any alternatives you considered.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Implementation and validation ideas / 实现与验证思路
+      description: Optional. Mention affected modules, compatibility needs, and how the result could be tested.

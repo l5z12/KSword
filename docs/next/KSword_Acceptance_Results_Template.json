@@ -103,7 +103,7 @@
       "implementation_paths": [
         "shared/evidence/ObjectIdentity.h",
         "shared/evidence/ObjectIdentity.cpp",
-        "KswordARKLightTests/EvidenceContractTests.cpp"
+        "tests/native/KswordARKLightTests/EvidenceContractTests.cpp"
       ],
       "environments": [
         "E0"
@@ -479,7 +479,7 @@
       "implementation_paths": [
         "shared/evidence/PeImageMap.h",
         "shared/evidence/PeImageMap.cpp",
-        "KswordARKLightTests/ImageIntegrityTests.cpp"
+        "tests/native/KswordARKLightTests/ImageIntegrityTests.cpp"
       ],
       "environments": [
         "E0"
@@ -511,7 +511,7 @@
       "implementation_paths": [
         "shared/evidence/PeImageMap.h",
         "shared/evidence/PeImageMap.cpp",
-        "KswordARKLightTests/ImageIntegrityTests.cpp"
+        "tests/native/KswordARKLightTests/ImageIntegrityTests.cpp"
       ],
       "environments": [
         "E0"
@@ -546,7 +546,7 @@
       "implementation_paths": [
         "shared/evidence/ImageDiff.h",
         "shared/evidence/ImageDiff.cpp",
-        "KswordARKLightTests/ImageIntegrityTests.cpp"
+        "tests/native/KswordARKLightTests/ImageIntegrityTests.cpp"
       ],
       "environments": [
         "E0"
@@ -578,7 +578,7 @@
       "implementation_paths": [
         "shared/evidence/ImageDiff.h",
         "shared/evidence/ImageDiff.cpp",
-        "KswordARKLightTests/ImageIntegrityTests.cpp"
+        "tests/native/KswordARKLightTests/ImageIntegrityTests.cpp"
       ],
       "environments": [
         "E0"
@@ -613,7 +613,7 @@
       "implementation_paths": [
         "shared/evidence/ImageDiff.h",
         "shared/evidence/ImageDiff.cpp",
-        "KswordARKLightTests/ImageIntegrityTests.cpp"
+        "tests/native/KswordARKLightTests/ImageIntegrityTests.cpp"
       ],
       "environments": [
         "E0"
@@ -1043,7 +1043,7 @@
       "verification_status": "NOT_RUN",
       "implementation_paths": [
         "shared/evidence/CrossViewDiff.cpp",
-        "KswordARKLightTests/CrossViewTests.cpp"
+        "tests/native/KswordARKLightTests/CrossViewTests.cpp"
       ],
       "environments": [
         "E0"
@@ -1131,7 +1131,7 @@
       "implementation_paths": [
         "shared/evidence/MemoryRegionEvidence.h",
         "shared/evidence/MemoryRegionEvidence.cpp",
-        "KswordARKLightTests/MemoryEvidenceTests.cpp"
+        "tests/native/KswordARKLightTests/MemoryEvidenceTests.cpp"
       ],
       "environments": [
         "E0"
@@ -1163,7 +1163,7 @@
       "implementation_paths": [
         "shared/evidence/MemoryRegionEvidence.h",
         "shared/evidence/MemoryRegionEvidence.cpp",
-        "KswordARKLightTests/MemoryEvidenceTests.cpp"
+        "tests/native/KswordARKLightTests/MemoryEvidenceTests.cpp"
       ],
       "environments": [
         "E0"
@@ -1196,7 +1196,7 @@
       "implementation_paths": [
         "shared/evidence/PageTableWalk.h",
         "shared/evidence/PageTableWalk.cpp",
-        "KswordARKLightTests/MemoryEvidenceTests.cpp"
+        "tests/native/KswordARKLightTests/MemoryEvidenceTests.cpp"
       ],
       "environments": [
         "E0"
@@ -1228,7 +1228,7 @@
       "implementation_paths": [
         "shared/evidence/PageTableWalk.h",
         "shared/evidence/PageTableWalk.cpp",
-        "KswordARKLightTests/MemoryEvidenceTests.cpp"
+        "tests/native/KswordARKLightTests/MemoryEvidenceTests.cpp"
       ],
       "environments": [
         "E0"
@@ -1263,7 +1263,7 @@
       "implementation_paths": [
         "shared/evidence/PageTableWalk.h",
         "shared/evidence/PageTableWalk.cpp",
-        "KswordARKLightTests/MemoryEvidenceTests.cpp"
+        "tests/native/KswordARKLightTests/MemoryEvidenceTests.cpp"
       ],
       "environments": [
         "E0"
@@ -1318,7 +1318,7 @@
       "implementation_paths": [
         "shared/evidence/MemoryRegionEvidence.h",
         "shared/evidence/MemoryRegionEvidence.cpp",
-        "KswordARKLightTests/MemoryEvidenceTests.cpp"
+        "tests/native/KswordARKLightTests/MemoryEvidenceTests.cpp"
       ],
       "environments": [
         "E0"
@@ -1370,7 +1370,7 @@
       "implementation_paths": [
         "shared/evidence/MemoryRegionEvidence.h",
         "shared/evidence/MemoryRegionEvidence.cpp",
-        "KswordARKLightTests/MemoryEvidenceTests.cpp"
+        "tests/native/KswordARKLightTests/MemoryEvidenceTests.cpp"
       ],
       "environments": [
         "E0"
@@ -1402,7 +1402,7 @@
       "verification_status": "NOT_RUN",
       "implementation_paths": [
         "shared/evidence/ScanBudget.h",
-        "KswordARKLightTests/MemoryEvidenceTests.cpp"
+        "tests/native/KswordARKLightTests/MemoryEvidenceTests.cpp"
       ],
       "environments": [
         "E0"
@@ -1475,7 +1475,7 @@
       "implementation_paths": [
         "shared/evidence/TimelineCore.h",
         "shared/evidence/TimelineCore.cpp",
-        "KswordARKLightTests/TimelineTests.cpp"
+        "tests/native/KswordARKLightTests/TimelineTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -1505,7 +1505,7 @@
       "implementation_paths": [
         "shared/evidence/TimelineCore.h",
         "shared/evidence/TimelineCore.cpp",
-        "KswordARKLightTests/TimelineTests.cpp"
+        "tests/native/KswordARKLightTests/TimelineTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -1535,7 +1535,7 @@
       "implementation_paths": [
         "shared/evidence/TimelineCore.h",
         "shared/evidence/TimelineCore.cpp",
-        "KswordARKLightTests/TimelineTests.cpp"
+        "tests/native/KswordARKLightTests/TimelineTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -1565,7 +1565,7 @@
       "implementation_paths": [
         "shared/evidence/TimelineCore.h",
         "shared/evidence/TimelineCore.cpp",
-        "KswordARKLightTests/TimelineTests.cpp"
+        "tests/native/KswordARKLightTests/TimelineTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -1595,7 +1595,7 @@
       "implementation_paths": [
         "shared/evidence/TimelineCore.h",
         "shared/evidence/TimelineCore.cpp",
-        "KswordARKLightTests/TimelineTests.cpp"
+        "tests/native/KswordARKLightTests/TimelineTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -1625,7 +1625,7 @@
       "implementation_paths": [
         "shared/evidence/TimelineCore.h",
         "shared/evidence/TimelineCore.cpp",
-        "KswordARKLightTests/TimelineTests.cpp"
+        "tests/native/KswordARKLightTests/TimelineTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -1675,7 +1675,7 @@
       "implementation_paths": [
         "shared/evidence/TimelineCore.h",
         "shared/evidence/TimelineCore.cpp",
-        "KswordARKLightTests/TimelineTests.cpp"
+        "tests/native/KswordARKLightTests/TimelineTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -1705,7 +1705,7 @@
       "implementation_paths": [
         "shared/evidence/TimelineCore.h",
         "shared/evidence/TimelineCore.cpp",
-        "KswordARKLightTests/TimelineTests.cpp"
+        "tests/native/KswordARKLightTests/TimelineTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -1735,7 +1735,7 @@
       "implementation_paths": [
         "shared/evidence/TimelineCore.h",
         "shared/evidence/TimelineCore.cpp",
-        "KswordARKLightTests/TimelineTests.cpp"
+        "tests/native/KswordARKLightTests/TimelineTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -1785,7 +1785,7 @@
       "implementation_paths": [
         "shared/evidence/TimelineCore.h",
         "shared/evidence/TimelineCore.cpp",
-        "KswordARKLightTests/TimelineTests.cpp"
+        "tests/native/KswordARKLightTests/TimelineTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -1815,7 +1815,7 @@
       "implementation_paths": [
         "shared/evidence/WfpAnalysis.h",
         "shared/evidence/WfpAnalysis.cpp",
-        "KswordARKLightTests/WfpTests.cpp"
+        "tests/native/KswordARKLightTests/WfpTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -1845,7 +1845,7 @@
       "implementation_paths": [
         "shared/evidence/WfpAnalysis.h",
         "shared/evidence/WfpAnalysis.cpp",
-        "KswordARKLightTests/WfpTests.cpp"
+        "tests/native/KswordARKLightTests/WfpTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -1875,7 +1875,7 @@
       "implementation_paths": [
         "shared/evidence/WfpAnalysis.h",
         "shared/evidence/WfpAnalysis.cpp",
-        "KswordARKLightTests/WfpTests.cpp"
+        "tests/native/KswordARKLightTests/WfpTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -1905,7 +1905,7 @@
       "implementation_paths": [
         "shared/evidence/WfpAnalysis.h",
         "shared/evidence/WfpAnalysis.cpp",
-        "KswordARKLightTests/WfpTests.cpp"
+        "tests/native/KswordARKLightTests/WfpTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -1935,7 +1935,7 @@
       "implementation_paths": [
         "shared/evidence/WfpAnalysis.h",
         "shared/evidence/WfpAnalysis.cpp",
-        "KswordARKLightTests/WfpTests.cpp"
+        "tests/native/KswordARKLightTests/WfpTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -1965,7 +1965,7 @@
       "implementation_paths": [
         "shared/evidence/WfpAnalysis.h",
         "shared/evidence/WfpAnalysis.cpp",
-        "KswordARKLightTests/WfpTests.cpp"
+        "tests/native/KswordARKLightTests/WfpTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2015,7 +2015,7 @@
       "implementation_paths": [
         "shared/evidence/WfpAnalysis.h",
         "shared/evidence/WfpAnalysis.cpp",
-        "KswordARKLightTests/WfpTests.cpp"
+        "tests/native/KswordARKLightTests/WfpTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2045,7 +2045,7 @@
       "implementation_paths": [
         "shared/evidence/SecurityState.h",
         "shared/evidence/SecurityState.cpp",
-        "KswordARKLightTests/SecurityStateTests.cpp"
+        "tests/native/KswordARKLightTests/SecurityStateTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2075,7 +2075,7 @@
       "implementation_paths": [
         "shared/evidence/SecurityState.h",
         "shared/evidence/SecurityState.cpp",
-        "KswordARKLightTests/SecurityStateTests.cpp"
+        "tests/native/KswordARKLightTests/SecurityStateTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2105,7 +2105,7 @@
       "implementation_paths": [
         "shared/evidence/SecurityState.h",
         "shared/evidence/SecurityState.cpp",
-        "KswordARKLightTests/SecurityStateTests.cpp"
+        "tests/native/KswordARKLightTests/SecurityStateTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2135,7 +2135,7 @@
       "implementation_paths": [
         "shared/evidence/SecurityState.h",
         "shared/evidence/SecurityState.cpp",
-        "KswordARKLightTests/SecurityStateTests.cpp"
+        "tests/native/KswordARKLightTests/SecurityStateTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2165,7 +2165,7 @@
       "implementation_paths": [
         "shared/evidence/SecurityState.h",
         "shared/evidence/SecurityState.cpp",
-        "KswordARKLightTests/SecurityStateTests.cpp"
+        "tests/native/KswordARKLightTests/SecurityStateTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2195,7 +2195,7 @@
       "implementation_paths": [
         "shared/evidence/SecurityState.h",
         "shared/evidence/SecurityState.cpp",
-        "KswordARKLightTests/SecurityStateTests.cpp"
+        "tests/native/KswordARKLightTests/SecurityStateTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2225,7 +2225,7 @@
       "implementation_paths": [
         "shared/evidence/SecurityState.h",
         "shared/evidence/SecurityState.cpp",
-        "KswordARKLightTests/SecurityStateTests.cpp"
+        "tests/native/KswordARKLightTests/SecurityStateTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2275,7 +2275,7 @@
       "implementation_paths": [
         "shared/evidence/SnapshotCompare.h",
         "shared/evidence/SnapshotCompare.cpp",
-        "KswordARKLightTests/SnapshotCompareTests.cpp"
+        "tests/native/KswordARKLightTests/SnapshotCompareTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2305,7 +2305,7 @@
       "implementation_paths": [
         "shared/evidence/SnapshotCompare.h",
         "shared/evidence/SnapshotCompare.cpp",
-        "KswordARKLightTests/SnapshotCompareTests.cpp"
+        "tests/native/KswordARKLightTests/SnapshotCompareTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2335,7 +2335,7 @@
       "implementation_paths": [
         "shared/evidence/SnapshotCompare.h",
         "shared/evidence/SnapshotCompare.cpp",
-        "KswordARKLightTests/SnapshotCompareTests.cpp"
+        "tests/native/KswordARKLightTests/SnapshotCompareTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2365,7 +2365,7 @@
       "implementation_paths": [
         "shared/evidence/SnapshotCompare.h",
         "shared/evidence/SnapshotCompare.cpp",
-        "KswordARKLightTests/SnapshotCompareTests.cpp"
+        "tests/native/KswordARKLightTests/SnapshotCompareTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2395,7 +2395,7 @@
       "implementation_paths": [
         "shared/evidence/SnapshotCompare.h",
         "shared/evidence/SnapshotCompare.cpp",
-        "KswordARKLightTests/SnapshotCompareTests.cpp"
+        "tests/native/KswordARKLightTests/SnapshotCompareTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2425,7 +2425,7 @@
       "implementation_paths": [
         "shared/evidence/SnapshotCompare.h",
         "shared/evidence/SnapshotCompare.cpp",
-        "KswordARKLightTests/SnapshotCompareTests.cpp"
+        "tests/native/KswordARKLightTests/SnapshotCompareTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2455,7 +2455,7 @@
       "implementation_paths": [
         "shared/evidence/SnapshotCompare.h",
         "shared/evidence/SnapshotCompare.cpp",
-        "KswordARKLightTests/SnapshotCompareTests.cpp"
+        "tests/native/KswordARKLightTests/SnapshotCompareTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2525,7 +2525,7 @@
       "implementation_paths": [
         "shared/evidence/DumpFacts.h",
         "shared/evidence/DumpFacts.cpp",
-        "KswordARKLightTests/DumpFactsTests.cpp"
+        "tests/native/KswordARKLightTests/DumpFactsTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2555,7 +2555,7 @@
       "implementation_paths": [
         "shared/evidence/DumpFacts.h",
         "shared/evidence/DumpFacts.cpp",
-        "KswordARKLightTests/DumpFactsTests.cpp"
+        "tests/native/KswordARKLightTests/DumpFactsTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2585,7 +2585,7 @@
       "implementation_paths": [
         "shared/evidence/DumpFacts.h",
         "shared/evidence/DumpFacts.cpp",
-        "KswordARKLightTests/DumpFactsTests.cpp"
+        "tests/native/KswordARKLightTests/DumpFactsTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2615,7 +2615,7 @@
       "implementation_paths": [
         "shared/evidence/DumpFacts.h",
         "shared/evidence/DumpFacts.cpp",
-        "KswordARKLightTests/DumpFactsTests.cpp"
+        "tests/native/KswordARKLightTests/DumpFactsTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2645,7 +2645,7 @@
       "implementation_paths": [
         "shared/evidence/DumpFacts.h",
         "shared/evidence/DumpFacts.cpp",
-        "KswordARKLightTests/DumpFactsTests.cpp"
+        "tests/native/KswordARKLightTests/DumpFactsTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2675,7 +2675,7 @@
       "implementation_paths": [
         "shared/evidence/DumpFacts.h",
         "shared/evidence/DumpFacts.cpp",
-        "KswordARKLightTests/DumpFactsTests.cpp"
+        "tests/native/KswordARKLightTests/DumpFactsTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2705,7 +2705,7 @@
       "implementation_paths": [
         "shared/evidence/DumpFacts.h",
         "shared/evidence/DumpFacts.cpp",
-        "KswordARKLightTests/DumpFactsTests.cpp"
+        "tests/native/KswordARKLightTests/DumpFactsTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2735,7 +2735,7 @@
       "implementation_paths": [
         "shared/evidence/DumpFacts.h",
         "shared/evidence/DumpFacts.cpp",
-        "KswordARKLightTests/DumpFactsTests.cpp"
+        "tests/native/KswordARKLightTests/DumpFactsTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2765,7 +2765,7 @@
       "implementation_paths": [
         "shared/evidence/DumpFacts.h",
         "shared/evidence/DumpFacts.cpp",
-        "KswordARKLightTests/DumpFactsTests.cpp"
+        "tests/native/KswordARKLightTests/DumpFactsTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2795,7 +2795,7 @@
       "implementation_paths": [
         "shared/evidence/EntityGraph.h",
         "shared/evidence/EntityGraph.cpp",
-        "KswordARKLightTests/EntityGraphTests.cpp"
+        "tests/native/KswordARKLightTests/EntityGraphTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2825,7 +2825,7 @@
       "implementation_paths": [
         "shared/evidence/EntityGraph.h",
         "shared/evidence/EntityGraph.cpp",
-        "KswordARKLightTests/EntityGraphTests.cpp"
+        "tests/native/KswordARKLightTests/EntityGraphTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2855,7 +2855,7 @@
       "implementation_paths": [
         "shared/evidence/EntityGraph.h",
         "shared/evidence/EntityGraph.cpp",
-        "KswordARKLightTests/EntityGraphTests.cpp"
+        "tests/native/KswordARKLightTests/EntityGraphTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2885,7 +2885,7 @@
       "implementation_paths": [
         "shared/evidence/EntityGraph.h",
         "shared/evidence/EntityGraph.cpp",
-        "KswordARKLightTests/EntityGraphTests.cpp"
+        "tests/native/KswordARKLightTests/EntityGraphTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2915,7 +2915,7 @@
       "implementation_paths": [
         "shared/evidence/EntityGraph.h",
         "shared/evidence/EntityGraph.cpp",
-        "KswordARKLightTests/EntityGraphTests.cpp"
+        "tests/native/KswordARKLightTests/EntityGraphTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2945,7 +2945,7 @@
       "implementation_paths": [
         "shared/evidence/EntityGraph.h",
         "shared/evidence/EntityGraph.cpp",
-        "KswordARKLightTests/EntityGraphTests.cpp"
+        "tests/native/KswordARKLightTests/EntityGraphTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -2995,7 +2995,7 @@
       "implementation_paths": [
         "shared/evidence/EntityGraph.h",
         "shared/evidence/EntityGraph.cpp",
-        "KswordARKLightTests/EntityGraphTests.cpp"
+        "tests/native/KswordARKLightTests/EntityGraphTests.cpp"
       ],
       "environments": [],
       "executions": [
@@ -3023,10 +3023,10 @@
       "implementation_status": "开发中",
       "verification_status": "NOT_RUN",
       "implementation_paths": [
-        "KswordARKLightTests/KswordARKLightTests.vcxproj",
-        "KswordARKLightTests/EvidenceContractTests.cpp",
-        "KswordARKLightTests/CrossViewTests.cpp",
-        "KswordARKLightTests/HvmEptSwitchTests.cpp"
+        "tests/native/KswordARKLightTests/KswordARKLightTests.vcxproj",
+        "tests/native/KswordARKLightTests/EvidenceContractTests.cpp",
+        "tests/native/KswordARKLightTests/CrossViewTests.cpp",
+        "tests/native/KswordARKLightTests/HvmEptSwitchTests.cpp"
       ],
       "environments": [
         "E0"
@@ -3065,7 +3065,7 @@
       "evidence_paths": [],
       "blocking_reason": null,
       "known_issues": [],
-      "notes": "本轮未实施。开工核对结论：需增强。现有入口：KswordFsDecodeTests/KswordFsDecodeTests.cpp:139；KswordFsDecodeTests/KswordFsDecodeTests.cpp:73；tools/scanner_tests/scanner_self_test.cpp:596。缺口：缺三样：(1) 没有任何“验收编号 ↔ 测试”映射产物，docs/next/KSword_Acceptance_Results_Template.json 的 evidence_paths 全为空数组，无人填；(2) 取消用例只有 driver_test_plan.json:16 的 timeout 一条口径，Qt/Light 侧全无 —— 全仓 isInterruptionRequested/m_cancelRequested 只有 4 处实际调用（FileDock.cpp、ksword/file/file_handle_tools.cpp 等），且无对应测试；(3) 竞态/过期用例只有 KswordARKLightTests 的 snapshot 分支，Ksword5.1 无测试工程因此完全靠人工。"
+      "notes": "本轮未实施。开工核对结论：需增强。现有入口：tests/native/KswordFsDecodeTests/KswordFsDecodeTests.cpp:139；tests/native/KswordFsDecodeTests/KswordFsDecodeTests.cpp:73；tools/scanner_tests/scanner_self_test.cpp:596。缺口：缺三样：(1) 没有任何“验收编号 ↔ 测试”映射产物，docs/next/KSword_Acceptance_Results_Template.json 的 evidence_paths 全为空数组，无人填；(2) 取消用例只有 driver_test_plan.json:16 的 timeout 一条口径，Qt/Light 侧全无 —— 全仓 isInterruptionRequested/m_cancelRequested 只有 4 处实际调用（FileDock.cpp、ksword/file/file_handle_tools.cpp 等），且无对应测试；(3) 竞态/过期用例只有 KswordARKLightTests 的 snapshot 分支，Ksword5.1 无测试工程因此完全靠人工。"
     },
     {
       "id": "Q-03",
@@ -3081,7 +3081,7 @@
       "verification_status": "PASS",
       "implementation_paths": [
         "Ksword5.1/Ksword5.1/Ksword5.1.vcxproj",
-        "KswordARKLightTests/KswordARKLightTests.vcxproj",
+        "tests/native/KswordARKLightTests/KswordARKLightTests.vcxproj",
         "scripts/Invoke-KswordAutomatedAcceptance.ps1"
       ],
       "environments": [

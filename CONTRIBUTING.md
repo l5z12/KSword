@@ -1,29 +1,131 @@
-# Contributing to Ksword ARK
+# Contributing to KSword
 
-## 贡献
+[简体中文](docs/zh-CN/contributing.md) · [Build guide](docs/development.md) · [Code map](docs/maintenance.md)
 
-项目按 [LICENSE](LICENSE) 的条款发布（当前为 KSword Community Source License 1.6）。提交代码即表示你有权提交，并同意该贡献随项目按对应许可证约束处理。第三方代码请保留其原有许可证文本。
+Contributions can be a reproducible bug report, a documentation correction, a
+translation, a regression test, or a code change. You do not need a kernel testing
+machine to contribute to the CLI, source tools, or offline analysis tests.
+Issues and pull requests may be written in English or Chinese.
 
-讨论和协作遵守 `COMMUNITY_COVENANT.md`；它是社区约定，不会给许可再加限制。
+## Your first contribution
 
-## 模块边界
+1. Pick one observable problem. Search existing issues and pull requests for
+   related work. A small fix or test can go straight to a PR; discuss a new
+   subsystem or protocol change in an issue before investing in its implementation.
+2. Fork the repository, clone your fork, and create a descriptive branch:
 
-- 共享 IOCTL 协议只放在 `shared/driver/`。
-- 驱动新 IOCTL 先在 `KswordARKDriver/src/dispatch/ioctl_registry.c` 注册，再在 `src/features/<module>/<module>_ioctl.c` 实现 handler。
-- 用户态 R0 调用只通过 `Ksword5.1/Ksword5.1/ArkDriverClient/`。Dock UI 不直接调用 KswordARK `DeviceIoControl`。
-- 新增源码必须加入对应 `.vcxproj` 和 `.filters`。
-- 第三方代码必须保留原有许可证文本。
-- DynData 共享协议只能维护在 `shared/driver/KswordArkDynDataIoctl.h`；驱动侧不要复制结构体定义。
-- 统一驱动状态/能力协议只能维护在 `shared/driver/KswordArkCapabilityIoctl.h`；KernelDock 能力页只通过 `ArkDriverClient::queryDriverCapabilities()` 获取状态。
-- System Informer DynData 只允许作为 `third_party/systeminformer_dyn/` 数据源接入，禁止顺手搬入 KPH 对象系统、通信层、session token 或 System Informer IOCTL。
-- 依赖未公开内核字段的功能必须通过 DynData capability gating 判断，不要在业务功能里散落新增硬编码偏移。
-- 新增依赖私有偏移的 IOCTL 必须在 `KswordARKDriver/src/dispatch/ioctl_registry.c` 的 `RequiredCapability` 填写对应 `KSW_CAP_*`；无依赖时才使用 `KSWORD_ARK_IOCTL_CAPABILITY_NONE`（也就是 `0ULL`）。
-- 进程扩展信息统一走 `shared/driver/KswordArkProcessIoctl.h` v2；Protection、SignatureLevel、ObjectTable、SectionObject 等 EPROCESS 字段只能来自 DynData/Runtime resolver，并在 UI 展示字段来源。
-- PPL 修改属于高风险 R0 写字段动作，必须依赖 `KSW_CAP_PROCESS_PROTECTION_PATCH`，并在用户态二次确认中展示当前值、目标值、签名级别联动和回滚风险。
+   ```powershell
+   git clone https://github.com/YOUR-USERNAME/KSword.git
+   cd KSword
+   git switch -c fix/describe-the-problem
+   ```
 
-## 合并冲突控制
+3. Run the source checks with Python 3.12+:
 
-- 协议头变更先合并。
-- `.vcxproj`/`.filters` 变更由单一 owner 集中合并。
-- 不同 owner 避免同时修改同一个 Dock 大文件。
-- R3 监控相关施工期间，如果任务只涉及 R0/DynData，请不要编译主程序、Taskbar 或 HUD；确需验证时先和当前 R3 owner 对齐。
+   ```powershell
+   uv run --python 3.12 python tools/check.py
+   ```
+
+   If you already have Python 3.12+, `python tools/check.py` is equivalent. No
+   Python packages are needed. Native builds use Windows; see the
+   [prerequisite table](docs/development.md#choose-the-smallest-build) before
+   installing Qt or WDK.
+4. Find the owning module in the [code map](docs/maintenance.md). Keep a change
+   focused on that responsibility. Add a regression case for changed behavior;
+   use existing offline tests when possible.
+5. Add new files to Git and to every consuming `.vcxproj` and `.vcxproj.filters`.
+   Run the relevant tests and source checks. The checks inspect tracked
+   working-tree files, so untracked additions are not yet part of the audit.
+6. Open a pull request against the repository's default branch. Explain the
+   problem, resulting behavior, and how you tested it. List anything you could
+   not test. Build logs should identify the command, toolset, and first failure,
+   rather than only showing the final MSBuild summary.
+
+## Small contributions with useful feedback
+
+| If you want to work on… | Start here | Validate with… |
+| --- | --- | --- |
+| Contributor tools or build selection | `tools/`, `tools/tests/` | `python tools/check.py --check tool-tests --check projects` |
+| CLI argument handling | `apps/cli/CliArguments.cpp`, `tests/native/cli/` | `python tools/dev.py test --target cli-tests` |
+| CLI commands and help | `apps/cli/Cli*.cpp`, `CliHelp.cpp` | `python tools/dev.py test --target cli` plus command-specific tests |
+| Malformed filesystem input | `file_dock/NtfsRunListDecode.cpp`, `tests/native/fs_decode/` | `python tools/dev.py test --target fs-tests` |
+| Driver response validation | `ArkDriverClient/*Support.h`, `tests/native/ark_client/` | `python tools/dev.py test --target client-tests` |
+| ETW configuration files | `monitor_dock/EtwFilterConfig.*`, `tests/native/monitor/` | `python tools/dev.py test --target monitor-tests` (QtCore) |
+| Translations or UI text | `apps/desktop/languages/`, owning UI module | `python tools/check.py --check i18n`; build the desktop for UI changes |
+
+The `file_dock/`, `ArkDriverClient/`, and `monitor_dock/` paths above are under
+`apps/desktop/`. All commands can be prefixed with `uv run --python 3.12`.
+Passing CLI help tests verifies help routes, not live driver operations. Do not
+claim runtime acceptance from a successful build.
+
+## Reviewable changes
+
+Public guides use English with a Chinese copy. Update both languages in the same
+PR, keep reciprocal links, and register new pairs in `docs/catalog.json`. See the
+[documentation index](docs/README.md) for the layout and original-language research
+references. `python tools/check.py` checks paired guides, local links, and generated
+CLI documentation alongside source integrity.
+
+Keep unrelated formatting, generated binaries, local paths, and release assets
+out of a PR. Follow the [coding style](docs/coding-style.md). Use names that describe the
+operation and document ownership or invariants that are not apparent from the
+code; avoid comments that repeat each statement.
+
+Write code comments in English so contributors can follow the implementation.
+Preserve technical identifiers, literal examples, and third-party notices. Put
+non-English literal examples in inline backticks, with the explanation in English.
+UI strings and English/Chinese documentation remain bilingual.
+Script help, diagnostics, prompts, and progress messages use English too; retain
+exact localized input patterns and Unicode test fixtures where required.
+`python tools/check.py --check comments` checks first-party C/C++, Python, and XML
+comments and Python docstrings. Review comments in other languages as part of the
+PR; this check does not assess technical accuracy or translate text.
+
+For a refactor, explain the new responsibility boundary and which behavior is
+preserved. Avoid combining a large move with unrelated behavior changes. When a
+review identifies a regression, add a targeted test before fixing it where the
+behavior can be exercised independently.
+
+New contributors can update project/filter entries in their own PR. There is no
+separate owner approval required to build a project or prepare those edits. If
+another PR touches the same feature, coordinate in the issue or PR and resolve
+conflicts using the current module layout.
+
+## Boundaries to preserve
+
+- Define wire protocols only in `shared/driver/`, including DynData and capability
+  structures. Register new driver IOCTL handlers in
+  `drivers/ark/src/dispatch/ioctl_registry.c`; implement the feature under
+  `src/features/<module>/`.
+- User-mode code accesses KswordARK through `ArkDriverClient`. Dock UI must not
+  issue raw KswordARK `DeviceIoControl` calls.
+- Private kernel fields come from validated DynData/runtime capabilities, never
+  new hardcoded offsets. Set the registry entry's `RequiredCapability` to the
+  appropriate `KSW_CAP_*`; use `KSWORD_ARK_IOCTL_CAPABILITY_NONE` only when no
+  capability is needed. Preserve field provenance and capability failures in UI.
+- Keep System Informer integration limited to the vendored DynData source;
+  do not import its KPH object system, communication layer, or session tokens.
+- Preserve identity checks, buffer bounds, cancellation, callback lifetimes,
+  and confirmations around system-changing operations. PPL changes still require
+  `KSW_CAP_PROCESS_PROTECTION_PATCH` and the existing confirmation details.
+- CLI command, alias, and parameter changes must update `CliHelp.cpp` and
+  `docs/cli.md` (regenerate with `tools/generate_cli_docs.py`) and
+  `docs/zh-CN/cli.md` together.
+- Edit language packs at the affected keys only. Update both `zh-CN.json` and
+  `en-US.json` for visible text changes; never rewrite whole packs with a JSON
+  serializer. Run the i18n audit.
+
+Before changing UI themes or asynchronous behavior, read the relevant entries in
+[the shared project notes](.claude/memory/MEMORY.md). Those notes are available to
+human contributors as well as coding agents; [maintenance.md](docs/maintenance.md)
+is the public starting point.
+
+## License and community
+
+The project is distributed under [LICENSE](LICENSE), currently the KSword
+Community Source License 1.6. Submit only material you have the right to
+contribute, under the project's contribution terms. Preserve third-party license
+texts and attribution. This guide does not change the project's license.
+
+Discussion follows the [Community Covenant](COMMUNITY_COVENANT.md). It is a
+community agreement, not an additional software license restriction.

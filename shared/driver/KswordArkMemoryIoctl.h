@@ -4,13 +4,13 @@
 
 // ============================================================
 // KswordArkMemoryIoctl.h
-// 作用：
-// - 定义 Phase-11 进程虚拟内存查询、读取和差异写入协议；
-// - 定义 R0 物理内存读取、受控写入和 x64 页表解析协议；
-// - 定义 R0 内核可执行页只读扫描协议，v2 增加预算、归属、保护和哈希证据；
-// - R3/R0 共享本文件中的结构，不在 UI 或 Client 侧重复定义；
-// - 写入协议只承载已编辑的差异块，不提供分配、释放或保护修改；
-// - 页表协议只做只读解析，不默认提供 PTE/PDE 修改能力。
+// Purpose:
+// - Defines Phase-11 process virtual memory query, read, and diff-write protocol;
+// - Defines the R0 physical memory read, controlled write, and x64 page table resolution protocol;
+// - Defines the R0 kernel executable page read-only scan protocol; v2 adds budget, ownership, protection, and hash evidence.
+// - R3 and R0 share the structures defined in this file; do not redefine them in the UI or Client side;
+// - The write protocol carries only edited differential blocks; it does not support allocation, deallocation, or protection modification.
+// - The page table protocol performs read-only parsing only and does not provide PTE/PDE modification capabilities by default.
 // ============================================================
 
 #define KSWORD_ARK_MEMORY_PROTOCOL_VERSION_V1 1UL
@@ -236,14 +236,14 @@
 #define KSWORD_ARK_MEMORY_PROTECTION_GLOBAL  0x00000040UL
 #define KSWORD_ARK_MEMORY_PROTECTION_USER    0x00000080UL
 
-// 内核可执行页扫描请求 flags。中文说明：flags 为 0 时返回所有已识别的模块
-// executable 页；设置过滤位时仅返回对应分类，未知位由 R0 handler 拒绝。
+// Kernel executable page scan request flags. Note: flags = 0 returns all recognized module executable pages;
+// setting filter bits returns only the corresponding categories; unknown bits are rejected by the R0 handler.
 #define KSWORD_ARK_KERNEL_EXEC_SCAN_FLAG_INCLUDE_MODULE_TEXT 0x00000001UL
 #define KSWORD_ARK_KERNEL_EXEC_SCAN_FLAG_INCLUDE_MODULE_NON_TEXT 0x00000002UL
 #define KSWORD_ARK_KERNEL_EXEC_SCAN_FLAG_INCLUDE_WRITABLE_EXECUTABLE 0x00000004UL
 #define KSWORD_ARK_KERNEL_EXEC_SCAN_FLAG_INCLUDE_UNKNOWN_EXECUTABLE 0x00000008UL
-// 让扫描不再跳过「已经不可执行」的页。代码节被改成 RW 之后页表上会带 NX，
-// 只扫可执行页会完全看不到这种状态，因此需要单独开关把它们带回来。
+// Prevent skipping pages that are already non-executable. When a code section is modified to RW, the page table marks
+// it as NX. Scanning only executable pages would miss this state, so a dedicated switch is required to include them.
 #define KSWORD_ARK_KERNEL_EXEC_SCAN_FLAG_INCLUDE_SECTION_ANOMALY 0x00000010UL
 #define KSWORD_ARK_KERNEL_EXEC_SCAN_FLAG_INCLUDE_ALL \
     (KSWORD_ARK_KERNEL_EXEC_SCAN_FLAG_INCLUDE_MODULE_TEXT | \
@@ -252,8 +252,8 @@
      KSWORD_ARK_KERNEL_EXEC_SCAN_FLAG_INCLUDE_UNKNOWN_EXECUTABLE | \
      KSWORD_ARK_KERNEL_EXEC_SCAN_FLAG_INCLUDE_SECTION_ANOMALY)
 
-// 内核可执行页扫描响应状态。中文说明：v1 不做全内核地址空间枚举，成功扫描
-// 也返回 CONSERVATIVE/PARTIAL_CONSERVATIVE，避免 R3 误解为完整内核覆盖。
+// Kernel executable page scan response status. Note: v1 does not enumerate the entire kernel address space; even a successful
+// scan returns CONSERVATIVE or PARTIAL_CONSERVATIVE to prevent R3 from misinterpreting it as full kernel coverage.
 #define KSWORD_ARK_KERNEL_EXEC_SCAN_STATUS_UNAVAILABLE 0UL
 #define KSWORD_ARK_KERNEL_EXEC_SCAN_STATUS_CONSERVATIVE 1UL
 #define KSWORD_ARK_KERNEL_EXEC_SCAN_STATUS_PARTIAL_CONSERVATIVE 2UL
@@ -261,16 +261,16 @@
 #define KSWORD_ARK_KERNEL_EXEC_SCAN_STATUS_INVALID_RANGE 4UL
 #define KSWORD_ARK_KERNEL_EXEC_SCAN_STATUS_IRQL_REJECTED 5UL
 
-// 内核可执行页 ownerKind。中文说明：ownerKind 表示 R0 对该页所在模块区域的
-// 保守归类；WRITABLE_EXECUTABLE 优先级最高，随后才区分 text/non-text。
+// Kernel executable page ownerKind. Note: ownerKind represents a conservative classification of the module region
+// containing the page by R0; WRITABLE_EXECUTABLE takes highest priority, followed by text/non-text distinction.
 #define KSWORD_ARK_KERNEL_EXEC_OWNER_UNKNOWN 0UL
 #define KSWORD_ARK_KERNEL_EXEC_OWNER_MODULE_TEXT 1UL
 #define KSWORD_ARK_KERNEL_EXEC_OWNER_MODULE_NON_TEXT 2UL
 #define KSWORD_ARK_KERNEL_EXEC_OWNER_MODULE_WRITABLE_EXECUTABLE 3UL
 #define KSWORD_ARK_KERNEL_EXEC_OWNER_MODULE_UNKNOWN_SECTION 4UL
 
-// 内核可执行页 riskFlags。中文说明：这些位只描述扫描观察到的风险信号，
-// 不表示 R0 已经修改页面属性或尝试修复。
+// Kernel executable page riskFlags. Note: These bits only describe risk signals observed
+// during scanning and do not indicate that R0 has modified page attributes or attempted a fix.
 #define KSWORD_ARK_KERNEL_EXEC_RISK_NONE 0x00000000UL
 #define KSWORD_ARK_KERNEL_EXEC_RISK_WRITABLE_EXECUTABLE 0x00000001UL
 #define KSWORD_ARK_KERNEL_EXEC_RISK_MODULE_NON_TEXT_EXECUTABLE 0x00000002UL
@@ -278,18 +278,18 @@
 #define KSWORD_ARK_KERNEL_EXEC_RISK_LARGE_PAGE 0x00000008UL
 #define KSWORD_ARK_KERNEL_EXEC_RISK_UNKNOWN_EXECUTABLE 0x00000010UL
 #define KSWORD_ARK_KERNEL_EXEC_RISK_FIRST_BYTES_UNREADABLE 0x00000020UL
-// 页属于模块的代码节，但页表上已经带 NX：这一页现在不可执行了。
+// The page belongs to a module's code section, but the page table already has NX set: this page is now non-executable.
 #define KSWORD_ARK_KERNEL_EXEC_RISK_CODE_PAGE_NOT_EXECUTABLE 0x00000040UL
-// 页属于模块的代码节，但页表上可写：正常情况下代码节页应当是只读可执行。
+// The page belongs to a module's code section but is writable in the page table: normally, code section pages should be read-only executable.
 #define KSWORD_ARK_KERNEL_EXEC_RISK_CODE_PAGE_WRITABLE 0x00000080UL
 
-// 内核 executable scan response flags。中文说明：这些位解释 partial status 的
-// 直接原因，尤其是输出行容量和 maxBytes 预算命中。
+// Kernel executable scan response flags. Note: These bits explain the direct cause of partial
+// status, particularly regarding output line capacity and maxBytes budget exhaustion.
 #define KSWORD_ARK_KERNEL_EXEC_SCAN_RESPONSE_FLAG_TRUNCATED 0x00000001UL
 #define KSWORD_ARK_KERNEL_EXEC_SCAN_RESPONSE_FLAG_BUDGET_EXHAUSTED 0x00000002UL
 
-// 内核 executable first-bytes hash metadata。中文说明：R0 只返回哈希和状态，
-// 默认不回传原始字节，避免把内核内容当作敏感转储暴露给 UI。
+// Kernel executable first-bytes hash metadata. Note: R0 returns only the hash and status; the original
+// bytes are not returned by default to avoid exposing kernel content as sensitive dumps to the UI.
 #define KSWORD_ARK_KERNEL_EXEC_HASH_NONE 0UL
 #define KSWORD_ARK_KERNEL_EXEC_HASH_FNV1A64 1UL
 #define KSWORD_ARK_KERNEL_EXEC_HASH_STATUS_UNAVAILABLE 0UL
@@ -637,9 +637,9 @@ typedef struct _KSWORD_ARK_QUERY_PAGE_TABLE_ENTRY_RESPONSE
     KSWORD_ARK_PAGE_TABLE_ENTRY_INFO info;
 } KSWORD_ARK_QUERY_PAGE_TABLE_ENTRY_RESPONSE;
 
-// 内核可执行页扫描请求。中文说明：flags 控制返回分类，maxEntries 限制 entries
-// 写回数量，startAddress/endAddress 提供可选半开地址过滤区间；该请求不携带
-// 写入、修复或页表修改参数。
+// Kernel executable page scan request. Note: flags control return classification, maxEntries limits the
+// number of entries written back, and startAddress/endAddress provide an optional half-open address
+// filter range; this request carries no parameters for writing, patching, or page table modification.
 typedef struct _KSWORD_ARK_SCAN_KERNEL_EXECUTABLE_MEMORY_REQUEST
 {
     unsigned long flags;
@@ -651,8 +651,8 @@ typedef struct _KSWORD_ARK_SCAN_KERNEL_EXECUTABLE_MEMORY_REQUEST
     unsigned long reserved0;
 } KSWORD_ARK_SCAN_KERNEL_EXECUTABLE_MEMORY_REQUEST;
 
-// 单条内核可执行页扫描结果。中文说明：pageCount 表示连续合并后的页数量，
-// modulePath 保存该条目所属已加载模块路径或文件名，R3 仅用于展示与过滤。
+// Single kernel executable page scan result. Note: pageCount indicates the number of pages merged contiguously; modulePath
+// stores the path or filename of the loaded module to which this entry belongs; R3 is used for display and filtering only.
 typedef struct _KSWORD_ARK_KERNEL_EXECUTABLE_MEMORY_ENTRY
 {
     unsigned long long virtualAddress;
@@ -677,8 +677,8 @@ typedef struct _KSWORD_ARK_KERNEL_EXECUTABLE_MEMORY_ENTRY
     wchar_t modulePath[KSWORD_ARK_KERNEL_EXEC_MODULE_PATH_CHARS];
 } KSWORD_ARK_KERNEL_EXECUTABLE_MEMORY_ENTRY;
 
-// 内核可执行页扫描响应头。中文说明：status 汇总本次扫描是保守成功、部分成功
-// 还是失败；lastStatus 保留最近一次底层 NTSTATUS，entries[] 为变长结果区。
+// Kernel executable page scan response header. Note: status summarizes whether the scan was conservatively successful, partially
+// successful, or failed; lastStatus preserves the most recent underlying NTSTATUS; entries[] is a variable-length result region.
 typedef struct _KSWORD_ARK_SCAN_KERNEL_EXECUTABLE_MEMORY_RESPONSE
 {
     unsigned long version;

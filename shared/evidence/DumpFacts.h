@@ -1,22 +1,22 @@
 #pragma once
 
-// C 模块（离线崩溃转储分析，P2）的纯事实模型与安全边界。
+// Factual model and safety boundaries for module C (offline crash-dump analysis, P2).
 //
-// 覆盖编号：C-02 C-03 C-04 C-05 C-06 C-07 C-08 C-09 C-10。
-// C-01（DbgEng 探测）与"与真实 dump 对照"不在本文件范围：那需要真实样本与调试引擎，
-// 本文件只做能被构造字节完整离线验证的部分。
+// Coverage IDs: C-02 C-03 C-04 C-05 C-06 C-07 C-08 C-09 C-10.
+// C-01 (DbgEng probing) and 'comparison with real dumps' are out of scope for this file: those require real samples
+// and a debugging engine. This file handles only parts that can be fully verified offline using constructed bytes.
 //
-// 本文件不碰磁盘、不调 DbgEng、不含 Qt/Win32。输入是调用方已经读进内存的字节，
-// 输出是可被 UI/报告直接消费的事实结构。引擎承载在既有 MinidumpDock 里。
+// This file does not touch disk, does not call DbgEng, and contains no Qt/Win32. Input is bytes already read into memory by the
+// caller; output is a fact structure consumable directly by UI/reports. The engine is hosted within the existing MinidumpDock.
 //
-// 三条贯穿全文件的红线（上一轮对抗性评审实测抓到的作弊模式）：
-//   1. 缺失永远是独立状态。任何"没读到"都不许退化成 0、空串或"正常"
-//      （C-03 点名的陷阱）。
-//   2. 默认构造不许是"完整""可信""安全"。DumpRecognition 默认 NotADump，
-//      StackFrame 默认 TruncatedNoData，SymbolMatch 默认 NotAttempted，
-//      ContentPresence 默认 Unknown，SymbolServerPolicy 默认不联网。
-//   3. 没有 malicious / threat / isRootkit / suspicious / riskScore / rootCause /
-//      责任百分比这类越权判定字段。C-06 只产出"线索够不够立案"，不产出判决。
+// Three red lines spanning the entire file (cheating patterns caught during the previous round of adversarial review):
+//   1. Missing is always an independent state. Any 'not read' must not
+//      degrade to 0, empty string, or 'normal' (trap pointed out in C-03).
+//   2. Default construction must not be 'complete', 'trusted', or 'safe'. DumpRecognition
+//      defaults to NotADump, StackFrame to TruncatedNoData, SymbolMatch to NotAttempted,
+//      ContentPresence to Unknown, and SymbolServerPolicy to no network access.
+//   3. No unauthorized judgment fields such as malicious, threat, isRootkit, suspicious, riskScore, rootCause, or
+//      liability percentage. C-06 only determines whether there is sufficient evidence to file a case, not a verdict.
 
 #include "EvidenceEnvelope.h"
 #include "LosslessValue.h"
@@ -30,139 +30,139 @@
 #include <string_view>
 #include <vector>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 
 // ---------------------------------------------------------------------------
-// 字节读取。所有按偏移的访问都经过这里，越界返回 false 而不是读到垃圾。
-// 显式小端组装，不做结构体 memcpy —— 避免对齐与填充假设。
+// Byte reading: all offset-based accesses go through here; out-of-bounds access returns false instead of reading garbage.
+// Explicitly assemble little-endian; avoid struct memcpy to prevent assumptions about alignment and padding.
 // ---------------------------------------------------------------------------
-bool ReadLittleEndianU32(std::span<const std::uint8_t> bytes,
+bool readLittleEndianU32(std::span<const std::uint8_t> bytes,
                          std::size_t offset,
                          std::uint32_t& out) noexcept;
 
-bool ReadLittleEndianU64(std::span<const std::uint8_t> bytes,
+bool readLittleEndianU64(std::span<const std::uint8_t> bytes,
                          std::size_t offset,
                          std::uint64_t& out) noexcept;
 
 // ---------------------------------------------------------------------------
-// C-02 文件识别与支持范围
+// C-02 File identification and support scope
 // ---------------------------------------------------------------------------
 
-// DumpKind：本轮的支持范围。只有 KernelSmall/KernelMemory 允许取崩溃事实。
+// DumpKind: Scope of support for this round. Only KernelSmall/KernelMemory allow retrieving crash facts.
 enum class DumpKind {
-    NotADump,      // 字节里没有任何已知转储签名
-    Unsupported,   // 认出了签名家族，但本轮不解析（32 位内核转储 / 非 x64 / 头被截断）
-    UserMinidump,  // 'MDMP' 用户态小型转储。红线：绝不当成内核 dump
-    KernelSmall,   // PAGEDU64 且 DumpType ∈ {3 仅头, 4 triage}
-    KernelMemory,  // PAGEDU64 且 DumpType ∈ {1,2,5,6,7}
+    kNotADump,      // No known dump signatures in the bytes.
+    kUnsupported,   // Signature family recognized, but parsing skipped this round (32-bit kernel dump / non-x64 / truncated header).
+    kUserMinidump,  // 'MDMP' user-mode minidump. Red line: never treat as a kernel dump.
+    kKernelSmall,   // PAGEDU64 and DumpType ∈ {3 header only, 4 triage}
+    kKernelMemory,  // PAGEDU64 and DumpType ∈ {1,2,5,6,7}
 };
 
-const char* DumpKindName(DumpKind kind) noexcept;
+const char* dumpKindName(DumpKind kind) noexcept;
 
-// 只有这两类才谈得上 bugcheck 事实。其余一律不解析，也不冒充解析成功。
-bool DumpKindCarriesKernelFacts(DumpKind kind) noexcept;
+// Only these two types warrant bugcheck facts. All others are neither parsed nor treated as successfully parsed.
+bool dumpKindCarriesKernelFacts(DumpKind kind) noexcept;
 
-// SignatureFamily 与 DumpKind 是两件事，不能塌成一个字段：
-// 头被截断时家族仍然可信（例如"确定是 MDMP，所以确定不是内核 dump"），
-// 但 kind 收敛不到 KernelSmall/KernelMemory。DumpKind 只有规范给定的五个值，
-// 因此这种"认得出但读不全"的情况 kind=Unsupported + reason=TruncatedHeader，
-// 家族由本字段单独承载。
+// SignatureFamily and DumpKind are distinct concepts and must not be merged into a single field.
+// The family remains trustworthy even if the header is truncated (e.g., "definitely MDMP, so
+// definitely not a kernel dump"), but kind cannot converge to KernelSmall/KernelMemory. Since
+// DumpKind only has the five specified values, this "recognized but incomplete" case uses
+// kind=Unsupported + reason=TruncatedHeader, with the family carried solely by this field.
 enum class SignatureFamily {
-    None,
-    Mdmp,          // 'MDMP'
-    KernelPage64,  // 'PAGE' + 'DU64'
-    KernelPage32,  // 'PAGE' + 'DUMP'
+    kNone,
+    kMdmp,          // 'MDMP'
+    kKernelPage64,  // 'PAGE' + 'DU64'
+    kKernelPage32,  // 'PAGE' + 'DUMP'
 };
 
-const char* SignatureFamilyName(SignatureFamily family) noexcept;
+const char* signatureFamilyName(SignatureFamily family) noexcept;
 
-// RecognitionReason：为什么得到这个 kind。失败语义不许塌成一个（评审模式 4）：
-// 空文件 / 太短 / 截断 / 未知签名 / 位宽不支持 / 架构不支持 / DumpType 不支持
-// 是七种不同的事，报告与 UI 必须能分开表述。
+// RecognitionReason: why this kind was obtained. Failure semantics must not collapse into one (Review Mode 4):
+// Empty file, too short, truncated, unknown signature, unsupported bit width, unsupported architecture, and
+// unsupported DumpType are seven distinct cases; the report and UI must be able to express them separately.
 enum class RecognitionReason {
-    Recognized,
-    EmptyFile,                 // 0 字节
-    TooSmallForSignature,      // 有字节但不足 8 字节，连签名都读不出
-    TruncatedHeader,           // 签名成立，但可读字节不足该格式的头长度
-    UnknownSignature,          // 前 8 字节不匹配任何已知签名
-    UnsupportedKernelBitness,  // 'PAGE'+'DUMP'：32 位内核转储，本轮不支持
-    UnsupportedArchitecture,   // 内核转储但 MachineImageType 不是 x64
-    UnsupportedDumpType,       // DumpType 字段不是已知取值（含 PAGE 填充）
+    kRecognized,
+    kEmptyFile,                 // 0 bytes
+    kTooSmallForSignature,      // Has bytes but fewer than 8, insufficient to read the signature.
+    kTruncatedHeader,           // Signature is valid, but the readable bytes are insufficient for the header length of this format.
+    kUnknownSignature,          // First 8 bytes do not match any known signature.
+    kUnsupportedKernelBitness,  // 'PAGE'+'DUMP': 32-bit kernel dump; not supported in this round.
+    kUnsupportedArchitecture,   // Kernel dump but MachineImageType is not x64
+    kUnsupportedDumpType,       // DumpType field is not a known value (including PAGE padding).
 };
 
-const char* RecognitionReasonName(RecognitionReason reason) noexcept;
+const char* recognitionReasonName(RecognitionReason reason) noexcept;
 
-// C-02：目标架构分类。原始机器类型另存，分类不吃掉原值。
+// C-02: Target architecture classification. Original machine type is preserved; classification does not consume the original value.
 enum class TargetArchitecture {
-    Unknown,  // 没读到可信的机器类型
-    X86,
-    X64,
-    Arm,
-    Arm64,
-    Other,    // 读到了但不在已知表里 —— 原值在 rawMachineType
+    kUnknown,  // Failed to read a trusted machine type.
+    kX86,
+    kX64,
+    kArm,
+    kArm64,
+    kOther,    // Note: Read but not in the known table — the original value is in rawMachineType.
 };
 
-const char* TargetArchitectureName(TargetArchitecture architecture) noexcept;
+const char* targetArchitectureName(TargetArchitecture architecture) noexcept;
 
 struct DumpRecognition final {
-    DumpKind kind = DumpKind::NotADump;
-    SignatureFamily family = SignatureFamily::None;
-    RecognitionReason reason = RecognitionReason::UnknownSignature;
-    TargetArchitecture architecture = TargetArchitecture::Unknown;
+    DumpKind kind = DumpKind::kNotADump;
+    SignatureFamily family = SignatureFamily::kNone;
+    RecognitionReason reason = RecognitionReason::kUnknownSignature;
+    TargetArchitecture architecture = TargetArchitecture::kUnknown;
 
-    OptionalU64 rawSignature;    // 前 4 字节原值，未读到即 unset
-    OptionalU64 rawValidDump;    // 次 4 字节原值
-    OptionalU64 rawMachineType;  // PE 机器类型原值
-    OptionalU64 rawDumpType;     // DUMP_HEADER64.DumpType 原值
-    OptionalU64 fileSize;        // 调用方声明的文件大小
-    OptionalU64 bytesProvided;   // 调用方实际给了多少字节
-    OptionalU64 headerBytesRequired;  // 该家族需要的最小头长度
+    OptionalU64 rawSignature;    // Original first 4 bytes; unset if not read.
+    OptionalU64 rawValidDump;    // Secondary 4-byte raw value
+    OptionalU64 rawMachineType;  // Original PE machine type.
+    OptionalU64 rawDumpType;     // Original value of DUMP_HEADER64.DumpType.
+    OptionalU64 fileSize;        // File size declared by the caller.
+    OptionalU64 bytesProvided;   // Number of bytes actually provided by the caller.
+    OptionalU64 headerBytesRequired;  // Minimum header length required for this family.
 
-    // C-02："不冒充解析成功"。只有真的按格式读过字段才为真。
+    // C-02: "Do not fake successful parsing". True only if fields were genuinely read according to the format.
     bool parseAttempted = false;
 
-    CollectionOutcome outcome;   // 失败时保留原因码（domain = "KSWORD_DUMPRECOGNITION"）
+    CollectionOutcome outcome;   // Retain error code on failure (domain = "KSWORD_DUMPRECOGNITION")
 };
 
-// C-02 主入口。只看字节，不看扩展名、不看路径。
-// headBytes 至少给到文件头（内核转储要 0x2000 字节才能读全 DumpType 之后的字段）；
-// totalFileSize 未知时按 headBytes.size() 当作全文件。
+// C-02 main entry point. Inspects only bytes, ignoring file extension and path.
+// headBytes must include at least the file header (kernel dumps require 0x2000 bytes to fully read fields after DumpType);
+// If totalFileSize is unknown, treat headBytes.size() as the full file size.
 //
-// **不是 noexcept**，而且不许改回去：每一条失败路径都要构造 CollectionOutcome，
-// 里面的 domain 字符串 "KSWORD_DUMPRECOGNITION" 有 22 字节，超过 MSVC std::string
-// 的 15 字节 SSO 上限，必然堆分配。声明成 noexcept 只会让一次内存不足从
-// bad_alloc 变成 std::terminate —— 主程序直接消失，正是 C-01 要避免的那一条。
-// 真正不许分配的是判据函数（见 .cpp 里 AsciiEqualsIgnoreCase 一节），它们仍是 noexcept。
-DumpRecognition RecognizeDump(std::span<const std::uint8_t> headBytes,
+// **Not noexcept**, and do not revert this: every failure path must construct a CollectionOutcome. The domain
+// string "KSWORD_DUMPRECOGNITION" inside it is 22 bytes, exceeding the 15-byte SSO limit of MSVC std::string,
+// forcing a heap allocation. Declaring it noexcept would turn a single out-of-memory condition from bad_alloc
+// into std::terminate—the main process vanishes, which is exactly the C-01 scenario we must avoid.
+// The predicate functions that must never allocate (see the asciiEqualsIgnoreCase section in .cpp) remain noexcept.
+DumpRecognition recognizeDump(std::span<const std::uint8_t> headBytes,
                               const OptionalU64& totalFileSize);
 
-// "文件坏了"与"格式不支持"都会落到 kind=Unsupported，但它们是两件事。
-// UI 文案必须靠这个函数分开，不能只看 kind。
-bool RecognitionIsDamagedRatherThanUnsupported(const DumpRecognition& recognition) noexcept;
+// Both "corrupt file" and "unsupported format" map to kind=Unsupported, but they are distinct issues.
+// UI text must rely on this function to distinguish; do not check kind alone.
+bool recognitionIsDamagedRatherThanUnsupported(const DumpRecognition& recognition) noexcept;
 
 // ---------------------------------------------------------------------------
-// C-03 崩溃事实
+// C-03 Crash facts
 // ---------------------------------------------------------------------------
 
-// DumpFieldAvailability：字段级三态。C-03 点名的陷阱就是把 NotRecorded/NotParsed
-// 压成 Present(0)。三者在这里永远分开。
+// DumpFieldAvailability: Three-state logic at the field level. The trap highlighted in C-03 is
+// collapsing NotRecorded and NotParsed into Present(0). These three states must remain distinct here.
 enum class DumpFieldAvailability {
-    NotParsed,    // 本轮没读到（窗口不够 / 文件截断 / 格式不解析）—— 不知道有没有
-    NotRecorded,  // 转储里就没写（PAGE 填充 / 该格式不含此字段）—— 知道没有
-    Present,      // 读到了真实值
+    kNotParsed,    // Not read in this round (window too small / file truncated / format unparseable) — unknown if present
+    kNotRecorded,  // Not written in the dump (PAGE padding / this format lacks this field) — implies absence.
+    kPresent,      // Read actual value.
 };
 
-const char* DumpFieldAvailabilityName(DumpFieldAvailability availability) noexcept;
+const char* dumpFieldAvailabilityName(DumpFieldAvailability availability) noexcept;
 
 struct DumpField final {
-    DumpFieldAvailability availability = DumpFieldAvailability::NotParsed;
+    DumpFieldAvailability availability = DumpFieldAvailability::kNotParsed;
     OptionalU64 value;
 
     static DumpField present(std::uint64_t v) noexcept;
     static DumpField notRecorded() noexcept;
     static DumpField notParsed() noexcept;
 
-    // 不变式：Present ⇔ value.present。任一侧单独成立都是构造 bug。
+    // Invariant: Present ⇔ value.present. Either side holding true independently constitutes a construction bug.
     bool consistent() const noexcept;
 
     friend bool operator==(const DumpField& a, const DumpField& b) noexcept {
@@ -172,26 +172,26 @@ struct DumpField final {
 };
 
 struct BugCheckFacts final {
-    DumpKind dumpKind = DumpKind::NotADump;
+    DumpKind dumpKind = DumpKind::kNotADump;
 
     DumpField code;                        // DUMP_HEADER64.BugCheckCode
     std::array<DumpField, 4> parameters{}; // BugCheckParameter[0..3]
     DumpField targetOsMajor;               // MajorVersion
-    DumpField targetOsBuild;               // MinorVersion（内核构建号）
+    DumpField targetOsBuild;               // MinorVersion (Kernel build number)
     DumpField processorCount;
     DumpField crashTimeUtc100ns;           // SystemTime（FILETIME）
     DumpField uptime100ns;                 // SystemUpTime
-    DumpField writerStatus;                // 0 是有意义的取值，不当缺失
-    DumpField directoryTableBase;          // 崩溃时的 CR3
+    DumpField writerStatus;                // 0 is a meaningful value, not a missing value
+    DumpField directoryTableBase;          // CR3 at crash time.
 
-    // C-03 + 评审模式 4：NotParsed 有两种来源，报告要能分开说。
+    // C-03 + Review Mode 4: NotParsed has two sources; the report must distinguish them.
     OptionalU64 bytesProvided;
     OptionalU64 fileSizeDeclared;
     bool windowShorterThanFile = false;
 
     CollectionOutcome outcome;
 
-    // 至少有一个字段真的读到了值。全 false 时不允许渲染成"崩溃信息"。
+    // At least one field actually read a value. When all are false, it is not allowed to render as 'crash information'.
     bool hasAnyFact() const noexcept;
     std::size_t presentFieldCount() const noexcept;
     std::size_t notRecordedFieldCount() const noexcept;
@@ -199,155 +199,155 @@ struct BugCheckFacts final {
     std::size_t fieldCount() const noexcept;
 };
 
-// C-03 主入口。recognition.kind 决定解析与否：
-//   NotADump                 -> outcome=NotCollected，全部 NotParsed
-//   Unsupported              -> outcome=Unsupported，全部 NotParsed
-//   UserMinidump             -> outcome=Unsupported，全部 NotRecorded（该格式不含这些字段）
-//   KernelSmall/KernelMemory -> 逐字段读，读不到的按上面三态如实标注
-BugCheckFacts ExtractBugCheckFacts(const DumpRecognition& recognition,
+// C-03 Main entry point. recognition.kind determines whether to parse:
+//   NotADump -> outcome=NotCollected, all NotParsed
+//   Unsupported -> outcome=Unsupported, all NotParsed.
+//   UserMinidump -> outcome=Unsupported, all fields marked NotRecorded (this format lacks these fields).
+//   KernelSmall/KernelMemory -> read field-by-field; any unread fields are marked according to the above three-state logic.
+BugCheckFacts extractBugCheckFacts(const DumpRecognition& recognition,
                                    std::span<const std::uint8_t> headBytes);
 
 // ---------------------------------------------------------------------------
-// C-04 符号精确匹配
+// C-04 Symbol exact match
 // ---------------------------------------------------------------------------
 
 enum class SymbolMatch {
-    NotAttempted,  // 默认：没试过。不是"没有符号"
-    Absent,        // 试过了，找不到 PDB
-    WrongVersion,  // 找到了 PDB 但 GUID/Age 不符 —— 红线：不得用于函数名/行号
-    Matched,
+    kNotAttempted,  // Default: Not attempted. Not 'no symbols'.
+    kAbsent,        // Attempted but PDB not found.
+    kWrongVersion,  // PDB found but GUID/Age mismatch — red line: must not be used for function names or line numbers.
+    kMatched,
 };
 
-const char* SymbolMatchName(SymbolMatch match) noexcept;
+const char* symbolMatchName(SymbolMatch match) noexcept;
 
 enum class SymbolCacheSource {
-    Unknown,
-    NotLoaded,
-    LocalDirectory,  // 转储同目录 / 用户显式指定的本地目录
-    LocalCache,      // 本地符号缓存（downstream store）
-    SymbolServer,    // 网络符号服务器
-    DumpEmbedded,    // 转储自带（极少）
+    kUnknown,
+    kNotLoaded,
+    kLocalDirectory,  // Dump to same directory / user-specified local directory
+    kLocalCache,      // Local symbol cache (downstream store).
+    kSymbolServer,    // Network symbol server
+    kDumpEmbedded,    // Dumped embedded (rare)
 };
 
-const char* SymbolCacheSourceName(SymbolCacheSource source) noexcept;
+const char* symbolCacheSourceName(SymbolCacheSource source) noexcept;
 
-// PdbIdentity：GUID 按 16 字节原样存，不先转字符串再比 —— 大小写与花括号写法
-// 差异会让"错版"看起来像"匹配"。present 默认 false：没有标识绝不等于匹配。
+// PdbIdentity: Store the GUID as raw 16 bytes without converting to a string first; case differences and brace variations would
+// otherwise make a mismatched version appear as a match. present defaults to false: without an identifier, it never equals a match.
 struct PdbIdentity final {
     std::array<std::uint8_t, 16> guid{};
     std::uint32_t age = 0;
     bool present = false;
-    std::string pdbName;  // 外来文本，进报告前必须过 EscapeForReport
+    std::string pdbName;  // Foreign text; must pass escapeForReport before generating the report.
 };
 
-// 任一侧 present==false 即返回 false。两个空标识不算"相同"。
-bool SamePdbIdentity(const PdbIdentity& a, const PdbIdentity& b) noexcept;
+// Return false if either side has present==false. Two empty identities are not considered 'equal'.
+bool samePdbIdentity(const PdbIdentity& a, const PdbIdentity& b) noexcept;
 
 enum class SymbolLoadAttempt {
-    NotAttempted,
-    FileNotFound,
-    LoadFailed,   // 找到文件但打不开/格式坏
-    FileLoaded,
+    kNotAttempted,
+    kFileNotFound,
+    kLoadFailed,   // File found but cannot be opened / corrupted format
+    kFileLoaded,
 };
 
-const char* SymbolLoadAttemptName(SymbolLoadAttempt attempt) noexcept;
+const char* symbolLoadAttemptName(SymbolLoadAttempt attempt) noexcept;
 
-// C-04 判定：加载结果 + 两侧标识 -> 匹配三态。
-// 默认构造（NotAttempted + 两个空标识）必须返回 NotAttempted，绝不返回 Matched。
-SymbolMatch DeriveSymbolMatch(SymbolLoadAttempt attempt,
+// C-04 Judgment: Load result + both-side identifiers -> Three-state match.
+// Default construction (NotAttempted + two empty identities) must return NotAttempted, never Matched.
+SymbolMatch deriveSymbolMatch(SymbolLoadAttempt attempt,
                               const PdbIdentity& wanted,
                               const PdbIdentity& loaded) noexcept;
 
 struct ModuleSymbolState final {
-    std::string moduleName;  // 外来文本
-    PdbIdentity wanted;      // 转储里 CodeView 记录声明的
-    PdbIdentity loaded;      // 实际加载到的
-    SymbolMatch match = SymbolMatch::NotAttempted;
-    // attempt 与 match 都要留：SymbolMatch 只有规范给的四个值，
-    // "没找到文件" 与 "找到了但装不进来" 都会落到 Absent，两者的区别只能靠 attempt
-    // 与 outcome 保留（评审模式 4：失败语义不许塌成一个）。
-    SymbolLoadAttempt attempt = SymbolLoadAttempt::NotAttempted;
-    SymbolCacheSource cacheSource = SymbolCacheSource::Unknown;
-    CollectionOutcome outcome;  // 加载失败保留原始错误码
+    std::string moduleName;  // External text
+    PdbIdentity wanted;      // CodeView records declared in the dump
+    PdbIdentity loaded;      // Actually loaded
+    SymbolMatch match = SymbolMatch::kNotAttempted;
+    // Keep both attempt and match: SymbolMatch only has the four values specified by the spec. Both
+    // "file not found" and "found but failed to load" map to Absent; their distinction must be
+    // preserved via attempt and outcome (Review Mode 4: failure semantics must not collapse into one).
+    SymbolLoadAttempt attempt = SymbolLoadAttempt::kNotAttempted;
+    SymbolCacheSource cacheSource = SymbolCacheSource::kUnknown;
+    CollectionOutcome outcome;  // Preserve the original error code if loading fails.
 };
 
-// C-04 红线：只有 Matched 才允许给出确定的函数名与行号。
-bool MayReportFunctionName(const ModuleSymbolState& state) noexcept;
-bool MayReportSourceLine(const ModuleSymbolState& state) noexcept;
+// C-04 Red Line: Only if Matched, are definite function names and line numbers allowed.
+bool mayReportFunctionName(const ModuleSymbolState& state) noexcept;
+bool mayReportSourceLine(const ModuleSymbolState& state) noexcept;
 
-// 允许的归因层级。WrongVersion/Absent 最多到"模块+偏移"。
+// Allowed attribution levels. WrongVersion/Absent are limited to "Module+Offset".
 enum class SymbolAttribution {
-    ModuleOnly,             // 连基址都没有，只能说模块
-    ModulePlusOffset,       // "模块+0x偏移"
-    FunctionPlusOffset,     // "模块!函数+0x偏移"
-    FunctionAndSourceLine,  // 再加"源文件:行号"
+    kModuleOnly,             // Without a base address, it can only be considered a module.
+    kModulePlusOffset,       // "Module + 0x offset"
+    kFunctionPlusOffset,     // "Module!Function+0xOffset"
+    kFunctionAndSourceLine,  // Add "Source File:Line Number".
 };
 
-const char* SymbolAttributionName(SymbolAttribution attribution) noexcept;
+const char* symbolAttributionName(SymbolAttribution attribution) noexcept;
 
-SymbolAttribution AllowedAttribution(const ModuleSymbolState& state,
+SymbolAttribution allowedAttribution(const ModuleSymbolState& state,
                                      bool moduleBaseKnown) noexcept;
 
-// C-04：网络符号下载必须"用户启用 + 可取消 + 有限时"。默认三样都没有。
+// C-04: Network symbol downloads must be 'user-enabled + cancellable + time-limited'. All three defaults are false.
 struct SymbolServerPolicy final {
     bool userEnabled = false;
     bool cancellable = false;
-    ScanBudget budget;  // 必须含 maxDurationNanos，否则"有限时"无从谈起
+    ScanBudget budget;  // Must include maxDurationNanos; otherwise, the concept of 'time-limited' is meaningless.
 };
 
 enum class SymbolServerDecision {
-    Allow,
-    RejectNotEnabled,      // 用户没开
-    RejectNotCancellable,  // 没有取消通路
-    RejectNoTimeBudget,    // 没有时间预算
+    kAllow,
+    kRejectNotEnabled,      // Not enabled by the user
+    kRejectNotCancellable,  // No cancellation path
+    kRejectNoTimeBudget,    // No time budget
 };
 
-const char* SymbolServerDecisionName(SymbolServerDecision decision) noexcept;
+const char* symbolServerDecisionName(SymbolServerDecision decision) noexcept;
 
-// 默认构造的策略必须被拒。判定顺序：开关 -> 取消 -> 时限。
-SymbolServerDecision DecideSymbolServerFetch(const SymbolServerPolicy& policy) noexcept;
+// Default-constructed policies must be rejected. Evaluation order: switch -> cancel -> timeout.
+SymbolServerDecision decideSymbolServerFetch(const SymbolServerPolicy& policy) noexcept;
 
 // ---------------------------------------------------------------------------
-// C-05 栈与模块
+// C-05 Stack and modules
 // ---------------------------------------------------------------------------
 
 enum class UnwindState {
-    TruncatedNoData,  // 默认：没有 unwind 数据或转储不含该栈内存，到此为止
-    TruncatedCorrupt, // 数据自相矛盾（栈指针倒退/越界），到此为止
-    Guessed,          // 栈扫描出来的候选，不是展开结果
-    Unwound,          // 用 unwind 数据正常展开
+    kTruncatedNoData,  // Default: no unwind data or the dump lacks this stack memory; stop here.
+    kTruncatedCorrupt, // Data is self-contradictory (stack pointer regression/overflow); stop here.
+    kGuessed,          // Candidates from stack scanning, not unwind results.
+    kUnwound,          // Normal expansion using unwind data.
 };
 
-const char* UnwindStateName(UnwindState state) noexcept;
+const char* unwindStateName(UnwindState state) noexcept;
 
-// 截断态之后不允许再有帧 —— 否则就是"拼接猜测帧"。
-bool UnwindStateIsTerminal(UnwindState state) noexcept;
+// No frames may follow a truncated state; doing so would stitch together guessed frames.
+bool unwindStateIsTerminal(UnwindState state) noexcept;
 
-// 只有 Unwound 是可信帧。Guessed 不是。
-bool UnwindStateIsTrustworthy(UnwindState state) noexcept;
+// Only Unwound frames are trustworthy; Guessed frames are not.
+bool unwindStateIsTrustworthy(UnwindState state) noexcept;
 
 struct StackFrame final {
     OptionalU64 address;
     OptionalU64 stackPointer;
 
-    std::string moduleName;  // 外来文本
+    std::string moduleName;  // External text
     OptionalU64 moduleBase;
     OptionalU64 offsetInModule;
 
-    SymbolMatch symbolMatch = SymbolMatch::NotAttempted;
-    std::string functionName;  // 只有 symbolMatch==Matched 才允许非空
+    SymbolMatch symbolMatch = SymbolMatch::kNotAttempted;
+    std::string functionName;  // Non-null is allowed only when symbolMatch == Matched.
     OptionalU64 functionOffset;
-    std::string sourceFile;  // 同上
+    std::string sourceFile;  // Same as above
     OptionalU64 sourceLine;
 
-    UnwindState unwindState = UnwindState::TruncatedNoData;
+    UnwindState unwindState = UnwindState::kTruncatedNoData;
 
-    // C-05：参数逐个三态。取不到的参数保留 unset，绝不填 0。
+    // C-05: Parameters are individually ternary. Unavailable parameters remain unset and are never filled with 0.
     std::vector<OptionalU64> availableArgs;
     bool argsComplete = false;
 
-    // C-05：优化/内联导致的归因歧义要保留而不是抹平。
-    // attributionAmbiguous 为真时 candidateFunctions 必须留下 >= 2 个候选。
+    // C-05: Attribution ambiguity caused by optimization/inlining must be preserved, not flattened.
+    // When attributionAmbiguous is true, candidateFunctions must retain >= 2 candidates.
     bool attributionAmbiguous = false;
     std::vector<std::string> candidateFunctions;
 };
@@ -362,59 +362,59 @@ struct StackTrace final {
     std::size_t truncatedCount() const noexcept;
 };
 
-// ValidateStackTrace：拒绝不合法的栈，而不是"修正"它。
-// 检查顺序固定（先边界后逐帧），返回第一条违规。
+// validateStackTrace: Rejects invalid stacks rather than 'correcting' them.
+// Check order is fixed (bounds first, then frame-by-frame); return the first violation.
 enum class StackValidation {
-    Ok,
-    FramesAfterTruncation,              // 截断帧后面还有帧 = 拼接了猜测帧
-    // 没有匹配符号却给了函数名 —— 函数内偏移（functionOffset）同样算：没有解析出
-    // 函数就没有"函数内偏移"这回事，那个数只能是拿错版 PDB 或猜出来的。
-    FunctionNameWithoutMatchedSymbols,
-    SourceLineWithoutMatchedSymbols,    // 没有匹配符号却给了行号
-    // 没有匹配符号却给了候选函数名。候选同样会被渲染到 UI，只是从单数变复数：
-    // 错版 PDB 解出来的名字挂上"候选"两个字并不会因此变成可用的信息（C-04 红线）。
-    CandidatesWithoutMatchedSymbols,
-    AmbiguityCollapsed,                 // 标了歧义却只留一个候选 = 抹平了歧义
-    IncompleteArgumentsClaimedComplete, // 声称参数齐全但里面有未知
+    kOk,
+    kFramesAfterTruncation,              // Frames after a truncated frame imply guessed frames were appended.
+    // A function name without matching symbols; functionOffset also counts. Without a resolved function,
+    // there is no function-relative offset: the number can only come from a mismatched PDB or a guess.
+    kFunctionNameWithoutMatchedSymbols,
+    kSourceLineWithoutMatchedSymbols,    // Source line number without matching symbols.
+    // Candidate function names without matching symbols. Candidates are also rendered in the UI; pluralizing the names does not change this:
+    // Appending "candidate" to names resolved from a mismatched PDB does not make them usable information (C-04 red line).
+    kCandidatesWithoutMatchedSymbols,
+    kAmbiguityCollapsed,                 // Ambiguity marked but only one candidate retained = ambiguity collapsed.
+    kIncompleteArgumentsClaimedComplete, // Claims arguments are complete but contains unknowns.
 };
 
-const char* StackValidationName(StackValidation validation) noexcept;
+const char* stackValidationName(StackValidation validation) noexcept;
 
-StackValidation ValidateStackTrace(const StackTrace& trace) noexcept;
+StackValidation validateStackTrace(const StackTrace& trace) noexcept;
 
 // ---------------------------------------------------------------------------
-// C-06 可疑模块解释
+// C-06 Suspicious module explanation
 // ---------------------------------------------------------------------------
 
-// 三种证据分开表达。它们的强度完全不同，合并即失真。
+// Express the three evidence types separately. Their strengths differ significantly; merging them causes distortion.
 enum class ModuleEvidenceKind {
-    OnStack,           // 模块出现在栈上（可能只是被调用者）
-    FaultingIpModule,  // 故障 IP 落在该模块
-    VerifierReported,  // Driver Verifier 明确点名
+    kOnStack,           // Module appears on the stack (possibly just called).
+    kFaultingIpModule,  // Faulting IP falls within this module.
+    kVerifierReported,  // Driver Verifier explicitly identifies
 };
 
-const char* ModuleEvidenceKindName(ModuleEvidenceKind kind) noexcept;
+const char* moduleEvidenceKindName(ModuleEvidenceKind kind) noexcept;
 
 struct ModuleEvidenceItem final {
-    ModuleEvidenceKind kind = ModuleEvidenceKind::OnStack;
-    std::string moduleName;  // 外来文本
+    ModuleEvidenceKind kind = ModuleEvidenceKind::kOnStack;
+    std::string moduleName;  // External text
 
-    // 这条证据自己的前提：来自哪一帧、那一帧是怎么来的。
-    UnwindState frameUnwindState = UnwindState::TruncatedNoData;
+    // The prerequisite for this evidence itself: which frame it came from and how that frame was generated.
+    UnwindState frameUnwindState = UnwindState::kTruncatedNoData;
     OptionalU64 frameIndex;
 
-    // 故障 IP 是不是直接来自 trap frame / context record，而不是某个展开帧的返回地址。
-    // 默认 false —— 默认不许免检。FaultingIpModule 证据只有在这一位为真、或者它所在
-    // 的那一帧本身可信（Unwound）时才够格当"可查线索"：一帧已经被判定为
-    // TruncatedCorrupt（数据自相矛盾）却仍据此点名某个第三方驱动，就是越权判定。
+    // Whether the faulting IP comes directly from the trap frame / context record, rather than a return address from an unwind frame.
+    // Defaults to false—exemption from inspection is not allowed by default. The FaultingIpModule evidence qualifies as a 'verifiable
+    // lead' only if this bit is true or the frame itself is trusted (Unwound). If a frame is already deemed TruncatedCorrupt
+    // (internally contradictory data) yet is used to implicate a third-party driver, that constitutes an unauthorized determination.
     bool ipFromContextRecord = false;
 
-    std::string detail;  // 外来文本，原样保存
+    std::string detail;  // Preserve external text verbatim.
 };
 
 struct ModuleEvidenceGroup final {
-    std::string moduleName;  // 首次出现时的原始写法（展示用）
-    std::string moduleKey;   // ASCII 小写的分组键（不跨大小写以外做归一化）
+    std::string moduleName;  // Original implementation at first occurrence (for demonstration).
+    std::string moduleKey;   // ASCII lowercase group key (no normalization beyond case).
 
     std::vector<ModuleEvidenceItem> onStack;
     std::vector<ModuleEvidenceItem> faultingIp;
@@ -425,289 +425,289 @@ struct ModuleEvidenceGroup final {
     std::size_t evidenceCount() const noexcept;
 };
 
-// 已知系统模块名单（写死在实现里，不从转储读）。命中只降低"线索"资格，不是判决。
-bool IsWellKnownSystemModuleName(std::string_view moduleName) noexcept;
+// Known system module list (hardcoded in implementation, not read from dump). A match only reduces 'lead' eligibility, it is not a verdict.
+bool isWellKnownSystemModuleName(std::string_view moduleName) noexcept;
 
-// C-06：不给根因，只给"这条线索够不够立案"。没有任何百分比。
+// C-06: Does not provide the root cause, only answers 'Is this clue sufficient to open a case?'. No percentages are given.
 enum class InvestigationLead {
-    Undetermined,          // 默认：证据不足，无法确定
-    SystemModuleOnly,      // 只有系统模块（ntoskrnl/hal/...）的栈或 IP 证据：不构成线索
-    StackPresenceOnly,     // 只在可信帧的栈上出现：弱线索
-    FaultingIpAttributed,  // 故障 IP 归属到该模块：可查线索
-    VerifierNamed,         // Verifier 点名：最强的可查线索，仍然不是根因
+    kUndetermined,          // Default: insufficient evidence to determine.
+    kSystemModuleOnly,      // Stack or IP evidence from system modules (ntoskrnl/hal/...) only: not considered a clue.
+    kStackPresenceOnly,     // Appears only on the stack of trusted frames: weak clue
+    kFaultingIpAttributed,  // Faulting IP attributed to this module: investigable clue.
+    kVerifierNamed,         // Verifier named: The strongest traceable clue, yet still not the root cause.
 };
 
-const char* InvestigationLeadName(InvestigationLead lead) noexcept;
+const char* investigationLeadName(InvestigationLead lead) noexcept;
 
-// 每一条证据自己的前提也要成立，否则不许升级线索等级：
-//   * group.moduleKey 为空 = 这一组根本没有身份（GroupModuleEvidence 对空模块名就会
-//     产出这样一组）。没有名字的模块拿不到任何线索，一律 Undetermined。
-//   * faultingIp 证据需要 ipFromContextRecord 或该帧 Unwound，见 ModuleEvidenceItem。
-//   * onStack 证据需要该帧 Unwound。
-InvestigationLead ClassifyLead(const ModuleEvidenceGroup& group) noexcept;
+// Each piece of evidence's own prerequisites must hold; otherwise, the lead level cannot be upgraded:
+//   * If group.moduleKey is empty, this group has no identity (groupModuleEvidence produces such a group for
+//     empty module names). Modules without a name cannot yield any clues and are always marked Undetermined.
+//   * The faultingIp evidence requires ipFromContextRecord or that the frame be Unwound; see ModuleEvidenceItem.
+//   * onStack evidence requires this frame to be Unwound.
+InvestigationLead classifyLead(const ModuleEvidenceGroup& group) noexcept;
 
-// 按模块分组。O(n log n)：一次 stable_sort + 一趟扫描，不做两两比较。
-std::vector<ModuleEvidenceGroup> GroupModuleEvidence(std::vector<ModuleEvidenceItem> items);
+// Group by module. O(n log n): one stable_sort + one scan, no pairwise comparisons.
+std::vector<ModuleEvidenceGroup> groupModuleEvidence(std::vector<ModuleEvidenceItem> items);
 
 struct SuspectLead final {
     ModuleEvidenceGroup group;
-    InvestigationLead lead = InvestigationLead::Undetermined;
+    InvestigationLead lead = InvestigationLead::kUndetermined;
 };
 
 struct SuspectReport final {
     std::vector<SuspectLead> leads;
-    AnalysisConclusion conclusion = AnalysisConclusion::NoEvidence;
-    std::vector<std::string> limitationKeys;  // i18n 键，UI 负责翻译
+    AnalysisConclusion conclusion = AnalysisConclusion::kNoEvidence;
+    std::vector<std::string> limitationKeys;  // i18n key; UI handles translation
 };
 
-// stackOutcome 决定有没有观测。没有观测就是 NoEvidence，绝不是"未发现问题"。
-// 本函数永不返回 NoDifferenceObserved：一份转储的前提就是确实崩了，
-// "未发现差异"在这里是没有意义的结论。
-SuspectReport BuildSuspectReport(std::vector<ModuleEvidenceGroup> groups,
+// stackOutcome determines whether observations exist. If no observations exist, the result is NoEvidence, not 'no issues found'.
+// This function never returns NoDifferenceObserved: a dump presupposes a
+// crash, so 'no difference observed' is a meaningless conclusion here.
+SuspectReport buildSuspectReport(std::vector<ModuleEvidenceGroup> groups,
                                  const CollectionOutcome& stackOutcome);
 
 // ---------------------------------------------------------------------------
-// C-07 缺失内存的边界
+// C-07 Missing memory boundary
 // ---------------------------------------------------------------------------
 
 enum class ContentCategory {
-    IrpObjects,
-    LockObjects,       // ERESOURCE / 自旋锁
-    FullProcessSpace,  // 完整进程地址空间
-    PoolMemory,
-    KernelModuleList,
-    ThreadStacks,
-    PhysicalMemory,
+    kIrpObjects,
+    kLockObjects,       // ERESOURCE / spinlock
+    kFullProcessSpace,  // Full process address space
+    kPoolMemory,
+    kKernelModuleList,
+    kThreadStacks,
+    kPhysicalMemory,
 };
 
 inline constexpr std::size_t kContentCategoryCount = 7;
 
-const char* ContentCategoryName(ContentCategory category) noexcept;
+const char* contentCategoryName(ContentCategory category) noexcept;
 
 enum class ContentPresence {
-    Unknown,      // 默认：还没判定。红线：不许当成"没有"，更不许当成"有"
-    NotIncluded,  // 转储格式/本文件不含 —— "转储未包含"
-    NotParsable,  // 含但当前解析不了 —— "当前无法解析"
-    Included,     // 含且可解析
+    kUnknown,      // Default: undetermined. Red line: must not be treated as 'none' nor as 'present'.
+    kNotIncluded,  // Dump format: this file is not included — "Dump Not Included"
+    kNotParsable,  // Contains but currently unparseable — "Currently unparseable"
+    kIncluded,     // Included and parsable
 };
 
-const char* ContentPresenceName(ContentPresence presence) noexcept;
+const char* contentPresenceName(ContentPresence presence) noexcept;
 
 struct DumpContentAvailability final {
-    // 值初始化即全 Unknown（Unknown 是第一个枚举量）。默认不是"包含"。
+    // Value initialization results in all Unknown (Unknown is the first enumerator). The default is not 'present'.
     std::array<ContentPresence, kContentCategoryCount> presence{};
 
     ContentPresence presenceOf(ContentCategory category) const noexcept;
     void set(ContentCategory category, ContentPresence value) noexcept;
 };
 
-// 由转储类型推出的**上界**，不是"确认包含"。
-// 只有格式上确定不含的才写 NotIncluded；可能含的一律 Unknown，要靠实际解析确认。
-DumpContentAvailability DeriveAvailabilityFromKind(DumpKind kind) noexcept;
+// Upper bound derived from dump type, not "confirmed inclusion".
+// Only mark as NotIncluded if the format definitively excludes it; otherwise mark as Unknown and rely on actual parsing to confirm.
+DumpContentAvailability deriveAvailabilityFromKind(DumpKind kind) noexcept;
 
 enum class ContentQueryResult {
-    Available,            // 可以去解析
-    NotIncludedInDump,    // "转储未包含"
-    NotParsableHere,      // "当前无法解析"
-    UnknownAvailability,  // 还没判定 —— 不许当成"没有"
+    kAvailable,            // Can be parsed
+    kNotIncludedInDump,    // "Not included in dump"
+    kNotParsableHere,      // "Currently unparsable"
+    kUnknownAvailability,  // Not yet determined — must not be treated as 'absent'.
 };
 
-const char* ContentQueryResultName(ContentQueryResult result) noexcept;
+const char* contentQueryResultName(ContentQueryResult result) noexcept;
 
-// C-07 红线：任何一种非 Available 的结果都不许返回空对象冒充真实数据。
-ContentQueryResult QueryContent(const DumpContentAvailability& availability,
+// C-07 Red Line: Do not return an empty object to fake real data for any result that is not Available.
+ContentQueryResult queryContent(const DumpContentAvailability& availability,
                                ContentCategory category) noexcept;
 
-// C-07：从转储以外补齐的数据必须单独标记来源并在报告里写明，
-// 不得与转储内数据合并计数。
+// C-07: Data supplemented from outside the dump must have its source marked separately
+// and documented in the report; do not combine its counts with data from the dump.
 struct ExternalSupplement final {
     bool used = false;
-    SourceRef source;         // used 时 origin 必须是 ExternalFile
-    std::string disclosureKey;  // 报告里必须出现的说明键
+    SourceRef source;         // When used, origin must be ExternalFile.
+    std::string disclosureKey;  // Disclosure key that must appear in the report.
 };
 
-bool SupplementDisclosed(const ExternalSupplement& supplement) noexcept;
+bool supplementDisclosed(const ExternalSupplement& supplement) noexcept;
 
 // ---------------------------------------------------------------------------
-// C-08 超时、取消与隔离
+// C-08: Timeout, cancellation, and isolation.
 // ---------------------------------------------------------------------------
 
 enum class HelperState {
-    NotStarted,
-    Starting,
-    Ready,
-    Busy,
-    Stalled,       // 超出预算仍无响应
-    Disconnected,  // 通信断了
-    Cancelling,    // 已请求取消，仍在收尾（不得伪报已清理）
-    Exited,
-    Failed,
+    kNotStarted,
+    kStarting,
+    kReady,
+    kBusy,
+    kStalled,       // No response despite exceeding budget
+    kDisconnected,  // Communication disconnected
+    kCancelling,    // Cancellation requested; still finalizing (must not falsely report cleanup).
+    kExited,
+    kFailed,
 };
 
-const char* HelperStateName(HelperState state) noexcept;
-bool HelperStateIsTerminal(HelperState state) noexcept;
+const char* helperStateName(HelperState state) noexcept;
+bool helperStateIsTerminal(HelperState state) noexcept;
 
-// "这一轮到底结算了没有"。只有 Ready（起好了、该给的都给了）与 Exited（正常退出）
-// 算已结算；NotStarted/Starting/Busy/Cancelling 表示这一轮还没跑完，
-// Stalled/Disconnected/Failed 表示跑坏了。
-// 与 HelperStateIsTerminal 是两件事：Terminal 说的是"进程还在不在"，
-// 这里说的是"这批结果算不算数"。一个 Busy 的 helper 进程活得好好的，
-// 但它手上的结果集合天生不完整 —— 据此报"成功且未发现差异"就是"从没采到推出正常"。
-bool HelperStateSettled(HelperState state) noexcept;
+// "Has this round settled?" Only Ready (started, all required data provided) and Exited
+// (normal exit) count as settled; NotStarted/Starting/Busy/Cancelling indicate the
+// round is still in progress; Stalled/Disconnected/Failed indicate the round failed.
+// This is distinct from helperStateIsTerminal: Terminal indicates whether the process still exists, whereas this indicates whether
+// the result set is valid. A Busy helper process may be running perfectly fine, but its result set is inherently incomplete;
+// reporting 'success with no differences found' in this case would be equivalent to claiming 'no valid results were ever collected'.
+bool helperStateSettled(HelperState state) noexcept;
 
-// C-08 红线：只允许结束**本模块拥有的** helper。
+// C-08 Red Line: Only helpers owned by this module are allowed to be terminated.
 struct HelperOwnership final {
-    std::string ownerModuleId;  // 谁启动的
-    std::string helperId;       // helper 实例 id
+    std::string ownerModuleId;  // Initiator
+    std::string helperId;       // helper instance ID
     OptionalU64 processId;
-    bool startedByThisModule = false;  // 默认 false —— 默认不许结束
+    bool startedByThisModule = false;  // Default false — by default, termination is not allowed.
 };
 
 enum class TerminateDecision {
-    Allow,
-    RejectNotOwned,          // 不是本模块启动的
-    RejectOwnerMismatch,     // owner id 与请求方对不上
-    RejectNoHelperIdentity,  // 连 helperId 都没有，无从确认要结束谁
+    kAllow,
+    kRejectNotOwned,          // Not started by this module
+    kRejectOwnerMismatch,     // Owner ID does not match the requester.
+    kRejectNoHelperIdentity,  // Without a helperId, it is impossible to determine whom to terminate.
 };
 
-const char* TerminateDecisionName(TerminateDecision decision) noexcept;
+const char* terminateDecisionName(TerminateDecision decision) noexcept;
 
-TerminateDecision DecideHelperTermination(const HelperOwnership& helper,
+TerminateDecision decideHelperTermination(const HelperOwnership& helper,
                                           std::string_view requestingModuleId) noexcept;
 
-// C-08：卡住/断连/取消都要保留部分结果并明确标注中断原因。
+// C-08: For blocked, disconnected, or cancelled states, retain partial results and explicitly mark the interruption reason.
 struct InterruptedResult final {
-    BudgetStop stop = BudgetStop::Continue;
-    HelperState helperState = HelperState::NotStarted;
+    BudgetStop stop = BudgetStop::kContinue;
+    HelperState helperState = HelperState::kNotStarted;
     CollectionOutcome outcome;
     CoverageAccount coverage;
     bool partialResultsRetained = false;
-    std::vector<std::string> interruptionKeys;  // i18n 键
+    std::vector<std::string> interruptionKeys;  // i18n key
 };
 
-// haveAnyResult 为 false 时结果绝不会是 Partial：一次"什么都没采到"的中断
-// 若报成 Partial，StatusCarriesObservation 就会放行，下游据此推出正向结论 ——
-// 这正是"从没采到推出正常"。此时按停止原因落到 NotCollected/Timeout/Error。
+// When haveAnyResult is false, the result can never be Partial: an interruption where nothing was collected. If reported as
+// Partial, statusCarriesObservation would allow it, leading downstream to infer a positive conclusion—precisely the fallacy
+// of 'inferring normalcy from nothing collected.' In this case, the stop reason maps to NotCollected/Timeout/Error.
 //
-// helperState 是**独立的第二维**，不许只看 stop：stop==Continue 只说明"预算没用完"，
-// 它对"helper 到底跑没跑"一无所知。helper 没结算（HelperStateSettled 为假）时，
-// Success 一律降级 —— 有结果降到 Partial，没结果降到 NotCollected。已经是
-// Timeout/Error/NotCollected 的更严重结论保持不动，本函数只降级不升级。
-InterruptedResult BuildInterruptedResult(BudgetStop stop,
+// helperState is an **independent second dimension**; do not look at stop alone: stop==Continue only indicates "budget not
+// exhausted" and tells nothing about whether the helper actually ran. When the helper is not settled (helperStateSettled is
+// false), Success is always downgraded: if there is a result, downgrade to Partial; if no result, downgrade to NotCollected.
+// More severe conclusions like Timeout/Error/NotCollected remain unchanged; this function only downgrades, never upgrades.
+InterruptedResult buildInterruptedResult(BudgetStop stop,
                                          HelperState helperState,
                                          const ScanBudget& budget,
                                          CoverageAccount coverage,
                                          bool haveAnyResult);
 
 // ---------------------------------------------------------------------------
-// C-09 不可信路径与输出
+// C-09: Untrusted paths and output.
 // ---------------------------------------------------------------------------
 
-// EscapeForReport：外来文本（模块名 / 文件路径 / 符号名 / 转储自带字符串）进
-// HTML 报告前的唯一出口。
-//   & < > " ' -> 实体引用
-//   C0 控制字符与 0x7F -> "&#65533;"（U+FFFD 的十进制数字引用，纯 ASCII 输出）
-//   >= 0x80 的字节原样透传，不破坏 UTF-8
-// 换行/制表也被替换：这些字段里出现换行本身就是异常，报告自己的换行不经过本函数。
-std::string EscapeForReport(std::string_view untrusted);
+// escapeForReport: The sole exit point for untrusted text (module names, file paths,
+// symbol names, and strings embedded in dumps) before generating HTML reports.
+//   Entity references for & < > " ' -> C0 control characters and 0x7F -> "&#65533;" (decimal
+//   numeric reference for U+FFFD, pure ASCII output). Bytes >= 0x80 are passed through unchanged
+//   to avoid breaking UTF-8. Newlines and tabs are replaced: the presence of newlines in these
+// fields is itself anomalous; reports containing newlines do not pass through this function.
+std::string escapeForReport(std::string_view untrusted);
 
-// 纯文本（.txt / TSV）报告字段的消毒：只把会打乱行列结构的控制字符换成 '?'，
-// 不做 HTML 转义。与 EscapeForReport 是两条不同出口，不许互相替代。
-std::string SanitizeForPlainTextField(std::string_view untrusted);
+// Sanitization of plain text (.txt / TSV) report fields: only control characters that would disrupt row/column structure are
+// replaced with '?', without HTML escaping. This is a separate exit path from escapeForReport and must not be substituted for it.
+std::string sanitizeForPlainTextField(std::string_view untrusted);
 
-// C-09：只允许实现内固定的白名单命令。没有任何"拼参数"入口 —— 本文件不提供
-// 命令构造函数，白名单是完整命令字符串，逐字节全等才通过。
-std::span<const std::string_view> AllowedAnalysisCommands() noexcept;
+// C-09: Only allow fixed internal whitelist commands. No "parameter splicing" entry points exist — this file provides
+// no command constructors; the whitelist consists of complete command strings, passing only via byte-for-byte equality.
+std::span<const std::string_view> allowedAnalysisCommands() noexcept;
 
-bool IsSafeAnalysisCommand(std::string_view command) noexcept;
+bool isSafeAnalysisCommand(std::string_view command) noexcept;
 
 enum class CommandRejection {
-    Accepted,
-    Empty,
-    TooLong,
-    ContainsControlCharacter,
-    ContainsShellMetacharacter,
-    NotInWhitelist,
+    kAccepted,
+    kEmpty,
+    kTooLong,
+    kContainsControlCharacter,
+    kContainsShellMetacharacter,
+    kNotInWhitelist,
 };
 
-const char* CommandRejectionName(CommandRejection rejection) noexcept;
+const char* commandRejectionName(CommandRejection rejection) noexcept;
 
-// 判定顺序固定：空 -> 过长 -> 控制字符 -> shell 元字符 -> 白名单。
-CommandRejection ClassifyCommandRequest(std::string_view request) noexcept;
+// Judgment order is fixed: null -> too long -> control characters -> shell metacharacters -> whitelist.
+CommandRejection classifyCommandRequest(std::string_view request) noexcept;
 
-// C-09：路径按数据处理。返回值只用于**判定**，本函数绝不重写路径。
+// C-09: Path is processed according to data handling rules. The return value is used solely for **validation**; this function never rewrites the path.
 enum class PathRisk {
-    Ok,
-    Empty,
-    TooLong,
-    ControlCharacter,
-    WildCard,             // * 或 ?
-    ParentTraversal,      // 存在等于 ".." 的路径段
-    AlternateDataStream,  // 驱动器冒号以外的 ':'
-    // 保留设备名（CON/PRN/AUX/NUL/COM1-9/LPT1-9）**或** DOS 设备命名空间前缀
+    kOk,
+    kEmpty,
+    kTooLong,
+    kControlCharacter,
+    kWildCard,             // Wildcard (* or ?)
+    kParentTraversal,      // A path segment equal to ".." exists.
+    kAlternateDataStream,  // A colon other than the drive-letter colon.
+    // Reserved device names (CON/PRN/AUX/NUL/COM1-9/LPT1-9) or a DOS device namespace prefix.
     // \\.\ / //./（\\.\PhysicalDrive0、\\.\pipe\x、\\?\GLOBALROOT\Device\...）。
-    // 后者既不是远程路径也不是文件：允许打开就等于允许把裸盘或命名管道当转储喂进来，
-    // 那是一条无限长、可变、由本地攻击者控制的字节流。
-    DeviceName,
-    // 段尾有 '.' 或 ' '。Windows 打开时会把它们剥掉，于是"被判定的字符串"与
-    // "真正被打开的文件"不是同一个 —— 判定结果因此不可信，直接拒绝。
-    TrailingDotOrSpace,
-    UncOrRemote,          // \\server\share 或 //server/share（含 \\?\UNC\ 长路径写法）
+    // The latter is neither a remote path nor a file: allowing it to be opened is equivalent to allowing raw disks or
+    // named pipes to be fed as dumps, which constitutes an infinite-length, variable, attacker-controlled byte stream.
+    kDeviceName,
+    // Trailing dot or space. Windows strips them when opening, so the 'determined string' differs
+    // from the 'actually opened file' — the determination is unreliable; reject directly.
+    kTrailingDotOrSpace,
+    kUncOrRemote,          // \\server\share or //server/share (including \\?\UNC\ long path notation)
 };
 
-const char* PathRiskName(PathRisk risk) noexcept;
+const char* pathRiskName(PathRisk risk) noexcept;
 
-// Win32 长路径前缀 \\?\（以及 \\?\UNC\）先被剥掉再判定：它是打开超过 MAX_PATH 的
-// 转储文件的唯一写法，本身无害。不剥掉的话，前缀里的 '?' 会被通配符扫描一刀切成
-// WildCard —— 合法的长路径转储永远打不开，而且 UI 给出的理由（"含通配符"）是错的，
-// 用户无从修。剥掉之后 \\?\UNC\server\share\x 仍然是 UncOrRemote。
-PathRisk ClassifyDumpPath(std::string_view path) noexcept;
+// Win32 long path prefix \\?\ (and \\?\UNC\) is stripped before evaluation: it is the only valid way to open dump files
+// exceeding MAX_PATH and is itself harmless. Without stripping, the '?' in the prefix would be treated as a WildCard by
+// the scan, causing valid long-path dumps to be rejected with an incorrect UI reason ("contains WildCard"), leaving the
+// user unable to fix it. After stripping, \\?\UNC\server\share\x remains classified as UncOrRemote.
+PathRisk classifyDumpPath(std::string_view path) noexcept;
 
-// 只有 Ok 与 UncOrRemote 可以打开；UncOrRemote 还需要用户显式确认。
-bool PathAcceptableForOpen(PathRisk risk) noexcept;
-bool PathNeedsExplicitConfirmation(PathRisk risk) noexcept;
+// Only Ok and UncOrRemote can be opened; UncOrRemote also requires explicit user confirmation.
+bool pathAcceptableForOpen(PathRisk risk) noexcept;
+bool pathNeedsExplicitConfirmation(PathRisk risk) noexcept;
 
-// C-09 纵深防御：对**已经生成的**报告片段做出口检查。即使某处忘了转义，
-// 这一层也能在写文件前拦下。
+// C-09 Defense in Depth: Performs egress checks on already-generated report fragments. Even if
+// escaping is forgotten elsewhere, this layer intercepts issues before writing to the file.
 enum class ReportOutputRisk {
-    Ok,
-    RawControlCharacter,   // \t \n \r 以外的控制字符
-    // 需要用户点一下才会走出去：href/action/formaction/cite/content 指向
+    kOk,
+    kRawControlCharacter,   // Control characters other than \t, \n, and \r.
+    // Requires a user click to navigate out: href/action/formaction/cite/content points to
     // http(s)/ftp/file/UNC。
-    ExternalLink,
-    // 打开报告就**自动**发出去的外部请求。两类都算，因为后果一样：
-    //   * 标签：img/iframe/object/embed/video/audio/source/link/base/meta/style
-    //   * 属性：src/srcset/background/poster/data/style 里出现外部 URL、
-    //     CSS 的 url(...) 或 @import —— 即使标签名本身人畜无害
+    kExternalLink,
+    // External requests automatically sent when opening the report. Both types count because the consequences are the same:
+    //   * Tags: img/iframe/object/embed/video/audio/source/link/base/meta/style
+    //   * Attributes: External URLs, CSS URL(...) functions, or @import rules appearing in
+    //     src, srcset, background, poster, data, or style—even if the tag name itself is benign.
     //     （<div style="background:url(https://…)">、<table background="//…">）。
-    ExternalResourceTag,
-    DebuggerMarkupLink,    // DML：<exec cmd="..."> / <link cmd="...">
+    kExternalResourceTag,
+    kDebuggerMarkupLink,    // DML：<exec cmd="..."> / <link cmd="...">
     // <script> / on*= / javascript: / vbscript: / data:。
-    // 判定前先把属性区里的字符引用折掉：浏览器解析 URL **之前**先解实体，
-    // 所以 "&#106;avascript:" 对它来说就是 "javascript:"。
-    ScriptOrEventHandler,
+    // Before validation, unescape character references in the attribute section: browsers
+    // resolve entities before parsing URLs, so "&#106;avascript:" is treated as "javascript:".
+    kScriptOrEventHandler,
 };
 
-const char* ReportOutputRiskName(ReportOutputRisk risk) noexcept;
+const char* reportOutputRiskName(ReportOutputRisk risk) noexcept;
 
-// 一趟扫描，取最高危的一项。优先级：
-// 控制字符 > 脚本 > DML > 外部资源（标签或自动加载属性）> 外部链接 > Ok。
-ReportOutputRisk ClassifyReportFragment(std::string_view fragment) noexcept;
+// One pass scan, taking the highest risk item. Priority:
+// Control characters > scripts > DML > external resources (tags or auto-load attributes) > external links > OK.
+ReportOutputRisk classifyReportFragment(std::string_view fragment) noexcept;
 
 // ---------------------------------------------------------------------------
-// C-10 报告出处
+// C-10 Report provenance
 // ---------------------------------------------------------------------------
 
 struct EngineIdentity final {
     std::string engineId;       // "ksword.dumpfacts" / "dbgeng"
-    std::string engineVersion;  // 空 = 未知。红线：不许写 "0.0" 冒充
+    std::string engineVersion;  // Empty = unknown. Critical: Do not write "0.0" to fake it.
     bool engineAvailable = false;
 };
 
 struct DumpInputIdentity final {
-    std::string filePath;  // 原始路径（外来文本，进报告前过 EscapeForReport）
+    std::string filePath;  // Original path (external text; pass through escapeForReport before adding it to the report).
     OptionalU64 fileSize;
-    std::string sha256Hex;  // 64 位十六进制小写；空 = 未计算，不是 "0"
+    std::string sha256Hex;  // 64-bit lowercase hexadecimal; empty means not calculated, not "0".
     bool hashComputed = false;
     OptionalU64 lastModifiedUtc100ns;
 };
@@ -715,45 +715,45 @@ struct DumpInputIdentity final {
 struct DumpReportProvenance final {
     EngineIdentity engine;
     DumpInputIdentity input;
-    SourceRef source;               // origin 必须是 OfflineSample
-    CaptureWindow window;           // 分析发生的时刻
-    CoverageAccount analysisScope;  // 分析范围
+    SourceRef source;               // Note: origin must be OfflineSample
+    CaptureWindow window;           // Moment when analysis occurred.
+    CoverageAccount analysisScope;  // Analysis scope
     std::vector<ModuleSymbolState> symbolStates;
     DumpContentAvailability availability;
     ExternalSupplement supplement;
 };
 
-// C-10：缺什么就报什么，而不是一个 bool "ok"。
+// C-10: Report exactly what is missing, rather than a single bool 'ok'.
 enum class ProvenanceGap {
-    MissingEngineIdentity,
-    MissingEngineVersion,
-    MissingInputPath,
-    MissingInputSize,
-    MissingInputHash,
-    MissingAnalysisWindow,
-    MissingSymbolStates,
-    UnstatedAnalysisScope,
-    WrongSourceOrigin,
-    UndisclosedExternalSupplement,  // 用了转储外的数据却没写说明
+    kMissingEngineIdentity,
+    kMissingEngineVersion,
+    kMissingInputPath,
+    kMissingInputSize,
+    kMissingInputHash,
+    kMissingAnalysisWindow,
+    kMissingSymbolStates,
+    kUnstatedAnalysisScope,
+    kWrongSourceOrigin,
+    kUndisclosedExternalSupplement,  // Uses data outside the dump without documentation.
 };
 
-const char* ProvenanceGapName(ProvenanceGap gap) noexcept;
+const char* provenanceGapName(ProvenanceGap gap) noexcept;
 
-std::vector<ProvenanceGap> AuditProvenance(const DumpReportProvenance& provenance);
+std::vector<ProvenanceGap> auditProvenance(const DumpReportProvenance& provenance);
 
-// 默认构造的 provenance 必然返回 false（评审模式 3）。
-bool ProvenanceReviewable(const DumpReportProvenance& provenance);
+// A default-constructed provenance always returns false (Review Mode 3).
+bool provenanceReviewable(const DumpReportProvenance& provenance);
 
 struct ReportField final {
-    std::string key;    // ASCII i18n 键
-    std::string value;  // 已经过 EscapeForReport 的值
+    std::string key;    // ASCII i18n key
+    std::string value;  // Value already processed by escapeForReport.
 };
 
-// C-09 + C-10：报告头字段的唯一生成入口。所有外来文本在这里统一转义，
-// 缺失值输出固定的 "dump.value.unknown" 键而不是 "0"/空串。
-std::vector<ReportField> BuildProvenanceFields(const DumpReportProvenance& provenance);
+// C-09 + C-10: The sole entry point for generating report header fields. All external text is escaped
+// here; missing values output the fixed key "dump.value.unknown" instead of "0" or an empty string.
+std::vector<ReportField> buildProvenanceFields(const DumpReportProvenance& provenance);
 
-// 缺失值在报告里的占位键。调用方按 i18n 翻译，不要自己拼中文。
+// Placeholder key for missing values in reports. Callers must translate via i18n; do not hardcode Chinese.
 inline constexpr std::string_view kUnknownValueKey = "dump.value.unknown";
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence

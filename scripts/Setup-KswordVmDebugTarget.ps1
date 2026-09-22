@@ -1,34 +1,34 @@
 <#
 .SYNOPSIS
-    把一台 VMware 虚拟机配成 KSword 的授权测试机：开测试签名 + 网络内核调试（KDNET）。
+    Configure a VMware VM as a KSword license test machine: enable test signing + network kernel debugging (KDNET).
 
 .DESCRIPTION
-    只改这台虚拟机自己的启动配置（BCD），不碰宿主机，不安装任何东西，不加载驱动。
-    执行前请确保：
-      1. 已经给这台虚拟机打过快照；
-      2. 虚拟机固件里 Secure Boot 是关闭的 —— 开着的话 testsigning 会被静默忽略，
-         你会得到"命令成功"但驱动依然加载不了的假象。
+    Modify only this VM's boot configuration (BCD); do not touch the host, install anything, or load drivers.
+    Ensure before execution:
+      1. This VM has already been snapshotted;
+      2. Secure Boot is disabled in the virtual machine firmware: if enabled, testsigning would be
+         silently ignored, creating the false impression of "command success" while the driver fails to load.
 
-    改完必须重启才生效。重启后桌面右下角会出现"测试模式 / Test Mode"水印。
+    Changes require a reboot to take effect. After reboot, a "Test Mode" watermark will appear in the bottom-right corner of the desktop.
 
 .PARAMETER HostIp
-    宿主机在 VMware 虚拟网段上的地址。NAT(VMnet8) 默认 192.168.80.1。
+    Address of the host machine on the VMware virtual network segment. NAT (VMnet8) defaults to 192.168.80.1.
 
 .PARAMETER Port
-    KDNET 端口。宿主机防火墙需要放行该端口的入站 UDP。
+    KDNET port. The host firewall must allow inbound UDP traffic on this port.
 
 .PARAMETER Key
-    KDNET 密钥，四段点分。两侧必须完全一致。
+    KDNET key, four segments separated by dots. Both sides must match exactly.
 
 .PARAMETER Revert
-    撤销：关掉调试与测试签名，恢复成普通启动。
+    Revert: disable debugging and test signing to restore normal boot.
 
 .EXAMPLE
-    # 在虚拟机内，以管理员身份：
+    # In the virtual machine, run as Administrator:
     powershell -ExecutionPolicy Bypass -File .\Setup-KswordVmDebugTarget.ps1
 
 .EXAMPLE
-    # 撤销
+    # Revoke
     powershell -ExecutionPolicy Bypass -File .\Setup-KswordVmDebugTarget.ps1 -Revert
 #>
 [CmdletBinding()]
@@ -45,75 +45,75 @@ function Assert-Admin {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     $pr = New-Object Security.Principal.WindowsPrincipal($id)
     if (-not $pr.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        throw '必须以管理员身份运行。'
+        throw 'Must run as administrator.'
     }
 }
 
 function Get-SecureBootState {
-    # 非 UEFI 机器上 Confirm-SecureBootUEFI 会抛异常，那种情况等价于"没开"。
+    # On non-UEFI machines, Confirm-SecureBootUEFI throws an exception; this case is equivalent to 'not enabled'.
     try { return [bool](Confirm-SecureBootUEFI) } catch { return $false }
 }
 
 Assert-Admin
 
-Write-Host "=== KSword 测试机配置 ===" -ForegroundColor Cyan
-Write-Host "计算机名 : $env:COMPUTERNAME"
-Write-Host "系统     : $((Get-CimInstance Win32_OperatingSystem).Caption) build $((Get-CimInstance Win32_OperatingSystem).BuildNumber)"
+Write-Host "=== KSword Test Target Configuration ===" -ForegroundColor Cyan
+Write-Host "Computer Name : $env:COMPUTERNAME"
+Write-Host "System     : $((Get-CimInstance Win32_OperatingSystem).Caption) build $((Get-CimInstance Win32_OperatingSystem).BuildNumber)"
 
 if ($Revert) {
-    Write-Host "`n--- 撤销模式 ---" -ForegroundColor Yellow
+    Write-Host "`n--- Revoke Mode ---" -ForegroundColor Yellow
     bcdedit /debug off
     bcdedit /set testsigning off
-    Write-Host "`n已关闭调试与测试签名。重启后生效。" -ForegroundColor Yellow
+    Write-Host "`nDebugging and test signing have been disabled. Changes take effect after a restart." -ForegroundColor Yellow
     bcdedit /enum "{current}" | Select-String 'testsigning|debug'
     return
 }
 
 # ---------------------------------------------------------------------------
-# 1) Secure Boot 必须是关的
+# 1) Secure Boot must be disabled.
 # ---------------------------------------------------------------------------
 $secureBoot = Get-SecureBootState
 Write-Host "`nSecure Boot : $secureBoot" -NoNewline
 if ($secureBoot) {
-    Write-Host "  <-- 必须先关掉" -ForegroundColor Red
-    throw 'Secure Boot 开着时 bcdedit /set testsigning on 会被静默忽略。请先在虚拟机固件里关闭 Secure Boot（VMware：虚拟机设置 → 选项 → 高级 → 取消勾选"启用安全引导"），然后重跑本脚本。'
+    Write-Host "  <-- Must turn off first" -ForegroundColor Red
+    throw 'Secure Boot is on: bcdedit /set testsigning on will be silently ignored. Please disable Secure Boot in the VM firmware first (VMware: VM Settings → Options → Advanced → uncheck "Enable Secure Boot"), then rerun this script.'
 }
 Write-Host "  OK" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# 2) 备份当前启动项（快照之外的第二道保险）
-#    以 SYSTEM 运行时（计划任务提权）Desktop 可能不存在，回退到 Windows\Temp。
+# 2) Backup current startup items (the second line of defense beyond snapshots).
+#    The Desktop may not exist when running as SYSTEM (via scheduled task with elevated privileges); fall back to Windows\Temp.
 # ---------------------------------------------------------------------------
 $desktop = [Environment]::GetFolderPath('Desktop')
 $backupDir = if ($desktop -and (Test-Path $desktop)) { $desktop } else { Join-Path $env:SystemRoot 'Temp' }
 $backup = Join-Path $backupDir 'bcd-before-ksword.txt'
 bcdedit /enum "{current}" | Out-File -FilePath $backup -Encoding utf8
 bcdedit /dbgsettings   | Out-File -FilePath $backup -Encoding utf8 -Append
-Write-Host "已备份当前启动项到 $backup"
+Write-Host "Backed up current boot entries to $backup"
 
 # ---------------------------------------------------------------------------
-# 3) 网络内核调试（KDNET）
-#    e1000e = Intel 82574L，在 KDNET 支持的网卡列表内。
+# 3) Network kernel debugging (KDNET)
+#    e1000e = Intel 82574L, which is in the list of NICs supported by KDNET.
 # ---------------------------------------------------------------------------
-Write-Host "`n--- 配置 KDNET ---" -ForegroundColor Cyan
+Write-Host "`n--- Configuring KDNET ---" -ForegroundColor Cyan
 Write-Host "hostip=$HostIp port=$Port key=$Key"
 & bcdedit /dbgsettings net "hostip:$HostIp" "port:$Port" "key:$Key"
-if ($LASTEXITCODE -ne 0) { throw "bcdedit /dbgsettings 失败，退出码 $LASTEXITCODE" }
+if ($LASTEXITCODE -ne 0) { throw "bcdedit /dbgsettings failed, exit code $LASTEXITCODE" }
 
 & bcdedit /debug on
-if ($LASTEXITCODE -ne 0) { throw "bcdedit /debug on 失败，退出码 $LASTEXITCODE" }
+if ($LASTEXITCODE -ne 0) { throw "bcdedit /debug on failed, exit code $LASTEXITCODE" }
 
 # ---------------------------------------------------------------------------
-# 4) 测试签名 —— 让 CN=KswordARK Test Signing Certificate 签的驱动可以加载
+# 4) Test signing — allows drivers signed by CN=KswordARK Test Signing Certificate to load
 # ---------------------------------------------------------------------------
-Write-Host "`n--- 开启测试签名 ---" -ForegroundColor Cyan
+Write-Host "`n--- Enabling test signing ---" -ForegroundColor Cyan
 & bcdedit /set testsigning on
-if ($LASTEXITCODE -ne 0) { throw "bcdedit /set testsigning on 失败，退出码 $LASTEXITCODE" }
+if ($LASTEXITCODE -ne 0) { throw "bcdedit /set testsigning on failed, exit code $LASTEXITCODE" }
 
 # ---------------------------------------------------------------------------
-# 5) 回读确认 —— 不要只看"操作成功完成"这句话
+# 5) Read-back confirmation — do not rely solely on the message "The operation completed successfully."
 # ---------------------------------------------------------------------------
-Write-Host "`n--- 回读确认 ---" -ForegroundColor Cyan
+Write-Host "`n--- Readback Confirmation ---" -ForegroundColor Cyan
 $dbg = (bcdedit /dbgsettings | Out-String)
 $cur = (bcdedit /enum "{current}" | Out-String)
 
@@ -123,7 +123,7 @@ $checks = @(
     @{ Name = 'debugtype=NET'; Ok = $dbg -match '(?im)^\s*debugtype\s+NET' }
     @{ Name = "hostip=$HostIp"; Ok = $dbg -match [regex]::Escape($HostIp) }
     @{ Name = "port=$Port";     Ok = $dbg -match "(?im)^\s*port\s+$Port" }
-    @{ Name = 'key 已设置';      Ok = $dbg -match [regex]::Escape($Key) }
+    @{ Name = 'key is set';      Ok = $dbg -match [regex]::Escape($Key) }
     @{ Name = 'debug=Yes';      Ok = $cur -match '(?im)^\s*debug\s+Yes' }
     @{ Name = 'testsigning=Yes';Ok = $cur -match '(?im)^\s*testsigning\s+Yes' }
 )
@@ -136,10 +136,10 @@ foreach ($c in $checks) {
 }
 
 if ($bad -gt 0) {
-    throw "$bad 项回读校验没通过 —— 不要当成配置成功。"
+    throw "$bad item readback validation failed -- do not treat as configuration success."
 }
 
-Write-Host "`n全部就绪。现在重启虚拟机：" -ForegroundColor Yellow
+Write-Host "`n All ready. Now restarting the virtual machine: " -ForegroundColor Yellow
 Write-Host "    shutdown /r /t 0"
-Write-Host "`n重启后应看到桌面右下角出现'测试模式'水印。宿主机侧连接命令：" -ForegroundColor Yellow
+Write-Host "`nAfter reboot, you should see the 'Test Mode' watermark in the bottom-right corner of the desktop. Connection command on the host side: " -ForegroundColor Yellow
 Write-Host "    windbg.exe -k net:port=$Port,key=$Key"

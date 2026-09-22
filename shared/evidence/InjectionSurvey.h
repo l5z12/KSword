@@ -1,31 +1,31 @@
 #pragma once
 
-// J 模块：进程内存植入与完整性检查（事后现场，没有事前监控记录）。
+// J Module: Process memory injection and integrity check (post-event forensics, no pre-event monitoring records).
 //
-// 这一层回答的是 issue #196 第一阶段的五件事：
-//   J-01 全地址空间索引（子区域权限不得被 AllocationBase 聚合吃掉）
-//   J-02 模块交叉视图（加载器 L / 映像映射 I / 非映像载荷候选 P）
-//   J-03 工作集页筛选（Valid/Shared 的正确语义）
-//   J-04 线程起点及其落点
-//   J-05 归一化映像比较的**范围选择**（归一化本身复用 PeImageMap + ImageDiff）
-// 外加两条贯穿全模块、"最不能省"的东西：归一化比较与**明确的检查缺口**。
+// This layer addresses the five items from Phase 1 of issue #196:
+//   J-01 Full address space index (sub-region permissions must not be consumed by AllocationBase aggregation).
+//   J-02 Module cross-view (Loader L / Image Mapping I / Non-image payload candidates P)
+//   J-03 Working set page filtering (correct semantics for Valid/Shared).
+//   J-04: Thread start and end points
+//   J-05: **Range selection** for normalized image comparison, reusing PeImageMap + ImageDiff for normalization. Two
+// mandatory concerns span the module: normalized comparison and **explicitly reported gaps in inspection coverage**.
 //
-// 刻意不提供的东西，同样是判据的一部分：
-//   * 没有 injectedUtc / injectionMethod / injectorPid 之类的字段。事后内存状态证明
-//     不了"谁在什么时候用哪种 API 注入"，给了字段就一定会有人去填。时间字段只有
-//     firstObservedUtc100ns（首次观测时间），来源字段分成"载荷所在进程"和
-//     "注入源进程"，后者默认 OwnerAttribution::Unknown。
-//   * 没有 score / weight / +30 +40。那些分数没有样本校准，而且"私有执行页"
-//     "不在模块内""无映像来源"经常是同一块内存的三种说法，相加就是重复计分。
-//     结论只有 AnalysisConclusion 四态 + 一张观测语义表（SemanticsFor）。
-//   * 没有"整进程豁免"或"整目录豁免"的入口。ExceptionRelation 必须绑定
-//     目标程序版本 + 被修改模块身份 + 具体 RVA 范围，缺一即拒。
-//   * 没有 isInjected / isClean。快速模式的结束条件是"完成了哪些检查、发现哪些
-//     候选"，不是二选一；截断、拒绝访问、参考文件不确定一律进 coverageGapKeys，
-//     绝不折叠成"未发现异常"。
+// Things deliberately omitted are also part of the criteria:
+//   * There are no fields like injectedUtc, injectionMethod, or injectorPid. Post-event memory state cannot prove
+//     'who injected, when, and via which API'; providing such fields would inevitably lead to them being filled. The
+//     only time field is firstObservedUtc100ns (first observed time). The source field is split into 'process
+//     containing the payload' and 'injection source process', with the latter defaulting to OwnerAttribution::Unknown.
+//   * No score/weight/+30/+40. Those scores lack sample calibration, and "private executable page", "outside module",
+//     and "no image source" are often three descriptions of the same memory region; summing them causes double-counting.
+//     Conclusion has only four AnalysisConclusion states plus one observation semantics table (semanticsFor).
+//   * No entry points for "whole-process exemption" or "whole-directory exemption". ExceptionRelation must bind target
+//     program version + modified module identity + specific RVA range; missing any component results in rejection.
+//   * There are no isInjected / isClean flags. The termination condition for fast mode is 'which checks
+//     were completed and which candidates were found', not a binary choice. Truncation, access denied, and
+//     uncertain reference files all map to coverageGapKeys; never collapse them into 'no anomalies found'.
 //
-// C++20、Qt-free、Win32-free。PAGE_* 这类 Win32 数值常量在本文件里按公开文档
-// 重新声明，不 include <Windows.h> —— 与 PeImageMap 手工解析 PE 的理由相同。
+// C++20, Qt-free, Win32-free. Win32 numeric constants like PAGE_* are redeclared here per public documentation
+// without including <Windows.h>, consistent with the rationale for PeImageMap's manual PE parsing.
 
 #include "EvidenceEnvelope.h"
 #include "ImageDiff.h"
@@ -40,64 +40,64 @@
 #include <string>
 #include <vector>
 
-namespace Ksword::Evidence {
+namespace ksword::evidence {
 
-// 本模块的检测器版本。写进每条 finding，供导出与回溯。
+// Detector version for this module. Written into each finding for export and rollback.
 inline constexpr std::uint32_t kInjectionSurveyRuleSetVersion = 1U;
 
 // ---------------------------------------------------------------------------
-// 模式与架构
+// Mode and architecture.
 // ---------------------------------------------------------------------------
 
-// 快速模式用于筛选，深度模式用于验证和取证。两者的差别只在**采集范围与读取量**，
-// 不在判据：归一化比较的 profile 两边必须相同（见 NormalizationProfileId）。
+// Fast mode is for screening; deep mode is for verification and forensics. The difference lies **only in the collection scope and
+// read volume**, not in the criteria: the normalized profile sides must be identical for comparison (see normalizationProfileId).
 enum class SurveyMode {
-    Fast,
-    Deep,
+    kFast,
+    kDeep,
 };
 
-const char* SurveyModeName(SurveyMode mode) noexcept;
+const char* surveyModeName(SurveyMode mode) noexcept;
 
 enum class ProcessArchitecture {
-    Unknown,
-    X64,
-    Wow64,      // 64 位系统上的 32 位进程
-    X86Native,
-    Arm64,
-    Arm64Ec,
+    kUnknown,
+    kX64,
+    kWow64,      // 32-bit process on a 64-bit system
+    kX86Native,
+    kArm64,
+    kArm64Ec,
 };
 
-const char* ProcessArchitectureName(ProcessArchitecture architecture) noexcept;
+const char* processArchitectureName(ProcessArchitecture architecture) noexcept;
 
 enum class CollectorArchitecture {
-    Unknown,
-    Native64,
-    Wow64,      // 采集器自己跑在 WOW64 下
+    kUnknown,
+    kNative64,
+    kWow64,      // The collector runs under WOW64.
 };
 
-const char* CollectorArchitectureName(CollectorArchitecture architecture) noexcept;
+const char* collectorArchitectureName(CollectorArchitecture architecture) noexcept;
 
-// 微软文档：32 位进程在 WOW64 下调用 EnumProcessModulesEx 时，模块过滤参数被忽略。
-// 也就是说 WOW64 采集器拿到的永远只是 32 位视图，不能当作完整的 64 位模块列表。
+// Microsoft documentation: When a 32-bit process calls EnumProcessModulesEx under WOW64, the module filter parameters are ignored.
+// This means the WOW64 collector only ever sees the 32-bit view and cannot be treated as a complete 64-bit module list.
 enum class ModuleEnumerationTrust {
-    Unknown,                  // 架构未知 —— 不能假设可信
-    Trusted,                  // 原生 64 位采集器
-    FilterIgnoredUnderWow64,  // WOW64 采集器：过滤参数被忽略，视图不完整
+    kUnknown,                  // Architecture unknown — cannot assume trust.
+    kTrusted,                  // Native 64-bit collector
+    kFilterIgnoredUnderWow64,  // WOW64 collector: Filter parameters are ignored; view is incomplete.
 };
 
-const char* ModuleEnumerationTrustName(ModuleEnumerationTrust trust) noexcept;
+const char* moduleEnumerationTrustName(ModuleEnumerationTrust trust) noexcept;
 
-ModuleEnumerationTrust EvaluateModuleEnumerationTrust(CollectorArchitecture collector,
+ModuleEnumerationTrust evaluateModuleEnumerationTrust(CollectorArchitecture collector,
                                                       ProcessArchitecture target) noexcept;
 
 // ---------------------------------------------------------------------------
-// J-01：Win32 保护值的正确分类
+// J-01: Correct classification of Win32 protection values.
 // ---------------------------------------------------------------------------
 //
-// 低字节是**互斥的基本保护值**，不是一组可以相与的位：
+// Low byte is the **exclusive base protection value**, not a set of bits to be ANDed:
 //   PAGE_EXECUTE_READ (0x20) & PAGE_EXECUTE (0x10) == 0
-// 所以 `protect & PAGE_EXECUTE` 会漏掉 R-X 和 RWX 页 —— 这正是 issue 点名的漏检。
-// 高位才是可以叠加的修饰位（PAGE_GUARD / PAGE_NOCACHE / ...）。
+// So `protect & PAGE_EXECUTE` misses R-X and RWX pages — exactly the false negatives flagged in the issue.
+// The high bits are the combinable modifiers (PAGE_GUARD / PAGE_NOCACHE / ...).
 
 inline constexpr std::uint32_t kWin32ProtectBaseMask = 0xFFU;
 
@@ -116,22 +116,22 @@ inline constexpr std::uint32_t kWin32PageWriteCombine = 0x400U;
 inline constexpr std::uint32_t kWin32PageTargetsNoUpdate = 0x40000000U;
 
 enum class ExecuteProtection {
-    Unknown,           // 来源没给原始值 —— 不是"不可执行"
-    NotExecutable,
-    Execute,           // PAGE_EXECUTE
-    ExecuteRead,       // PAGE_EXECUTE_READ
-    ExecuteReadWrite,  // PAGE_EXECUTE_READWRITE
-    ExecuteWriteCopy,  // PAGE_EXECUTE_WRITECOPY
+    kUnknown,           // Source lacks original value — not "non-executable"
+    kNotExecutable,
+    kExecute,           // PAGE_EXECUTE
+    kExecuteRead,       // PAGE_EXECUTE_READ
+    kExecuteReadWrite,  // PAGE_EXECUTE_READWRITE
+    kExecuteWriteCopy,  // PAGE_EXECUTE_WRITECOPY
 };
 
-const char* ExecuteProtectionName(ExecuteProtection protection) noexcept;
+const char* executeProtectionName(ExecuteProtection protection) noexcept;
 
-bool ExecuteProtectionIsExecutable(ExecuteProtection protection) noexcept;
+bool executeProtectionIsExecutable(ExecuteProtection protection) noexcept;
 
-// 从原始 PAGE_* 值解出来的事实。unrecognizedBase 表示低字节不是任何已知基本值 ——
-// 那是"看不懂"，既不能当可执行也不能当不可执行。
+// Facts decoded from original PAGE_* values. unrecognizedBase indicates the low byte is not any known
+// base value — that means "unrecognized," so it cannot be treated as executable or non-executable.
 struct ProtectionFacts final {
-    ExecuteProtection execute = ExecuteProtection::Unknown;
+    ExecuteProtection execute = ExecuteProtection::kUnknown;
     bool readable = false;
     bool writable = false;
     bool copyOnWrite = false;
@@ -141,59 +141,59 @@ struct ProtectionFacts final {
     OptionalU64 rawValue;
 };
 
-ProtectionFacts ClassifyWin32Protection(const OptionalU64& rawProtect) noexcept;
+ProtectionFacts classifyWin32Protection(const OptionalU64& rawProtect) noexcept;
 
-// 把解析结果写进通用的 RegionProtection（M-01）。两者并存是有意的：
-// RegionProtection 是跨模块的通用形状，ProtectionFacts 保留 Win32 特有的
-// "看不懂的基本值"和"PAGE_GUARD"这两种状态。
-RegionProtection ToRegionProtection(const ProtectionFacts& facts) noexcept;
+// Write the parsed result into the common RegionProtection (M-01). Keeping both is intentional:
+// RegionProtection is a cross-module generic shape, while ProtectionFacts retains
+// Win32-specific 'uninterpretable raw values' and the 'PAGE_GUARD' state.
+RegionProtection toRegionProtection(const ProtectionFacts& facts) noexcept;
 
-// 取一条区域记录"实际生效"的保护事实：
-//   * 有原始 PAGE_* 值就以它为准 —— 这样即使调用方用错误的位与算出了
-//     RegionProtection::executable，这一层也能纠正回来（issue 点名的漏检就是
-//     `protect & PAGE_EXECUTE` 漏掉 R-X / RWX）。
-//   * 没有原始值时才退回布尔字段；布尔字段**全是默认值**说明来源根本没填，
-//     那是未知，不是"不可执行"。
-ProtectionFacts EffectiveProtection(const RegionRecord& record) noexcept;
+// Retrieve the 'effective' protection facts for a region record:
+//   If a raw PAGE_* value exists, use it as the authoritative source—even if the caller computed it using incorrect bitwise operations.
+//     RegionProtection::executable: This layer can also correct the issue (the missed
+//     detection pointed out in the issue was `protect & PAGE_EXECUTE` missing R-X / RWX).
+//   * Fall back to the boolean field only when there is no raw value; if the boolean field is
+//     entirely default, the source was never filled, which means unknown, not "non-executable".
+ProtectionFacts effectiveProtection(const RegionRecord& record) noexcept;
 
 // ---------------------------------------------------------------------------
-// J-01：区域的代码分类
+// J-01: Code classification of the region.
 // ---------------------------------------------------------------------------
 //
-// 第一轮要标记的是**两类**已提交区域：可执行的 MEM_PRIVATE 和可执行的 MEM_MAPPED。
-// 只扫私有内存会漏掉映射型的非映像代码。
-// 注意 MEM_IMAGE 里的可执行页不是"候选"，但也不是"放行" —— 它走 J-05 的比较路径。
+// The first round must mark **two types** of committed regions: executable MEM_PRIVATE and executable MEM_MAPPED.
+// Scanning only private memory misses mapped non-image code.
+// Note: Executable pages in MEM_IMAGE are not "candidates" but also not "allowed"; they follow the J-05 comparison path.
 enum class RegionCodeClass {
-    Unknown,            // 类型或权限未知
-    NotCommitted,       // 未提交，不参与代码分类
-    NonExecutable,
-    ImageExecutable,    // MEM_IMAGE 且可执行 —— 交给归一化比较
-    PrivateExecutable,  // MEM_PRIVATE 且可执行 —— 动态代码候选
-    MappedExecutable,   // MEM_MAPPED 且可执行 —— 动态代码候选
+    kUnknown,            // Type or permission unknown.
+    kNotCommitted,       // Not committed, excluded from code classification.
+    kNonExecutable,
+    kImageExecutable,    // MEM_IMAGE and executable — pass to normalization comparison.
+    kPrivateExecutable,  // MEM_PRIVATE and executable — dynamic code candidate
+    kMappedExecutable,   // MEM_MAPPED and executable — candidate for dynamic code.
 };
 
-const char* RegionCodeClassName(RegionCodeClass codeClass) noexcept;
+const char* regionCodeClassName(RegionCodeClass codeClass) noexcept;
 
-// 候选 = 非映像的可执行内存。这只说明"存在动态／非映像可执行内存"，
-// 不说明"注入成立"。
-bool IsDynamicCodeCandidate(RegionCodeClass codeClass) noexcept;
+// Candidate = non-image executable memory. This only indicates
+// 'dynamic/non-image executable memory exists', not 'injection confirmed'.
+bool isDynamicCodeCandidate(RegionCodeClass codeClass) noexcept;
 
-RegionCodeClass ClassifyRegionCode(const RegionRecord& record) noexcept;
+RegionCodeClass classifyRegionCode(const RegionRecord& record) noexcept;
 
 // ---------------------------------------------------------------------------
-// J-01：地址空间索引
+// J-01: Address space index.
 // ---------------------------------------------------------------------------
 //
-// VirtualQueryEx 返回的是"属性相同的连续区域"，不是一个内核 VAD。所以按
-// AllocationBase 聚合是**显示与归属**用的，绝不能把子区域自己的权限合并掉：
-// 一块 RW 的私有分配里挖出一页 RX，聚合后只剩"这块分配是 RW"就把证据丢了。
+// VirtualQueryEx returns "contiguous regions with identical attributes", not a kernel VAD. Therefore, aggregating by
+// AllocationBase is for **display and attribution** only; never merge the permissions of sub-regions into their parent.
+// Extracting an RX page from a RW private allocation; after aggregation, only 'this allocation is RW' remains, causing the evidence to be lost.
 struct AllocationGroup final {
     OptionalU64 allocationBase;
-    std::vector<std::size_t> entryIndices;  // 指回 AddressSpaceIndex::entries
+    std::vector<std::size_t> entryIndices;  // Points back to AddressSpaceIndex::entries
 
-    RegionType type = RegionType::Unknown;
-    bool typeMixed = false;        // 组内出现了不止一种 Type
-    std::string mappedPath;        // 组内一致的映射路径；不一致时为空
+    RegionType type = RegionType::kUnknown;
+    bool typeMixed = false;        // Note: More than one Type appeared within the group.
+    std::string mappedPath;        // Consistent mapped path within the group; empty if inconsistent.
     bool mappedPathMixed = false;
 
     std::uint64_t committedBytes = 0;
@@ -202,20 +202,20 @@ struct AllocationGroup final {
     bool anyExecutable = false;
     bool anyWritableExecutable = false;
     bool anyGuard = false;
-    bool anyProtectionUnknown = false;  // 有子区域的保护值读不出来/看不懂
+    bool anyProtectionUnknown = false;  // Protection values for sub-regions could not be read or understood.
 };
 
 struct AddressSpaceIndex final {
     static constexpr std::size_t kNoEntry = static_cast<std::size_t>(-1);
 
-    // 前 searchableCount 条按 base 升序且区间有效，可参与二分查找；其后是
-    // base/size 缺失或相加溢出的记录 —— 它们仍然保留（证据不丢），但进不了查找，
-    // 并计入 coverage.failed。
+    // The first searchableCount entries are sorted by base in ascending order with valid intervals and can
+    // participate in binary search. The remaining entries have missing base/size or addition overflow;
+    // they are retained (evidence is not lost) but excluded from search and counted in coverage.failed.
     std::vector<RegionRecord> entries;
     std::size_t searchableCount = 0;
-    std::vector<AllocationGroup> groups;   // 按 allocationBase 聚合，顺序同 entries 首现
-    std::vector<RegionCodeClass> codeClasses;  // 与 entries 等长
-    std::vector<std::size_t> entryGroup;       // 与 entries 等长，指回 groups 下标
+    std::vector<AllocationGroup> groups;   // Aggregate by allocationBase, in the order of first appearance in entries.
+    std::vector<RegionCodeClass> codeClasses;  // Same length as entries.
+    std::vector<std::size_t> entryGroup;       // Same length as entries, pointing to the index in groups.
 
     CollectionOutcome outcome;
     CoverageAccount coverage;
@@ -224,144 +224,144 @@ struct AddressSpaceIndex final {
     std::uint64_t executableBytes = 0;
     std::size_t dynamicCodeCandidateCount = 0;
 
-    // 找到包含 va 的子区域下标。没有覆盖到就是 kNoEntry —— 那是覆盖缺口，
-    // 不是"这个地址是空闲的"。
+    // Find the index of the sub-region containing `va`. If not covered, return
+    // `kNoEntry` — this indicates a coverage gap, not that the address is free.
     std::size_t findEntry(std::uint64_t va) const noexcept;
     const AllocationGroup* groupForEntry(std::size_t entryIndex) const noexcept;
 
-    // 索引是否具备"缺项推断"的资格：只有采集成功且账目正面证明完整覆盖才算。
+    // Whether the index qualifies for "absence inference": only if collection succeeded and the ledger positively proves complete coverage.
     bool usableForAbsenceInference() const noexcept;
 };
 
-// records 的顺序不重要，内部按 base 排序；base/size 缺失的记录进不了区间查找，
-// 但仍保留在 entries 里并计入 coverage.failed。
-AddressSpaceIndex BuildAddressSpaceIndex(std::vector<RegionRecord> records,
+// The order of records is irrelevant; they are sorted internally by base. Records missing a base or
+// size are excluded from interval lookups but remain in entries and are counted in coverage.failed.
+AddressSpaceIndex buildAddressSpaceIndex(std::vector<RegionRecord> records,
                                          const CollectionOutcome& outcome);
 
 // ---------------------------------------------------------------------------
-// J-01b：进程列表用的廉价筛选汇总
+// J-01b: Cheap summary filter for the process list
 // ---------------------------------------------------------------------------
 //
-// 这一档只做 J-01 的第一轮（枚举区域 + 分类），**不**碰模块、PE、工作集、线程。
-// 用途是给进程列表一列，让用户一眼看出哪些进程的动态代码面异常大。
+// This stage performs only the first round of J-01 (enumerating regions and categories), **not** touching modules, PE, working set, or threads.
+// Used to add a column to the process list, allowing users to instantly identify which processes have abnormally large dynamic code surfaces.
 //
-// 它**不是结论**，而且必须被当成不是结论来用。实测（2026-09-12，本机 496 个进程）：
-// 310 个可打开的进程里 **284 个（92%）** 都有私有/映射可执行内存，280 个还带可写可执行。
-// 所以"有没有动态代码"当告警信号等于全亮；有意义的是**数量**和它的离群程度
-// （同一次采样里 avpui 841 块、kpm 682 块，而绝大多数进程只有个位数）。
-// 代价：全机 496 个进程共 1073 ms，中位 2.52 ms/进程，p95 9.5 ms。
+// It is **not a conclusion** and must be treated as such. Empirical test (2026-09-12, 496 processes on local machine):
+// 310 openable processes: **284 (92%)** have private/mapped executable memory, and 280 also have RWX memory.
+// Therefore, the presence of dynamic code acts as an all-clear alarm signal; what matters is the **count** and its outlier degree
+// (e.g., in the same sample, avpui has 841 blocks and kpm has 682 blocks, while most processes have only single-digit counts).
+// Cost: 496 processes across the machine took 1073 ms total, with a median of 2.52 ms/process and p95 of 9.5 ms.
 enum class SurfaceScreenState {
-    NotScreened,       // 没做过 —— 列里必须显示"未筛选"，不能显示 0
-    AccessDenied,      // 打不开目标（受保护进程等）—— 不是"没有动态代码"
-    IdentityMismatch,  // PID 已复用
-    Failed,
-    Screened,
+    kNotScreened,       // Not screened — the column must display "Not Screened", not 0.
+    kAccessDenied,      // Failed to open the target (e.g., protected process) — not 'no dynamic code'.
+    kIdentityMismatch,  // PID reused
+    kFailed,
+    kScreened,
 };
 
-const char* SurfaceScreenStateName(SurfaceScreenState state) noexcept;
+const char* surfaceScreenStateName(SurfaceScreenState state) noexcept;
 
-// 只有 Screened 的计数才有意义；其余状态下的 0 是"不知道"，不是"没有"。
-bool SurfaceScreenCountsAreMeaningful(SurfaceScreenState state) noexcept;
+// Only Screened counts are meaningful; a 0 in other states means 'unknown', not 'none'.
+bool surfaceScreenCountsAreMeaningful(SurfaceScreenState state) noexcept;
 
 struct ProcessSurfaceScreen final {
-    SurfaceScreenState state = SurfaceScreenState::NotScreened;
+    SurfaceScreenState state = SurfaceScreenState::kNotScreened;
     std::uint32_t regionCount = 0;
     std::uint32_t dynamicCodeRegions = 0;
     std::uint32_t writableExecutableRegions = 0;
     std::uint64_t dynamicCodeBytes = 0;
-    // 首次观测时间，不是"注入时间"。
+    // First observation time, not the 'injection time'.
     OptionalU64 screenedUtc100ns;
 };
 
-// 从已建好的地址空间索引汇总。索引采集失败时返回对应的失败态，
-// 绝不把"没查到"折叠成计数 0。
-ProcessSurfaceScreen SummarizeSurfaceScreen(const AddressSpaceIndex& index,
+// Summarize from the built address space index. If index collection fails, return
+// the corresponding failure state; never collapse 'not found' into a count of 0.
+ProcessSurfaceScreen summarizeSurfaceScreen(const AddressSpaceIndex& index,
                                             const OptionalU64& screenedUtc100ns);
 
 // ---------------------------------------------------------------------------
-// J-02：模块交叉视图
+// J-02: Module cross-view.
 // ---------------------------------------------------------------------------
 
-// L：加载器视图。同一个采集器的两层包装不算两个来源，所以这里不区分
-// PSAPI / Toolhelp / PEB 三条链表 —— 它们的交叉价值在与 I 的比对上。
+// L: Loader view. Two layers of wrapping by the same collector do not count as two sources, so we do not
+// distinguish between the PSAPI, Toolhelp, and PEB linked lists here—their cross-value lies in comparison with I.
 struct LoaderModuleEntry final {
     DriverInstanceId module;   // imagePath / imageBase / imageSize
-    std::string listedName;    // 加载器列出的名字（可能与磁盘文件名不同）
+    std::string listedName;    // Name listed by the loader (may differ from the disk filename).
     bool isMainImage = false;
 };
 
-// I：映像映射视图。mappedPath 用 GetMappedFileNameW 一类接口取得，
-// **不只相信 PEB 字符串**；取不到就保留失败原因，绝不写成"无文件植入"。
+// I: Image mapping view. mappedPath is obtained via interfaces like GetMappedFileNameW.
+// * Do not trust PEB strings alone; if unavailable, retain the failure reason and never write "no file injection".
 struct ImageMappingEntry final {
     OptionalU64 allocationBase;
-    OptionalU64 mappedSize;     // 该分配组内已提交跨度
+    OptionalU64 mappedSize;     // Committed span within this allocation group.
     std::string mappedPath;
     CollectionOutcome pathOutcome;
 };
 
-// P：非映像载荷候选的结构判定。
-// "两个字节的 MZ 不是充分证据"：数据缓冲区里躺着一个 PE 文件，与这个 PE 已经被
-// 加载执行，是两件事。所以 PeWithHeaders 只是一种结构事实。
+// P: structural judgment for non-image payload candidates.
+// "Two bytes of 'MZ' are not sufficient evidence": The presence of a PE file in the data buffer is distinct
+// from whether that PE has been loaded and executed. Thus, PeWithHeaders represents only a structural fact.
 enum class PayloadStructure {
-    NotExamined,     // 没检查 —— 覆盖缺口
-    Unreadable,      // 想检查但读不到
-    NoStructure,     // 检查过，没有可辨识结构
-    DataOnlyPeFile,  // 有完整 PE 文件结构但不像被映射（节未按虚拟布局展开）
-    MappedPeImage,   // 头部自洽且节布局与内存范围自洽
-    HeaderErasedPe,  // 头被擦除，但仍有导入/展开/内部引用等残留结构
-    BareCode,        // 没有 PE 结构的可执行代码
+    kNotExamined,     // Not examined — coverage gap
+    kUnreadable,      // Intended to check but unreadable
+    kNoStructure,     // Checked; no recognizable structure found.
+    kDataOnlyPeFile,  // Has complete PE file structure but not mapped (sections not expanded to virtual layout)
+    kMappedPeImage,   // Header is self-consistent and section layout is consistent with the memory range.
+    kHeaderErasedPe,  // Header erased, but residual structures such as imports, unwind data, and internal references remain.
+    kBareCode,        // Executable code without PE structure.
 };
 
-const char* PayloadStructureName(PayloadStructure structure) noexcept;
+const char* payloadStructureName(PayloadStructure structure) noexcept;
 
 struct PayloadCandidateEntry final {
     OptionalU64 base;
     OptionalU64 size;
-    RegionType type = RegionType::Unknown;
-    PayloadStructure structure = PayloadStructure::NotExamined;
-    std::vector<std::string> structureFacts;  // key=value，可回源
+    RegionType type = RegionType::kUnknown;
+    PayloadStructure structure = PayloadStructure::kNotExamined;
+    std::vector<std::string> structureFacts;  // key=value, can trace back to source.
     CollectionOutcome outcome;
-    // **可靠展开的调用帧**落进这块内存。不是"栈回溯这个能力可用"，也不是
-    // "栈里扫到一个像这块内存的地址" —— 只有 StackEvidenceKind::ReliableUnwoundFrame
-    // 才能置位。这一位是把"内存里有载荷结构"抬成"载荷与执行相关联"的唯一依据。
+    // **Reliably unwound call frames** land in this memory. This is not about "stack backtracing capability is available" nor "an
+    // address resembling this memory was found by scanning the stack" — only `StackEvidenceKind::ReliableUnwoundFrame` can set this
+    // bit. This bit is the sole basis for elevating "payload structure exists in memory" to "payload is associated with execution".
     bool reliableFrameEntersRegion = false;
 
-    // 采集时这块内存**带不带执行权限**。深度模式会把不可执行的私有/映射内存也纳入
-    // 结构检查（休眠载荷可以先存成 RW、执行前才翻成 RX），但那一档的噪声完全不同：
-    // 本机实测 330 个可打开进程、129937 块非可执行已提交区域里，首页能通过 PE
-    // 合理性检查的有 99 块 —— 每进程约 0.3 个。所以不可执行的候选**只列不升结论**，
-    // 判定见 PayloadCandidateCanRaiseConclusion。
+    // Whether this memory region has execute permissions at the time of collection. In deep mode, non-executable private/mapped memory is also included in
+    // structural checks (sleeping payloads can be stored as RW and switched to RX before execution), but the noise profile for that mode is entirely different:
+    // Local testing on 330 openable processes and 129937 non-executable committed regions found only 99
+    // regions passing PE validity checks in the first page (~0.3 per process). Therefore, non-executable
+    // candidates are listed but do not raise conclusions; see payloadCandidateCanRaiseConclusion.
     bool executableAtScanTime = true;
 };
 
-// 一个载荷候选够不够格参与升结论。不可执行的候选一律不够：
-// 每进程 0.3 个的底噪意味着放它进来会让"观测到差异"在干净机器上常态出现，
-// 而那等于把这个功能变成又一个全亮的告警灯。它们仍然会作为条目列出来。
-bool PayloadCandidateCanRaiseConclusion(const PayloadCandidateEntry& candidate) noexcept;
+// Determines if a payload candidate qualifies to raise a conclusion. Non-executable candidates never qualify:
+// A baseline noise of 0.3 per process means including it would cause 'observed differences' to appear routinely on
+// clean machines, effectively turning this feature into another always-on alarm. They are still listed as entries.
+bool payloadCandidateCanRaiseConclusion(const PayloadCandidateEntry& candidate) noexcept;
 
 enum class ModuleCrossIssue {
-    ImageMappingWithoutLoaderEntry,  // 有映像映射，加载器列表没有对应项
-    LoaderEntryWithoutImageMapping,  // 列表里的基址没有合理映射
-    LoaderPathMismatch,              // 名称/路径与实际映射不一致
-    LoaderSizeMismatch,              // 大小与实际映射不一致
-    MainImageIdentityConflict,       // 主映像的几个来源自相矛盾
-    MappedPathUnavailable,           // 路径查询失败 —— 缺口，不是结论
+    kImageMappingWithoutLoaderEntry,  // Image mapping exists, but no corresponding loader entry.
+    kLoaderEntryWithoutImageMapping,  // Base addresses in the list lack valid mappings.
+    kLoaderPathMismatch,              // Name/path mismatch with actual mapping.
+    kLoaderSizeMismatch,              // Size does not match the actual mapping.
+    kMainImageIdentityConflict,       // Contradictory sources for the main image identity
+    kMappedPathUnavailable,           // Path query failed — a gap, not a conclusion.
 };
 
-const char* ModuleCrossIssueName(ModuleCrossIssue issue) noexcept;
+const char* moduleCrossIssueName(ModuleCrossIssue issue) noexcept;
 
-// 交叉视图的问题分两档，不能一视同仁：
-//   * **矛盾**（本函数返回 true）：两个视图对**同一个对象**说了互相冲突的话 ——
-//     加载器说是 ntdll.dll、映射却指向另一个文件；主映像的三个来源互不一致。
-//     这撑得起 DifferenceObserved。
-//   * **不对称**（返回 false）：一边有、另一边没有。它有大量已记录的合法成因 ——
-//     只做资源映射的映像（LOAD_LIBRARY_AS_IMAGE_RESOURCE）、Windows 元数据映像、
-//     .NET 相关映射；实测 explorer.exe 上稳定有十几条。它只能到 Indeterminate。
-//   缺少 PEB 项"只能先报异常"，不是"观测到差异"。
-bool ModuleCrossIssueIsContradiction(ModuleCrossIssue issue) noexcept;
+// Cross-view issues are categorized into two tiers and cannot be treated equally:
+//   * **Contradiction** (this function returns true): Two views say conflicting things about the **same object** — the
+//     loader says ntdll.dll, but the mapping points to another file; the three sources of the main image are inconsistent.
+//     This supports DifferenceObserved.
+//   * **Asymmetric** (returns false): One side has it, the other does not. It has many recorded legitimate causes—such as image
+//     mappings that only perform resource mapping (LOAD_LIBRARY_AS_IMAGE_RESOURCE), Windows metadata images, and .NET-related
+//     mappings; empirically, explorer.exe consistently shows over a dozen such cases. It can only be classified as Indeterminate.
+//   Missing PEB entry 'report exception first' is not 'observed discrepancy'.
+bool moduleCrossIssueIsContradiction(ModuleCrossIssue issue) noexcept;
 
 struct ModuleCrossFinding final {
-    ModuleCrossIssue issue = ModuleCrossIssue::MappedPathUnavailable;
+    ModuleCrossIssue issue = ModuleCrossIssue::kMappedPathUnavailable;
     OptionalU64 base;
     std::string loaderPath;
     std::string mappedPath;
@@ -374,7 +374,7 @@ struct ModuleCrossFinding final {
 struct ModuleCrossViewInput final {
     std::vector<LoaderModuleEntry> loaderView;
     CollectionOutcome loaderOutcome;
-    ModuleEnumerationTrust loaderTrust = ModuleEnumerationTrust::Unknown;
+    ModuleEnumerationTrust loaderTrust = ModuleEnumerationTrust::kUnknown;
 
     std::vector<ImageMappingEntry> imageView;
     CollectionOutcome imageOutcome;
@@ -382,15 +382,15 @@ struct ModuleCrossViewInput final {
     std::vector<PayloadCandidateEntry> payloadView;
     CollectionOutcome payloadOutcome;
 
-    // 主映像的三个独立来源。任何一个为空表示该来源没取到。
-    std::string mainImagePathFromLoader;   // PEB 加载器链表首项
-    std::string mainImagePathFromKernel;   // QueryFullProcessImageName 一类
-    std::string mainImagePathFromMapping;  // 主映像分配的 GetMappedFileNameW
+    // Three independent sources for the main image. An empty value indicates that source was not retrieved.
+    std::string mainImagePathFromLoader;   // First item of the PEB loader list.
+    std::string mainImagePathFromKernel;   // QueryFullProcessImageName type
+    std::string mainImagePathFromMapping;  // GetMappedFileNameW for the main image allocation
     OptionalU64 mainImageBaseFromLoader;
     OptionalU64 mainImageBaseFromMapping;
 
-    // 映射跨度与加载器 SizeOfImage 的容差。加载器报的是 SizeOfImage，
-    // 映射跨度可能因对齐而略大，所以不给容差会产生大量噪声。
+    // Tolerance for mapping span relative to the loader's SizeOfImage. The loader reports SizeOfImage, but the
+    // mapping span may be slightly larger due to alignment. Without tolerance, this would generate excessive noise.
     std::uint64_t sizeToleranceBytes = 0x10000ULL;
 };
 
@@ -403,26 +403,26 @@ struct ModuleCrossViewReport final {
     std::size_t mappingOnly = 0;
     std::size_t payloadCandidates = 0;
 
-    // 只有两侧视图都 Success 才允许做"缺项"推断。任一侧失败/部分/不支持时，
-    // 缺项一律不产出，并留下缺口键 —— 这与 X-06 是同一条规则。
+    // Inference of missing items is allowed only when both side views report Success. If either side fails, is partial, or
+    // is unsupported, no missing items are produced, and the gap key is left intact. This follows the same rule as X-06.
     bool absenceInferenceAllowed = false;
 
-    AnalysisConclusion conclusion = AnalysisConclusion::NoEvidence;
+    AnalysisConclusion conclusion = AnalysisConclusion::kNoEvidence;
 };
 
-ModuleCrossViewReport EvaluateModuleCrossView(const ModuleCrossViewInput& input);
+ModuleCrossViewReport evaluateModuleCrossView(const ModuleCrossViewInput& input);
 
 // ---------------------------------------------------------------------------
-// J-03：工作集页筛选
+// J-03: Working set page filtering.
 // ---------------------------------------------------------------------------
 
-// QueryWorkingSetEx 的一页结果。字段名与 PSAPI_WORKING_SET_EX_BLOCK 对齐。
+// Result for one page from QueryWorkingSetEx. Field names align with PSAPI_WORKING_SET_EX_BLOCK.
 struct WorkingSetPageFact final {
     std::uint64_t va = 0;
-    bool queried = false;   // 有没有真的查过这一页
-    bool valid = false;     // Valid==0 时其余字段不得按有效页解释
-    bool shared = false;    // "是否可共享"，不是"当前恰好有两个进程在用"
-    OptionalU64 shareCount; // 保留原值供导出；判据里**不使用**
+    bool queried = false;   // Whether this page has actually been queried.
+    bool valid = false;     // When Valid==0, other fields must not be interpreted as valid pages.
+    bool shared = false;    // "Shareable" does not mean "currently used by exactly two processes".
+    OptionalU64 shareCount; // Retain the original value for export; **do not use** in criteria.
     bool locked = false;
     bool largePage = false;
     bool bad = false;
@@ -431,158 +431,158 @@ struct WorkingSetPageFact final {
 };
 
 enum class PageScreenVerdict {
-    NotQueried,           // 没查 —— 覆盖缺口
-    InvalidNeedsRecheck,  // Valid==0，保守标待补查，不按有效页解释
-    PrivatizedCandidate,  // Valid && !Shared —— 私有化/改写候选，优先比较
-    SharedNotCleared,     // Valid && Shared —— **不是放行**，深度模式仍要比较
+    kNotQueried,           // Not queried — covers the gap.
+    kInvalidNeedsRecheck,  // Valid==0: conservatively mark as pending recheck; do not interpret as valid page.
+    kPrivatizedCandidate,  // Valid && !Shared — Privatized/rewritten candidate; compare first.
+    kSharedNotCleared,     // Valid && Shared — **not an allow**, deep mode still requires comparison
 };
 
-const char* PageScreenVerdictName(PageScreenVerdict verdict) noexcept;
+const char* pageScreenVerdictName(PageScreenVerdict verdict) noexcept;
 
-// 判据里刻意不看 shareCount：Shared 表示"页面是否可共享"，
-// ShareCount == 1 不能代替它。而且 DFRWS 2023 记录过内存合并会让**已修改**的页面
-// 重新呈现可共享状态，所以 Shared 也不能反向放行。
-PageScreenVerdict ScreenWorkingSetPage(const WorkingSetPageFact& fact) noexcept;
+// The criterion deliberately ignores shareCount: Shared indicates 'whether a page is shareable';
+// ShareCount == 1 does not substitute for it. Moreover, DFRWS 2023 recorded that memory merging
+// can cause modified pages to regain a shareable state, so Shared cannot be used to reverse-allow.
+PageScreenVerdict screenWorkingSetPage(const WorkingSetPageFact& fact) noexcept;
 
-// 快速模式优先比较不可共享的代码页；深度模式不使用共享状态排除任何映像页。
-bool PageSelectedForComparison(PageScreenVerdict verdict, SurveyMode mode) noexcept;
+// Fast mode prioritizes comparing non-shareable code pages; deep mode does not exclude any image pages via shared state.
+bool pageSelectedForComparison(PageScreenVerdict verdict, SurveyMode mode) noexcept;
 
 // ---------------------------------------------------------------------------
-// J-04：线程起点与落点
+// J-04: Thread start and end points.
 // ---------------------------------------------------------------------------
 
-// 一个模块的代码范围。codeBegin/codeEnd 是模块内**应当执行**的 RVA 区间并集的
-// 粗粒度包络，用于判断"落在映像内部却不符合该模块代码布局"。
+// The code range of a module. codeBegin/codeEnd represent the coarse-grained envelope of the union of RVA intervals that **should be
+// executed** within the module, used to detect regions that fall inside the image but do not conform to the module's code layout.
 struct ImageCodeExtent final {
     std::string path;
     std::uint64_t base = 0;
     std::uint64_t size = 0;
     std::uint64_t codeBeginRva = 0;
     std::uint64_t codeEndRva = 0;
-    bool codeExtentKnown = false;  // false 表示只知道模块范围，不知道代码布局
+    bool codeExtentKnown = false;  // false indicates only module scope is known, not code layout.
 
     bool containsAddress(std::uint64_t address) const noexcept;
     bool addressInCodeExtent(std::uint64_t address) const noexcept;
 };
 
 enum class ThreadStartLanding {
-    NotCollected,        // 起始地址没取到 —— 没有观测，不是"归属不一致"
-    OutsideIndex,        // 索引没覆盖到这个地址 —— 覆盖缺口
-    FreeOrReserved,      // 落在已释放/未提交区域
-    NonImagePrivate,     // 落在私有区域
-    NonImageMapped,      // 落在映射（非映像）区域
-    ImageCodeRange,      // 落在某映像的代码范围内
-    ImageOutsideCode,    // 落在映像内部但不符合该模块代码布局
-    ImageLayoutUnknown,  // 落在映像内，但代码布局未知，无法细分
+    kNotCollected,        // Start address not retrieved — no observation, not "ownership mismatch".
+    kOutsideIndex,        // Index does not cover this address — coverage gap.
+    kFreeOrReserved,      // Falls within a freed or uncommitted region.
+    kNonImagePrivate,     // Falls in private region
+    kNonImageMapped,      // Falls within a mapped (non-image) region.
+    kImageCodeRange,      // Falls within a code range of an image.
+    kImageOutsideCode,    // Located within the image but does not conform to the module's code layout.
+    kImageLayoutUnknown,  // Falls within the image, but code layout is unknown and cannot be subdivided.
 };
 
-const char* ThreadStartLandingName(ThreadStartLanding landing) noexcept;
+const char* threadStartLandingName(ThreadStartLanding landing) noexcept;
 
-// 现存线程的起点采集结果。
+// Collection result for existing thread start points.
 struct ThreadStartInput final {
     ThreadInstanceId thread;
     OptionalU64 startAddress;
     CollectionOutcome startAddressOutcome;
 
-    // 入口附近指令检查（预算允许时才做）。三态：没做 / 做了读不到 / 做了读到。
+    // Entry instruction check (only if budget allows). Three states: not done / done but unreadable / done and readable.
     bool entryInspected = false;
     bool entryReadable = false;
-    // 解析出的第一跳目标。unset 表示"没解析出来"，不是"没有跳转"。
+    // The first-hop target after parsing. unset means "not parsed", not "no jump".
     OptionalU64 immediateBranchTarget;
 };
 
-// 线程上下文的可信度。微软明确指出：运行中的线程无法通过 GetThreadContext 取得
-// 有效上下文。所以"没挂起也没快照"拿到的上下文只能标成不可信，不得当执行证据。
+// Trust level of the thread context. Microsoft explicitly states: a running thread cannot obtain a valid context via GetThreadContext.
+// Therefore, a context obtained without suspending or taking a snapshot must be marked as untrusted and cannot be used as execution evidence.
 //
-// WaitingThreadStable 是第四态，也是本功能实际吃得到的那一态：**不运行的线程，
-// 上下文本来就是稳定的**。微软那句警告针对的是"正在别的核上跑"的线程 —— 它的
-// RIP/RSP 在你读的同时就在变。阻塞在 NtDelayExecution / NtWaitForSingleObject 里
-// 的线程不存在这个问题，读到的就是它真正停着的那一组值。
+// WaitingThreadStable is the fourth state and the only one this feature actually consumes: **for a
+// non-running thread, the context is inherently stable**. Microsoft's warning targets threads 'running on
+// another core'—their RIP/RSP change while you are reading them. Threads blocked in NtDelayExecution or
+// NtWaitForSingleObject do not have this issue; the values you read are exactly the set they were stopped at.
 //
-// 这一态是整条线的关键：本功能的硬约束是**不挂起目标**，所以 SuspendedOrSnapshot
-// 永远拿不到；而最值得查的 shellcode 形态恰好是"打个盹再醒"的信标，它就停在等待里。
-// 采集侧必须在取上下文**前后各查一次线程状态**，两次都是等待才允许标这一态；
-// 中间被唤醒的话，展开出来的第一个返回地址就不会落在任何模块里，可靠前缀当场
-// 截断——失败方向是"不敢声称可靠"，这是对的那一侧。
+// This state is critical for the entire flow: the hard constraint of this feature is **not suspending the target**, so SuspendedOrSnapshot is never
+// reachable; meanwhile, the shellcode form most worth investigating is exactly a beacon that "takes a nap then wakes up", which remains in a waiting state.
+// The collection side must check the thread status once before and once after capturing the context; both checks must indicate 'waiting' to allow marking this state.
+// Note: If interrupted while suspended, the first unwound return address will not fall within any module; the reliable
+// prefix is truncated immediately—the failure direction is 'dare not claim reliability', which is the correct side.
 enum class ThreadContextTrust {
-    NotCaptured,
-    RunningThreadUntrusted,
-    WaitingThreadStable,
-    SuspendedOrSnapshot,
+    kNotCaptured,
+    kRunningThreadUntrusted,
+    kWaitingThreadStable,
+    kSuspendedOrSnapshot,
 };
 
-const char* ThreadContextTrustName(ThreadContextTrust trust) noexcept;
+const char* threadContextTrustName(ThreadContextTrust trust) noexcept;
 
-ThreadContextTrust ClassifyThreadContextTrust(bool captured,
+ThreadContextTrust classifyThreadContextTrust(bool captured,
                                               bool suspendedOrSnapshot,
                                               bool waitingBeforeAndAfter) noexcept;
 
-bool ContextUsableAsExecutionEvidence(ThreadContextTrust trust) noexcept;
+bool contextUsableAsExecutionEvidence(ThreadContextTrust trust) noexcept;
 
-// 栈上看到的东西分三档存放。"在栈内存里扫到一个看起来像代码地址的数值"
-// 不等于"恢复出一个调用帧"，三者混成同一种执行证据是明令禁止的。
+// Stack observations are stored in three tiers. "Scanning a value in stack memory that looks like a code address" is not
+// equivalent to "recovering a call frame"; mixing all three into a single execution evidence type is explicitly prohibited.
 enum class StackEvidenceKind {
-    ReliableUnwoundFrame,            // 可靠展开的帧
-    HeuristicReturnAddressCandidate, // 启发式候选返回地址
-    PlainPointerReference,           // 普通指针引用
+    kReliableUnwoundFrame,            // Reliably unwound frame.
+    kHeuristicReturnAddressCandidate, // Heuristic return address candidate
+    kPlainPointerReference,           // Plain pointer reference.
 };
 
-const char* StackEvidenceKindName(StackEvidenceKind kind) noexcept;
+const char* stackEvidenceKindName(StackEvidenceKind kind) noexcept;
 
-// 只有可靠展开的帧才算执行证据。
-bool StackEvidenceCountsAsExecution(StackEvidenceKind kind) noexcept;
+// Only frames with reliable unwind count as execution evidence.
+bool stackEvidenceCountsAsExecution(StackEvidenceKind kind) noexcept;
 
-// 采集侧交上来的一个原始栈帧。**采集侧不判可靠性**，它只回答两件事实：
-// 展开到了哪儿，以及**上一帧的 PC 有没有落在一个能查到 RUNTIME_FUNCTION 的函数里**。
-// 后者是判可靠性的全部依据，理由见 AdmitStackFrames。
+// A raw stack frame submitted by the collector. **The collector does not verify reliability**; it only answers two facts:
+// Where it unwound to, and whether the **previous frame's PC falls within a function where a RUNTIME_FUNCTION can be found**.
+// The latter is the sole basis for reliability checks; see admitStackFrames for reasoning.
 struct RawStackFrame final {
     OptionalU64 instructionPointer;
     OptionalU64 stackPointer;
-    // 本帧是由**上一帧的展开数据**算出来的（而不是扫栈猜的）。
-    // 栈顶帧直接来自线程上下文，它恒为 true（没有"上一帧"要展开）。
+    // This frame is derived from the **previous frame's unwind data** (not guessed by stack scanning).
+    // The stack top frame comes directly from the thread context and is always true (there is no "previous frame" to unwind).
     bool derivedFromUnwindData = false;
-    // 本帧的 PC 自身能不能查到展开数据。它决定的是**下一帧**可不可靠，不是本帧。
+    // Whether unwind data is available for the current frame's PC. This determines reliability for the **next** frame, not the current one.
     bool unwindDataAvailableAtPc = false;
 };
 
-// 一个线程的栈采集结果。
+// The result of stack collection for a thread.
 struct ThreadStackInput final {
     ThreadInstanceId thread;
-    ThreadContextTrust trust = ThreadContextTrust::NotCaptured;
+    ThreadContextTrust trust = ThreadContextTrust::kNotCaptured;
     CollectionOutcome outcome;
-    // 由栈顶向下排列。
+    // Arranged from top to bottom of the stack.
     std::vector<RawStackFrame> frames;
-    // 展开在中途停下的原因（读栈失败、超过帧数上限……），空表示走到了栈底。
+    // Reason for unwinding at a stop (e.g., stack read failure, exceeded frame limit...); empty indicates reaching the stack bottom.
     std::string terminationReason;
 };
 
-// 判可靠性的唯一入口。返回**可靠前缀的长度**：从栈顶起，连续满足
-// "由展开数据算出" 的帧数。
+// The single entry point for assessing reliability. Return the **length of the reliable prefix**: the
+// number of consecutive frames, starting at the top of the stack, that were calculated from unwind data.
 //
-// 为什么是前缀而不是逐帧判：x64 没有帧指针链，一旦某一帧的 PC 查不到
-// RUNTIME_FUNCTION（shellcode 正是如此），再往下走就只能靠扫栈猜，猜出来的
-// "返回地址"里混着大量早已过期的陈旧值。所以可靠性一旦断了就不会再接上。
+// Why prefix instead of per-frame check: x64 lacks a frame pointer chain. Once a frame's PC cannot find
+// RUNTIME_FUNCTION (as with shellcode), further traversal relies on stack scanning to guess, where the guessed
+// "return addresses" are mixed with many stale, expired values. Once reliability breaks, it never recovers.
 //
-// 注意这条规则**恰好**把 shellcode 帧本身算进可靠前缀：它是从有展开数据的调用者
-// （KERNELBASE 之类）算出来的，所以它可靠；不可靠的是它下面那些。这正是要的语义。
+// Note that this rule **exactly** counts the shellcode frame itself as part of the reliable prefix: it is derived from the caller
+// with unwind data (such as KERNELBASE), so it is reliable; the frames below it are unreliable. This is the intended semantics.
 //
-// trust 不够时一律返回 0 —— 上下文本身就不可信的话，从它展开出来的东西再"可靠"
-// 也没有意义。
-std::size_t AdmitStackFrames(const ThreadStackInput& stack) noexcept;
+// If trust is insufficient, always return 0 — if the context itself is untrustworthy,
+// anything derived from it is meaningless regardless of apparent reliability.
+std::size_t admitStackFrames(const ThreadStackInput& stack) noexcept;
 
 struct ThreadStartFinding final {
     ThreadInstanceId thread;
     OptionalU64 startAddress;
-    ThreadStartLanding landing = ThreadStartLanding::NotCollected;
+    ThreadStartLanding landing = ThreadStartLanding::kNotCollected;
 
-    // 起始地址所在页**现在**可不可执行。起点页现在不可执行不能据此忽略这条线索，
-    // 所以它只是一个并列的事实位，不参与 landing 的判定。
+    // Whether the page containing the start address is executable **now**. The fact that the start page is currently non-executable
+    // does not justify ignoring this clue; thus, it is merely a parallel fact bit and does not participate in landing determination.
     bool startPageExecutableKnown = false;
     bool startPageExecutable = false;
 
-    std::string owningPath;   // 空表示归属未知，不是"没有归属"
+    std::string owningPath;   // Empty indicates unknown ownership, not 'no ownership'.
     OptionalU64 branchTarget;
-    ThreadStartLanding branchTargetLanding = ThreadStartLanding::NotCollected;
+    ThreadStartLanding branchTargetLanding = ThreadStartLanding::kNotCollected;
     bool branchLeavesOwningModule = false;
     bool entryInspected = false;
 
@@ -590,64 +590,64 @@ struct ThreadStartFinding final {
     CollectionOutcome outcome;
 };
 
-// 按地址空间索引 + 模块代码范围解释一批线程起点。
-std::vector<ThreadStartFinding> EvaluateThreadStarts(
+// Interpret a batch of thread start points using the address space index and module code ranges.
+std::vector<ThreadStartFinding> evaluateThreadStarts(
     const std::vector<ThreadStartInput>& threads,
     const AddressSpaceIndex& index,
     const std::vector<ImageCodeExtent>& images);
 
 // ---------------------------------------------------------------------------
-// J-05：归一化映像比较的范围选择
+// J-05: Scope selection for normalized image comparison.
 // ---------------------------------------------------------------------------
 //
-// 硬约束：快速模式与深度模式**必须使用同一套归一化逻辑**，不能快扫裸比较、
-// 深扫才处理重定位。所以 profile id 与模式无关；两种模式只改比较范围。
+// Hard constraint: Fast mode and deep mode must use the same normalization logic; fast scan must not perform raw comparison while deep
+// scan handles relocations. Therefore, the profile ID is independent of the mode; the two modes only differ in the comparison range.
 inline constexpr const char* kNormalizationProfileId = "image.normalize.peimagemap.v1";
 inline constexpr std::uint32_t kNormalizationProfileVersion = 1U;
 
-const char* NormalizationProfileId(SurveyMode mode) noexcept;
-std::uint32_t NormalizationProfileVersion(SurveyMode mode) noexcept;
+const char* normalizationProfileId(SurveyMode mode) noexcept;
+std::uint32_t normalizationProfileVersion(SurveyMode mode) noexcept;
 
 enum class ComparisonReason {
-    MainImageEntry,           // 主映像入口
-    SuspiciousThreadEntry,    // 可疑线程入口
-    WorkingSetScreenedPage,   // 工作集筛出的异常映像页
-    ControlFlowReference,     // 已发现的控制流引用位置
-    FullExecutableCoverage,   // 深度模式：全部可执行映像范围
+    kMainImageEntry,           // Main image entry
+    kSuspiciousThreadEntry,    // Suspicious thread entry.
+    kWorkingSetScreenedPage,   // Abnormal image pages screened from the working set
+    kControlFlowReference,     // Discovered control flow reference locations
+    kFullExecutableCoverage,   // Deep mode: all executable image ranges.
 };
 
-const char* ComparisonReasonName(ComparisonReason reason) noexcept;
+const char* comparisonReasonName(ComparisonReason reason) noexcept;
 
 struct ComparisonTarget final {
     DriverInstanceId module;
     RvaRange range;
-    ComparisonReason reason = ComparisonReason::MainImageEntry;
+    ComparisonReason reason = ComparisonReason::kMainImageEntry;
 };
 
-// 建计划所需的现场事实。
+// Facts required to build the plan.
 struct ComparisonPlanInput final {
-    SurveyMode mode = SurveyMode::Fast;
+    SurveyMode mode = SurveyMode::kFast;
     std::vector<ImageCodeExtent> images;
 
-    // 主映像入口的 RVA 与要比较的跨度。unset 表示没取到 —— 计划里会留缺口键。
+    // The RVA of the main image entry and the span to compare. unset indicates retrieval failure — a gap key is planned to be reserved.
     std::string mainImagePath;
     OptionalU64 mainImageEntryRva;
 
-    // 可疑线程入口（已解析成 模块路径 + RVA）。
+    // Suspicious thread entry site (resolved to module path + RVA).
     struct ThreadEntrySite final {
         std::string imagePath;
         std::uint32_t rva = 0;
     };
     std::vector<ThreadEntrySite> threadEntrySites;
 
-    // 工作集筛出的异常映像页（模块路径 + 页 RVA）。
+    // Abnormal image pages filtered from the working set (module path + page RVA).
     struct ScreenedPage final {
         std::string imagePath;
         std::uint32_t pageRva = 0;
     };
     std::vector<ScreenedPage> screenedPages;
 
-    // 已发现的控制流引用位置。
+    // Discovered control flow reference locations.
     std::vector<ThreadEntrySite> controlFlowSites;
 
     std::uint32_t entryWindowBytes = 64U;
@@ -655,95 +655,95 @@ struct ComparisonPlanInput final {
 };
 
 struct ComparisonPlan final {
-    SurveyMode mode = SurveyMode::Fast;
+    SurveyMode mode = SurveyMode::kFast;
     std::string normalizationProfileId;
     std::uint32_t normalizationProfileVersion = 0;
     std::vector<ComparisonTarget> targets;
     std::vector<std::string> coverageGapKeys;
 };
 
-ComparisonPlan BuildComparisonPlan(const ComparisonPlanInput& input);
+ComparisonPlan buildComparisonPlan(const ComparisonPlanInput& input);
 
-// 参考文件的可信度。"当前路径下的文件可能已被更新或替换"——拿不到可靠参考时
-// 必须报"参考映像不确定"，不能自动把所有差异归为恶意修改。
+// Confidence level of the reference file. 'The file under the current path may have been updated or replaced.' When a reliable reference cannot
+// be obtained, 'reference image uncertain' must be reported; one cannot automatically attribute all differences to malicious modifications.
 enum class ReferenceConfidence {
-    NoReference,        // 根本没有参考文件
-    ReferenceUncertain, // 有文件，但不能确认它对应目标映像版本
-    ReferenceVerified,  // 身份已核对（PDB 签名 / TimeDateStamp+SizeOfImage 等）
+    kNoReference,        // No reference file at all.
+    kReferenceUncertain, // File exists, but cannot confirm it corresponds to the target image version.
+    kReferenceVerified,  // Identity verified (PDB signature / TimeDateStamp + SizeOfImage, etc.).
 };
 
-const char* ReferenceConfidenceName(ReferenceConfidence confidence) noexcept;
+const char* referenceConfidenceName(ReferenceConfidence confidence) noexcept;
 
-// 只有 ReferenceVerified 才允许把差异表述成"映像代码修改已证实"。
-bool ReferenceSupportsDifferenceClaim(ReferenceConfidence confidence) noexcept;
+// Only ReferenceVerified allows expressing the difference as 'Image code modification confirmed'.
+bool referenceSupportsDifferenceClaim(ReferenceConfidence confidence) noexcept;
 
-// 参考字节是从哪儿来的。两个来源互相独立，**同时命中才最强**：
-//   DiskFile      —— 磁盘上的那个文件。最常用，但文件可能被锁住、读不到，
-//                     或者已经被攻击者连同内存一起改掉。
-//   SectionObject —— 内存管理器自己持有的节对象（原型 PTE 指向的干净页）。
-//                     它是映射建立时的内容，改磁盘文件不会改它。
+// Source of the reference bytes. The two sources are independent; **simultaneous hits provide the strongest evidence**:
+//   DiskFile: The file on disk. Most common, but the file may be
+//                     locked, unreadable, or modified by an attacker along with memory.
+//   SectionObject: A section object held by the memory manager itself (clean pages pointed to by prototype PTEs).
+//                     It is the content at mapping establishment; modifying the disk file does not change it.
 enum class ImageReferenceSource {
-    None,
-    DiskFile,
-    SectionObject,
+    kNone,
+    kDiskFile,
+    kSectionObject,
 };
 
-const char* ImageReferenceSourceName(ImageReferenceSource source) noexcept;
+const char* imageReferenceSourceName(ImageReferenceSource source) noexcept;
 
 struct ImageComparisonOutcome final {
     DriverInstanceId module;
-    ReferenceConfidence referenceConfidence = ReferenceConfidence::NoReference;
-    ImageReferenceSource referenceSource = ImageReferenceSource::DiskFile;
+    ReferenceConfidence referenceConfidence = ReferenceConfidence::kNoReference;
+    ImageReferenceSource referenceSource = ImageReferenceSource::kDiskFile;
     ImageDiffReport report;
 
-    // 节对象参考的覆盖账。**只在 referenceSource == SectionObject 时有意义。**
-    // 原型 PTE 不是 valid 形态的页拿不到参考（本版本按设计不把页面调进来），
-    // 那些页是**覆盖缺口**，不是"比过了没差异"。
+    // Coverage accounting for section object references. **Only meaningful when referenceSource == SectionObject.**
+    // Prototype PTEs that are not in a valid page state cannot be referenced (by design in this version, pages are
+    // not paged in). These pages represent **coverage gaps**, not "no difference found after comparison."
     std::size_t sectionPagesRequested = 0;
     std::size_t sectionPagesAvailable = 0;
 };
 
-// 节对象参考是不是覆盖了请求的全部页。没覆盖全时差异仍然算数（发现的就是发现的），
-// 但"没发现差异"不能成立 —— 没比到的页不能算比过了。
-bool SectionReferenceCoverageComplete(const ImageComparisonOutcome& outcome) noexcept;
+// Whether the section object reference covers all requested pages. If coverage is incomplete, differences are still valid (what
+// was found is found), but "no difference found" cannot be established—pages that were not compared cannot be considered compared.
+bool sectionReferenceCoverageComplete(const ImageComparisonOutcome& outcome) noexcept;
 
 // ---------------------------------------------------------------------------
-// J-06：R0 扫描后端的交叉视图（issue #196 §五 第一、二层）
+// J-06: Cross-view of R0 scanning backend (issue #196 §V, Layers 1-2)
 // ---------------------------------------------------------------------------
 //
-// 这一节处理的是**第二、第三个独立来源**：
-//   * VAD 树（内存管理器自己记的区域），与 R3 的 VirtualQueryEx 独立；
-//   * 页表叶子（处理器实际怎么看），与前两者都独立。
+// This section handles the **second and third independent sources**:
+//   * VAD tree (regions tracked by the memory manager itself), independent of R3's VirtualQueryEx;
+//   * Page table leaves (how the processor actually views them) are independent of the former two.
 //
-// 三条硬规则：
-//   * "内部结构按目标 build 验证，未支持的版本明确降级" —— profile 没验证过就
-//     **一条 finding 都不产**，只留缺口。绝不用相近版本的偏移继续读。
-//   * MMVAD_FLAGS 的位布局没有经过验证，所以 VAD 的 protection **不参与**与 R3
-//     保护属性的矛盾判定；只比较范围。位猜错时那会变成整片假矛盾。
-//   * "内核采集依赖内核可信" —— 有内核能力的对手可以改这里读到的元数据。
-//     只要用了内核视图就恒挂 kLimitKernelTrustAssumption，不承诺"有驱动便无法隐藏"。
+// Three hard rules:
+//   * 'Internal structures are validated against the target build; unsupported versions are explicitly downgraded' — if the profile hasn't been validated, then
+//     No findings are produced; only a gap remains. Never use offsets from similar versions to continue reading.
+//   The bit layout of MMVAD_FLAGS is unverified, so VAD protection **does not participate** in contradiction checks against R3
+//     protection attributes; only ranges are compared. If the bits are guessed wrong, it results in a whole-page false contradiction.
+//   * "Kernel collection relies on kernel trust" — A threat with kernel capabilities can modify the metadata read here.
+//     If kernel view is used, kLimitKernelTrustAssumption is always set; no guarantee that 'presence of a driver implies inability to hide'.
 
 enum class KernelBackendState {
-    NotRequested,       // 这次没打算用内核后端
-    DriverUnavailable,  // 驱动没加载 / 打不开 / 权限不足
-    ProfileUnverified,  // 驱动在，但 DynData 没为当前 build 验证过所需偏移
-    Partial,            // 跑了，但有读不到的节点/表项，或被预算截断
-    Available,          // 完整跑完
+    kNotRequested,       // The kernel backend is not intended for use this time.
+    kDriverUnavailable,  // Driver not loaded / cannot open / insufficient permissions
+    kProfileUnverified,  // The driver is present, but DynData has not verified the required offsets for the current build.
+    kPartial,            // Executed but with unreadable nodes/entries or truncated by budget.
+    kAvailable,          // Completed run
 };
 
-const char* KernelBackendStateName(KernelBackendState state) noexcept;
+const char* kernelBackendStateName(KernelBackendState state) noexcept;
 
-// 只有 Available 才谈得上"这边有那边没有"。Partial 会让缺项推断变成猜。
-bool KernelBackendSupportsAbsenceInference(KernelBackendState state) noexcept;
+// Only 'Available' allows for 'present here, absent there' logic. 'Partial' turns missing-item inference into guessing.
+bool kernelBackendSupportsAbsenceInference(KernelBackendState state) noexcept;
 
-// R0 VAD 视图的一条区域记录。
+// R0 VAD view region record.
 struct KernelVadRegion final {
     OptionalU64 startVa;
     OptionalU64 endVaExclusive;
     OptionalU64 vadNodeAddress;
     bool privateMemory = false;
     bool hasSection = false;          // controlArea != 0
-    // 位布局未经验证 —— 恒为 true。protection/vadType 因此只能展示。
+    // Bit layout is unverified — always true. Therefore, protection and vadType can only be displayed.
     bool flagsLayoutAssumed = true;
     OptionalU64 protectionRaw;
     OptionalU64 vadFlagsRaw;
@@ -751,46 +751,46 @@ struct KernelVadRegion final {
 
 struct KernelVadView final {
     std::vector<KernelVadRegion> regions;
-    KernelBackendState state = KernelBackendState::NotRequested;
+    KernelBackendState state = KernelBackendState::kNotRequested;
     CollectionOutcome outcome;
     std::uint64_t visitedCount = 0;
     std::uint64_t unreadableNodeCount = 0;
     bool truncated = false;
 
-    // --- 树结构完整性（断链检查）---------------------------------------------
-    // integrityValid 是这一整组的**硬闸门**：为假时下面几项一律不得参与判定。
-    // 部分遍历（截断 / 续扫 / 有节点读不到）下 visitedCount 本来就小于 vadCount，
-    // 拿它去比等于在正常机器上稳定误报。
+    // --- Tree structure integrity (broken link check) --------------------------------------------- integrityValid
+    // is the hard gate for this entire group: if false, the following items must not participate in the judgment.
+    // Under partial traversal (truncation, resumption, or unreadable nodes), visitedCount is inherently
+    // less than vadCount; comparing them for equality causes stable false positives on normal machines.
     bool integrityValid = false;
-    bool vadCountKnown = false;      // EPROCESS.VadCount 的偏移可用且读到了
-    bool vadHintKnown = false;       // EPROCESS.VadHint 的偏移可用且读到了
-    std::uint64_t vadCount = 0;      // 内核自己维护的计数
+    bool vadCountKnown = false;      // EPROCESS.VadCount offset is available and has been read.
+    bool vadHintKnown = false;       // EPROCESS.VadHint offset is available and has been read.
+    std::uint64_t vadCount = 0;      // Count maintained by the kernel itself.
     OptionalU64 vadHintAddress;
-    bool vadHintVisited = false;     // VadHint 指向的节点在遍历里被访问到
-    std::uint64_t parentMismatchNodes = 0;  // 父指针回指不上的节点数
+    bool vadHintVisited = false;     // Node pointed to by VadHint was visited during traversal.
+    std::uint64_t parentMismatchNodes = 0;  // Count of nodes where the parent pointer does not match
 
     bool usableForAbsenceInference() const noexcept;
 };
 
-// 断链检查的三态结论。**刻意不是布尔**：
-//   NotChecked —— 没做，或者遍历不完整（这时不知道，不是"没问题"）
-//   Consistent —— 走完了，三项都对得上
-//   Inconsistent —— 走完了，至少一项对不上
-// 把 NotChecked 折进 Consistent 是这个功能最容易犯也最贵的错：
-// "没查成"会被读成"树是好的"。
+// Three-state conclusion for broken-link checks. **Deliberately not a boolean**:
+//   NotChecked: not performed, or traversal incomplete (unknown, not 'OK').
+//   Consistent: traversal completed, all three items match. Inconsistent:
+//   traversal completed, at least one item mismatches. Folding NotChecked
+// into Consistent is the most common and costly error for this feature:
+// 'Failed to check' may be misread as 'tree is valid'.
 enum class VadLinkIntegrity {
-    NotChecked,
-    Consistent,
-    Inconsistent,
+    kNotChecked,
+    kConsistent,
+    kInconsistent,
 };
 
-const char* VadLinkIntegrityName(VadLinkIntegrity integrity) noexcept;
+const char* vadLinkIntegrityName(VadLinkIntegrity integrity) noexcept;
 
-// 判一次 VAD 树的链接完整性。只看树内部的自洽性，不涉及 R3 交叉视图 ——
-// 那是另一维（用户态看不到但页表看得到）。
-VadLinkIntegrity EvaluateVadLinkIntegrity(const KernelVadView& view) noexcept;
+// Check the link integrity of the VAD tree once. Only verify internal consistency within the tree; it does
+// not involve cross-view with R3 (a separate dimension where user mode cannot see but the page table can).
+VadLinkIntegrity evaluateVadLinkIntegrity(const KernelVadView& view) noexcept;
 
-// R0 页表视图的一段可执行叶子页。
+// An executable leaf page in the R0 page table view.
 struct KernelExecutableExtent final {
     OptionalU64 startVa;
     OptionalU64 byteLength;
@@ -804,7 +804,7 @@ struct KernelExecutableExtent final {
 
 struct KernelPteView final {
     std::vector<KernelExecutableExtent> extents;
-    KernelBackendState state = KernelBackendState::NotRequested;
+    KernelBackendState state = KernelBackendState::kNotRequested;
     CollectionOutcome outcome;
     std::uint64_t tableReads = 0;
     std::uint64_t failedTableReads = 0;
@@ -816,16 +816,16 @@ struct KernelPteView final {
 };
 
 enum class KernelRegionCrossIssue {
-    VadOnlyRange,            // VAD 有这段，R3 的 VirtualQueryEx 没报
-    R3OnlyCommittedRange,    // R3 报了已提交区域，VAD 树里没有对应
-    ExecutableBeyondR3View,  // 页表说可执行，R3 索引里那段不可执行或不存在
-    ExecutableBeyondVadView, // 页表说可执行，VAD 没有覆盖那段
+    kVadOnlyRange,            // VAD contains this range, but R3 VirtualQueryEx does not report it.
+    kR3OnlyCommittedRange,    // R3 reported a committed region, but no corresponding entry exists in the VAD tree.
+    kExecutableBeyondR3View,  // Page table indicates executable, but the region in the R3 index is non-executable or does not exist.
+    kExecutableBeyondVadView, // Page table says executable, but VAD does not cover that region.
 };
 
-const char* KernelRegionCrossIssueName(KernelRegionCrossIssue issue) noexcept;
+const char* kernelRegionCrossIssueName(KernelRegionCrossIssue issue) noexcept;
 
 struct KernelRegionCrossFinding final {
-    KernelRegionCrossIssue issue = KernelRegionCrossIssue::VadOnlyRange;
+    KernelRegionCrossIssue issue = KernelRegionCrossIssue::kVadOnlyRange;
     OptionalU64 startVa;
     OptionalU64 endVaExclusive;
     std::vector<std::string> facts;
@@ -833,10 +833,10 @@ struct KernelRegionCrossFinding final {
 };
 
 struct KernelCrossViewInput final {
-    const AddressSpaceIndex* r3Index = nullptr;   // 必填；为空则整节不产出
+    const AddressSpaceIndex* r3Index = nullptr;   // Required; if null, the entire section produces no output.
     KernelVadView vadView;
     KernelPteView pteView;
-    // 页表视图只扫了这个范围。范围外的"页表没报可执行"不构成缺项。
+    // The page table view only scanned this range. "Page table reports not executable" outside this range does not constitute a missing entry.
     OptionalU64 pteScanBegin;
     OptionalU64 pteScanEnd;
 };
@@ -851,10 +851,10 @@ struct KernelCrossViewReport final {
     std::size_t executableBeyondViewCount = 0;
     bool absenceInferenceAllowed = false;
 
-    // VAD 树自身的链接自洽性。和上面三个计数是互补的两维：那三个问"两个视图说的
-    // 一不一样"，这一个问"这棵树自己站不站得住"。摘链的直接痕迹在后者。
-    VadLinkIntegrity linkIntegrity = VadLinkIntegrity::NotChecked;
-    // 判定用到的原始读数，供结果里回源。
+    // Self-consistency of the VAD tree's own links. This is the complementary dimension to the three counts above: the three ask "do the
+    // two views agree?", while this one asks "is this tree structurally sound?". The direct trace of link removal appears in the latter.
+    VadLinkIntegrity linkIntegrity = VadLinkIntegrity::kNotChecked;
+    // Original readings used for validation, returned in results for source tracing.
     std::uint64_t linkVisitedCount = 0;
     std::uint64_t linkVadCount = 0;
     std::uint64_t linkParentMismatchNodes = 0;
@@ -863,107 +863,107 @@ struct KernelCrossViewReport final {
     bool linkVadHintVisited = false;
     OptionalU64 linkVadHintAddress;
 
-    AnalysisConclusion conclusion = AnalysisConclusion::NoEvidence;
+    AnalysisConclusion conclusion = AnalysisConclusion::kNoEvidence;
 };
 
-KernelCrossViewReport EvaluateKernelCrossView(const KernelCrossViewInput& input);
+KernelCrossViewReport evaluateKernelCrossView(const KernelCrossViewInput& input);
 
 // ---------------------------------------------------------------------------
-// 例外（白名单）：只针对具体关系
+// Exception (whitelist): applies only to specific relationships
 // ---------------------------------------------------------------------------
 
-// 合法例外至少要覆盖这四类来源。Unspecified 一律拒绝准入 —— 一条没有类别的
-// 豁免规则无法被复核。
+// Valid exceptions must cover at least these four sources. Unspecified is
+// always rejected: an exemption rule without a category cannot be audited.
 enum class ExceptionCategory {
-    Unspecified,
-    RuntimeDynamicCode,       // JIT 等运行时动态代码
-    SecurityInstrumentation,  // 安全产品插桩
-    SoftwareProtection,       // 软件保护 / 打包 / DRM
-    SystemCompatibility,      // 已验证的系统兼容性修改
+    kUnspecified,
+    kRuntimeDynamicCode,       // JIT and other runtime dynamic code.
+    kSecurityInstrumentation,  // Security product instrumentation
+    kSoftwareProtection,       // Software protection / packing / DRM
+    kSystemCompatibility,      // Verified system compatibility modifications
 };
 
-const char* ExceptionCategoryName(ExceptionCategory category) noexcept;
+const char* exceptionCategoryName(ExceptionCategory category) noexcept;
 
 struct ExceptionRelation final {
     std::string ruleId;
     std::uint32_t ruleVersion = 0;
-    ExceptionCategory category = ExceptionCategory::Unspecified;
+    ExceptionCategory category = ExceptionCategory::kUnspecified;
 
-    std::string targetImageIdentity;     // 目标程序版本身份（必填）
-    std::string modifiedModuleIdentity;  // 被修改模块身份（必填）
-    RvaRange modifiedRange;              // 修改位置（必填，且有硬上限）
+    std::string targetImageIdentity;     // Target application version identity (required).
+    std::string modifiedModuleIdentity;  // Identity of the modified module (required).
+    RvaRange modifiedRange;              // Modified location (required, with a hard upper limit).
 
-    // 允许的跳转关系。空表示这条规则不对跳转目标作要求。
+    // Allowed jump relationships. Empty indicates no requirement on the jump target for this rule.
     std::string allowedBranchTargetModuleIdentity;
-    // 必要的目标字节检查。非空时**必须**能读到现场字节才可能命中。
+    // Essential target byte check. Non-null only if field bytes are readable; otherwise, a hit is impossible.
     std::vector<std::uint8_t> expectedBytes;
 
-    std::string evidenceText;  // 依据来源，不是结论
+    std::string evidenceText;  // Based on source, not a conclusion.
 };
 
 enum class ExceptionAdmission {
-    Accepted,
-    MissingRuleId,
-    MissingCategory,
-    MissingTargetImageIdentity,
-    MissingModuleIdentity,
-    EmptyRange,
-    RangeTooWide,   // 超过 kExplanationRuleMaxSpanBytes —— 等于整模块放行
+    kAccepted,
+    kMissingRuleId,
+    kMissingCategory,
+    kMissingTargetImageIdentity,
+    kMissingModuleIdentity,
+    kEmptyRange,
+    kRangeTooWide,   // Exceeds kExplanationRuleMaxSpanBytes — equivalent to allowing the entire module.
 };
 
-const char* ExceptionAdmissionName(ExceptionAdmission admission) noexcept;
+const char* exceptionAdmissionName(ExceptionAdmission admission) noexcept;
 
-// 白名单必须针对具体关系而不是整个进程或目录：四个必填项缺一即拒，
-// 范围为空或过宽即拒。被拒的规则不参与匹配。
-ExceptionAdmission AdmitExceptionRelation(const ExceptionRelation& rule) noexcept;
+// Whitelists must target specific relations, not entire processes or directories: missing any of the four required fields
+// results in rejection; an empty or overly broad scope results in rejection. Rejected rules do not participate in matching.
+ExceptionAdmission admitExceptionRelation(const ExceptionRelation& rule) noexcept;
 
-// 例外规则里的 modifiedModuleIdentity **必须**用这个函数生成，否则规则永远匹配
-// 不上（匹配是严格等值比较，不做路径归一化）。优先取 DriverInstanceId 的跨会话
-// 主键（带 PDB 签名 / TimeDateStamp，能区分同名不同版本）；身份不足时退化为
-// 归一化路径（小写 + 反斜杠）。退化键区分不了版本，这正是"同名不等于同版本"
-// 的代价，写规则的人应当补齐模块身份而不是依赖路径。
-std::string ModuleIdentityKeyFor(const DriverInstanceId& module);
+// The modifiedModuleIdentity in the exception rule **must** be generated using this function; otherwise, the rule will never
+// match (matching is strict equality without path normalization). Prefer the cross-session primary key of DriverInstanceId
+// (including PDB signature / TimeDateStamp to distinguish same-name different versions); if identity is insufficient,
+// degrade to a normalized path (lowercase + backslash). The degraded key cannot distinguish versions; this is the cost of
+// 'same name does not equal same version'. Rule authors should supplement module identity rather than relying on paths.
+std::string moduleIdentityKeyFor(const DriverInstanceId& module);
 
 struct ExceptionQuery final {
     std::string targetImageIdentity;
     std::string modifiedModuleIdentity;
     RvaRange range;
-    // 现场观测到的跳转目标模块身份。空表示"没有这个事实"。
+    // Identity of the branch target module observed in the field. Empty indicates "this fact does not exist".
     std::string actualBranchTargetModuleIdentity;
-    // 现场读到的字节。bytesAvailable 为 false 表示没读到 —— 与"读到了空"不同。
+    // Bytes read from the live target. bytesAvailable=false means no data was obtained, which differs from successfully reading an empty result.
     bool bytesAvailable = false;
     std::vector<std::uint8_t> actualBytes;
 };
 
 enum class ExceptionMatch {
-    NoRule,                // 一条规则都没有
-    AllRulesRejected,      // 有规则但全被准入检查拒了
-    TargetImageMismatch,
-    ModuleMismatch,
-    RangeNotCovered,       // 部分覆盖不算命中
-    BranchTargetMismatch,
-    BytesUnavailable,      // 规则要求字节检查，但现场没读到 —— 不命中
-    BytesMismatch,
-    Matched,
+    kNoRule,                // No rules present
+    kAllRulesRejected,      // Rules exist, but all were rejected by admission checks.
+    kTargetImageMismatch,
+    kModuleMismatch,
+    kRangeNotCovered,       // Partial coverage does not count as a hit
+    kBranchTargetMismatch,
+    kBytesUnavailable,      // Rule requires byte checking, but bytes were not read on-site -> no match.
+    kBytesMismatch,
+    kMatched,
 };
 
-const char* ExceptionMatchName(ExceptionMatch match) noexcept;
+const char* exceptionMatchName(ExceptionMatch match) noexcept;
 
 struct ExceptionMatchResult final {
-    ExceptionMatch match = ExceptionMatch::NoRule;
+    ExceptionMatch match = ExceptionMatch::kNoRule;
     std::string ruleId;
     std::uint32_t ruleVersion = 0;
-    ExceptionCategory category = ExceptionCategory::Unspecified;
-    std::size_t rejectedRuleCount = 0;  // 丢弃必须可见
+    ExceptionCategory category = ExceptionCategory::kUnspecified;
+    std::size_t rejectedRuleCount = 0;  // Discarded items must be visible.
 };
 
-// 命中要求规则范围**完全包含**待判范围。返回"最接近的失败原因"：
-// 只要有任何一条规则走到更靠后的检查，就报那一条的原因，便于定位规则写错在哪。
-ExceptionMatchResult MatchExceptionRelation(const std::vector<ExceptionRelation>& rules,
+// A match requires the rule scope to **fully contain** the scope being checked. Returns the "closest failure reason":
+// If any rule proceeds to a later check, report the reason for that specific rule to help locate where the rule is incorrect.
+ExceptionMatchResult matchExceptionRelation(const std::vector<ExceptionRelation>& rules,
                                             const ExceptionQuery& query);
 
 // ---------------------------------------------------------------------------
-// 结果条目
+// Result entry
 // ---------------------------------------------------------------------------
 
 extern const char* const kRuleIdDynamicCodeRegion;          // inject.region.dynamic-code
@@ -980,36 +980,36 @@ extern const char* const kRuleIdPayloadStructure;           // inject.payload.st
 extern const char* const kRuleIdKernelRegionHiddenFromR3;   // inject.kernel.region-hidden-from-r3
 extern const char* const kRuleIdKernelRegionMissingInVad;   // inject.kernel.region-missing-in-vad
 extern const char* const kRuleIdKernelExecutableBeyondView; // inject.kernel.executable-beyond-view
-// VAD 树自身的链接不自洽（父指针回指不上 / VadHint 指向树外 / 计数比走出来的多）。
-// 这是"摘链"的直接痕迹，和"用户态看不到但页表看得到"是互补的两维。
+// Inconsistency in the VAD tree's own links (parent pointer does not resolve upward / VadHint points outside the tree / count exceeds the number of traversed nodes).
+// This is direct evidence of "chain removal," complementary to the two dimensions of "invisible to user mode but visible in page tables."
 extern const char* const kRuleIdKernelVadLinkBroken;        // inject.kernel.vad-link-broken
 
-// 可信度：不是分数，是"这条结果由多少独立观测撑起来"。
+// Confidence: not a score, but "how many independent observations support this result".
 enum class EvidenceConfidence {
-    InputIncomplete,          // 依赖的输入不完整 —— 只能当线索
-    SingleObservation,        // 单一观测
-    CorroboratedIndependent,  // 两个及以上独立观测互证
+    kInputIncomplete,          // Dependent input is incomplete — can only be used as a clue.
+    kSingleObservation,        // Single observation
+    kCorroboratedIndependent,  // Two or more independent observations corroborate each other.
 };
 
-const char* EvidenceConfidenceName(EvidenceConfidence confidence) noexcept;
+const char* evidenceConfidenceName(EvidenceConfidence confidence) noexcept;
 
-// 每条结果的字段集合，对应 issue 第六节的清单。
-// 注意这里**没有** injectedUtc / injectorPid / score / isMalicious。
+// The set of fields for each result, corresponding to the checklist in Section 6 of the issue.
+// Note that injectedUtc, injectorPid, score, and isMalicious are intentionally absent here.
 struct InjectionFinding final {
     std::string ruleId;
     std::uint32_t ruleVersion = kInjectionSurveyRuleSetVersion;
     std::string detectorVersion;
 
-    ProcessInstanceId payloadProcess;  // 载荷所在进程
-    // 注入源进程。没有事前记录就是 Unknown，不许降格成"某个系统进程"。
-    OwnerAttribution injectorAttribution = OwnerAttribution::Unknown;
+    ProcessInstanceId payloadProcess;  // Process containing the payload.
+    // Injection source process. Without a prior record, it is Unknown; never downgrade it to an unspecified system process.
+    OwnerAttribution injectorAttribution = OwnerAttribution::kUnknown;
     std::vector<std::string> injectorCandidates;
 
-    OptionalU64 firstObservedUtc100ns;  // 首次观测时间，不是注入时间
+    OptionalU64 firstObservedUtc100ns;  // First observed time, not the injection time.
 
     OptionalU64 address;
     OptionalU64 size;
-    RegionType regionType = RegionType::Unknown;
+    RegionType regionType = RegionType::kUnknown;
     RegionProtection protection;
     std::string mappedPath;
 
@@ -1017,63 +1017,63 @@ struct InjectionFinding final {
     std::string sectionName;
     OptionalU64 rva;
 
-    std::vector<std::string> facts;  // 原始证据，key=value，可回源
+    std::vector<std::string> facts;  // Raw evidence, key=value format, can be traced back to source.
     std::vector<ThreadInstanceId> relatedThreads;
     std::vector<std::string> relatedFrameKeys;
 
-    EvidenceConfidence confidence = EvidenceConfidence::InputIncomplete;
+    EvidenceConfidence confidence = EvidenceConfidence::kInputIncomplete;
     ExceptionMatchResult exception;
     std::vector<std::string> coverageGapKeys;
     CollectionOutcome inputOutcome;
 
-    // 例外命中的结果仍然保留在列表里（可核对），但不计入"未解释"计数。
+    // Exception hit results remain in the list (for verification) but are not counted in the "unexplained" total.
     bool explainedByException() const noexcept;
 };
 
 // ---------------------------------------------------------------------------
-// 观测语义表（issue 第六节）
+// Observation semantics table (Issue Section 6).
 // ---------------------------------------------------------------------------
 
 enum class ObservationClass {
-    PrivateOrMappedExecutablePresent,   // 存在私有 RX／RWX（或映射可执行）
-    NormalizedImageDiffers,             // 归一化后代码仍与可靠参考不同
-    PayloadStructureWithReliableFrame,  // 自洽载荷结构 + 可靠栈帧进入其中
-    MappedModuleOutsideBaseline,        // 正常映射的 DLL 不符合可信应用基线
-    VadTreeLinkageInconsistent,         // VAD 树自身的链接不自洽（摘链痕迹）
-    ScanCompleteNoStrongEvidence,       // 扫完了但没有强证据
-    KeyInputUnavailable,                // 关键页面／线程／参考文件不可获得
+    kPrivateOrMappedExecutablePresent,   // Private RX/RWX (or mapped executable) present.
+    kNormalizedImageDiffers,             // Code still differs from the trusted reference after normalization.
+    kPayloadStructureWithReliableFrame,  // Self-consistent payload structure + reliable stack frame entry into it.
+    kMappedModuleOutsideBaseline,        // Normally mapped DLL does not match the trusted application baseline
+    kVadTreeLinkageInconsistent,         // The VAD tree's own links are inconsistent (evidence of unlinking).
+    kScanCompleteNoStrongEvidence,       // Scan completed but no strong evidence found
+    kKeyInputUnavailable,                // Critical page/thread/reference file unavailable
 };
 
-const char* ObservationClassName(ObservationClass observation) noexcept;
+const char* observationClassName(ObservationClass observation) noexcept;
 
-// 一条观测能给出什么、不能给出什么。两个键都是 i18n 键，UI 必须把"不能给出的
-// 结论"一并显示 —— 否则用户会把"没检查到"读成"没有"。
+// What an observation can and cannot conclude. Both keys are i18n keys; the UI must display
+// 'conclusions that cannot be drawn' as well—otherwise users may misinterpret 'not checked' as 'none'.
 struct ObservationSemantics final {
-    ObservationClass observation = ObservationClass::KeyInputUnavailable;
+    ObservationClass observation = ObservationClass::kKeyInputUnavailable;
     const char* allowedConclusionKey = "";
     const char* forbiddenConclusionKey = "";
-    AnalysisConclusion contribution = AnalysisConclusion::NoEvidence;
+    AnalysisConclusion contribution = AnalysisConclusion::kNoEvidence;
 };
 
-ObservationSemantics SemanticsFor(ObservationClass observation) noexcept;
+ObservationSemantics semanticsFor(ObservationClass observation) noexcept;
 
 // ---------------------------------------------------------------------------
-// 身份复核
+// Identity recheck
 // ---------------------------------------------------------------------------
 
 enum class IdentityRecheckVerdict {
-    Same,
-    Changed,        // 退出、重建或 PID 复用 —— 证据可能串到另一个进程
-    Unverifiable,   // 身份信息不足
+    kSame,
+    kChanged,        // Exit, rebuild, or PID reuse — evidence may be linked to another process.
+    kUnverifiable,   // Insufficient identity information
 };
 
-const char* IdentityRecheckVerdictName(IdentityRecheckVerdict verdict) noexcept;
+const char* identityRecheckVerdictName(IdentityRecheckVerdict verdict) noexcept;
 
-IdentityRecheckVerdict RecheckProcessIdentity(const ProcessInstanceId& before,
+IdentityRecheckVerdict recheckProcessIdentity(const ProcessInstanceId& before,
                                               const ProcessInstanceId& after) noexcept;
 
 // ---------------------------------------------------------------------------
-// 覆盖缺口键
+// Coverage gap key
 // ---------------------------------------------------------------------------
 
 extern const char* const kGapAddressSpaceIncomplete;   // inject.gap.address-space
@@ -1091,55 +1091,55 @@ extern const char* const kGapModuleEnumerationWow64;   // inject.gap.module-enum
 extern const char* const kGapMainImageSourceMissing;   // inject.gap.main-image-source
 extern const char* const kGapKernelBackendUnavailable; // inject.gap.kernel-backend
 extern const char* const kGapKernelProfileUnverified;  // inject.gap.kernel-profile
-// VAD 后端跑成了，但树没走完（截断 / 续扫 / 有节点读不到），断链判据因此不成立。
+// The VAD backend scan completed, but the tree traversal was truncated, resumed, or some nodes were unreadable; thus, the broken-link criterion does not hold.
 extern const char* const kGapVadLinkUncheckable;       // inject.gap.vad-link-uncheckable
-// 用节对象当参考，但有页拿不到（原型 PTE 不是 valid 形态）。差异仍算数，
-// 但"没发现差异"不能成立 —— 没比到的页不是比过了。
+// Uses section objects as references, but some pages are inaccessible (prototype PTEs are not in a valid state). Differences
+// are still counted, but 'no difference found' cannot be concluded—pages that weren't compared are not considered compared.
 extern const char* const kGapSectionReferenceIncomplete; // inject.gap.section-reference
-// 做了栈回溯，但一个线程的上下文都不够可信（全都在跑）。这是"打算查没查成"，
-// 不是"本版本不做"—— 后者是 kLimitStackUnwindUnavailable，两者不能混。
+// Stack walking was performed, but the context for at least one thread is not fully trusted (all are running). This represents "intended
+// to check but failed," not "not implemented in this version"—the latter is kLimitStackUnwindUnavailable; do not confuse the two.
 extern const char* const kGapStackWalkUntrusted;       // inject.gap.stack-untrusted
 
 // ---------------------------------------------------------------------------
-// 能力限制键：与覆盖缺口是**两类东西**，不能混在一张表里
+// Capability limit keys: These are **two distinct categories** from coverage gaps and must not be mixed in the same table.
 // ---------------------------------------------------------------------------
 //
-//   * 覆盖缺口（上面那一组）＝"我打算查的东西没查成"：页读不到、线程拿不到、
-//     参考文件对不上、预算截断、身份存疑。它**必须**压制"未发现差异"——
-//     你声明的范围本身破了。
-//   * 能力限制（下面这一组）＝"本版本根本不做这件事"：没有 CLR 运行时归因、
-//     不识别擦头载荷、没有可靠栈回溯后端。它**不压制**结论，只缩小结论的适用范围。
+//   * Coverage gap (the group above) = "I intended to check something but failed": page read
+//     failure, thread retrieval failure, reference file mismatch, budget truncation, or identity
+//     doubt. It **must** suppress "no differences found" — the declared range itself is invalid.
+//   * Capability limits (this group) = "This version does not do this at all": No CLR runtime attribution, no recognition of
+//     header-erased payloads, and no reliable stack unwind backend. It **does not suppress** conclusions, only narrows their scope.
 //
-// 为什么必须分开：把能力限制也当缺口，等于每个进程、每一次扫描都永远"覆盖不完整"，
-// 于是 AnalysisConclusion 的四态在生产里退化成三态，"查过了、在范围内没发现"
-// 和"根本没查成"再也分不开 —— 那正是缺口这一维想避免的事。
+// Why they must be separated: Treating capability limits as gaps means every process and every scan is perpetually 'incompletely
+// covered'. This degrades the four states of AnalysisConclusion in production to three, making it impossible to distinguish between
+// 'scanned and found nothing within scope' and 'scan failed entirely'—precisely the distinction the gap dimension aims to preserve.
 extern const char* const kLimitNonExecutableNotScanned;  // inject.limit.non-executable
 extern const char* const kLimitStackUnwindUnavailable;   // inject.limit.stack-unwind
-// 本版本只按残留的 PE 头识别载荷结构，识别不了被擦除头部的载荷。
+// This version identifies payload structures only by the remaining PE header; payloads with erased headers cannot be recognized.
 extern const char* const kLimitPayloadHeaderErased;      // inject.limit.payload-erased-header
-// 本版本不做 CLR 等运行时归因。实测（2026-09-12，pwsh.exe 深扫）：
-// System.Management.Automation.dll 上有一处 9 字节就地改写，归一化比较把它如实报成
-// "未解释差异" —— 比较引擎没错，缺的是解释它的运行时视图。所以这一条必须显式列出，
-// 否则用户会把一条托管运行时的正常改写读成注入证据。
+// This version does not perform runtime attribution for CLR, etc. Empirical test (2026-09-12, deep scan of pwsh.exe):
+// There is a 9-byte in-place rewrite on System.Management.Automation.dll; the normalization comparison reports it as an
+// 'unexplained difference' exactly as-is. The comparison engine is correct, but the runtime view lacks an explanation. Therefore,
+// this item must be explicitly listed; otherwise, users will misinterpret a normal managed runtime rewrite as injection evidence.
 extern const char* const kLimitRuntimeAttribution;       // inject.limit.runtime-attribution
-// 内核采集依赖内核可信：有内核能力的对手可以改这里读到的元数据或参考页。
-// 只要用了内核视图就恒挂这一条 —— 绝不宣传"有驱动便无法隐藏"。
+// Kernel collection relies on kernel trust: an adversary with kernel capabilities can modify the metadata or reference pages read here.
+// If kernel views are used, always enforce this constraint—never claim 'drivers cannot hide'.
 extern const char* const kLimitKernelTrustAssumption;    // inject.limit.kernel-trust
-// MMVAD_FLAGS 的位布局没有经过 build 验证，所以 VAD 的保护属性不参与矛盾判定。
+// MMVAD_FLAGS bit layout is not build-verified, so VAD protection attributes are excluded from conflict detection.
 extern const char* const kLimitKernelVadFlagsUnverified; // inject.limit.kernel-vad-flags
-// 第三层（把进程映像页与 Image Section Object 的参考页比较）本版本没做。
+// Layer 3 (comparing process image pages with reference pages from the Image Section Object) is not implemented in this version.
 extern const char* const kLimitKernelSectionCompare;     // inject.limit.kernel-section-compare
-// 内核交叉差异的**合法成因目录**尚未在实机数据上建立。在建立之前，这类差异
-// 一律只到"待解释"，不升 DifferenceObserved —— 没量过就不给确定性。
+// The **valid cause directory** for kernel cross-differences has not yet been established on real-machine data. Until established, such
+// differences are treated only as "pending explanation" and do not escalate to DifferenceObserved — no measurement means no certainty.
 extern const char* const kLimitKernelBenignBaseline;     // inject.limit.kernel-benign-baseline
-// 本机根本没有 KswordARK 设备。这是**能力限制**不是覆盖缺口：我们从来没有声明过
-// 要在一台没装驱动的机器上做内核视图。写成缺口会让每一次扫描的 scopeIntact 恒为假，
-// 四态又退化成三态 —— 与 kLimitNonExecutableNotScanned 同一条道理。
-// 驱动**在**但某次调用失败（权限、profile 未验证）才是真缺口。
+// This machine has no KswordARK device. This is a **capability limitation**, not a coverage gap: we never claimed to
+// support kernel views on a machine without the driver. Treating it as a gap would make scopeIntact always false for
+// every scan, reducing the four-state model to three states—similar to the logic behind kLimitNonExecutableNotScanned.
+// A real vulnerability exists only if the driver is present but a specific call fails (due to permissions or unverified profile).
 extern const char* const kLimitKernelBackendAbsent;      // inject.limit.kernel-backend-absent
 
-// 已完成 / 未执行的检查项键。快速模式的结束条件用这两张表表达，
-// 而不是一个 Injected/Clean 的布尔。
+// Keys for completed and pending checks. The termination condition for fast mode is
+// expressed using these two tables, rather than a single Injected/Clean boolean.
 extern const char* const kCheckAddressSpaceIndex;      // inject.check.address-space
 extern const char* const kCheckModuleCrossView;        // inject.check.module-cross-view
 extern const char* const kCheckWorkingSetScreen;       // inject.check.working-set
@@ -1153,25 +1153,25 @@ extern const char* const kCheckVadLinkIntegrity;       // inject.check.vad-link
 extern const char* const kCheckKernelPteScan;          // inject.check.kernel-pte
 
 // ---------------------------------------------------------------------------
-// 总入口
+// Main entry point
 // ---------------------------------------------------------------------------
 
 struct SurveyInput final {
-    SurveyMode mode = SurveyMode::Fast;
+    SurveyMode mode = SurveyMode::kFast;
     std::string detectorVersion;
 
-    // 进程身份必须在扫描前后各取一次。只有 pid 的身份是弱身份，
-    // 复核结果会是 Unverifiable，此时结论不得升到 NoDifferenceObserved。
+    // Process identity must be captured once before and once after the scan. Since PID is a weak identity, verification
+    // results will be Unverifiable; in this case, the conclusion must not be elevated to NoDifferenceObserved.
     ProcessInstanceId processBefore;
     ProcessInstanceId processAfter;
     OptionalU64 collectedUtc100ns;
 
-    ProcessArchitecture targetArchitecture = ProcessArchitecture::Unknown;
-    CollectorArchitecture collectorArchitecture = CollectorArchitecture::Unknown;
+    ProcessArchitecture targetArchitecture = ProcessArchitecture::kUnknown;
+    CollectorArchitecture collectorArchitecture = CollectorArchitecture::kUnknown;
 
-    // 目标程序的版本身份（主映像身份串）。例外规则必须绑定到它 ——
-    // 一条只写"允许改 ntdll 的这几个字节"的豁免，如果不绑定目标程序版本，
-    // 就会在所有程序上生效。空串表示没取到，此时任何例外都匹配不上。
+    // Target program version identity (primary image identity string). Exception rules must be bound to it—a
+    // write-only exemption like 'allow modifying these bytes in ntdll' would apply to all programs if not bound to
+    // the target version. An empty string indicates the value was not retrieved; in this case, no exceptions match.
     std::string targetImageIdentity;
 
     AddressSpaceIndex addressSpace;
@@ -1187,50 +1187,50 @@ struct SurveyInput final {
     std::size_t workingSetInvalidPages = 0;
 
     std::vector<ImageComparisonOutcome> imageComparisons;
-    // 计划里有、但这一轮没做成的比较目标数。>0 即覆盖缺口。
+    // Number of planned comparison targets not executed in this round. >0 indicates a coverage gap.
     std::size_t plannedComparisonsNotRun = 0;
 
     std::vector<PayloadCandidateEntry> payloadCandidates;
 
-    // R0 扫描后端的交叉视图结果。默认全是 NotRequested —— 没驱动时整节静默跳过，
-    // 不产生任何缺口（"没打算用"不是"想用没用上"）。
+    // Cross-view results from the R0 scanning backend. Default is all NotRequested — if no driver is present, the
+    // entire section is silently skipped, leaving no gaps ('not intended to use' is not 'intended to use but failed').
     KernelCrossViewReport kernelCrossView;
-    KernelBackendState kernelVadState = KernelBackendState::NotRequested;
-    KernelBackendState kernelPteState = KernelBackendState::NotRequested;
+    KernelBackendState kernelVadState = KernelBackendState::kNotRequested;
+    KernelBackendState kernelPteState = KernelBackendState::kNotRequested;
 
-    // 各线程的栈采集结果。空表示这一轮根本没做栈回溯（能力限制，不是缺口）。
+    // Stack collection results for each thread. Empty means stack backtracing was not performed in this round (due to capability limits, not a gap).
     //
-    // 这里**没有** reliableStackWalkAvailable 这样一个布尔开关，是刻意的：
-    // "可靠展开可用"是抬结论的三道闸门之一，做成可直接赋值的字段，就等于给了
-    // 一个绕过 AdmitStackFrames 的后门。它只能由本 vector 的内容推出来。
+    // There is **no** reliableStackWalkAvailable boolean switch here; this is intentional:
+    // "Reliable unwind available" is one of the three gates for elevating the conclusion. Making it a directly assignable
+    // field would create a backdoor to bypass admitStackFrames. It must be derived solely from the contents of this vector.
     std::vector<ThreadStackInput> threadStacks;
-    // 深度模式是否扫了非可执行内存。载荷休眠时可以不保持执行权限，
-    // 所以"只看当前带执行权限的页"在深度模式下是一个必须显式记录的缺口。
+    // Whether non-executable memory was scanned in deep mode. Since payloads may be dormant without execute permissions,
+    // 'scanning only pages with current execute permissions' is a gap that must be explicitly recorded in deep mode.
     bool nonExecutableMemoryScanned = false;
 
     std::vector<ExceptionRelation> exceptions;
-    BudgetStop budgetStop = BudgetStop::Continue;
+    BudgetStop budgetStop = BudgetStop::kContinue;
 
-    // 采集器观测到的额外覆盖缺口（"打算查但没查成"）。会压制"未发现差异"。
+    // Extra coverage gaps observed by the collector ("intended to check but failed"). This suppresses "no differences found".
     std::vector<std::string> extraCoverageGapKeys;
-    // 采集器自报的能力限制（"本版本不做这件事"）。列出来，但不压制结论。
+    // Collector's self-reported capability limits ("this version does not do this"). Listed but do not suppress conclusions.
     std::vector<std::string> extraCapabilityLimitKeys;
 };
 
 struct SurveyReport final {
-    SurveyMode mode = SurveyMode::Fast;
+    SurveyMode mode = SurveyMode::kFast;
     std::string detectorVersion;
     std::uint32_t ruleSetVersion = kInjectionSurveyRuleSetVersion;
 
     ProcessInstanceId process;
     OptionalU64 firstObservedUtc100ns;
-    IdentityRecheckVerdict identity = IdentityRecheckVerdict::Unverifiable;
+    IdentityRecheckVerdict identity = IdentityRecheckVerdict::kUnverifiable;
 
     std::vector<InjectionFinding> findings;
     std::vector<ObservationClass> observations;
 
-    std::vector<std::string> coverageGapKeys;      // 打算查但没查成 —— 压制结论
-    std::vector<std::string> capabilityLimitKeys;  // 本版本不做 —— 只缩小适用范围
+    std::vector<std::string> coverageGapKeys;      // Intended to check but failed to complete — suppress conclusion
+    std::vector<std::string> capabilityLimitKeys;  // Not implemented in this version — only narrows the scope.
     std::vector<std::string> completedCheckKeys;
     std::vector<std::string> notPerformedCheckKeys;
 
@@ -1238,37 +1238,37 @@ struct SurveyReport final {
     std::size_t unexplainedImageDiffCount = 0;
     std::size_t exceptionExplainedCount = 0;
     std::size_t threadStartAnomalyCount = 0;
-    std::size_t moduleCrossIssueCount = 0;      // 全部交叉视图问题
-    std::size_t moduleCrossConflictCount = 0;   // 其中的"矛盾"档，只有它能升结论
-    std::size_t kernelCrossIssueCount = 0;      // R3/VAD/页表 三视图之间的差异
-    // 自洽载荷结构 **且** 有可靠展开的帧进入其中。只有它能和"归一化差异""交叉视图
-    // 矛盾"一起撑起 DifferenceObserved；光有结构不行。
+    std::size_t moduleCrossIssueCount = 0;      // All cross-view issues.
+    std::size_t moduleCrossConflictCount = 0;   // Among the 'conflict' files, only this one can elevate the conclusion.
+    std::size_t kernelCrossIssueCount = 0;      // Differences among the R3, VAD, and page-table views.
+    // A self-consistent payload structure with a reliably unwound frame entering it. Only this can support
+    // DifferenceObserved alongside normalized differences and cross-view contradictions; structure alone is insufficient.
     std::size_t payloadWithExecutionCount = 0;
 
-    // 栈回溯的账。三个数分开记，因为它们各自回答不同的问题：
-    //   walked   —— 尝试展开过几个线程（0 表示这一轮根本没做）
-    //   trusted  —— 其中几个的上下文可信、且真的产出了可靠前缀
-    //   frames   —— 可靠前缀里一共几帧（去重前）
-    // "walked 大而 trusted 为 0"是缺口，不是"线程都正常"。
-    // VAD 树链接不自洽的条目数。单独计，不并进 kernelCrossIssueCount ——
-    // 那一个问的是"两个视图说的一不一样"，这一个问"这棵树自己站不站得住"。
-    // 用节对象（而不是磁盘文件）当参考跑过的比较次数。
+    // Stack backtrace accounting. Track these three numbers separately as they answer different questions:
+    //   walked —— attempted to unwind several threads (0 means no attempt was made in this round)
+    //   trusted —— among those, how many had trusted contexts and actually produced reliable
+    //   prefixes frames —— total number of frames in the reliable prefix (before deduplication)
+    // "large walked but trusted is 0" indicates a gap, not "all threads are normal".
+    // Count of VAD tree link inconsistencies. Counted separately and not merged into kernelCrossIssueCount—the
+    // latter asks 'do the two views agree?', while this asks 'is this tree internally consistent?'.
+    // Use section objects (rather than disk files) as the reference for the number of comparisons performed.
     std::size_t sectionReferenceComparisons = 0;
     std::size_t vadLinkIssueCount = 0;
-    VadLinkIntegrity vadLinkIntegrity = VadLinkIntegrity::NotChecked;
+    VadLinkIntegrity vadLinkIntegrity = VadLinkIntegrity::kNotChecked;
 
     std::size_t stackThreadsWalked = 0;
     std::size_t stackThreadsTrusted = 0;
     std::size_t stackReliableFrameCount = 0;
 
     CoverageAccount coverage;
-    AnalysisConclusion conclusion = AnalysisConclusion::NoEvidence;
+    AnalysisConclusion conclusion = AnalysisConclusion::kNoEvidence;
 
-    // 覆盖完整度与结论是两个维度。
-    //   * scopeIntact：声明要查的范围有没有破。为假时 conclusion 永远不可能是
-    //     NoDifferenceObserved —— 这是硬闸门。
-    //   * coverageComplete：连能力限制也算上的"什么都不缺"。它比 scopeIntact 严格，
-    //     只用于展示；拿它当闸门会让结论永远到不了 NoDifferenceObserved。
+    // Coverage completeness and conclusion are two distinct dimensions.
+    //   * scopeIntact: Declares whether the checked scope remains intact. When
+    //     false, conclusion can never be NoDifferenceObserved — this is a hard gate.
+    //   * coverageComplete: "Nothing missing" including capability restrictions. It is stricter than scopeIntact and
+    //     used for display only; using it as a gate would prevent the conclusion from ever reaching NoDifferenceObserved.
     bool scopeIntact = false;
     bool coverageComplete = false;
 
@@ -1277,6 +1277,6 @@ struct SurveyReport final {
     bool hasLimit(const std::string& limitKey) const noexcept;
 };
 
-SurveyReport RunInjectionSurvey(const SurveyInput& input);
+SurveyReport runInjectionSurvey(const SurveyInput& input);
 
-} // namespace Ksword::Evidence
+} // namespace ksword::evidence
