@@ -20,7 +20,7 @@ Issues and pull requests may be written in English or Chinese.
    git switch -c fix/describe-the-problem
    ```
 
-3. Run the source checks with Python 3.12+:
+3. Run the source checks with Python 3.12+ and PowerShell 7 (`pwsh` on PATH):
 
    ```powershell
    uv run --python 3.12 python tools/check.py

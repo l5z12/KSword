@@ -12,7 +12,7 @@ loaded kernel driver.
 
 | Work | Prerequisites | Command from the repository root |
 | --- | --- | --- |
-| Source checks | Git, Python 3.12+ | `python tools/check.py` |
+| Source checks | Git, Python 3.12+, PowerShell 7 (`pwsh`) | `python tools/check.py` |
 | Client, CLI parser, and filesystem tests | Windows, MSVC v143, Windows SDK | `python tools/dev.py test` |
 | CLI executable and every help route | Same as native tests | `python tools/dev.py test --target cli` |
 | ETW configuration tests | Native prerequisites + Qt 6.9.3 MSVC x64 (QtCore) | `python tools/dev.py test --target monitor-tests` |

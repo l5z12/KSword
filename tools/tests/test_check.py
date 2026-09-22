@@ -12,6 +12,24 @@ import check
 
 
 class CheckRunnerTests(unittest.TestCase):
+    def test_driver_checks_run_without_loading_a_driver(self):
+        with patch.object(check.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(0, check.run_checks(["driver-plan", "driver-safe-read", "driver-harness"]))
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertEqual(sys.executable, commands[0][0])
+        self.assertIn("tools/driver_functional_ci/plan_gate.py", commands[0])
+        self.assertEqual(["pwsh", "-NoProfile", "-NonInteractive", "-File"], commands[1][:4])
+        self.assertEqual("drivers/ark/tests/SafeReadRegression.ps1", commands[1][4])
+        self.assertEqual(["-Mode", "SelfTest"], commands[2][-2:])
+
+    def test_missing_powershell_is_not_silently_skipped(self):
+        output = io.StringIO()
+        with patch.object(check.subprocess, "run", side_effect=FileNotFoundError("pwsh")):
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(1, check.run_checks(["driver-safe-read"]))
+        self.assertIn("FAIL driver-safe-read", output.getvalue())
+
     def test_failure_does_not_skip_other_checks_or_return_success(self):
         output = io.StringIO()
         with patch.object(check.subprocess, "run", side_effect=[subprocess.CompletedProcess([], 2), subprocess.CompletedProcess([], 0)]) as run:

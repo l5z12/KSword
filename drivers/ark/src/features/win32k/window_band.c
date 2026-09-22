@@ -19,7 +19,7 @@ typedef ULONGLONG (NTAPI *KswBandCreateTime)(PEPROCESS);
 
 typedef struct KswBandRuntime {
     KswBandEnter enter;
-    KswBandLeave leave;
+    KswBandLeave leaveCriticalSection;
     KswBandValidate validate;
     KswBandBegin begin;
     KswBandDefer defer;
@@ -131,17 +131,17 @@ static NTSTATUS kswBandResolve(KswBandRuntime* runtime)
     runtime->unlock = (KswBandUnlock)kswBandRoutine(&image, 0x26170, kUnlock, sizeof(kUnlock));
     runtime->rootOwner = (KswBandRootOwner)kswBandRoutine(&image, 0x742B8, kOwner, sizeof(kOwner));
     runtime->enter = (KswBandEnter)RtlFindExportedRoutineByName(base.imageBase, "EnterCrit");
-    runtime->leave = (KswBandLeave)RtlFindExportedRoutineByName(base.imageBase, "UserSessionSwitchLeaveCrit");
+    runtime->leaveCriticalSection = (KswBandLeave)RtlFindExportedRoutineByName(base.imageBase, "UserSessionSwitchLeaveCrit");
     runtime->validate = (KswBandValidate)RtlFindExportedRoutineByName(base.imageBase, "ValidateHwnd");
     RtlInitUnicodeString(&name, L"PsGetProcessCreateTimeQuadPart");
     runtime->createTime = (KswBandCreateTime)MmGetSystemRoutineAddress(&name);
     if (!runtime->begin || !runtime->defer || !runtime->end || !runtime->lock || !runtime->unlock ||
-        !runtime->enter || !runtime->leave || !runtime->validate || !runtime->rootOwner || !runtime->createTime)
+        !runtime->enter || !runtime->leaveCriticalSection || !runtime->validate || !runtime->rootOwner || !runtime->createTime)
         return STATUS_NOT_SUPPORTED;
     // The base exports must also resolve to executable code in the loaded base.
     if (!kswordArkRuntimeInitializeImageView(base.imageBase, base.imageSize, &image) ||
         !kswordArkRuntimeAddressIsExecutable(&image, (ULONG_PTR)runtime->enter, 1) ||
-        !kswordArkRuntimeAddressIsExecutable(&image, (ULONG_PTR)runtime->leave, 1) ||
+        !kswordArkRuntimeAddressIsExecutable(&image, (ULONG_PTR)runtime->leaveCriticalSection, 1) ||
         !kswordArkRuntimeAddressIsExecutable(&image, (ULONG_PTR)runtime->validate, 1)) return STATUS_REVISION_MISMATCH;
     return STATUS_SUCCESS;
 }
@@ -310,7 +310,7 @@ NTSTATUS kswordArkWindowBandIoctl(WDFDEVICE device, WDFREQUEST request,
         }
     } __finally {
         if (locked) kswBandUnlockWindow(&runtime, pti, targetLock);
-        if (entered) runtime.leave();
+        if (entered) runtime.leaveCriticalSection();
     }
 done:
     ObDereferenceObject(thread);

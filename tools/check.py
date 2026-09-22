@@ -1,7 +1,7 @@
 """Run the repository's portable source checks with the same commands as CI.
 
 Usage: python tools/check.py [--check NAME ...]
-The checks need Git and Python, but do not build or load the Windows driver.
+The checks need Git, Python, and PowerShell 7, but do not build or load the driver.
 """
 
 from __future__ import annotations
@@ -38,6 +38,10 @@ CHECKS = {
     # explicit gate. The EPT audit pins the private, per-processor hierarchy.
     "hvm-catalog": ["tools/hvm_ctl/audit_catalog.py"],
     "hvm-ept": ["tools/hvm_local_ept_gate.py"],
+    "driver-plan": [
+        "tools/driver_functional_ci/plan_gate.py", "--repo-root", ".",
+        "--out", "artifacts/driver-functional-plan.md",
+    ],
     "theme-tests": ["tools/theme_token_audit.py", "--self-test"],
     "theme": ["tools/theme_token_audit.py", "--source-root", "apps/desktop"],
     # Keep --fail-on-risk: producing a report alone does not gate regressions.
@@ -45,6 +49,11 @@ CHECKS = {
         "tools/ioctl_audit/ksword_ioctl_audit.py", "--repo-root", ".",
         "--format", "markdown", "--out", "artifacts/ioctl-audit.md", "--fail-on-risk",
     ],
+}
+
+POWERSHELL_CHECKS = {
+    "driver-safe-read": ["drivers/ark/tests/SafeReadRegression.ps1"],
+    "driver-harness": ["drivers/ark/tests/DriverFunctionalMatrix.ps1", "-Mode", "SelfTest"],
 }
 
 
@@ -72,6 +81,11 @@ def run_checks(names: list[str], root: Path = ROOT) -> int:
         try:
             if name == "json":
                 code = validate_json(root)
+            elif name in POWERSHELL_CHECKS:
+                code = subprocess.run(
+                    ["pwsh", "-NoProfile", "-NonInteractive", "-File", *POWERSHELL_CHECKS[name]],
+                    cwd=root, env=env,
+                ).returncode
             else:
                 # Reuse the invoking interpreter (including a local uv environment).
                 code = subprocess.run([sys.executable, *CHECKS[name]], cwd=root, env=env).returncode
@@ -87,7 +101,7 @@ def run_checks(names: list[str], root: Path = ROOT) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    choices = ["json", *CHECKS]
+    choices = ["json", *CHECKS, *POWERSHELL_CHECKS]
     parser.add_argument("--check", action="append", choices=choices, help="run only named checks; repeatable")
     parser.add_argument("--list", action="store_true", help="list available checks without running them")
     args = parser.parse_args()

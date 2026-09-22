@@ -163,7 +163,7 @@ or changing public headers.
 
 ## Source checks
 
-From the repository root, with Git and Python 3.12 or newer:
+From the repository root, with Git, Python 3.12 or newer, and PowerShell 7 (`pwsh`):
 
 ```powershell
 python tools/check.py
@@ -192,6 +192,9 @@ The default set validates tracked JSON, MSBuild source/filter membership,
 English comment prose in C/C++, Python, and XML, tooling regression tests,
 language packs, kernel knowledge, the HVM command
 catalog and private EPT invariants, theme tokens, and IOCTL access policy.
+It also runs the driver functional-plan gate, fault-contained read audit, and
+functional-matrix harness self-test (`driver-plan`, `driver-safe-read`, and
+`driver-harness`). The harness runs only in `SelfTest` mode, without loading a driver.
 It does not compile C/C++, run VM acceptance, or establish driver loadability.
 The CI workflow retains the separate MSVC arithmetic tests and native builds.
 

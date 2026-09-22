@@ -61,11 +61,11 @@ function Assert-DoesNotMatch {
 $wrappers = @(
     @{
         Path = Join-Path $RepositoryRoot 'drivers/ark\src\features\kernel\driver_image_editor_list.c'
-        Name = 'KswordARKDriverImageReadMemory'
+        Name = 'kswordArkDriverImageReadMemory'
     },
     @{
         Path = Join-Path $RepositoryRoot 'drivers/ark\src\platform\dyndata_fallback_resolver.c'
-        Name = 'KswordARKDriverFallbackReadMemory'
+        Name = 'kswordArkDriverFallbackReadMemory'
     }
 )
 
@@ -73,8 +73,8 @@ foreach ($wrapper in $wrappers) {
     $body = Get-CFunctionBody -Path $wrapper.Path -Name $wrapper.Name
     Assert-Matches `
         -Text $body `
-        -Pattern '\bKswordARKRuntimeReadMemory\s*\(' `
-        -FailureMessage "$($wrapper.Name) must delegate untrusted kernel reads to KswordARKRuntimeReadMemory."
+        -Pattern '\bkswordArkRuntimeReadMemory\s*\(' `
+        -FailureMessage "$($wrapper.Name) must delegate untrusted kernel reads to kswordArkRuntimeReadMemory."
     Assert-DoesNotMatch `
         -Text $body `
         -Pattern '\b(?:RtlCopyMemory|memcpy|memmove)\s*\(' `
@@ -82,33 +82,33 @@ foreach ($wrapper in $wrappers) {
 }
 
 $runtimeReader = Join-Path $RepositoryRoot 'drivers/ark\src\platform\runtime_signature_scan.c'
-$runtimeBody = Get-CFunctionBody -Path $runtimeReader -Name 'KswordARKRuntimeReadMemory'
+$runtimeBody = Get-CFunctionBody -Path $runtimeReader -Name 'kswordArkRuntimeReadMemory'
 Assert-Matches `
     -Text $runtimeBody `
     -Pattern '\bKeGetCurrentIrql\s*\(\s*\)\s*>\s*APC_LEVEL' `
-    -FailureMessage 'KswordARKRuntimeReadMemory must reject calls above APC_LEVEL.'
+    -FailureMessage 'kswordArkRuntimeReadMemory must reject calls above APC_LEVEL.'
 Assert-Matches `
     -Text $runtimeBody `
     -Pattern '\bMmCopyMemory\s*\(' `
-    -FailureMessage 'KswordARKRuntimeReadMemory must use MmCopyMemory for fault-contained reads.'
+    -FailureMessage 'kswordArkRuntimeReadMemory must use MmCopyMemory for fault-contained reads.'
 Assert-Matches `
     -Text $runtimeBody `
-    -Pattern '\bbytesTransferred\s*==\s*Size' `
-    -FailureMessage 'KswordARKRuntimeReadMemory must require the complete requested range.'
+    -Pattern '\bbytesTransferred\s*==\s*size' `
+    -FailureMessage 'kswordArkRuntimeReadMemory must require the complete requested range.'
 Assert-DoesNotMatch `
     -Text $runtimeBody `
     -Pattern '\b(?:RtlCopyMemory|memcpy|memmove)\s*\(' `
-    -FailureMessage 'KswordARKRuntimeReadMemory must not regress to a direct copy.'
+    -FailureMessage 'kswordArkRuntimeReadMemory must not regress to a direct copy.'
 
 $bgpSource = Join-Path $RepositoryRoot 'drivers/ark\src\features\bugcheck\bugcheck_bgp.c'
-$bgpViewBody = Get-CFunctionBody -Path $bgpSource -Name 'KswordARKBugcheckBgpInitializeImageView'
-$bgpAddressBody = Get-CFunctionBody -Path $bgpSource -Name 'KswordARKBugcheckBgpAddressInSection'
-$bgpScanBody = Get-CFunctionBody -Path $bgpSource -Name 'KswordARKBugcheckBgpScanSignatures'
-$bgpDecodeBody = Get-CFunctionBody -Path $bgpSource -Name 'KswordARKBugcheckBgpDecodeRelativeCallAt'
+$bgpViewBody = Get-CFunctionBody -Path $bgpSource -Name 'kswordArkBugcheckBgpInitializeImageView'
+$bgpAddressBody = Get-CFunctionBody -Path $bgpSource -Name 'kswordArkBugcheckBgpAddressInSection'
+$bgpScanBody = Get-CFunctionBody -Path $bgpSource -Name 'kswordArkBugcheckBgpScanSignatures'
+$bgpDecodeBody = Get-CFunctionBody -Path $bgpSource -Name 'kswordArkBugcheckBgpDecodeRelativeCallAt'
 
 Assert-Matches `
     -Text $bgpViewBody `
-    -Pattern '\bKswordARKRuntimeReadMemory\s*\(' `
+    -Pattern '\bkswordArkRuntimeReadMemory\s*\(' `
     -FailureMessage 'The BGP PE parser must read live kernel headers through the fault-contained reader.'
 Assert-Matches `
     -Text $bgpAddressBody `
@@ -120,10 +120,10 @@ Assert-Matches `
     -FailureMessage 'The BGP scanner must skip discardable executable sections before reading them.'
 Assert-Matches `
     -Text $bgpScanBody `
-    -Pattern '\bKswordARKRuntimeReadMemory\s*\(' `
+    -Pattern '\bkswordArkRuntimeReadMemory\s*\(' `
     -FailureMessage 'The BGP scanner must snapshot each bounded window with the fault-contained reader.'
 $discardableCheck = $bgpScanBody.IndexOf('IMAGE_SCN_MEM_DISCARDABLE', [StringComparison]::Ordinal)
-$snapshotRead = $bgpScanBody.IndexOf('KswordARKRuntimeReadMemory(', [StringComparison]::Ordinal)
+$snapshotRead = $bgpScanBody.IndexOf('kswordArkRuntimeReadMemory(', [StringComparison]::Ordinal)
 if ($discardableCheck -lt 0 -or $snapshotRead -lt 0 -or $discardableCheck -gt $snapshotRead) {
     throw 'The BGP scanner must reject discardable sections before its first snapshot read.'
 }
@@ -136,42 +136,42 @@ Assert-Matches `
     -Pattern '-\(LONGLONG\)displacement' `
     -FailureMessage 'BGP relative-call decoding must handle LONG_MIN without signed overflow.'
 
-$bgpResolveBody = Get-CFunctionBody -Path $bgpSource -Name 'KswordARKBugcheckBgpResolveFunctions'
-$bgpBeginDrawBody = Get-CFunctionBody -Path $bgpSource -Name 'KswordARKBugcheckBgpBeginDraw'
+$bgpResolveBody = Get-CFunctionBody -Path $bgpSource -Name 'kswordArkBugcheckBgpResolveFunctions'
+$bgpBeginDrawBody = Get-CFunctionBody -Path $bgpSource -Name 'kswordArkBugcheckBgpBeginDraw'
 Assert-Matches `
     -Text $bgpResolveBody `
-    -Pattern '\bInterlockedExchange\s*\(\s*&g_KswordArkBgp\.ResolvedSnapshotReady\s*,\s*1\s*\)' `
+    -Pattern '\bInterlockedExchange\s*\(\s*&gKswordArkBgp\.resolvedSnapshotReady\s*,\s*1\s*\)' `
     -FailureMessage 'The BGP resolver must publish an explicit ready snapshot only after validation.'
 Assert-Matches `
     -Text $bgpBeginDrawBody `
-    -Pattern '\bResolvedSnapshotReady\b' `
+    -Pattern '\bresolvedSnapshotReady\b' `
     -FailureMessage 'The crash-time BGP draw path must reject an unpublished resolver snapshot.'
 
 $bugcheckRuntime = Join-Path $RepositoryRoot 'drivers/ark\src\features\bugcheck\bugcheck_runtime.c'
-$bugcheckCallbackBody = Get-CFunctionBody -Path $bugcheckRuntime -Name 'KswordARKBugcheckReasonCallback'
+$bugcheckCallbackBody = Get-CFunctionBody -Path $bugcheckRuntime -Name 'kswordArkBugcheckReasonCallback'
 Assert-DoesNotMatch `
     -Text $bugcheckCallbackBody `
-    -Pattern '\b(?:KswordARKBugcheckBgpScanSignatures|KswordARKBugcheckBgpResolveFunctions|KswordARKRuntimeReadMemory)\s*\(' `
+    -Pattern '\b(?:kswordArkBugcheckBgpScanSignatures|kswordArkBugcheckBgpResolveFunctions|kswordArkRuntimeReadMemory)\s*\(' `
     -FailureMessage 'The bugcheck callback must consume only prepared state and never scan or read the live kernel image.'
 
 $driverEntry = Join-Path $RepositoryRoot 'drivers/ark\src\framework\driver_entry.c'
 $driverEntryBody = Get-CFunctionBody -Path $driverEntry -Name 'DriverEntry'
 Assert-Matches `
     -Text $driverEntryBody `
-    -Pattern '\bKswordARKBugcheckControlInitialize\s*\(' `
+    -Pattern '\bkswordArkBugcheckControlInitialize\s*\(' `
     -FailureMessage 'DriverEntry must initialize only the on-demand bugcheck controller.'
 Assert-DoesNotMatch `
     -Text $driverEntryBody `
-    -Pattern '\bKswordARKBugcheckInitialize\s*\(' `
+    -Pattern '\bkswordArkBugcheckInitialize\s*\(' `
     -FailureMessage 'DriverEntry must not scan BGP fields or register blue-screen callbacks before R3 requests installation.'
 
 $bugcheckControl = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'drivers/ark\src\features\bugcheck\bugcheck_control.c') -Raw
 $bugcheckConfigureBody = Get-CFunctionBody `
     -Path (Join-Path $RepositoryRoot 'drivers/ark\src\features\bugcheck\bugcheck_control.c') `
-    -Name 'KswordARKBugcheckControlConfigure'
+    -Name 'kswordArkBugcheckControlConfigure'
 Assert-DoesNotMatch `
     -Text $bugcheckConfigureBody `
-    -Pattern '\bKswordARKBugcheckInitialize\s*\(' `
+    -Pattern '\bkswordArkBugcheckInitialize\s*\(' `
     -FailureMessage 'The bugcheck installation IOCTL must enqueue work instead of synchronously running BGP preparation.'
 Assert-Matches `
     -Text $bugcheckConfigureBody `
@@ -183,11 +183,11 @@ Assert-DoesNotMatch `
     -FailureMessage 'WDFWORKITEM attributes must inherit execution level and synchronization scope; KMDF rejects explicit values for this object type.'
 Assert-Matches `
     -Text $bugcheckControl `
-    -Pattern '(?s)KswordARKBugcheckControlUninitialize.*?\bWdfWorkItemFlush\s*\(' `
+    -Pattern '(?s)kswordArkBugcheckControlUninitialize.*?\bWdfWorkItemFlush\s*\(' `
     -FailureMessage 'Driver unload must cancel and flush the bugcheck preparation work item before releasing resources.'
 Assert-Matches `
     -Text $bgpScanBody `
-    -Pattern '\bKswordARKBugcheckControlCheckAbort\s*\(' `
+    -Pattern '\bkswordArkBugcheckControlCheckAbort\s*\(' `
     -FailureMessage 'The bounded BGP signature scan must honor installation timeout and driver-unload cancellation.'
 
 $bugcheckHeader = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'drivers/ark\include\ark\ark_bugcheck.h') -Raw

@@ -9,7 +9,7 @@
 
 | 工作 | 依赖 | 仓库根目录命令 |
 | --- | --- | --- |
-| 源码检查 | Git、Python 3.12+ | `python tools/check.py` |
+| 源码检查 | Git、Python 3.12+、PowerShell 7（`pwsh`） | `python tools/check.py` |
 | 客户端、CLI 参数、文件系统测试 | Windows、MSVC v143、Windows SDK | `python tools/dev.py test` |
 | CLI 及全部帮助路由 | 同上 | `python tools/dev.py test --target cli` |
 | ETW 配置测试 | 上述依赖 + Qt 6.9.3 MSVC x64 的 QtCore | `python tools/dev.py test --target monitor-tests` |

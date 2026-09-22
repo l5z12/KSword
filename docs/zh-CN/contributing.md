@@ -24,6 +24,7 @@
    ```
 
    已安装 Python 3.12+ 时也可直接执行 `python tools/check.py`，不需要额外 Python 包。
+   驱动源码审计与测试框架自检还需要 PATH 中提供 PowerShell 7（`pwsh`）。
 4. 从[模块地图](maintenance.md)找到负责该行为的代码。围绕一个问题修改，为行为变更
    增加有意义的回归测试，优先复用离线测试。
 5. 新文件先加入 Git，同时更新每个消费者的 `.vcxproj` 和 `.vcxproj.filters`。

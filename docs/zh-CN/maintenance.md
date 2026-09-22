@@ -120,9 +120,11 @@ uv run --python 3.12 python tools/check.py --list
 uv run --python 3.12 python tools/check.py --check projects --check tool-tests
 ```
 
-检查只需 Git/Python 3.12+ 标准库，逐项执行，即使前项失败也保留其它结果；任一失败最终非零。
+检查需要 Git/Python 3.12+ 标准库及 PowerShell 7（`pwsh`），逐项执行，即使前项失败也保留其它结果；任一失败最终非零。
 范围包含 JSON、project/filters、C/C++/Python/XML 英文注释、工具回归、语言包、内核知识、HVM catalog/EPT、主题、
 IOCTL 访问策略及维护文档。IOCTL 报告保存在 `artifacts/ioctl-audit.md`，失败也保留。
+默认还执行驱动功能计划门禁、安全读取审计和功能矩阵框架自检（`driver-plan`、
+`driver-safe-read`、`driver-harness`）；框架只运行 `SelfTest` 模式，不加载驱动。
 这些检查不编译 C/C++，也不证明驱动签名/加载或 VM 验收。
 
 1. 选定所属模块，把可独立测试的判定从 UI 回调中提取。

@@ -22,6 +22,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from cli_catalog import read_catalog
+
 TIERS = {"probe", "guarded"}
 EXPECTATIONS = {"success", "graceful", "timeout"}
 REASON_RE = re.compile(r"^[a-z][a-z0-9-]*$")
@@ -66,20 +69,17 @@ def registered_ioctls(root: Path, prefix: str) -> set[str]:
 def cli_commands(root: Path) -> tuple[set[tuple[str, str]], dict[str, set[str]]]:
     """Parse apps/cli built-in help metadata to obtain the command table and 'Backed by' mapping.
 
-    Input is the repository root. The processing performs only regex extraction without compiling or executing the CLI.
+    Reuse the documentation/help-test parser without compiling or executing the CLI.
     Return value: A set of (family, subcommand) pairs, plus a reverse mapping from short IOCTL names to command families.
     """
 
-    source = (root / 'apps/cli/KswordCLI.cpp').read_text(encoding="utf-8", errors="replace")
-    row_re = re.compile(
-        r'\{\s*L"([a-z0-9]+)",\s*L"([a-z0-9-]*)",\s*L"[^"]*",\s*L"[^"]*",\s*L"[^"]*",\s*L"([^"]*)"\s*\}'
-    )
+    _, catalog = read_catalog(root / "apps/cli/CliHelp.cpp")
     commands: set[tuple[str, str]] = set()
     backed: dict[str, set[str]] = {}
-    for family, sub, notes in row_re.findall(source):
-        commands.add((family, sub))
-        for name in re.findall(r"IOCTL_KSWORD_ARK_[A-Z0-9_]+", notes):
-            backed.setdefault(name[len("IOCTL_KSWORD_ARK_"):], set()).add(family)
+    for command in catalog:
+        commands.add((command.family, command.name))
+        for name in re.findall(r"IOCTL_KSWORD_ARK_[A-Z0-9_]+", command.notes):
+            backed.setdefault(name[len("IOCTL_KSWORD_ARK_"):], set()).add(command.family)
     return commands, backed
 
 

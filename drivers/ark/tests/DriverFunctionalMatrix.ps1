@@ -969,7 +969,7 @@ function Invoke-SelfTest {
 
 function Main {
     if (-not $RepositoryRoot) {
-        $RepositoryRoot = (Resolve-Path (Join-Path $script:ScriptDirectory '..\..')).Path
+        $RepositoryRoot = (Resolve-Path (Join-Path $script:ScriptDirectory '..\..\..')).Path
     }
     if (-not $StateRoot) {
         $StateRoot = Join-Path $env:ProgramData 'KswordARK\driver-functional-ci'

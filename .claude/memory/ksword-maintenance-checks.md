@@ -63,6 +63,16 @@
   during path-only refactors. Review RC filenames and development fallback strings,
   Python pathlib chains, PowerShell script-root depth, CI filters, and CMake source
   exports; successful C++ compilation alone does not validate these references.
+- The default source checks also run `driver-plan`, `driver-safe-read`, and
+  `driver-harness`. PowerShell 7 (`pwsh`) is required for the latter two;
+  the harness runs only `SelfTest`, without driver loading. Keep all source-name
+  expectations in `SafeReadRegression.ps1` synchronized during symbol renames.
+- The functional-plan gate reuses `tools/cli_catalog.py` and reads `CliHelp.cpp`,
+  like the docs generator and help-route tests. Do not restore a separate regex
+  over the CLI entry point. Script root traversal must account for `drivers/ark/tests/`.
+- WDK builds force-include `warning.h`, which defines C macros including `leave`.
+  A standalone compiler invocation without this header can miss name collisions:
+  the window-band runtime callback uses `leaveCriticalSection` for this reason.
 - Retired desktop/qmake scaffolding is text under `archive/desktop/`; taskbar
   snapshots remain under `archive/taskbar/`. Local old build trees were moved to
   ignored `artifacts/legacy-layout/`. Do not use those trees as source dependencies.
